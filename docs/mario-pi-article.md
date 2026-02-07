@@ -48,7 +48,7 @@ const claudeResponse = await complete(claude, context, { thinkingEnabled: true }
 context.messages.push(claudeResponse);
 
 // Switch to GPT - it will see Claude's thinking as <thinking> tagged text
-const gpt = getModel('openai', 'gpt-5.1-codex');
+const gpt = getModel('openai', 'gpt-5-3-codex');
 context.messages.push({ role: 'user', content: 'Is that correct?' });
 const gptResponse = await complete(gpt, context);
 ```

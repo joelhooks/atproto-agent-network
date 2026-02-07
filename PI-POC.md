@@ -90,7 +90,7 @@ class AgentDO extends DurableObject {
     this.agent = new Agent({
       initialState: {
         systemPrompt: await this.memory.getSystemPrompt(),
-        model: getModel("anthropic", "claude-sonnet-4-20250514"),
+        model: getModel("anthropic", "claude-sonnet-4-5"),
         tools: this.getTools(),
       },
       // Transform context: inject relevant memories

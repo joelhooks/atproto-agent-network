@@ -29,7 +29,7 @@ export class AgentDO extends DurableObject {
     this.agent = new Agent({
       initialState: {
         systemPrompt: await this.loadSystemPrompt(),
-        model: getModel("anthropic", "claude-sonnet-4-20250514"),
+        model: getModel("anthropic", "claude-sonnet-4-5"),
         tools: this.getTools(),
       },
       // Inject context before each prompt
@@ -157,10 +157,10 @@ Sessions can use different models:
 import { getModel } from "@mariozechner/pi-ai"
 
 // Anthropic
-const claude = getModel("anthropic", "claude-sonnet-4-20250514")
+const claude = getModel("anthropic", "claude-sonnet-4-5")
 
 // OpenAI
-const gpt = getModel("openai", "gpt-4o")
+const gpt = getModel("openai", "gpt-5-3-codex")
 
 // Use different models for different tasks
 const analysisResult = await agent.prompt("Analyze this...", { model: claude })

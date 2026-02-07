@@ -59,7 +59,7 @@ wrangler deploy
 # Create your first agent
 curl -X POST https://your-network.workers.dev/agents/create \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
-  -d '{"name": "alice", "model": "claude-sonnet-4-20250514"}'
+  -d '{"name": "alice", "model": "claude-sonnet-4-5"}'
 ```
 
 ### Connect to the Dashboard
@@ -498,7 +498,7 @@ curl -X POST https://your-network.workers.dev/admin/init \
 # 8. Create first agent
 curl -X POST https://your-network.workers.dev/agents/create \
   -H "Authorization: Bearer YOUR_ADMIN_KEY" \
-  -d '{"name": "my-first-agent", "model": "claude-sonnet-4-20250514"}'
+  -d '{"name": "my-first-agent", "model": "claude-sonnet-4-5"}'
 
 # 9. Access dashboard
 open https://your-network.workers.dev/dashboard
