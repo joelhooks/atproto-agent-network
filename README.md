@@ -1,6 +1,6 @@
-# AT Protocol Agent Network on Cloudflare
+# ⚡ AT Protocol Agent Network on Cloudflare
 
-A decentralized agent communication and memory network, implementing AT Protocol concepts on Cloudflare primitives.
+⚡ A decentralized agent communication and memory network, implementing AT Protocol concepts on Cloudflare primitives.
 
 **Published:** [grimlock.ai/garden/atproto-agent-network](https://grimlock.ai/garden/atproto-agent-network)
 
