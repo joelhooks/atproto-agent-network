@@ -28,12 +28,6 @@ AT Protocol provides the conceptual model—DIDs, repos, lexicons, firehose—bu
 | Relay | Worker + DO coordination | Aggregates events, routes messages |
 | PDS | The whole stack | D1/R2/DO combined = mini-PDS |
 
-**Why not Vercel?**
-- Edge functions are stateless—no Durable Objects equivalent
-- No native WebSocket support at edge
-- Would need external Redis, Postgres, pub/sub for everything
-- Cloudflare is a platform; Vercel is a deployment target
-
 ## Architecture
 
 ```
