@@ -104,6 +104,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Summary**\n- Added `EncryptedMemory` with `store`/`retrieve` using DEK + X25519 envelope encryption and D1 inserts/selects in `packages/agent/src/memory.ts`.\n- Added unit tests with a fake D1 implementation to verify encrypted storage and roundtrip decryption in `packages/agent/src/memory.test.ts`.\n- Exported `EncryptedMemory` from `packages/agent/src/index.ts`.\n\n**Tests**\n- `pnpm vitest run packages/agent/src/memory.test.ts`\n\n**Learnings**\n- None."
+    },
+    {
+      "id": "wire-up-agentdo",
+      "title": "Wire up AgentDO with Pi agent and encrypted memory",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Summary:\n- Wired `AgentDO` to create/load identity, set up `EncryptedMemory`, and initialize `PiAgentWrapper` with `remember`/`recall` tools plus concrete `identity`, `prompt`, and `memory` handlers.\n- Added `apps/network/src/agent-do.test.ts` covering identity/public keys, prompt forwarding/tool wiring, and encrypted memory roundtrip.\n\nTests:\n- `pnpm vitest run apps/network/src/agent-do.test.ts`\n\nLearnings:\n- None.\n\nNote: `hive_cells --status open` failed locally (`command not found`)."
     }
   ],
   "failures": [

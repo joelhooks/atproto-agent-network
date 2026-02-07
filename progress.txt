@@ -263,3 +263,14 @@ Summary: Summary:
 Tests:
 - `pnpm vitest run apps/network/src/agent-do.test.ts`
 
+
+---
+[2026-02-07T21:01:07.662Z]
+Completed: Setup integration test harness (D1 mock)
+Files: none
+Summary: Using `d1-patterns` skill to align the mock with the D1 records table shape.
+
+**Summary**
+- Added an in-memory D1 mock harness for integration tests in `packages/core/src/d1-mock.ts`.
+- Added a focused integration test that validates insert/select behavior in `packages/core/src/d1-mock.integration.test.ts`.
+- Added an integration Vitest config in `vitest.config.integration.ts` targeting `**/*.inte
