@@ -14,8 +14,8 @@
     "prepare": "sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'"
   },
   "devDependencies": {
-    "miniflare": "^4.20260205.0",
+    "miniflare": "workspace:*",
     "turbo": "workspace:*",
-    "vitest": "^1.6.1"
+    "vitest": "workspace:*"
   }
 }

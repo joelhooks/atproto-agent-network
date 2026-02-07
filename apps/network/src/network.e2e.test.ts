@@ -1,43 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Miniflare } from 'miniflare'
 import { fileURLToPath } from 'node:url'
-
-type MiniflareInstance = {
-  dispatchFetch: (input: string) => Promise<Response>
-  dispose: () => Promise<void>
-}
-
-type MiniflareConstructor = new (options: unknown) => MiniflareInstance
 
 const scriptPath = fileURLToPath(new URL('./index.ts', import.meta.url))
 
-let Miniflare: MiniflareConstructor | null = null
-let miniflareUnavailable = false
+let mf: Miniflare | null = null
 
-try {
-  const module = await import('miniflare')
-  if (module.Miniflare) {
-    Miniflare = module.Miniflare as MiniflareConstructor
-  } else {
-    miniflareUnavailable = true
-  }
-} catch {
-  miniflareUnavailable = true
-}
-
-const describeE2E = miniflareUnavailable ? describe.skip : describe
-
-let mf: MiniflareInstance | null = null
-
-it('detects whether miniflare is available', () => {
-  expect(miniflareUnavailable || Miniflare).toBeTruthy()
-})
-
-describeE2E('Agent network E2E', () => {
+describe('Agent network E2E', () => {
   beforeEach(() => {
-    if (!Miniflare) {
-      return
-    }
-
     mf = new Miniflare({
       scriptPath,
       modules: true,
@@ -52,18 +22,12 @@ describeE2E('Agent network E2E', () => {
   })
 
   afterEach(async () => {
-    if (mf) {
-      await mf.dispose()
-      mf = null
-    }
+    await mf?.dispose()
+    mf = null
   })
 
   it('serves network metadata', async () => {
-    if (!mf) {
-      return
-    }
-
-    const response = await mf.dispatchFetch(
+    const response = await mf!.dispatchFetch(
       'http://localhost/.well-known/agent-network.json'
     )
 
@@ -75,11 +39,7 @@ describeE2E('Agent network E2E', () => {
   })
 
   it('resolves agent identity via durable object', async () => {
-    if (!mf) {
-      return
-    }
-
-    const response = await mf.dispatchFetch(
+    const response = await mf!.dispatchFetch(
       'http://localhost/agents/alice/identity'
     )
 

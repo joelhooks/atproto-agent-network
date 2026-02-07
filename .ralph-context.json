@@ -125,6 +125,20 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] PASS\n"
+    },
+    {
+      "id": "fix-key-serialization",
+      "title": "Fix CryptoKeyPair serialization in DO storage",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Fix**\n- Durable Object identity is no longer persisted as a raw `CryptoKeyPair` (which Cloudflare DO storage can’t serialize). It’s now stored as a JSON-serializable envelope of JWKs and re-hydrated back into `CryptoKeyPair` on load.\n  - `apps/network/src/agent.ts`\n\n**Implementation**\n- Added JWK helpers:\n  - `exportCryptoKeyPairJwk()` / `importCryptoKeyPairJwk()`\n  - `packages/core/src/crypto.ts`\n- Updated DO tests to simulate DO storage rejecting `CryptoKey` values and to verify identity can"
+    },
+    {
+      "id": "fix-lockfile-miniflare",
+      "title": "Fix lockfile sync and install miniflare",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] Scope: all 9 workspace projects\nLockfile is up to date, resolution step is skipped\nAlready up to date\n\n. prepare$ sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'\n. prepare: Done\nDone in 682ms\nPASS\n"
     }
   ],
   "failures": [
@@ -142,6 +156,21 @@
       "storyId": "lexicon-validation",
       "category": "unknown",
       "error": "PASS\n"
+    },
+    {
+      "storyId": "fix-lockfile-miniflare",
+      "category": "build_error",
+      "error": "Command failed: pnpm install --frozen-lockfile 2>&1 | grep -qvE \"ERR_PNPM_FROZEN_LOCKFILE\" && pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS"
+    },
+    {
+      "storyId": "fix-lockfile-miniflare",
+      "category": "unknown",
+      "error": "PASS\n"
+    },
+    {
+      "storyId": "fix-lockfile-miniflare",
+      "category": "unknown",
+      "error": "Scope: all 9 workspace projects\nLockfile is up to date, resolution step is skipped\nAlready up to date\n\n. prepare$ sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'\n. prepare: Done\nDone in 682ms\nPASS\n"
     }
   ]
 }
