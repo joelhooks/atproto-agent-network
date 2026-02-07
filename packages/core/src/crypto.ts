@@ -20,6 +20,14 @@ export async function generateX25519Keypair(): Promise<CryptoKeyPair> {
   )
 }
 
+export async function generateEd25519Keypair(): Promise<CryptoKeyPair> {
+  return crypto.subtle.generateKey(
+    { name: 'Ed25519' },
+    true,
+    ['sign', 'verify']
+  )
+}
+
 export async function encryptWithDek(
   plaintext: Uint8Array,
   dek: Uint8Array,

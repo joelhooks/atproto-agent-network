@@ -48,6 +48,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Summary:\n- Added GitHub Actions CI workflow to run `pnpm test` on push and pull_request: `.github/workflows/ci.yml`.\n\nTests:\n- `test -f .github/workflows/ci.yml && echo PASS`\n\nLearnings:\n- None."
+    },
+    {
+      "id": "generate-x25519",
+      "title": "Implement generateX25519Keypair",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Summary**\n- Added `generateX25519Keypair` using WebCrypto X25519 keygen in `packages/core/src/crypto.ts`.\n- Added unit coverage for X25519 keypair generation in `packages/core/src/crypto.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'`\n\n**Notes**\n- Progress report via `openclaw system event --text \"[COMPLETE] …\" --mode now` failed with `SystemError: uv_interface_addresses returned Unknown system error 1`. If you want me to retry or use a diff"
     }
   ],
   "failures": [

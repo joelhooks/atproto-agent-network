@@ -151,3 +151,19 @@ Summary: **Summary**
 
 **Notes**
 - Progress report via `openclaw system event --text "[COMPLETE] …" --mode now` failed with `SystemE
+
+---
+[2026-02-07T20:24:57.072Z]
+Completed: Implement generateEd25519Keypair
+Files: none
+Summary: Skill used: `envelope-encryption` (crypto keygen guidance).
+
+**Summary**
+- Added `generateEd25519Keypair` via WebCrypto Ed25519 keygen in `packages/core/src/crypto.ts`.
+- Added Ed25519 keypair expectations in `packages/core/src/crypto.test.ts`.
+
+**Tests**
+- `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateEd25519Keypair'`
+
+**Notes**
+- `hive_cells --status open` is not available here (
