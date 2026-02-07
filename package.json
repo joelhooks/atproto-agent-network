@@ -4,6 +4,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "turbo build",
+    "vitest": "node ./scripts/vitest.mjs",
     "test": "sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'",
     "test:watch": "turbo test:watch",
     "typecheck": "turbo typecheck",

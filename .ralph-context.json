@@ -13,6 +13,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Summary**\nVitest is already installed and the root config exists (`package.json`, `vitest.config.ts`), so no code changes were needed for this story. Validation passes.\n\n**Tests**\n`pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|✓|PASS)' && echo PASS || pnpm vitest run --passWithNoTests`\n\n**Notes**\n- `hive_cells --status open` is not available in this environment (`command not found`).\n- `openclaw message` now requires a subcommand/target. If you want progress messages sent, te"
+    },
+    {
+      "id": "identity-tests",
+      "title": "Create first unit test for identity.ts",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Summary**\n- Added first unit tests for DID utilities and TID generation in `packages/core/src/identity.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/identity.test.ts`\n\n**Learnings**\n- None."
     }
   ],
   "failures": [
