@@ -4,6 +4,24 @@
 
 **Published:** [grimlock.ai/garden/atproto-agent-network](https://grimlock.ai/garden/atproto-agent-network)
 
+## Security Model
+
+**Private by default. Encrypted by default.**
+
+| Layer | Protection |
+|-------|------------|
+| Transport | TLS 1.3 + X25519MLKEM768 (post-quantum) |
+| At-rest | Per-agent X25519 encryption keys |
+| Memory | Envelope encryption (DEK per record) |
+| Sharing | Explicit key exchange for public/shared |
+
+Privacy levels:
+- **private** (default) — Only the agent can decrypt
+- **shared** — DEK encrypted for specific recipients
+- **public** — Opt-in plaintext for network visibility
+
+See [PI-POC.md](./PI-POC.md) for full security architecture.
+
 ## Prior Art
 
 Before building anything, study these:
