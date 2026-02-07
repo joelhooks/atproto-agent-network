@@ -89,3 +89,24 @@ pnpm test     # Verify setup
    - Append learnings from completed work
 
 **The backlog is the truth. prd.json is a cache.**
+
+## Progress Reporting (REQUIRED)
+
+**Workers must report progress to coordinator via OpenClaw:**
+
+```bash
+# Report task start
+openclaw message "🚀 Starting: [story-id] - [title]"
+
+# Report completion
+openclaw message "✅ Completed: [story-id] - [summary of what was done]"
+
+# Report blockers
+openclaw message "🚫 Blocked: [story-id] - [what's blocking and why]"
+
+# Report test failures
+openclaw message "❌ Tests failing: [story-id] - [failure summary]"
+```
+
+**This keeps the coordinator (Grimlock) in the loop in real-time.**
+Don't just commit silently — communicate!
