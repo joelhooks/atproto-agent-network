@@ -64,3 +64,28 @@ pnpm test     # Verify setup
 - `AGENTS.md` — Coding conventions
 - `prd.json` — Ralph loop stories (synced from GitHub issues)
 - `progress.txt` — Loop learnings (append-only)
+
+## Coordinator Instructions (CRITICAL)
+
+**Before every Ralph loop run:**
+
+1. **Groom the backlog first**
+   - `gh issue list --state open --label agent/ready` — what's claimable?
+   - Close completed issues
+   - Remove `agent/ready` from blocked issues
+   - Verify `type/container` issues don't have `agent/ready`
+
+2. **Sync prd.json with GitHub**
+   - Stories must map to real issues
+   - Priority order must match dependencies
+   - Remove stories for closed issues
+
+3. **Check dependencies**
+   - Don't start crypto stories before test infra
+   - Don't start agent layer before crypto
+
+4. **Update progress.txt**
+   - What's done, what's blocked, what's next
+   - Append learnings from completed work
+
+**The backlog is the truth. prd.json is a cache.**
