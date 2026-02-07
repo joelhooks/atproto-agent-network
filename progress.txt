@@ -216,3 +216,17 @@ Tests:
 
 Learnings:
 - None.
+
+---
+[2026-02-07T20:33:59.343Z]
+Completed: Create D1 schema for encrypted records
+Files: none
+Summary: Summary:
+- Added encrypted record storage schema with `records` and `shared_records` tables plus indexes in `apps/network/schema.sql`.
+- Added schema validation tests in `apps/network/src/schema.test.ts`.
+- Added `apps/network/vitest.config.ts` so the validation command can discover app tests.
+
+Tests:
+- `test -f apps/network/schema.sql && pnpm vitest run apps/network/src/schema.test.ts`
+
+Learnings
