@@ -332,3 +332,16 @@ Done in 682ms
 PASS
 
 Codex: 
+
+---
+[2026-02-07T22:26:49.975Z]
+Completed: Fix lockfile sync and install miniflare
+Files: none
+Summary: **Change**
+- Added `.npmrc` with `confirmModulesPurge=false` so `pnpm install` won’t block on the “modules directories will be removed…” confirmation prompt during automation.
+
+**Validation**
+- Ran `pnpm install && pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS` → `PASS`
+
+**Learning**
+- `pnpm install` can prompt to purge/recreate `node_modules`; `confirmModulesPurge=false`
