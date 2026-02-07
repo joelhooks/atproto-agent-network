@@ -511,7 +511,8 @@
       ],
       "estimatedMinutes": 25,
       "sprint": "foundations-fix",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "fix-lockfile-miniflare",
@@ -664,7 +665,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-07T21:11:02.952Z",
-    "totalIterations": 19
+    "lastIteration": "2026-02-07T21:52:59.293Z",
+    "totalIterations": 20
   }
 }

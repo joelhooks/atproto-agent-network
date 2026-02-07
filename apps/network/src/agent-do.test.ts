@@ -22,8 +22,73 @@ class FakeStorage {
   }
 
   async put(key: string, value: unknown): Promise<void> {
-    this.store.set(key, value)
+    assertDurableObjectSerializable(value)
+    this.store.set(key, structuredClone(value))
   }
+}
+
+function assertDurableObjectSerializable(value: unknown): void {
+  const seen = new Set<unknown>()
+
+  function visit(node: unknown, path: string): void {
+    if (node === null) return
+
+    const t = typeof node
+    if (t === 'string' || t === 'number' || t === 'boolean' || t === 'bigint') {
+      return
+    }
+    if (t === 'undefined') return
+    if (t === 'symbol' || t === 'function') {
+      throw new Error(`Durable Object storage cannot serialize ${t} at ${path}`)
+    }
+
+    if (typeof CryptoKey === 'function' && node instanceof CryptoKey) {
+      throw new Error(`Durable Object storage cannot serialize CryptoKey at ${path}`)
+    }
+
+    if (node instanceof ArrayBuffer) return
+    if (node instanceof Uint8Array) return
+    if (ArrayBuffer.isView(node)) return
+    if (node instanceof Date) return
+
+    if (seen.has(node)) return
+    seen.add(node)
+
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i += 1) {
+        visit(node[i], `${path}[${i}]`)
+      }
+      return
+    }
+
+    if (node instanceof Map) {
+      for (const [k, v] of node.entries()) {
+        visit(k, `${path}<mapKey>`)
+        visit(v, `${path}<mapValue>`)
+      }
+      return
+    }
+
+    if (node instanceof Set) {
+      let i = 0
+      for (const entry of node.values()) {
+        visit(entry, `${path}<set>[${i}]`)
+        i += 1
+      }
+      return
+    }
+
+    if (t === 'object') {
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        visit(v, `${path}.${k}`)
+      }
+      return
+    }
+
+    throw new Error(`Durable Object storage cannot serialize value at ${path}`)
+  }
+
+  visit(value, '$')
 }
 
 interface RecordRow {
@@ -169,12 +234,51 @@ describe('AgentDO', () => {
 
     const response = await agent.fetch(new Request('https://example/identity'))
     const body = await response.json()
-    const stored = await storage.get<{ did: string }>('identity')
+    const stored = await storage.get<Record<string, unknown>>('identity')
 
     expect(body.did).toBe('did:cf:agent-identity')
     expect(body.publicKeys.encryption).toMatch(/^z/)
     expect(body.publicKeys.signing).toMatch(/^z/)
-    expect(stored?.did).toBe('did:cf:agent-identity')
+    expect(stored).toMatchObject({
+      version: 1,
+      did: 'did:cf:agent-identity',
+      signingKey: {
+        algorithm: 'Ed25519',
+      },
+      encryptionKey: {
+        algorithm: 'X25519',
+      },
+    })
+
+    expect(stored?.signingKey).toMatchObject({
+      publicJwk: { kty: 'OKP', crv: 'Ed25519' },
+      privateJwk: { kty: 'OKP', crv: 'Ed25519' },
+    })
+    expect(stored?.encryptionKey).toMatchObject({
+      publicJwk: { kty: 'OKP', crv: 'X25519' },
+      privateJwk: { kty: 'OKP', crv: 'X25519' },
+    })
+  })
+
+  it('reloads the identity from storage', async () => {
+    const { state } = createState('agent-reload')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+
+    const agent1 = new AgentDO(state as never, env as never)
+    const response1 = await agent1.fetch(new Request('https://example/identity'))
+    const body1 = await response1.json()
+
+    const agent2 = new AgentDO(state as never, env as never)
+    const response2 = await agent2.fetch(new Request('https://example/identity'))
+    const body2 = await response2.json()
+
+    expect(body2).toEqual(body1)
   })
 
   it('forwards prompts to the Pi agent with memory tools', async () => {

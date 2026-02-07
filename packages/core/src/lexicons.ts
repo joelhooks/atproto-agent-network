@@ -14,7 +14,7 @@ export const MemoryNote = z.object({
   tags: z.array(z.string()).optional(),
   source: z.string().optional(),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
 
 export const MemoryDecision = z.object({
   $type: z.literal('agent.memory.decision'),
@@ -24,7 +24,7 @@ export const MemoryDecision = z.object({
   rationale: z.string(),
   status: z.enum(['proposed', 'accepted', 'rejected', 'superseded']),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
 
 // Communication
 export const Message = z.object({
@@ -33,13 +33,13 @@ export const Message = z.object({
   recipient: z.string(),
   thread: z.string().optional(),
   content: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('text'), text: z.string() }),
-    z.object({ kind: z.literal('json'), data: z.unknown() }),
-    z.object({ kind: z.literal('ref'), uri: z.string() }),
+    z.object({ kind: z.literal('text'), text: z.string() }).passthrough(),
+    z.object({ kind: z.literal('json'), data: z.unknown() }).passthrough(),
+    z.object({ kind: z.literal('ref'), uri: z.string() }).passthrough(),
   ]),
   priority: z.number().int().min(1).max(5).default(3),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
 
 export const TaskRequest = z.object({
   $type: z.literal('agent.comms.task'),
@@ -51,7 +51,7 @@ export const TaskRequest = z.object({
   replyTo: z.string(),
   resultVisibility: z.enum(['private', 'shared', 'public']).default('private'),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
 
 export const TaskResponse = z.object({
   $type: z.literal('agent.comms.response'),
@@ -62,7 +62,7 @@ export const TaskResponse = z.object({
   result: z.unknown().optional(),
   error: z.string().optional(),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
 
 export const Handoff = z.object({
   $type: z.literal('agent.comms.handoff'),
@@ -71,10 +71,19 @@ export const Handoff = z.object({
   context: z.array(z.object({
     recordId: z.string(),
     encryptedDek: z.string(),
-  })),
+  }).passthrough()),
   reason: z.string(),
   createdAt: z.string().datetime(),
-})
+}).passthrough()
+
+export const LexiconRecordSchema = z.discriminatedUnion('$type', [
+  MemoryNote,
+  MemoryDecision,
+  Message,
+  TaskRequest,
+  TaskResponse,
+  Handoff,
+])
 
 // Export types
 export type MemoryNote = z.infer<typeof MemoryNote>
@@ -83,3 +92,4 @@ export type Message = z.infer<typeof Message>
 export type TaskRequest = z.infer<typeof TaskRequest>
 export type TaskResponse = z.infer<typeof TaskResponse>
 export type Handoff = z.infer<typeof Handoff>
+export type LexiconRecord = z.infer<typeof LexiconRecordSchema>

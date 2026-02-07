@@ -285,3 +285,23 @@ Summary: Used `cloudflare` skill to align the Miniflare E2E harness setup.
 - Added E2E Vitest config in `vitest.config.e2e.ts` to discover `*.e2e.test.ts`.
 - Added Miniflare-backed smoke tests for network metadata and AgentDO identity in `apps/network/src/network.e2e.test.ts`; the Miniflare suite is skipped when the module is unavailable.
 - Added `miniflare` dev dependency in `package.json` (l
+
+---
+[2026-02-07T21:49:07.522Z]
+Failed: Wire up Zod lexicon validation at API boundaries [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-07T21:52:59.293Z]
+Completed: Fix CryptoKeyPair serialization in DO storage
+Files: none
+Summary: **Fix**
+- Durable Object identity is no longer persisted as a raw `CryptoKeyPair` (which Cloudflare DO storage can’t serialize). It’s now stored as a JSON-serializable envelope of JWKs and re-hydrated back into `CryptoKeyPair` on load.
+  - `apps/network/src/agent.ts`
+
+**Implementation**
+- Added JWK helpers:
+  - `exportCryptoKeyPairJwk()` / `importCryptoKeyPairJwk()`
+  - `packages/core/src/crypto.t

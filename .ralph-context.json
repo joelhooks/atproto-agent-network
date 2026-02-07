@@ -118,6 +118,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Using `d1-patterns` skill to align the mock with the D1 records table shape.\n\n**Summary**\n- Added an in-memory D1 mock harness for integration tests in `packages/core/src/d1-mock.ts`.\n- Added a focused integration test that validates insert/select behavior in `packages/core/src/d1-mock.integration.test.ts`.\n- Added an integration Vitest config in `vitest.config.integration.ts` targeting `**/*.integration.test.ts`.\n\n**Tests**\n- `pnpm vitest run --config vitest.config.integration.ts`\n\n**Learnings*"
+    },
+    {
+      "id": "lexicon-validation",
+      "title": "Wire up Zod lexicon validation at API boundaries",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
     }
   ],
   "failures": [
@@ -130,6 +137,11 @@
       "storyId": "install-vitest",
       "category": "build_error",
       "error": "undefined\n ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command \"vitest\" not found\n\nDid you mean \"pnpm test\"?\n"
+    },
+    {
+      "storyId": "lexicon-validation",
+      "category": "unknown",
+      "error": "PASS\n"
     }
   ]
 }

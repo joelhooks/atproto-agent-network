@@ -28,6 +28,58 @@ export async function generateEd25519Keypair(): Promise<CryptoKeyPair> {
   )
 }
 
+export type StoredKeyAlgorithm = 'Ed25519' | 'X25519'
+
+export interface StoredCryptoKeyPairJwk {
+  algorithm: StoredKeyAlgorithm
+  publicJwk: JsonWebKey
+  privateJwk: JsonWebKey
+}
+
+const KEYPAIR_USAGES: Record<StoredKeyAlgorithm, { public: KeyUsage[]; private: KeyUsage[] }> = {
+  Ed25519: { public: ['verify'], private: ['sign'] },
+  X25519: { public: [], private: ['deriveBits'] },
+}
+
+function assertStoredKeyAlgorithm(value: unknown): asserts value is StoredKeyAlgorithm {
+  if (value !== 'Ed25519' && value !== 'X25519') {
+    throw new Error(`Unsupported key algorithm: ${String(value)}`)
+  }
+}
+
+export async function exportCryptoKeyPairJwk(
+  keypair: CryptoKeyPair
+): Promise<StoredCryptoKeyPairJwk> {
+  const algorithm = keypair.privateKey.algorithm.name
+  assertStoredKeyAlgorithm(algorithm)
+
+  if (keypair.publicKey.algorithm.name !== algorithm) {
+    throw new Error('CryptoKeyPair algorithm mismatch')
+  }
+
+  const [publicJwk, privateJwk] = await Promise.all([
+    crypto.subtle.exportKey('jwk', keypair.publicKey),
+    crypto.subtle.exportKey('jwk', keypair.privateKey),
+  ])
+
+  return { algorithm, publicJwk, privateJwk }
+}
+
+export async function importCryptoKeyPairJwk(
+  stored: StoredCryptoKeyPairJwk
+): Promise<CryptoKeyPair> {
+  assertStoredKeyAlgorithm(stored.algorithm)
+  const usages = KEYPAIR_USAGES[stored.algorithm]
+  const algorithm = { name: stored.algorithm }
+
+  const [publicKey, privateKey] = await Promise.all([
+    crypto.subtle.importKey('jwk', stored.publicJwk, algorithm, true, usages.public),
+    crypto.subtle.importKey('jwk', stored.privateJwk, algorithm, true, usages.private),
+  ])
+
+  return { publicKey, privateKey }
+}
+
 export async function deriveSharedSecret(
   privateKey: CryptoKey,
   publicKey: CryptoKey

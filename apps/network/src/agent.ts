@@ -15,10 +15,14 @@ import {
 } from '../../../packages/agent/src'
 import {
   exportPublicKey,
+  exportCryptoKeyPairJwk,
   generateEd25519Keypair,
   generateX25519Keypair,
+  importCryptoKeyPairJwk,
+  type StoredCryptoKeyPairJwk,
 } from '../../../packages/core/src/crypto'
 import { createDid } from '../../../packages/core/src/identity'
+import { validateLexiconRecord } from '../../../packages/core/src/validation'
 import type { AgentIdentity } from '../../../packages/core/src/types'
 
 interface AgentEnv {
@@ -28,6 +32,15 @@ interface AgentEnv {
   PI_AGENT_FACTORY?: PiAgentFactory
   PI_AGENT_MODEL?: unknown
   PI_SYSTEM_PROMPT?: string
+}
+
+interface StoredAgentIdentityV1 {
+  version: 1
+  did: string
+  signingKey: StoredCryptoKeyPairJwk
+  encryptionKey: StoredCryptoKeyPairJwk
+  createdAt: number
+  rotatedAt?: number
 }
 
 export class AgentDO extends DurableObject {
@@ -79,10 +92,16 @@ export class AgentDO extends DurableObject {
     }
 
     this.initializing = (async () => {
-      const stored = await this.ctx.storage.get<AgentIdentity>('identity')
+      const stored = await this.ctx.storage.get<StoredAgentIdentityV1>('identity')
 
-      if (stored) {
-        this.identity = stored
+      if (stored && stored.version === 1) {
+        this.identity = {
+          did: stored.did,
+          signingKey: await importCryptoKeyPairJwk(stored.signingKey),
+          encryptionKey: await importCryptoKeyPairJwk(stored.encryptionKey),
+          createdAt: stored.createdAt,
+          rotatedAt: stored.rotatedAt,
+        }
       } else {
         this.identity = {
           did: this.did,
@@ -90,7 +109,15 @@ export class AgentDO extends DurableObject {
           encryptionKey: await generateX25519Keypair(),
           createdAt: Date.now(),
         }
-        await this.ctx.storage.put('identity', this.identity)
+        const persisted: StoredAgentIdentityV1 = {
+          version: 1,
+          did: this.identity.did,
+          signingKey: await exportCryptoKeyPairJwk(this.identity.signingKey),
+          encryptionKey: await exportCryptoKeyPairJwk(this.identity.encryptionKey),
+          createdAt: this.identity.createdAt,
+          rotatedAt: this.identity.rotatedAt,
+        }
+        await this.ctx.storage.put('identity', persisted)
       }
 
       this.memory = new EncryptedMemory(this.env.DB, this.env.BLOBS, this.identity)
@@ -224,7 +251,15 @@ export class AgentDO extends DurableObject {
       if (!record || typeof record !== 'object') {
         return Response.json({ error: 'record is required' }, { status: 400 })
       }
-      const id = await this.memory.store(record as { $type: string })
+      const validated = validateLexiconRecord(record)
+      if (!validated.ok) {
+        return Response.json(
+          { error: validated.error, issues: validated.issues },
+          { status: 400 }
+        )
+      }
+
+      const id = await this.memory.store(validated.value)
       return Response.json({ id })
     }
 
