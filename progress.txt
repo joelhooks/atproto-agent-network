@@ -230,3 +230,12 @@ Tests:
 - `test -f apps/network/schema.sql && pnpm vitest run apps/network/src/schema.test.ts`
 
 Learnings
+
+---
+[2026-02-07T20:38:22.341Z]
+Completed: Implement Pi agent wrapper in packages/agent
+Files: none
+Summary: **Summary**
+- Added a `PiAgentWrapper` with lazy initialization, configurable factory injection, and prompt/promptStream forwarding in `packages/agent/src/agent.ts`.
+- Added unit tests for initialization wiring, prompt forwarding, promptStream unsupported error, and single initialization behavior in `packages/agent/src/agent.test.ts`.
+- Added Vitest config for package test discovery in `packages/a
