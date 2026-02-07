@@ -526,7 +526,8 @@
       ],
       "estimatedMinutes": 10,
       "sprint": "foundations-fix",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "fix-turbo-stubs",
