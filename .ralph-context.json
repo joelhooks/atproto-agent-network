@@ -97,6 +97,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Summary**\n- Added a `PiAgentWrapper` with lazy initialization, configurable factory injection, and prompt/promptStream forwarding in `packages/agent/src/agent.ts`.\n- Added unit tests for initialization wiring, prompt forwarding, promptStream unsupported error, and single initialization behavior in `packages/agent/src/agent.test.ts`.\n- Added Vitest config for package test discovery in `packages/agent/vitest.config.ts` and re-exported the wrapper in `packages/agent/src/index.ts`.\n\n**Tests**\n- `p"
+    },
+    {
+      "id": "encrypted-memory",
+      "title": "Implement EncryptedMemory class in packages/agent",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Summary**\n- Added `EncryptedMemory` with `store`/`retrieve` using DEK + X25519 envelope encryption and D1 inserts/selects in `packages/agent/src/memory.ts`.\n- Added unit tests with a fake D1 implementation to verify encrypted storage and roundtrip decryption in `packages/agent/src/memory.test.ts`.\n- Exported `EncryptedMemory` from `packages/agent/src/index.ts`.\n\n**Tests**\n- `pnpm vitest run packages/agent/src/memory.test.ts`\n\n**Learnings**\n- None."
     }
   ],
   "failures": [

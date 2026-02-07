@@ -7,13 +7,42 @@
 
 import { DurableObject } from 'cloudflare:workers'
 
+import {
+  EncryptedMemory,
+  PiAgentWrapper,
+  type PiAgentFactory,
+  type PiAgentTool,
+} from '../../../packages/agent/src'
+import {
+  exportPublicKey,
+  generateEd25519Keypair,
+  generateX25519Keypair,
+} from '../../../packages/core/src/crypto'
+import { createDid } from '../../../packages/core/src/identity'
+import type { AgentIdentity } from '../../../packages/core/src/types'
+
+interface AgentEnv {
+  DB: D1Database
+  BLOBS: R2Bucket
+  AI?: unknown
+  PI_AGENT_FACTORY?: PiAgentFactory
+  PI_AGENT_MODEL?: unknown
+  PI_SYSTEM_PROMPT?: string
+}
+
 export class AgentDO extends DurableObject {
-  private did: string
+  private readonly did: string
+  private readonly env: AgentEnv
   private initialized = false
-  
-  constructor(ctx: DurableObjectState, env: unknown) {
+  private initializing: Promise<void> | null = null
+  private identity: AgentIdentity | null = null
+  private memory: EncryptedMemory | null = null
+  private agent: PiAgentWrapper | null = null
+
+  constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
-    this.did = `did:cf:${ctx.id.toString()}`
+    this.env = env
+    this.did = createDid(ctx.id.toString())
   }
   
   async fetch(request: Request): Promise<Response> {
@@ -43,10 +72,97 @@ export class AgentDO extends DurableObject {
   }
   
   private async initialize(): Promise<void> {
-    // TODO: Load or create identity
-    // TODO: Initialize Pi agent
-    // TODO: Load encrypted memories
-    this.initialized = true
+    if (this.initialized) return
+    if (this.initializing) {
+      await this.initializing
+      return
+    }
+
+    this.initializing = (async () => {
+      const stored = await this.ctx.storage.get<AgentIdentity>('identity')
+
+      if (stored) {
+        this.identity = stored
+      } else {
+        this.identity = {
+          did: this.did,
+          signingKey: await generateEd25519Keypair(),
+          encryptionKey: await generateX25519Keypair(),
+          createdAt: Date.now(),
+        }
+        await this.ctx.storage.put('identity', this.identity)
+      }
+
+      this.memory = new EncryptedMemory(this.env.DB, this.env.BLOBS, this.identity)
+
+      const tools = this.buildTools()
+      const systemPrompt =
+        this.env.PI_SYSTEM_PROMPT ?? 'You are a Pi agent running on the AT Protocol Agent Network.'
+      const model = this.env.PI_AGENT_MODEL ?? this.env.AI ?? { provider: 'unknown' }
+
+      this.agent = new PiAgentWrapper({
+        systemPrompt,
+        model,
+        tools,
+        agentFactory: this.env.PI_AGENT_FACTORY,
+      })
+
+      this.initialized = true
+      this.initializing = null
+    })()
+
+    await this.initializing
+  }
+
+  private buildTools(): PiAgentTool[] {
+    if (!this.memory) {
+      return []
+    }
+
+    const memory = this.memory
+
+    return [
+      {
+        name: 'remember',
+        description: 'Store an encrypted memory record.',
+        parameters: {
+          type: 'object',
+          properties: {
+            record: { type: 'object', description: 'Memory record payload.' },
+          },
+          required: ['record'],
+        },
+        execute: async (params: { record?: unknown }) => {
+          const record =
+            params && typeof params === 'object' && 'record' in params
+              ? (params as { record?: unknown }).record
+              : params
+          if (!record || typeof record !== 'object') {
+            throw new Error('remember requires a record object')
+          }
+          const id = await memory.store(record as { $type: string })
+          return { id }
+        },
+      },
+      {
+        name: 'recall',
+        description: 'Retrieve an encrypted memory record by id.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Record id to retrieve.' },
+          },
+          required: ['id'],
+        },
+        execute: async (params: { id?: string }) => {
+          if (!params?.id) {
+            throw new Error('recall requires an id')
+          }
+          const record = await memory.retrieve(params.id)
+          return { record }
+        },
+      },
+    ]
   }
   
   private async handleWebSocket(request: Request): Promise<Response> {
@@ -59,25 +175,73 @@ export class AgentDO extends DurableObject {
   }
   
   private async getIdentity(): Promise<Response> {
-    // TODO: Return DID document
+    if (!this.identity) {
+      await this.initialize()
+    }
+
+    if (!this.identity) {
+      return Response.json({ error: 'Identity unavailable' }, { status: 500 })
+    }
+
+    const encryption = await exportPublicKey(this.identity.encryptionKey.publicKey)
+    const signing = await exportPublicKey(this.identity.signingKey.publicKey)
+
     return Response.json({
-      did: this.did,
-      status: 'not-yet-implemented'
+      did: this.identity.did,
+      createdAt: this.identity.createdAt,
+      publicKeys: {
+        encryption,
+        signing,
+      },
     })
   }
   
   private async handlePrompt(request: Request): Promise<Response> {
-    // TODO: Forward to Pi agent
-    return Response.json({
-      error: 'Not yet implemented'
-    }, { status: 501 })
+    if (!this.agent) {
+      return Response.json({ error: 'Agent unavailable' }, { status: 500 })
+    }
+
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload.prompt !== 'string') {
+      return Response.json({ error: 'prompt is required' }, { status: 400 })
+    }
+
+    const result = await this.agent.prompt(payload.prompt, payload.options)
+    return Response.json(result)
   }
   
   private async handleMemory(request: Request): Promise<Response> {
-    // TODO: Memory CRUD
-    return Response.json({
-      error: 'Not yet implemented'
-    }, { status: 501 })
+    if (!this.memory) {
+      return Response.json({ error: 'Memory unavailable' }, { status: 500 })
+    }
+
+    if (request.method === 'POST') {
+      const record = await request.json().catch(() => null)
+      if (!record || typeof record !== 'object') {
+        return Response.json({ error: 'record is required' }, { status: 400 })
+      }
+      const id = await this.memory.store(record as { $type: string })
+      return Response.json({ id })
+    }
+
+    if (request.method === 'GET') {
+      const url = new URL(request.url)
+      const id = url.searchParams.get('id')
+      if (!id) {
+        return Response.json({ error: 'id is required' }, { status: 400 })
+      }
+      const record = await this.memory.retrieve(id)
+      if (!record) {
+        return Response.json({ error: 'Not found' }, { status: 404 })
+      }
+      return Response.json({ id, record })
+    }
+
+    return new Response('Method not allowed', { status: 405 })
   }
   
   private async handleInbox(request: Request): Promise<Response> {

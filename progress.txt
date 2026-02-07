@@ -251,3 +251,15 @@ Summary: **Summary**
 
 **Tests**
 - `pnpm vitest run pack
+
+---
+[2026-02-07T20:52:18.133Z]
+Completed: Wire up AgentDO with Pi agent and encrypted memory
+Files: none
+Summary: Summary:
+- Wired `AgentDO` to create/load identity, set up `EncryptedMemory`, and initialize `PiAgentWrapper` with `remember`/`recall` tools plus concrete `identity`, `prompt`, and `memory` handlers.
+- Added `apps/network/src/agent-do.test.ts` covering identity/public keys, prompt forwarding/tool wiring, and encrypted memory roundtrip.
+
+Tests:
+- `pnpm vitest run apps/network/src/agent-do.test.ts`
+
