@@ -54,8 +54,18 @@ pnpm test     # Verify setup
 2. Claim by removing `agent/ready`, adding `agent/claimed`
 3. Create branch: `agent/<issue-number>-<short-name>`
 4. TDD: Write failing test → Implement → Pass
-5. Commit with `Closes #N` for auto-close
+5. Commit with conventional format: `feat: description (#N)` where N is the GitHub issue number
 6. Open PR
+
+## Commit Message Convention (MANDATORY)
+
+**Every commit MUST reference the GitHub issue number and project:**
+- Format: `type: description (#N)` 
+- Example: `feat: add X25519 keypair generation (#28)`
+- Example: `test: add identity.ts unit tests (#25)`
+- Types: `feat`, `test`, `fix`, `chore`, `refactor`
+- The `(#N)` creates a clickable link to the issue on GitHub
+- Check `prd.json` for the `githubIssue` field to find the issue number
 
 ## Key Files
 

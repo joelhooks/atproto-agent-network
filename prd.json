@@ -27,14 +27,15 @@
       ],
       "estimatedMinutes": 10,
       "sprint": "bootstrap",
-      "passes": true
+      "passes": true,
+      "githubIssue": 6
     },
     {
       "id": "install-vitest",
       "title": "Install Vitest and create root config",
       "issue": 24,
       "priority": 1,
-      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|✓|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
+      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|\u2713|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
       "files": [
         "vitest.config.ts",
         "package.json"
@@ -44,7 +45,8 @@
         "setup-monorepo"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 24
     },
     {
       "id": "identity-tests",
@@ -61,7 +63,8 @@
         "install-vitest"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 25
     },
     {
       "id": "vitest-workspace",
@@ -78,14 +81,15 @@
         "identity-tests"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 26
     },
     {
       "id": "turbo-test-task",
       "title": "Add turbo task for test",
       "issue": 27,
       "priority": 4,
-      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS",
+      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|\u2713|PASS)' && echo PASS",
       "files": [
         "turbo.json"
       ],
@@ -94,7 +98,8 @@
         "vitest-workspace"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 27
     },
     {
       "id": "test-utilities",
@@ -111,7 +116,8 @@
         "turbo-test-task"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 15
     },
     {
       "id": "ci-workflow",
@@ -127,7 +133,8 @@
         "turbo-test-task"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 18
     },
     {
       "id": "pre-commit-hooks",
@@ -144,7 +151,8 @@
         "ci-workflow"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": true,
+      "githubIssue": 19
     },
     {
       "id": "generate-x25519",
@@ -161,7 +169,8 @@
         "turbo-test-task"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": false,
+      "githubIssue": 28
     },
     {
       "id": "generate-ed25519",
@@ -178,7 +187,8 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": false,
+      "githubIssue": 29
     },
     {
       "id": "export-public-key",
@@ -195,7 +205,8 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": false,
+      "githubIssue": 30
     },
     {
       "id": "derive-shared-secret",
@@ -212,7 +223,8 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": false,
+      "githubIssue": 31
     },
     {
       "id": "envelope-encryption",
@@ -230,7 +242,8 @@
       ],
       "sprint": "crypto",
       "hitlGate": "Security review required before proceeding",
-      "passes": false
+      "passes": false,
+      "githubIssue": 8
     },
     {
       "id": "d1-schema",
@@ -247,7 +260,8 @@
         "envelope-encryption"
       ],
       "sprint": "storage",
-      "passes": false
+      "passes": false,
+      "githubIssue": 9
     },
     {
       "id": "pi-agent-wrapper",
@@ -264,7 +278,8 @@
         "turbo-test-task"
       ],
       "sprint": "storage",
-      "passes": false
+      "passes": false,
+      "githubIssue": 10
     },
     {
       "id": "encrypted-memory",
@@ -282,7 +297,8 @@
         "d1-schema"
       ],
       "sprint": "storage",
-      "passes": false
+      "passes": false,
+      "githubIssue": 11
     },
     {
       "id": "wire-up-agentdo",
@@ -301,14 +317,15 @@
       ],
       "sprint": "storage",
       "hitlGate": "Phase 1 complete - verify no plaintext in D1",
-      "passes": false
+      "passes": false,
+      "githubIssue": 12
     },
     {
       "id": "integration-test-harness",
       "title": "Setup integration test harness (D1 mock)",
       "issue": 16,
       "priority": 30,
-      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|\u2713|no test)' && echo PASS",
       "files": [
         "vitest.config.integration.ts"
       ],
@@ -317,14 +334,15 @@
         "d1-schema"
       ],
       "sprint": "testing-advanced",
-      "passes": false
+      "passes": false,
+      "githubIssue": 16
     },
     {
       "id": "e2e-test-harness",
       "title": "Setup E2E test harness (miniflare)",
       "issue": 17,
       "priority": 31,
-      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|\u2713|no test)' && echo PASS",
       "files": [
         "vitest.config.e2e.ts"
       ],
@@ -333,7 +351,8 @@
         "wire-up-agentdo"
       ],
       "sprint": "testing-advanced",
-      "passes": false
+      "passes": false,
+      "githubIssue": 17
     }
   ],
   "sprints": [
@@ -428,7 +447,13 @@
       "updateBlockedIssues": true,
       "closeParentWhenChildrenDone": true,
       "issueTemplate": 23
-    }
+    },
+    "commitMessageFormat": "{prefix}: {title} (#{githubIssue})",
+    "commitMessageRules": [
+      "Always include the GitHub issue number as (#{number}) at the end",
+      "Reference the project: joelhooks/atproto-agent-network",
+      "Use conventional commit prefix: feat|test|chore|fix"
+    ]
   },
   "labels": {
     "ready": "agent/ready",
