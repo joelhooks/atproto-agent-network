@@ -69,6 +69,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Summary:\n- Added `exportPublicKey` to `packages/core/src/crypto.ts` with multicodec prefixes for Ed25519/X25519 and base58btc multibase encoding.\n- Added `exportPublicKey` tests (with base58btc decoding) in `packages/core/src/crypto.test.ts` to verify prefixes and raw key payloads.\n\nTests:\n- `pnpm vitest run packages/core/src/crypto.test.ts -t 'exportPublicKey'`\n\nLearnings:\n- None.\n\nNotes:\n- `hive_cells --status open` is not available in this environment."
+    },
+    {
+      "id": "derive-shared-secret",
+      "title": "Implement deriveSharedSecret",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Skill used: `envelope-encryption` (X25519 shared-secret guidance).\n\n**Summary**\n- Added `deriveSharedSecret` using X25519 `deriveBits` in `packages/core/src/crypto.ts`.\n- Added a unit test verifying both parties derive the same 32-byte secret in `packages/core/src/crypto.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/crypto.test.ts -t 'deriveSharedSecret'`\n\n**Learnings**\n- None.\n\n**Notes**\n- `hive_cells --status open` is not available here (command not found)."
     }
   ],
   "failures": [

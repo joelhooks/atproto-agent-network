@@ -131,5 +131,179 @@ export async function exportPublicKey(publicKey: CryptoKey): Promise<string> {
   return encodeBase58btc(payload)
 }
 
-// TODO: DEK encryption helpers
-// See .agents/skills/envelope-encryption for full implementation
+const ENVELOPE_VERSION = 1
+const ENVELOPE_SALT_LENGTH = 16
+const ENVELOPE_NONCE_LENGTH = 12
+const ENVELOPE_PUBLIC_KEY_LENGTH = 32
+const ENVELOPE_INFO = new TextEncoder().encode('atproto-agent-network:dek')
+
+function assertEnvelopeLength(encryptedDek: Uint8Array): void {
+  const minimum = 1 + ENVELOPE_SALT_LENGTH + ENVELOPE_NONCE_LENGTH + ENVELOPE_PUBLIC_KEY_LENGTH + 1
+  if (encryptedDek.length < minimum) {
+    throw new Error('Encrypted DEK envelope is too short')
+  }
+}
+
+function packEncryptedDek(params: {
+  salt: Uint8Array
+  nonce: Uint8Array
+  ephemeralPublicKey: Uint8Array
+  ciphertext: Uint8Array
+}): Uint8Array {
+  const { salt, nonce, ephemeralPublicKey, ciphertext } = params
+
+  if (salt.length !== ENVELOPE_SALT_LENGTH) {
+    throw new Error(`Envelope salt must be ${ENVELOPE_SALT_LENGTH} bytes`)
+  }
+  if (nonce.length !== ENVELOPE_NONCE_LENGTH) {
+    throw new Error(`Envelope nonce must be ${ENVELOPE_NONCE_LENGTH} bytes`)
+  }
+  if (ephemeralPublicKey.length !== ENVELOPE_PUBLIC_KEY_LENGTH) {
+    throw new Error(`Envelope public key must be ${ENVELOPE_PUBLIC_KEY_LENGTH} bytes`)
+  }
+
+  const payload = new Uint8Array(
+    1 +
+      ENVELOPE_SALT_LENGTH +
+      ENVELOPE_NONCE_LENGTH +
+      ENVELOPE_PUBLIC_KEY_LENGTH +
+      ciphertext.length
+  )
+
+  let offset = 0
+  payload[offset] = ENVELOPE_VERSION
+  offset += 1
+  payload.set(salt, offset)
+  offset += ENVELOPE_SALT_LENGTH
+  payload.set(nonce, offset)
+  offset += ENVELOPE_NONCE_LENGTH
+  payload.set(ephemeralPublicKey, offset)
+  offset += ENVELOPE_PUBLIC_KEY_LENGTH
+  payload.set(ciphertext, offset)
+
+  return payload
+}
+
+function unpackEncryptedDek(encryptedDek: Uint8Array): {
+  salt: Uint8Array
+  nonce: Uint8Array
+  ephemeralPublicKey: Uint8Array
+  ciphertext: Uint8Array
+} {
+  assertEnvelopeLength(encryptedDek)
+
+  let offset = 0
+  const version = encryptedDek[offset]
+  offset += 1
+  if (version !== ENVELOPE_VERSION) {
+    throw new Error(`Unsupported DEK envelope version: ${version}`)
+  }
+
+  const salt = encryptedDek.slice(offset, offset + ENVELOPE_SALT_LENGTH)
+  offset += ENVELOPE_SALT_LENGTH
+  const nonce = encryptedDek.slice(offset, offset + ENVELOPE_NONCE_LENGTH)
+  offset += ENVELOPE_NONCE_LENGTH
+  const ephemeralPublicKey = encryptedDek.slice(
+    offset,
+    offset + ENVELOPE_PUBLIC_KEY_LENGTH
+  )
+  offset += ENVELOPE_PUBLIC_KEY_LENGTH
+  const ciphertext = encryptedDek.slice(offset)
+
+  return { salt, nonce, ephemeralPublicKey, ciphertext }
+}
+
+async function deriveEnvelopeKey(
+  sharedSecret: Uint8Array,
+  salt: Uint8Array
+): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    sharedSecret,
+    'HKDF',
+    false,
+    ['deriveKey']
+  )
+
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt,
+      info: ENVELOPE_INFO,
+    },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+}
+
+export async function encryptDekForPublicKey(
+  dek: Uint8Array,
+  recipientPublicKey: CryptoKey
+): Promise<Uint8Array> {
+  if (recipientPublicKey.algorithm.name !== 'X25519') {
+    throw new Error('encryptDekForPublicKey requires an X25519 public key')
+  }
+
+  const ephemeralKeypair = await generateX25519Keypair()
+  const sharedSecret = await deriveSharedSecret(
+    ephemeralKeypair.privateKey,
+    recipientPublicKey
+  )
+
+  const salt = crypto.getRandomValues(new Uint8Array(ENVELOPE_SALT_LENGTH))
+  const nonce = crypto.getRandomValues(new Uint8Array(ENVELOPE_NONCE_LENGTH))
+  const aesKey = await deriveEnvelopeKey(sharedSecret, salt)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce },
+    aesKey,
+    dek
+  )
+
+  const ephemeralRaw = new Uint8Array(
+    await crypto.subtle.exportKey('raw', ephemeralKeypair.publicKey)
+  )
+
+  return packEncryptedDek({
+    salt,
+    nonce,
+    ephemeralPublicKey: ephemeralRaw,
+    ciphertext: new Uint8Array(ciphertext),
+  })
+}
+
+export async function decryptDekWithPrivateKey(
+  encryptedDek: Uint8Array,
+  recipientPrivateKey: CryptoKey
+): Promise<Uint8Array> {
+  if (recipientPrivateKey.algorithm.name !== 'X25519') {
+    throw new Error('decryptDekWithPrivateKey requires an X25519 private key')
+  }
+
+  const { salt, nonce, ephemeralPublicKey, ciphertext } =
+    unpackEncryptedDek(encryptedDek)
+
+  const senderPublicKey = await crypto.subtle.importKey(
+    'raw',
+    ephemeralPublicKey,
+    { name: 'X25519' },
+    true,
+    []
+  )
+
+  const sharedSecret = await deriveSharedSecret(
+    recipientPrivateKey,
+    senderPublicKey
+  )
+  const aesKey = await deriveEnvelopeKey(sharedSecret, salt)
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: nonce },
+    aesKey,
+    ciphertext
+  )
+
+  return new Uint8Array(plaintext)
+}

@@ -230,7 +230,7 @@
       ],
       "sprint": "crypto",
       "hitlGate": "Security review required before proceeding",
-      "passes": false
+      "passes": true
     },
     {
       "id": "d1-schema",
@@ -454,7 +454,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-07T20:29:02.470Z",
-    "totalIterations": 12
+    "lastIteration": "2026-02-07T20:31:12.332Z",
+    "totalIterations": 13
   }
 }

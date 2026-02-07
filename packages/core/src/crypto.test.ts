@@ -1,6 +1,9 @@
 import {
   deriveSharedSecret,
+  decryptDekWithPrivateKey,
+  encryptDekForPublicKey,
   exportPublicKey,
+  generateDek,
   generateEd25519Keypair,
   generateX25519Keypair,
 } from './crypto'
@@ -110,5 +113,41 @@ describe('exportPublicKey', () => {
 
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', publicKey))
     expect(decoded.slice(2)).toEqual(raw)
+  })
+})
+
+describe('envelope encryption', () => {
+  it('round-trips a DEK using an X25519 recipient keypair', async () => {
+    const { publicKey, privateKey } = await generateX25519Keypair()
+    const dek = await generateDek()
+
+    const encryptedDek = await encryptDekForPublicKey(dek, publicKey)
+    const decryptedDek = await decryptDekWithPrivateKey(encryptedDek, privateKey)
+
+    expect(decryptedDek).toEqual(dek)
+  })
+
+  it('produces distinct envelopes for the same DEK', async () => {
+    const { publicKey, privateKey } = await generateX25519Keypair()
+    const dek = await generateDek()
+
+    const first = await encryptDekForPublicKey(dek, publicKey)
+    const second = await encryptDekForPublicKey(dek, publicKey)
+
+    expect(first).not.toEqual(second)
+    await expect(decryptDekWithPrivateKey(first, privateKey)).resolves.toEqual(dek)
+    await expect(decryptDekWithPrivateKey(second, privateKey)).resolves.toEqual(dek)
+  })
+
+  it('fails to decrypt with the wrong private key', async () => {
+    const recipient = await generateX25519Keypair()
+    const intruder = await generateX25519Keypair()
+    const dek = await generateDek()
+
+    const encryptedDek = await encryptDekForPublicKey(dek, recipient.publicKey)
+
+    await expect(
+      decryptDekWithPrivateKey(encryptedDek, intruder.privateKey)
+    ).rejects.toThrow()
   })
 })
