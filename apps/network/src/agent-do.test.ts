@@ -355,4 +355,96 @@ describe('AgentDO', () => {
 
     expect(loaded).toEqual({ id, record })
   })
+
+  it('validates lexicon records passed to the remember tool', async () => {
+    const { state } = createState('agent-remember-invalid')
+    const prompt = vi.fn().mockResolvedValue({ ok: true })
+    let initConfig:
+      | { initialState?: { tools?: Array<{ name: string; execute?: (params: unknown) => unknown }> } }
+      | undefined
+
+    const agentFactory = vi.fn().mockImplementation(async (init) => {
+      initConfig = init
+      return { prompt }
+    })
+
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'init tools' }),
+      })
+    )
+
+    const rememberTool = initConfig?.initialState?.tools?.find((tool) => tool.name === 'remember')
+    expect(rememberTool).toBeTruthy()
+    expect(typeof rememberTool?.execute).toBe('function')
+
+    const invalidRecord = {
+      $type: 'agent.memory.note',
+      createdAt: new Date().toISOString(),
+    }
+
+    await expect(rememberTool!.execute!({ record: invalidRecord })).rejects.toThrow()
+    expect(db.records.size).toBe(0)
+  })
+
+  it('stores the parsed lexicon record (defaults applied) from the remember tool', async () => {
+    const { state } = createState('agent-remember-defaults')
+    const prompt = vi.fn().mockResolvedValue({ ok: true })
+    let initConfig:
+      | { initialState?: { tools?: Array<{ name: string; execute?: (params: unknown) => unknown }> } }
+      | undefined
+
+    const agentFactory = vi.fn().mockImplementation(async (init) => {
+      initConfig = init
+      return { prompt }
+    })
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'init tools' }),
+      })
+    )
+
+    const rememberTool = initConfig?.initialState?.tools?.find((tool) => tool.name === 'remember')
+    expect(rememberTool).toBeTruthy()
+    expect(typeof rememberTool?.execute).toBe('function')
+
+    const messageRecord = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:recipient',
+      content: { kind: 'text', text: 'hello' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const result = (await rememberTool!.execute!({ record: messageRecord })) as { id: string }
+    expect(result.id).toContain('did:cf:agent-remember-defaults/agent.comms.message/')
+
+    const loadResponse = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(result.id)}`)
+    )
+    const loaded = (await loadResponse.json()) as { record: Record<string, unknown> }
+
+    expect(loaded.record.priority).toBe(3)
+  })
 })

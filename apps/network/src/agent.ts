@@ -167,7 +167,14 @@ export class AgentDO extends DurableObject {
           if (!record || typeof record !== 'object') {
             throw new Error('remember requires a record object')
           }
-          const id = await memory.store(record as { $type: string })
+          const validated = validateLexiconRecord(record)
+          if (!validated.ok) {
+            const error = new Error('Invalid lexicon record')
+            ;(error as Error & { issues?: unknown }).issues = validated.issues
+            throw error
+          }
+
+          const id = await memory.store(validated.value)
           return { id }
         },
       },

@@ -1,0 +1,18 @@
+{
+  "stories": [
+    {
+      "id": "fix-turbo-stubs",
+      "title": "Wire real turbo scripts or remove turbo",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
+    }
+  ],
+  "failures": [
+    {
+      "storyId": "fix-turbo-stubs",
+      "category": "unknown",
+      "error": "PASS\n"
+    }
+  ]
+}

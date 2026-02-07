@@ -345,3 +345,21 @@ Summary: **Change**
 
 **Learning**
 - `pnpm install` can prompt to purge/recreate `node_modules`; `confirmModulesPurge=false`
+
+---
+[2026-02-07T22:40:23.203Z]
+Failed: Wire real turbo scripts or remove turbo [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-07T22:40:31.272Z]
+Completed: Wire up Zod lexicon validation at API boundaries
+Files: none
+Summary: **Change**
+- Enforced Zod lexicon validation on the `remember` tool boundary (reject invalid records; store the parsed record so Zod defaults are applied): `apps/network/src/agent.ts`
+- Added AgentDO tests to prove `remember` rejects invalid lexicon payloads (no DB write) and that defaults (eg `priority: 3`) are persisted: `apps/network/src/agent-do.test.ts`
+
+**Validation**
+- `pnpm vitest run --pa
