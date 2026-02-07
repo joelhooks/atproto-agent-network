@@ -54,6 +54,39 @@ Agent Code (Vercel AI SDK)
 3. **Envelope encryption** — Per-record DEK, wrapped by agent KEK
 4. **HITL security gates** — Human approval at phase boundaries
 
+## Secrets Management
+
+Secrets are managed via `agent-secrets` CLI. Namespace: `atproto-agents`
+
+**Available secrets:**
+- `cloudflare_api_key` — CF API token (Workers, D1, AI Gateway, DNS, etc.)
+- `cloudflare_account_id` — CF account ID
+- `openrouter_api_key` — OpenRouter API key (Kimi 2.5, Claude, etc.)
+
+**Usage:**
+```bash
+# Lease a secret (returns value only — perfect for piping)
+export CF_API_TOKEN=$(secrets lease atproto-agents::cloudflare_api_key --ttl 2h)
+export CF_ACCOUNT_ID=$(secrets lease atproto-agents::cloudflare_account_id --ttl 2h)
+export OPENROUTER_API_KEY=$(secrets lease atproto-agents::openrouter_api_key --ttl 2h)
+
+# Use with wrangler
+CLOUDFLARE_API_TOKEN=$CF_API_TOKEN wrangler deploy
+CLOUDFLARE_API_TOKEN=$CF_API_TOKEN wrangler d1 create atproto-agent-network
+
+# Store as wrangler secrets (for production)
+echo $OPENROUTER_API_KEY | CLOUDFLARE_API_TOKEN=$CF_API_TOKEN wrangler secret put OPENROUTER_API_KEY
+
+# Revoke when done
+secrets revoke --all
+```
+
+**Rules:**
+- Never hardcode secrets in code or config files
+- Always use `--ttl` matched to task duration
+- Revoke leases after task completion
+- Use `secrets exec` for one-shot commands
+
 ## Before You Start
 
 ```bash
