@@ -167,3 +167,20 @@ Summary: Skill used: `envelope-encryption` (crypto keygen guidance).
 
 **Notes**
 - `hive_cells --status open` is not available here (
+
+---
+[2026-02-07T20:27:30.597Z]
+Completed: Implement exportPublicKey (multibase)
+Files: none
+Summary: Summary:
+- Added `exportPublicKey` to `packages/core/src/crypto.ts` with multicodec prefixes for Ed25519/X25519 and base58btc multibase encoding.
+- Added `exportPublicKey` tests (with base58btc decoding) in `packages/core/src/crypto.test.ts` to verify prefixes and raw key payloads.
+
+Tests:
+- `pnpm vitest run packages/core/src/crypto.test.ts -t 'exportPublicKey'`
+
+Learnings:
+- None.
+
+Notes:
+- `hive

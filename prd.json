@@ -195,7 +195,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": true
     },
     {
       "id": "derive-shared-secret",
@@ -454,7 +454,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-07T20:24:57.072Z",
-    "totalIterations": 10
+    "lastIteration": "2026-02-07T20:27:30.596Z",
+    "totalIterations": 11
   }
 }
