@@ -8,7 +8,7 @@ This is an autonomous development workspace. Agents build agents.
 2. Read `PI-POC.md` — the implementation plan with security gates
 3. Read `docs/O11Y.md` — observability architecture
 4. Check `.agents/skills/` for available skills
-5. Check the hive for current work: `hive_cells --status open`
+5. Check the hive for current work: `swarm hive cells --status open`
 
 ## What We're Building
 
