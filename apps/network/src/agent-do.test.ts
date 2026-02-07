@@ -356,6 +356,37 @@ describe('AgentDO', () => {
     expect(loaded).toEqual({ id, record })
   })
 
+  it('validates lexicon records posted to the memory API', async () => {
+    const { state } = createState('agent-memory-invalid')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const invalidRecord = {
+      $type: 'agent.memory.note',
+      createdAt: new Date().toISOString(),
+    }
+
+    const response = await agent.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(invalidRecord),
+    }))
+
+    expect(response.status).toBe(400)
+
+    const body = (await response.json()) as { error?: string; issues?: unknown }
+    expect(body.error).toBe('Invalid record')
+    expect(Array.isArray(body.issues)).toBe(true)
+    expect((body.issues as unknown[]).length).toBeGreaterThan(0)
+    expect(db.records.size).toBe(0)
+  })
+
   it('validates lexicon records passed to the remember tool', async () => {
     const { state } = createState('agent-remember-invalid')
     const prompt = vi.fn().mockResolvedValue({ ok: true })

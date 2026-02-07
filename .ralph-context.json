@@ -6,6 +6,13 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] PASS\n"
+    },
+    {
+      "id": "lexicon-validation",
+      "title": "Wire up Zod lexicon validation at API boundaries",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Change**\n- Enforced Zod lexicon validation on the `remember` tool boundary (reject invalid records; store the parsed record so Zod defaults are applied): `apps/network/src/agent.ts`\n- Added AgentDO tests to prove `remember` rejects invalid lexicon payloads (no DB write) and that defaults (eg `priority: 3`) are persisted: `apps/network/src/agent-do.test.ts`\n\n**Validation**\n- `pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS` → `PASS`\n\n**Learning**\n- “API boundaries” inclu"
     }
   ],
   "failures": [

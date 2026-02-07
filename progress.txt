@@ -363,3 +363,16 @@ Summary: **Change**
 
 **Validation**
 - `pnpm vitest run --pa
+
+---
+[2026-02-07T22:42:32.730Z]
+Completed: Wire up Zod lexicon validation at API boundaries
+Files: none
+Summary: **Changes**
+- Added a test to assert the `/memory` HTTP API rejects invalid lexicon records with `400` + Zod `issues`, and does not write to the DB: `apps/network/src/agent-do.test.ts`.
+
+**Validation**
+- `pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS` -> `PASS`
+
+**Note**
+- `.ralph-context.json` was modified automatically (it records `lexicon-validation` as completed). Do 
