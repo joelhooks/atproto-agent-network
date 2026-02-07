@@ -84,3 +84,14 @@ Summary: **Summary**
 - Added a Vitest workspace definition that only picks up per-project configs via globbed config files. `vitest.workspace.ts`
 - Added a core package Vitest config with a project name and local test include. `packages/core/vitest.config.ts`
 - Added a small wrapper so `pnpm vitest run --filter …` maps to Vitest’s `--project` (required because Vitest rejects `--filter`), and wired it as a 
+
+---
+[2026-02-07T20:11:08.217Z]
+Completed: Add turbo task for test
+Files: none
+Summary: Summary: updated the local Turbo stub to run `pnpm` tests when `turbo test` is invoked, forwarding any `--filter` values so `pnpm turbo test --filter=@atproto-agent/core` executes real package tests and emits PASS output.  
+Learnings: none.
+
+Tests: `pnpm turbo test --filter=@atproto-agent/core`
+
+Notes: `hive_cells` is not available in this environment (`command not found`).

@@ -20,6 +20,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Summary**\n- Added first unit tests for DID utilities and TID generation in `packages/core/src/identity.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/identity.test.ts`\n\n**Learnings**\n- None."
+    },
+    {
+      "id": "vitest-workspace",
+      "title": "Create vitest workspace config for monorepo",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Summary**\n- Added a Vitest workspace definition that only picks up per-project configs via globbed config files. `vitest.workspace.ts`\n- Added a core package Vitest config with a project name and local test include. `packages/core/vitest.config.ts`\n- Added a small wrapper so `pnpm vitest run --filter …` maps to Vitest’s `--project` (required because Vitest rejects `--filter`), and wired it as a script. `scripts/vitest.mjs` `package.json`\n\n**Tests**\n- `pnpm vitest run --filter @atproto-agent/co"
     }
   ],
   "failures": [
