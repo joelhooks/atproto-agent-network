@@ -30,9 +30,22 @@ apps/
 - **Runtime:** Cloudflare Workers + Durable Objects
 - **Database:** Cloudflare D1 (SQLite)
 - **Agent SDK:** Pi (inflection.ai)
+- **AI Inference:** Vercel AI SDK → Cloudflare AI Gateway → OpenRouter (Kimi 2.5 primary)
+- **Embeddings:** Workers AI (`@cf/baai/bge-large-en-v1.5`) — edge, free
 - **Crypto:** X25519 (key exchange), Ed25519 (signing), AES-GCM (encryption)
 - **Build:** pnpm + Turborepo
 - **Test:** Vitest
+
+## AI Gateway Architecture
+
+See `docs/AI-GATEWAY-ARCHITECTURE.md` for full details.
+
+```
+Agent Code (Vercel AI SDK)
+    → Cloudflare AI Gateway (observability, caching, fallback)
+        → OpenRouter (Kimi 2.5, Claude, Gemini)
+        → Workers AI (edge embeddings)
+```
 
 ## Core Principles
 

@@ -83,6 +83,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Summary:\n- Added envelope-encryption helpers to `packages/core/src/crypto.ts` (X25519 ephemeral exchange + HKDF + AES-GCM) with packed envelope parsing.\n- Added envelope roundtrip, randomness, and wrong-key failure tests in `packages/core/src/crypto.test.ts`.\n\nTests:\n- `pnpm vitest run packages/core/src/crypto.test.ts -t \"envelope\"`\n\nLearnings:\n- None."
+    },
+    {
+      "id": "d1-schema",
+      "title": "Create D1 schema for encrypted records",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Summary:\n- Added encrypted record storage schema with `records` and `shared_records` tables plus indexes in `apps/network/schema.sql`.\n- Added schema validation tests in `apps/network/src/schema.test.ts`.\n- Added `apps/network/vitest.config.ts` so the validation command can discover app tests.\n\nTests:\n- `test -f apps/network/schema.sql && pnpm vitest run apps/network/src/schema.test.ts`\n\nLearnings:\n- None."
     }
   ],
   "failures": [
