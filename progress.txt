@@ -110,3 +110,16 @@ Summary: **Summary**
 **Notes**
 - `openclaw message` failed with `too many arguments for 'message'`; let me know the expected usage.
 -
+
+---
+[2026-02-07T20:16:51.094Z]
+Completed: Add CI workflow (GitHub Actions)
+Files: none
+Summary: Summary:
+- Added GitHub Actions CI workflow to run `pnpm test` on push and pull_request: `.github/workflows/ci.yml`.
+
+Tests:
+- `test -f .github/workflows/ci.yml && echo PASS`
+
+Learnings:
+- None.

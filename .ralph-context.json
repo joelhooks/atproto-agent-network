@@ -34,6 +34,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Summary: updated the local Turbo stub to run `pnpm` tests when `turbo test` is invoked, forwarding any `--filter` values so `pnpm turbo test --filter=@atproto-agent/core` executes real package tests and emits PASS output.  \nLearnings: none.\n\nTests: `pnpm turbo test --filter=@atproto-agent/core`\n\nNotes: `hive_cells` is not available in this environment (`command not found`)."
+    },
+    {
+      "id": "test-utilities",
+      "title": "Create test utilities and fixtures",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Summary**\n- Added deterministic fixture helpers and core type factories in `packages/core/src/test-utils.ts`.\n- Added tests covering fixture helpers, defaults, and overrides in `packages/core/src/test-utils.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/test-utils.test.ts`\n\n**Notes**\n- `openclaw message` failed with `too many arguments for 'message'`; let me know the expected usage.\n- `git status` shows `.ralph-context.json` modified; I did not change it. How should we handle it?"
     }
   ],
   "failures": [
