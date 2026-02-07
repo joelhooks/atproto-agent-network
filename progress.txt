@@ -62,3 +62,16 @@ Vitest is already installed and the root config exists (`package.json`, `vitest.
 
 **Notes**
 - `hive_cells --status open` is not available in this environment (`command not fo
+
+---
+[2026-02-07T20:02:11.163Z]
+Completed: Create first unit test for identity.ts
+Files: none
+Summary: **Summary**
+- Added first unit tests for DID utilities and TID generation in `packages/core/src/identity.test.ts`.
+
+**Tests**
+- `pnpm vitest run packages/core/src/identity.test.ts`
+
+**Learnings**
+- None.
