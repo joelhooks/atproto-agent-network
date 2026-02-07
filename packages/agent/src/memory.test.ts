@@ -1,115 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { generateEd25519Keypair, generateX25519Keypair } from '../../core/src/crypto'
+import { D1MockDatabase } from '../../core/src/d1-mock'
 import type { AgentIdentity } from '../../core/src/types'
 
 import { EncryptedMemory } from './memory'
-
-interface RecordRow {
-  id: string
-  did: string
-  collection: string
-  rkey: string
-  ciphertext: Uint8Array
-  encrypted_dek: Uint8Array | null
-  nonce: Uint8Array
-  public: number
-  created_at: string
-  updated_at?: string | null
-}
-
-class FakeD1Statement {
-  private readonly params: unknown[]
-  private readonly sql: string
-  private readonly db: FakeD1Database
-
-  constructor(db: FakeD1Database, sql: string, params: unknown[] = []) {
-    this.db = db
-    this.sql = sql
-    this.params = params
-  }
-
-  bind(...params: unknown[]): FakeD1Statement {
-    return new FakeD1Statement(this.db, this.sql, params)
-  }
-
-  async run(): Promise<void> {
-    await this.db.run(this.sql, this.params)
-  }
-
-  async first<T>(): Promise<T | null> {
-    return this.db.first<T>(this.sql, this.params)
-  }
-}
-
-class FakeD1Database {
-  readonly records = new Map<string, RecordRow>()
-
-  prepare(sql: string): FakeD1Statement {
-    return new FakeD1Statement(this, sql)
-  }
-
-  async run(sql: string, params: unknown[]): Promise<void> {
-    const normalized = normalizeSql(sql)
-
-    if (normalized.startsWith('insert into records')) {
-      const [
-        id,
-        did,
-        collection,
-        rkey,
-        ciphertext,
-        encryptedDek,
-        nonce,
-        isPublic,
-        createdAt,
-      ] = params
-
-      this.records.set(id as string, {
-        id: id as string,
-        did: did as string,
-        collection: collection as string,
-        rkey: rkey as string,
-        ciphertext: asBytes(ciphertext, 'ciphertext'),
-        encrypted_dek: encryptedDek ? asBytes(encryptedDek, 'encrypted_dek') : null,
-        nonce: asBytes(nonce, 'nonce'),
-        public: Number(isPublic),
-        created_at: createdAt as string,
-        updated_at: null,
-      })
-      return
-    }
-
-    throw new Error(`Unsupported SQL in FakeD1Database.run: ${normalized}`)
-  }
-
-  async first<T>(sql: string, params: unknown[]): Promise<T | null> {
-    const normalized = normalizeSql(sql)
-
-    if (normalized.includes('from records') && normalized.includes('where id = ?')) {
-      const [id, did] = params as [string, string]
-      const row = this.records.get(id)
-      if (!row) return null
-      if (did && row.did !== did) return null
-      return row as unknown as T
-    }
-
-    throw new Error(`Unsupported SQL in FakeD1Database.first: ${normalized}`)
-  }
-}
-
-function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, ' ').trim().toLowerCase()
-}
-
-function asBytes(value: unknown, label: string): Uint8Array {
-  if (value instanceof Uint8Array) return value
-  if (value instanceof ArrayBuffer) return new Uint8Array(value)
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-  }
-  throw new Error(`${label} must be bytes`)
-}
 
 async function createIdentity(): Promise<AgentIdentity> {
   return {
@@ -123,7 +18,7 @@ async function createIdentity(): Promise<AgentIdentity> {
 describe('EncryptedMemory', () => {
   it('stores encrypted records and retrieves the decrypted content', async () => {
     const identity = await createIdentity()
-    const db = new FakeD1Database()
+    const db = new D1MockDatabase()
     const memory = new EncryptedMemory(db, null, identity)
 
     const record = {
@@ -151,9 +46,96 @@ describe('EncryptedMemory', () => {
 
   it('returns null when a record is missing', async () => {
     const identity = await createIdentity()
-    const db = new FakeD1Database()
+    const db = new D1MockDatabase()
     const memory = new EncryptedMemory(db, null, identity)
 
     await expect(memory.retrieve('missing')).resolves.toBeNull()
+  })
+
+  it('lists decrypted records and supports collection filtering', async () => {
+    const identity = await createIdentity()
+    const db = new D1MockDatabase()
+    const memory = new EncryptedMemory(db, null, identity)
+
+    const note = {
+      $type: 'agent.memory.note',
+      summary: 'Encrypted note',
+      text: 'Keep this secret',
+      createdAt: new Date().toISOString(),
+    }
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:recipient',
+      content: { kind: 'text', text: 'hello' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const noteId = await memory.store(note)
+    const messageId = await memory.store(message)
+
+    const all = await memory.list()
+    expect(all.map((entry) => entry.id)).toEqual(expect.arrayContaining([noteId, messageId]))
+
+    const notesOnly = await memory.list({ collection: 'agent.memory.note' })
+    expect(notesOnly).toEqual([{ id: noteId, record: note }])
+  })
+
+  it('updates records in place (re-encrypts, sets updated_at)', async () => {
+    const identity = await createIdentity()
+    const db = new D1MockDatabase()
+    const memory = new EncryptedMemory(db, null, identity)
+
+    const original = {
+      $type: 'agent.memory.note',
+      summary: 'Initial',
+      text: 'v1',
+      createdAt: new Date().toISOString(),
+    }
+
+    const id = await memory.store(original)
+    const before = db.records.get(id)
+    const beforeCiphertext = before ? new Uint8Array(before.ciphertext) : null
+    expect(before?.updated_at ?? null).toBeNull()
+
+    const updated = {
+      ...original,
+      summary: 'Updated',
+      text: 'v2',
+    }
+
+    await expect(memory.update(id, updated)).resolves.toBe(true)
+
+    const after = db.records.get(id)
+    expect(after?.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}t/i)
+    expect(after?.ciphertext).not.toEqual(beforeCiphertext)
+
+    const loaded = await memory.retrieve(id)
+    expect(loaded).toEqual(updated)
+  })
+
+  it('soft-deletes records (excluded from list and retrieval)', async () => {
+    const identity = await createIdentity()
+    const db = new D1MockDatabase()
+    const memory = new EncryptedMemory(db, null, identity)
+
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'To delete',
+      text: 'bye',
+      createdAt: new Date().toISOString(),
+    }
+
+    const id = await memory.store(record)
+
+    await expect(memory.softDelete(id)).resolves.toBe(true)
+    const row = db.records.get(id)
+    expect(row?.deleted_at).toMatch(/^\d{4}-\d{2}-\d{2}t/i)
+
+    await expect(memory.retrieve(id)).resolves.toBeNull()
+    await expect(memory.list({ collection: 'agent.memory.note' })).resolves.toEqual([])
+
+    await expect(memory.softDelete(id)).resolves.toBe(false)
+    await expect(memory.update(id, record)).resolves.toBe(false)
   })
 })

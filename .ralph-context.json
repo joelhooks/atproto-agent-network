@@ -12,12 +12,24 @@
       "title": "Wire up Zod lexicon validation at API boundaries",
       "status": "completed",
       "filesModified": [],
-      "learnings": "**Change**\n- Enforced Zod lexicon validation on the `remember` tool boundary (reject invalid records; store the parsed record so Zod defaults are applied): `apps/network/src/agent.ts`\n- Added AgentDO tests to prove `remember` rejects invalid lexicon payloads (no DB write) and that defaults (eg `priority: 3`) are persisted: `apps/network/src/agent-do.test.ts`\n\n**Validation**\n- `pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS` → `PASS`\n\n**Learning**\n- “API boundaries” inclu"
+      "learnings": "**Changes**\n- Added a test to assert the `/memory` HTTP API rejects invalid lexicon records with `400` + Zod `issues`, and does not write to the DB: `apps/network/src/agent-do.test.ts`.\n\n**Validation**\n- `pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS` -> `PASS`\n\n**Note**\n- `.ralph-context.json` was modified automatically (it records `lexicon-validation` as completed). Do you want to keep that change, or should I revert it?"
+    },
+    {
+      "id": "memory-list-update-delete",
+      "title": "Add memory list, update, and soft-delete to EncryptedMemory",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
     }
   ],
   "failures": [
     {
       "storyId": "fix-turbo-stubs",
+      "category": "unknown",
+      "error": "PASS\n"
+    },
+    {
+      "storyId": "memory-list-update-delete",
       "category": "unknown",
       "error": "PASS\n"
     }

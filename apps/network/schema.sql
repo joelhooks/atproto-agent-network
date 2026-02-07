@@ -10,6 +10,7 @@ CREATE TABLE records (
   public INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT,
+  deleted_at TEXT,
   UNIQUE(did, collection, rkey)
 );
 

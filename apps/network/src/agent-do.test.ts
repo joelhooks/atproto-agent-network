@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
+
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
     protected ctx: unknown
@@ -104,99 +106,6 @@ interface RecordRow {
   updated_at?: string | null
 }
 
-class FakeD1Statement {
-  private readonly params: unknown[]
-  private readonly sql: string
-  private readonly db: FakeD1Database
-
-  constructor(db: FakeD1Database, sql: string, params: unknown[] = []) {
-    this.db = db
-    this.sql = sql
-    this.params = params
-  }
-
-  bind(...params: unknown[]): FakeD1Statement {
-    return new FakeD1Statement(this.db, this.sql, params)
-  }
-
-  async run(): Promise<void> {
-    await this.db.run(this.sql, this.params)
-  }
-
-  async first<T>(): Promise<T | null> {
-    return this.db.first<T>(this.sql, this.params)
-  }
-}
-
-class FakeD1Database {
-  readonly records = new Map<string, RecordRow>()
-
-  prepare(sql: string): FakeD1Statement {
-    return new FakeD1Statement(this, sql)
-  }
-
-  async run(sql: string, params: unknown[]): Promise<void> {
-    const normalized = normalizeSql(sql)
-
-    if (normalized.startsWith('insert into records')) {
-      const [
-        id,
-        did,
-        collection,
-        rkey,
-        ciphertext,
-        encryptedDek,
-        nonce,
-        isPublic,
-        createdAt,
-      ] = params
-
-      this.records.set(id as string, {
-        id: id as string,
-        did: did as string,
-        collection: collection as string,
-        rkey: rkey as string,
-        ciphertext: asBytes(ciphertext, 'ciphertext'),
-        encrypted_dek: encryptedDek ? asBytes(encryptedDek, 'encrypted_dek') : null,
-        nonce: asBytes(nonce, 'nonce'),
-        public: Number(isPublic),
-        created_at: createdAt as string,
-        updated_at: null,
-      })
-      return
-    }
-
-    throw new Error(`Unsupported SQL in FakeD1Database.run: ${normalized}`)
-  }
-
-  async first<T>(sql: string, params: unknown[]): Promise<T | null> {
-    const normalized = normalizeSql(sql)
-
-    if (normalized.includes('from records') && normalized.includes('where id = ?')) {
-      const [id, did] = params as [string, string]
-      const row = this.records.get(id)
-      if (!row) return null
-      if (did && row.did !== did) return null
-      return row as unknown as T
-    }
-
-    throw new Error(`Unsupported SQL in FakeD1Database.first: ${normalized}`)
-  }
-}
-
-function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, ' ').trim().toLowerCase()
-}
-
-function asBytes(value: unknown, label: string): Uint8Array {
-  if (value instanceof Uint8Array) return value
-  if (value instanceof ArrayBuffer) return new Uint8Array(value)
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-  }
-  throw new Error(`${label} must be bytes`)
-}
-
 function createState(id = 'agent-123') {
   const storage = new FakeStorage()
   const state = {
@@ -209,7 +118,7 @@ function createState(id = 'agent-123') {
 }
 
 function createEnv(overrides: Record<string, unknown> = {}) {
-  const db = new FakeD1Database()
+  const db = new D1MockDatabase()
   const env = {
     DB: db,
     BLOBS: {},
@@ -354,6 +263,114 @@ describe('AgentDO', () => {
     const loaded = await loadResponse.json()
 
     expect(loaded).toEqual({ id, record })
+  })
+
+  it('lists, updates, and soft-deletes memories via the memory API', async () => {
+    const { state } = createState('agent-memory-crud')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const note1 = {
+      $type: 'agent.memory.note',
+      summary: 'First',
+      text: 'v1',
+      createdAt: new Date().toISOString(),
+    }
+    const note2 = {
+      $type: 'agent.memory.note',
+      summary: 'Second',
+      text: 'v2',
+      createdAt: new Date().toISOString(),
+    }
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:recipient',
+      content: { kind: 'text', text: 'hello' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const store1 = await agent.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note1),
+    }))
+    const { id: id1 } = (await store1.json()) as { id: string }
+
+    const store2 = await agent.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note2),
+    }))
+    const { id: id2 } = (await store2.json()) as { id: string }
+
+    const store3 = await agent.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+    const { id: msgId } = (await store3.json()) as { id: string }
+
+    const listAll = await agent.fetch(new Request('https://example/memory'))
+    expect(listAll.status).toBe(200)
+    const allBody = (await listAll.json()) as { entries: Array<{ id: string }> }
+    expect(allBody.entries.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([id1, id2, msgId])
+    )
+
+    const listNotes = await agent.fetch(
+      new Request('https://example/memory?collection=agent.memory.note&limit=1')
+    )
+    const notesBody = (await listNotes.json()) as { entries: Array<{ id: string }> }
+    expect(notesBody.entries.length).toBe(1)
+    expect([id1, id2]).toContain(notesBody.entries[0]?.id)
+
+    const updated = { ...note2, summary: 'Second updated', text: 'v2b' }
+    const updateResponse = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(id2)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      })
+    )
+    expect(updateResponse.status).toBe(200)
+
+    const rowAfterUpdate = db.records.get(id2)
+    expect(rowAfterUpdate?.updated_at ?? null).not.toBeNull()
+
+    const loadUpdated = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(id2)}`)
+    )
+    const loadedUpdated = (await loadUpdated.json()) as { id: string; record: unknown }
+    expect(loadedUpdated).toEqual({ id: id2, record: updated })
+
+    const deleteResponse = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(id1)}`, {
+        method: 'DELETE',
+      })
+    )
+    expect(deleteResponse.status).toBe(200)
+    const rowAfterDelete = db.records.get(id1)
+    expect(rowAfterDelete?.deleted_at ?? null).not.toBeNull()
+
+    const loadDeleted = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(id1)}`)
+    )
+    expect(loadDeleted.status).toBe(404)
+
+    const listAfterDelete = await agent.fetch(
+      new Request('https://example/memory?collection=agent.memory.note')
+    )
+    const afterDeleteBody = (await listAfterDelete.json()) as { entries: Array<{ id: string }> }
+    expect(afterDeleteBody.entries.map((entry) => entry.id)).not.toEqual(
+      expect.arrayContaining([id1])
+    )
   })
 
   it('validates lexicon records posted to the memory API', async () => {

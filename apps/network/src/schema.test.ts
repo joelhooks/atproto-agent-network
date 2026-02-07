@@ -42,6 +42,7 @@ describe('schema.sql', () => {
       'public integer default 0',
       'created_at text not null',
       'updated_at text',
+      'deleted_at text',
       'unique(did, collection, rkey)'
     ]
 

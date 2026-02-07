@@ -13,6 +13,7 @@ export interface D1PreparedStatementLike {
   bind(...params: unknown[]): D1PreparedStatementLike
   run(): Promise<unknown>
   first<T = unknown>(): Promise<T | null>
+  all<T = unknown>(): Promise<{ results: T[] }>
 }
 
 export interface D1DatabaseLike {
@@ -22,6 +23,16 @@ export interface D1DatabaseLike {
 export interface EncryptedMemoryRecord {
   $type: string
   [key: string]: unknown
+}
+
+export interface EncryptedMemoryListOptions {
+  collection?: string
+  limit?: number
+}
+
+export interface EncryptedMemoryListEntry<T = EncryptedMemoryRecord> {
+  id: string
+  record: T
 }
 
 interface RecordsRow {
@@ -35,6 +46,7 @@ interface RecordsRow {
   public: number | boolean
   created_at: string
   updated_at?: string | null
+  deleted_at?: string | null
 }
 
 function toUint8Array(value: Uint8Array | ArrayBuffer | ArrayBufferView, label: string): Uint8Array {
@@ -100,6 +112,25 @@ export class EncryptedMemory {
     return id
   }
 
+  async list<T = EncryptedMemoryRecord>(
+    options: EncryptedMemoryListOptions = {}
+  ): Promise<Array<EncryptedMemoryListEntry<T>>> {
+    const limit = normalizeLimit(options.limit)
+    const rows = await this.loadRows(options.collection)
+
+    const visible = rows
+      .filter((row) => !row.deleted_at)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit)
+
+    const entries: Array<EncryptedMemoryListEntry<T>> = []
+    for (const row of visible) {
+      entries.push({ id: row.id, record: await this.decodeRow<T>(row) })
+    }
+
+    return entries
+  }
+
   async retrieve<T = EncryptedMemoryRecord>(id: string): Promise<T | null> {
     const row = await this.db
       .prepare('SELECT * FROM records WHERE id = ? AND did = ?')
@@ -107,7 +138,105 @@ export class EncryptedMemory {
       .first<RecordsRow>()
 
     if (!row) return null
+    if (row.deleted_at) return null
 
+    return this.decodeRow<T>(row)
+  }
+
+  async update(id: string, record: EncryptedMemoryRecord): Promise<boolean> {
+    if (!record || typeof record !== 'object') {
+      throw new Error('EncryptedMemory.update requires a record object')
+    }
+
+    if (typeof record.$type !== 'string' || record.$type.length === 0) {
+      throw new Error('EncryptedMemory.update requires a $type string')
+    }
+
+    const row = await this.db
+      .prepare('SELECT * FROM records WHERE id = ? AND did = ?')
+      .bind(id, this.identity.did)
+      .first<RecordsRow>()
+
+    if (!row) return false
+    if (row.deleted_at) return false
+
+    if (row.collection !== record.$type) {
+      throw new Error('EncryptedMemory.update $type must match the existing record collection')
+    }
+
+    const isPublic = row.public === true || Number(row.public) === 1 || row.encrypted_dek === null
+    const nonce = await generateNonce()
+    const updatedAt = new Date().toISOString()
+
+    if (isPublic) {
+      const plaintextBytes = new TextEncoder().encode(JSON.stringify(record))
+      await this.db
+        .prepare(
+          `UPDATE records
+           SET ciphertext = ?, encrypted_dek = ?, nonce = ?, public = ?, updated_at = ?
+           WHERE id = ? AND did = ?`
+        )
+        .bind(plaintextBytes, null, nonce, 1, updatedAt, id, this.identity.did)
+        .run()
+      return true
+    }
+
+    const dek = await generateDek()
+    const plaintext = new TextEncoder().encode(JSON.stringify(record))
+    const ciphertext = await encryptWithDek(plaintext, dek, nonce)
+    const encryptedDek = await encryptDekForPublicKey(dek, this.identity.encryptionKey.publicKey)
+
+    await this.db
+      .prepare(
+        `UPDATE records
+         SET ciphertext = ?, encrypted_dek = ?, nonce = ?, public = ?, updated_at = ?
+         WHERE id = ? AND did = ?`
+      )
+      .bind(ciphertext, encryptedDek, nonce, 0, updatedAt, id, this.identity.did)
+      .run()
+
+    return true
+  }
+
+  async softDelete(id: string): Promise<boolean> {
+    const row = await this.db
+      .prepare('SELECT * FROM records WHERE id = ? AND did = ?')
+      .bind(id, this.identity.did)
+      .first<RecordsRow>()
+
+    if (!row) return false
+    if (row.deleted_at) return false
+
+    const deletedAt = new Date().toISOString()
+    await this.db
+      .prepare(
+        `UPDATE records
+         SET deleted_at = ?, updated_at = ?
+         WHERE id = ? AND did = ?`
+      )
+      .bind(deletedAt, deletedAt, id, this.identity.did)
+      .run()
+
+    return true
+  }
+
+  private async loadRows(collection?: string): Promise<RecordsRow[]> {
+    if (collection) {
+      const result = await this.db
+        .prepare('SELECT * FROM records WHERE did = ? AND collection = ?')
+        .bind(this.identity.did, collection)
+        .all<RecordsRow>()
+      return result.results
+    }
+
+    const result = await this.db
+      .prepare('SELECT * FROM records WHERE did = ?')
+      .bind(this.identity.did)
+      .all<RecordsRow>()
+    return result.results
+  }
+
+  private async decodeRow<T>(row: RecordsRow): Promise<T> {
     const ciphertext = toUint8Array(row.ciphertext, 'ciphertext')
     const nonce = toUint8Array(row.nonce, 'nonce')
     const isPublic = row.public === true || Number(row.public) === 1
@@ -126,4 +255,10 @@ export class EncryptedMemory {
     const decoded = new TextDecoder().decode(plaintext)
     return JSON.parse(decoded) as T
   }
+}
+
+function normalizeLimit(limit: unknown): number {
+  const parsed = typeof limit === 'number' ? limit : Number(limit)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 50
+  return Math.min(Math.floor(parsed), 200)
 }

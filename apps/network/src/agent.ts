@@ -253,6 +253,8 @@ export class AgentDO extends DurableObject {
       return Response.json({ error: 'Memory unavailable' }, { status: 500 })
     }
 
+    const url = new URL(request.url)
+
     if (request.method === 'POST') {
       const record = await request.json().catch(() => null)
       if (!record || typeof record !== 'object') {
@@ -271,16 +273,65 @@ export class AgentDO extends DurableObject {
     }
 
     if (request.method === 'GET') {
-      const url = new URL(request.url)
+      const id = url.searchParams.get('id')
+      if (id) {
+        const record = await this.memory.retrieve(id)
+        if (!record) {
+          return Response.json({ error: 'Not found' }, { status: 404 })
+        }
+        return Response.json({ id, record })
+      }
+
+      const collection = url.searchParams.get('collection') ?? undefined
+      const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
+      const entries = await this.memory.list({ collection, limit })
+      return Response.json({ entries })
+    }
+
+    if (request.method === 'PUT') {
       const id = url.searchParams.get('id')
       if (!id) {
         return Response.json({ error: 'id is required' }, { status: 400 })
       }
-      const record = await this.memory.retrieve(id)
-      if (!record) {
+
+      const record = await request.json().catch(() => null)
+      if (!record || typeof record !== 'object') {
+        return Response.json({ error: 'record is required' }, { status: 400 })
+      }
+
+      const validated = validateLexiconRecord(record)
+      if (!validated.ok) {
+        return Response.json(
+          { error: validated.error, issues: validated.issues },
+          { status: 400 }
+        )
+      }
+
+      try {
+        const ok = await this.memory.update(id, validated.value)
+        if (!ok) {
+          return Response.json({ error: 'Not found' }, { status: 404 })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return Response.json({ error: message }, { status: 400 })
+      }
+
+      return Response.json({ id, ok: true })
+    }
+
+    if (request.method === 'DELETE') {
+      const id = url.searchParams.get('id')
+      if (!id) {
+        return Response.json({ error: 'id is required' }, { status: 400 })
+      }
+
+      const ok = await this.memory.softDelete(id)
+      if (!ok) {
         return Response.json({ error: 'Not found' }, { status: 404 })
       }
-      return Response.json({ id, record })
+
+      return Response.json({ id, ok: true })
     }
 
     return new Response('Method not allowed', { status: 405 })

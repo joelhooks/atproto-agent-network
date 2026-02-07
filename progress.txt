@@ -376,3 +376,22 @@ Summary: **Changes**
 
 **Note**
 - `.ralph-context.json` was modified automatically (it records `lexicon-validation` as completed). Do 
+
+---
+[2026-02-07T22:52:42.568Z]
+Failed: Add memory list, update, and soft-delete to EncryptedMemory [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-07T23:01:41.083Z]
+Completed: Add memory list, update, and soft-delete to EncryptedMemory
+Files: none
+Summary: Implemented memory list/update/soft-delete end-to-end through the AgentDO `/memory` API.
+
+- Updated `apps/network/src/agent.ts`:
+  - `GET /memory?id=...` still retrieves a single record.
+  - `GET /memory?collection=...&limit=...` lists decrypted records (excludes soft-deleted).
+  - `PUT /memory?id=...` validates lexicon, then updates in place (404 if missing/deleted).
+  - `DELETE /memory?id=...` s
