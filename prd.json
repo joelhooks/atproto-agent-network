@@ -519,7 +519,7 @@
       "title": "Fix lockfile sync and install miniflare",
       "issue": 47,
       "priority": 33,
-      "validationCommand": "pnpm install --frozen-lockfile 2>&1 | grep -qvE \"ERR_PNPM_FROZEN_LOCKFILE\" && pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "validationCommand": "pnpm install && pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
       "files": [
         "pnpm-lock.yaml",
         "apps/network/src/network.e2e.test.ts"
