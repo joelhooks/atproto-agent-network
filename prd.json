@@ -495,6 +495,55 @@
       "estimatedMinutes": 15,
       "sprint": "hardening",
       "dependsOn": []
+    },
+    {
+      "id": "fix-key-serialization",
+      "title": "Fix CryptoKeyPair serialization in DO storage",
+      "issue": 46,
+      "priority": 32,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "packages/core/src/crypto.ts",
+        "packages/core/src/types.ts",
+        "packages/core/src/crypto.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/agent-do.test.ts"
+      ],
+      "estimatedMinutes": 25,
+      "sprint": "foundations-fix",
+      "dependsOn": []
+    },
+    {
+      "id": "fix-lockfile-miniflare",
+      "title": "Fix lockfile sync and install miniflare",
+      "issue": 47,
+      "priority": 33,
+      "validationCommand": "pnpm install --frozen-lockfile 2>&1 | grep -qvE \"ERR_PNPM_FROZEN_LOCKFILE\" && pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "pnpm-lock.yaml",
+        "apps/network/src/network.e2e.test.ts"
+      ],
+      "estimatedMinutes": 10,
+      "sprint": "foundations-fix",
+      "dependsOn": []
+    },
+    {
+      "id": "fix-turbo-stubs",
+      "title": "Wire real turbo scripts or remove turbo",
+      "issue": 48,
+      "priority": 34,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "turbo.json",
+        "packages/core/package.json",
+        "packages/agent/package.json",
+        "packages/cli/package.json",
+        "apps/network/package.json",
+        "package.json"
+      ],
+      "estimatedMinutes": 15,
+      "sprint": "foundations-fix",
+      "dependsOn": []
     }
   ],
   "sprints": [
