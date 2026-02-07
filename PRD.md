@@ -21,6 +21,12 @@
 | 4 | [#4 Federation](https://github.com/joelhooks/atproto-agent-network/issues/4) | ⬜ Future | Private-by-default sharing |
 | 5 | [#5 Polish](https://github.com/joelhooks/atproto-agent-network/issues/5) | ⬜ Future | — |
 
+### Container Issues (DO NOT CLAIM DIRECTLY)
+| Issue | Contains | Status |
+|-------|----------|--------|
+| [#7 X25519 Key Generation](https://github.com/joelhooks/atproto-agent-network/issues/7) | #28, #29, #30, #31 | Work on children |
+| [#14 Setup Vitest](https://github.com/joelhooks/atproto-agent-network/issues/14) | #24, #25, #26, #27 | Work on children |
+
 ### Meta Issues (Gardening)
 | Purpose | Issue |
 |---------|-------|
@@ -31,32 +37,122 @@
 
 ---
 
-## Current Sprint: Testing Foundation
+## 🤖 Ralph Loop Rules
 
-**Goal:** Vitest + CI working across monorepo  
-**Estimated:** 1.5 hours  
-**HITL Gate:** None (proceed when green)
+### Issue Categories
 
-### Stories (in execution order)
+| Type | Label | Agent Behavior |
+|------|-------|----------------|
+| **Leaf task** | `type/task` + `agent/ready` | ✅ Claim and execute |
+| **Container** | `type/container` | ❌ Never claim — work on children |
+| **Epic** | `type/epic` | ❌ Never claim — tracking only |
+| **Meta** | `loop/meta` | ✅ Execute during gardening phase |
 
-| # | Story | Issue | Validation | Files |
-|---|-------|-------|------------|-------|
-| 1 | Install Vitest | [#24](https://github.com/joelhooks/atproto-agent-network/issues/24) | `bun test` runs | `package.json`, `vitest.config.ts` |
-| 2 | First unit test | [#25](https://github.com/joelhooks/atproto-agent-network/issues/25) | identity.test passes | `packages/core/src/identity.test.ts` |
-| 3 | Workspace config | [#26](https://github.com/joelhooks/atproto-agent-network/issues/26) | package tests work | `vitest.workspace.ts` |
-| 4 | Turbo test task | [#27](https://github.com/joelhooks/atproto-agent-network/issues/27) | `bun turbo test` | `turbo.json` |
-| 5 | CI workflow | [#18](https://github.com/joelhooks/atproto-agent-network/issues/18) | `.github/workflows/ci.yml` exists | CI runs on push |
+### Story Selection Algorithm
 
-### Next Sprint: Crypto Primitives
+```
+1. Query: gh issue list --label "agent/ready" --state open
+2. Filter: Exclude type/container, type/epic
+3. Sort: By priority in prd.json (lower = higher priority)
+4. Check: dependsOn satisfied (all deps closed or in prd.json before this)
+5. Select: First issue passing all checks
+```
 
-| # | Story | Issue | Validation |
-|---|-------|-------|------------|
-| 1 | generateX25519Keypair | [#28](https://github.com/joelhooks/atproto-agent-network/issues/28) | crypto.test passes |
-| 2 | generateEd25519Keypair | [#29](https://github.com/joelhooks/atproto-agent-network/issues/29) | crypto.test passes |
-| 3 | exportPublicKey | [#30](https://github.com/joelhooks/atproto-agent-network/issues/30) | multibase export works |
-| 4 | deriveSharedSecret | [#31](https://github.com/joelhooks/atproto-agent-network/issues/31) | ECDH derivation works |
+### Validation Failures
 
-**HITL Gate:** Security review required before Phase 1 completion.
+If validation fails:
+1. **Retry once** with fix attempt
+2. **On 2nd failure:** Add `agent/blocked` label
+3. **Comment with:** Failure log + what was tried
+4. **Move to:** Next story in queue
+5. **If all stories blocked:** Ping Oracle with full status
+
+### Story Skip Conditions
+
+Skip a story if:
+- Missing `agent/ready` label
+- Has `agent/blocked` label  
+- Has `type/container` or `type/epic` label
+- Has unmet `dependsOn` (check via prd.json)
+- Parent epic is closed
+
+### Branch Strategy
+
+```bash
+# Each story gets a branch from main
+git checkout main && git pull
+git checkout -b feat/<issue-number>-<short-name>
+
+# Work on branch
+# ... commits ...
+
+# Push and create PR
+git push -u origin HEAD
+gh pr create --title "feat(pkg): <title>" --body "Closes #<number>"
+```
+
+### Dependency Resolution
+
+Stories in `prd.json` have `dependsOn` arrays:
+
+```json
+{
+  "id": "envelope-encryption",
+  "dependsOn": ["derive-shared-secret"]
+}
+```
+
+**Resolution rules:**
+1. Check if dependency story is marked `passes: true` in prd.json
+2. OR check if dependency issue is closed on GitHub
+3. If neither, story is blocked
+
+---
+
+## Sprints
+
+### Sprint 0: Bootstrap
+| Story | Issue | Validation | Est. |
+|-------|-------|------------|------|
+| Setup monorepo | [#6](https://github.com/joelhooks/atproto-agent-network/issues/6) | `bun turbo build --dry-run` | 10m |
+
+### Sprint 1: Testing Foundation
+| Story | Issue | Validation | Est. |
+|-------|-------|------------|------|
+| Install Vitest | [#24](https://github.com/joelhooks/atproto-agent-network/issues/24) | `bun test --passWithNoTests` | 15m |
+| First unit test | [#25](https://github.com/joelhooks/atproto-agent-network/issues/25) | `bun test identity.test` | 20m |
+| Workspace config | [#26](https://github.com/joelhooks/atproto-agent-network/issues/26) | Package tests work | 15m |
+| Turbo test task | [#27](https://github.com/joelhooks/atproto-agent-network/issues/27) | `bun turbo test` | 15m |
+| Test utilities | [#15](https://github.com/joelhooks/atproto-agent-network/issues/15) | Fixtures work | 25m |
+| CI workflow | [#18](https://github.com/joelhooks/atproto-agent-network/issues/18) | `.github/workflows/ci.yml` | 20m |
+| Pre-commit hooks | [#19](https://github.com/joelhooks/atproto-agent-network/issues/19) | Hooks trigger | 15m |
+
+### Sprint 2: Crypto Primitives
+| Story | Issue | Validation | Est. |
+|-------|-------|------------|------|
+| generateX25519Keypair | [#28](https://github.com/joelhooks/atproto-agent-network/issues/28) | crypto.test passes | 30m |
+| generateEd25519Keypair | [#29](https://github.com/joelhooks/atproto-agent-network/issues/29) | crypto.test passes | 20m |
+| exportPublicKey | [#30](https://github.com/joelhooks/atproto-agent-network/issues/30) | multibase works | 30m |
+| deriveSharedSecret | [#31](https://github.com/joelhooks/atproto-agent-network/issues/31) | ECDH works | 20m |
+| Envelope encryption | [#8](https://github.com/joelhooks/atproto-agent-network/issues/8) | encrypt/decrypt roundtrip | 45m |
+
+**🚨 HITL Gate:** Security review required after this sprint.
+
+### Sprint 3: Encrypted Storage
+| Story | Issue | Validation | Est. |
+|-------|-------|------------|------|
+| D1 schema | [#9](https://github.com/joelhooks/atproto-agent-network/issues/9) | Schema valid | 30m |
+| Pi agent wrapper | [#10](https://github.com/joelhooks/atproto-agent-network/issues/10) | Agent tests pass | 45m |
+| EncryptedMemory | [#11](https://github.com/joelhooks/atproto-agent-network/issues/11) | Memory tests pass | 60m |
+| Wire up AgentDO | [#12](https://github.com/joelhooks/atproto-agent-network/issues/12) | Integration works | 60m |
+
+**🚨 HITL Gate:** Phase 1 complete — verify no plaintext in D1.
+
+### Sprint 4: Advanced Testing
+| Story | Issue | Validation | Est. |
+|-------|-------|------------|------|
+| Integration harness | [#16](https://github.com/joelhooks/atproto-agent-network/issues/16) | D1 mock works | 45m |
+| E2E harness | [#17](https://github.com/joelhooks/atproto-agent-network/issues/17) | Miniflare works | 60m |
 
 ---
 
@@ -67,16 +163,18 @@
 ```bash
 cd ~/Code/joelhooks/atproto-agent-network
 
-# 1. Check current state
-gh issue list --label "agent/ready" --limit 10
-cat prd.json | jq '.stories[0:3]'
+# 1. Pull latest
+git checkout main && git pull
 
-# 2. Read context
+# 2. Check current state
+gh issue list --label "agent/ready" --limit 10
+cat prd.json | jq '.stories | map(select(.passes != true)) | .[0:3]'
+
+# 3. Read context
 cat PRD.md          # This file
 cat AGENTS.md       # Development guide
-cat PI-POC.md       # Implementation plan (if doing Phase 1+)
 
-# 3. Claim next story
+# 4. Claim next ready story (NOT container/epic)
 gh issue edit <number> --remove-label "agent/ready" --add-label "agent/claimed"
 ```
 
@@ -91,102 +189,87 @@ Every story follows **RED → GREEN → REFACTOR**:
 │                                                                  │
 │  ┌─────────┐                                                     │
 │  │   RED   │ Write failing test first                           │
-│  │         │ - Touch test file                                   │
-│  │         │ - Write test cases from issue checklist             │
+│  │         │ - Copy test code from issue body                    │
 │  │         │ - Run: bun test <file> → MUST FAIL                  │
 │  └────┬────┘                                                     │
 │       │                                                          │
 │       ▼                                                          │
 │  ┌─────────┐                                                     │
 │  │  GREEN  │ Minimal code to pass                               │
-│  │         │ - Implement ONLY what tests require                 │
-│  │         │ - No premature optimization                         │
+│  │         │ - Copy implementation from issue body               │
+│  │         │ - Adapt as needed                                   │
 │  │         │ - Run: bun test <file> → MUST PASS                  │
-│  │         │ - Commit: git commit -m "test(...): ..."            │
 │  └────┬────┘                                                     │
 │       │                                                          │
 │       ▼                                                          │
 │  ┌─────────┐                                                     │
 │  │REFACTOR │ Clean up                                            │
-│  │         │ - Extract patterns                                  │
-│  │         │ - Add JSDoc                                         │
 │  │         │ - Run: bun turbo typecheck                          │
-│  │         │ - Commit: git commit -m "refactor(...): ..."        │
+│  │         │ - Commit: git commit -m "feat(...): ..."            │
 │  └─────────┘                                                     │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Commit Convention
+### 3. Validation
+
+Each story in `prd.json` has a `validationCommand`:
 
 ```bash
-# Tests
-git commit -m "test(core): add identity.ts tests"
-
-# Implementation
-git commit -m "feat(core): implement generateX25519Keypair"
-
-# Refactor
-git commit -m "refactor(core): extract key encoding helpers"
-
-# Close issue
-git commit -m "feat(core): complete crypto primitives
-
-Closes #28, #29, #30, #31"
-```
-
-### 3. Validation Commands
-
-Each story in `prd.json` has a `validationCommand`. Run it before marking done:
-
-```bash
-# Example: Check prd.json for validation
-cat prd.json | jq '.stories[] | select(.id == "install-vitest") | .validationCommand'
+# Get validation command for a story
+cat prd.json | jq -r '.stories[] | select(.issue == 24) | .validationCommand'
 
 # Run it
-eval $(cat prd.json | jq -r '.stories[] | select(.id == "install-vitest") | .validationCommand')
+eval "$(cat prd.json | jq -r '.stories[] | select(.issue == 24) | .validationCommand')"
 ```
 
 ### 4. Completing a Story
 
 ```bash
-# 1. Run validation
+# 1. Run full validation
 bun turbo test
 bun turbo typecheck
 
-# 2. Create PR (if not already done)
-gh pr create --title "feat(core): [description]" --body "Closes #X
+# 2. Commit with issue reference
+git add -A
+git commit -m "feat(pkg): description
+
+Closes #<number>"
+
+# 3. Push and create PR
+git push -u origin HEAD
+gh pr create --title "feat(pkg): description" --body "Closes #<number>
 
 ## Changes
-- [what changed]
+- Added tests for X
+- Implemented X
 
-## Tests
-- [new test files]
+## Validation
+\`\`\`
+<paste validation output>
+\`\`\`
 "
 
-# 3. Update issue labels
+# 4. Update issue labels
 gh issue edit <number> --remove-label "agent/claimed" --add-label "agent/review"
 
-# 4. Update parent epic checkbox
-gh issue view <parent-epic> --json body  # Check current state
-gh issue comment <parent-epic> --body "✅ Completed #X - [summary]"
+# 5. Update parent epic/container
+gh issue comment <parent> --body "✅ Completed #<number> - <summary>"
 ```
 
 ### 5. Gardening (After Each Sprint)
 
-After completing a sprint, run gardening tasks:
-
 ```bash
-# 1. Update affected issues (#23)
+# 1. Check for newly unblocked issues
 gh issue list --label "agent/blocked"
-# For each: check if now unblocked
+# For each: check if deps are now met
 gh issue edit <number> --remove-label "agent/blocked" --add-label "agent/ready"
 
-# 2. Backlog grooming (#22)
-gh issue list --state open --limit 50 --json number,title,labels,createdAt
+# 2. Update prd.json (mark completed stories)
+# Edit prd.json, set "passes": true for completed stories
 
-# 3. Create retrospective (#20 template)
-gh issue create --title "[Retro] Sprint: Testing Foundation" \
+# 3. Create retrospective
+gh issue create --title "[Retro] Sprint: <name>" \
   --label "loop/retro" --label "loop/meta" \
   --body "## What went well
 - 
@@ -195,13 +278,7 @@ gh issue create --title "[Retro] Sprint: Testing Foundation" \
 - 
 
 ## Process improvements
-- 
-
-## Next sprint adjustments
 - "
-
-# 4. Plan next sprint (#21 template)
-cat prd.json | jq '.sprints[1]'  # Next sprint
 ```
 
 ---
@@ -216,36 +293,28 @@ cat prd.json | jq '.sprints[1]'  # Next sprint
 | `agent/blocked` | Waiting on dependency | 🔴 Red |
 | `agent/review` | Awaiting human review | 🟣 Purple |
 
+### Issue Type
+| Label | Meaning | Claimable? |
+|-------|---------|------------|
+| `type/task` | Individual work item | ✅ Yes |
+| `type/container` | Has subtasks | ❌ No |
+| `type/epic` | Phase-level tracking | ❌ No |
+| `type/bug` | Something broken | ✅ Yes |
+| `type/security` | Security-related | ✅ Yes (careful) |
+
 ### Loop/Meta
 | Label | Meaning |
 |-------|---------|
-| `loop/meta` | Project maintenance, not code |
+| `loop/meta` | Project maintenance |
 | `loop/retro` | Retrospective |
 | `loop/planning` | Sprint planning |
 | `loop/grooming` | Backlog maintenance |
 | `loop/testing` | Testing infrastructure |
 
-### Type
-| Label | Meaning |
-|-------|---------|
-| `type/epic` | Contains subtasks |
-| `type/task` | Individual work item |
-| `type/bug` | Something broken |
-| `type/security` | Security-related |
-
-### Phase
-| Label | Phase |
-|-------|-------|
-| `phase/1-single-agent` | Encrypted single agent |
-| `phase/2-semantic-memory` | Vectorize + search |
-| `phase/3-multi-agent` | Agent coordination |
-| `phase/4-federation` | Sharing + federation |
-| `phase/5-polish` | Docs + UX |
-
 ### HITL Gates
 | Label | Meaning |
 |-------|---------|
-| `hitl/security-gate` | Requires security review |
+| `hitl/security-gate` | Requires security review before proceeding |
 
 ---
 
@@ -253,13 +322,13 @@ cat prd.json | jq '.sprints[1]'  # Next sprint
 
 **Do not proceed past these without Oracle approval:**
 
-### Phase 1 Gate
+### Phase 1 Gate (After Sprint 3)
 - [ ] All memories encrypted (verify with D1 query)
 - [ ] No plaintext in any table
 - [ ] Key generation tests pass
 - [ ] Encryption/decryption round-trip works
 
-### Phase 2 Gate  
+### Phase 2 Gate
 - [ ] Search works on embeddings only
 - [ ] Decryption only on explicit retrieval
 - [ ] No content in Vectorize metadata
@@ -283,23 +352,13 @@ From `prd.json`:
 ```json
 {
   "loopConfig": {
-    "maxIterations": 12,
-    "validationTimeout": 60,
+    "maxIterations": 20,
+    "validationTimeout": 120,
     "autoCommit": true,
-    "commitPrefix": "feat|test|chore",
-    "branchPrefix": "feat/",
-    "onStoryComplete": {
-      "updateParentCheckbox": true,
-      "addPRLink": true
-    },
-    "retrospective": {
-      "enabled": true,
-      "afterSprint": true,
-      "issueTemplate": 20
-    },
-    "gardening": {
-      "updateBlockedIssues": true,
-      "closeParentWhenChildrenDone": true
+    "onStoryFail": {
+      "maxRetries": 2,
+      "addBlockedLabel": true,
+      "commentWithLog": true
     }
   }
 }
@@ -308,9 +367,6 @@ From `prd.json`:
 ### Running the Loop
 
 ```bash
-# Initialize Ralph (if not done)
-ralph_init --workdir ~/Code/joelhooks/atproto-agent-network --projectName atproto-agent-network
-
 # Check status
 ralph_status --workdir ~/Code/joelhooks/atproto-agent-network
 
@@ -330,31 +386,19 @@ atproto-agent-network/
 ├── PRD.md               # THIS FILE - execution source of truth
 ├── AGENTS.md            # Development guide
 ├── PI-POC.md            # Implementation plan
-├── prd.json             # Machine-readable stories
+├── prd.json             # Machine-readable stories (Ralph reads this)
 ├── progress.txt         # Ralph loop progress log
 │
 ├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── task.md      # Agent-ready task template
-│   │   ├── epic.md      # Epic template
-│   │   └── bug.md       # Bug report template
 │   └── workflows/
 │       └── ci.yml       # CI pipeline
 │
 ├── .agents/
-│   └── skills/          # Skills for this project
-│       ├── cloudflare-do/
-│       ├── pi-agent/
-│       ├── envelope-encryption/
-│       ├── d1-patterns/
-│       ├── vectorize-search/
-│       └── zap-cli/
+│   └── skills/          # Project-specific skills
 │
 ├── packages/
 │   ├── core/            # Types, crypto, lexicons
-│   ├── agent/           # Pi wrapper, encrypted memory
-│   ├── cli/             # zap CLI
-│   └── dashboard/       # React dashboard
+│   └── agent/           # Pi wrapper, encrypted memory
 │
 └── apps/
     └── network/         # Cloudflare Workers + DO
@@ -363,8 +407,6 @@ atproto-agent-network/
 ---
 
 ## Skills Reference
-
-Load a skill before working on its domain:
 
 ```bash
 # Read skill before implementing
@@ -385,29 +427,20 @@ cat .agents/skills/<skill-name>/SKILL.md
 ## Quick Commands
 
 ```bash
-# View ready issues
-gh issue list --label "agent/ready"
+# View ready issues (excludes containers/epics)
+gh issue list --label "agent/ready" -L 20 | grep -v "type/container\|type/epic"
 
 # Claim issue
-gh issue edit 24 --remove-label "agent/ready" --add-label "agent/claimed"
+gh issue edit <N> --remove-label "agent/ready" --add-label "agent/claimed"
 
-# Complete issue
-gh issue edit 24 --remove-label "agent/claimed" --add-label "agent/review"
+# Complete issue  
+gh issue edit <N> --remove-label "agent/claimed" --add-label "agent/review"
 
-# Run tests
-bun turbo test
+# Check story in prd.json
+cat prd.json | jq '.stories[] | select(.issue == <N>)'
 
-# Type check
-bun turbo typecheck
-
-# Create PR
-gh pr create --title "feat(core): ..." --body "Closes #24"
-
-# View sprint
-cat prd.json | jq '.sprints[0]'
-
-# Next story
-cat prd.json | jq '.stories[] | select(.id == "<next-id>")'
+# Run validation for story
+eval "$(cat prd.json | jq -r '.stories[] | select(.issue == <N>) | .validationCommand')"
 ```
 
 ---
