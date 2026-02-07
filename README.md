@@ -22,6 +22,31 @@ Privacy levels:
 
 See [PI-POC.md](./PI-POC.md) for full security architecture.
 
+## Why Pi?
+
+[Pi](https://github.com/badlogic/pi-mono) is the agent runtime. Not OpenClaw, not a custom agent — Pi.
+
+> "Pi's entire idea is that if you want the agent to do something that it doesn't do yet, you don't go and download an extension or a skill or something like this. You ask the agent to extend itself."
+> — [Armin Ronacher](https://lucumr.pocoo.org/2026/1/31/pi/)
+
+**What makes Pi special:**
+
+| Feature | Description |
+|---------|-------------|
+| **Tiny core** | 4 tools: Read, Write, Edit, Bash. Shortest system prompt of any agent. |
+| **Extension system** | Extensions persist state into sessions. Hot reloading built-in. |
+| **Session trees** | Branch, navigate, rewind. Side-quests without wasting context. |
+| **Multi-provider** | Sessions can contain messages from different model providers. |
+| **Self-extending** | Agent builds its own tools and skills. Software building software. |
+
+**Pi packages we use:**
+- `@mariozechner/pi-agent-core` — Agent runtime with tool calling and state management
+- `@mariozechner/pi-ai` — Unified multi-provider LLM API
+
+**Philosophy:** OpenClaw is built on Pi. We're building an agent network on Pi. The agent maintains its own functionality — no MCP, no community skills marketplace. Each agent extends itself.
+
+See [docs/armin-pi-article.md](./docs/armin-pi-article.md) for full context.
+
 ## Prior Art
 
 Before building anything, study these:
@@ -592,14 +617,21 @@ See `/docs` for detailed research on each component:
 
 This research builds on work from:
 
+**Agent Runtime:**
+- **[Pi Monorepo](https://github.com/badlogic/pi-mono)** by Mario Zechner — The agent runtime
+- **[Pi: The Minimal Agent Within OpenClaw](https://lucumr.pocoo.org/2026/1/31/pi/)** by Armin Ronacher — Why Pi matters
+
+**Cloudflare Infrastructure:**
 - **[Cirrus](https://github.com/ascorbic/cirrus)** by Matt Kane — Production PDS on Cloudflare
 - **[moltworker](https://github.com/cloudflare/moltworker)** — OpenClaw on CF Sandbox ([blog](https://blog.cloudflare.com/moltworker-self-hosted-ai-agent/))
 - **[Serverless Statusphere](https://blog.cloudflare.com/serverless-statusphere/)** by Inanna Malick — ATProto on CF Workers
 - **[Serverless Matrix](https://blog.cloudflare.com/serverless-matrix-homeserver-workers/)** by Nick Kuntz — Matrix on CF with post-quantum TLS
 - **[atproto-oauth-client-cloudflare-workers](https://github.com/nDimensional/atproto-oauth-client-cloudflare-workers)** — OAuth for CF Workers
+
+**Protocol:**
 - **[AT Protocol Docs](https://atproto.com)** — Official specs
 
-Full blog post text archived in `docs/cloudflare-blog-*.md`.
+Full article text archived in `docs/`.
 
 ## License
 
