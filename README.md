@@ -2,6 +2,17 @@
 
 A decentralized agent communication and memory network, implementing AT Protocol concepts on Cloudflare primitives.
 
+## Prior Art
+
+Before building anything, study these:
+
+- **[Cirrus](https://github.com/ascorbic/cirrus)** — Production-ready single-user PDS on Cloudflare Workers. Uses Durable Objects (SQLite) + R2. Includes OAuth 2.1, passkeys, account migration. This is the reference implementation.
+- **[Cloudflare Blog: Serverless ATProto](https://blog.cloudflare.com/serverless-atproto/)** — Official walkthrough
+- **[atproto-oauth-client-cloudflare-workers](https://github.com/nDimensional/atproto-oauth-client-cloudflare-workers)** — OAuth client patched for Workers runtime
+- **[AT Protocol Self-Hosting Guide](https://atproto.com/guides/self-hosting)** — Official PDS hosting docs
+
+**What this repo adds:** Multi-agent coordination layer. Cirrus handles single-user PDS; this spec handles N agents talking to each other via typed lexicons, shared memory, and real-time coordination.
+
 ## Why Cloudflare?
 
 AT Protocol provides the conceptual model—DIDs, repos, lexicons, firehose—but running a full PDS/relay stack is heavy. Cloudflare's primitives map surprisingly well to atproto's architecture while being operationally simpler:
@@ -503,6 +514,27 @@ binding = "AI"
 | Ops Complexity | PDS + Relay + DID services | Managed edge services |
 | Cost | Self-hosted or paid PDS | Pay-per-use edge compute |
 
+## Building on Cirrus
+
+For a single-agent PDS, use [Cirrus](https://github.com/ascorbic/cirrus) directly:
+
+```bash
+npm create pds
+```
+
+Cirrus handles:
+- Repository operations (create, read, update, delete records)
+- Federation (sync, firehose, blob storage)
+- OAuth 2.1 provider (PKCE, DPoP, PAR)
+- Account migration (tested and verified)
+- Passkey authentication
+
+For multi-agent coordination, extend Cirrus or run multiple instances with:
+1. Custom `agent.comms.*` lexicons for typed messaging
+2. Relay DO for event aggregation across agent PDSes
+3. Vectorize index for semantic memory retrieval
+4. Queues for async task coordination
+
 ## Tradeoffs
 
 **Pros:**
@@ -511,12 +543,13 @@ binding = "AI"
 - Low latency globally (edge deployment)
 - Integrated vector search and AI
 - Simple deployment (wrangler)
+- Cirrus provides production-ready PDS foundation
 
 **Cons:**
 - Not federated with existing atproto network (without bridges)
 - Vendor lock-in to Cloudflare
 - D1/R2 limits vs. dedicated databases
-- Less mature than established infrastructure
+- Cirrus is single-user; multi-agent requires extension
 
 **When to use this:**
 - Private agent networks (enterprise, internal tools)
