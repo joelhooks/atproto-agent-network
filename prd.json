@@ -334,6 +334,167 @@
       ],
       "sprint": "testing-advanced",
       "passes": true
+    },
+    {
+      "id": "lexicon-validation",
+      "title": "Wire up Zod lexicon validation at API boundaries",
+      "issue": 36,
+      "priority": 40,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "packages/core/src/lexicons.ts",
+        "packages/core/src/validation.ts",
+        "packages/core/src/validation.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "estimatedMinutes": 20,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "memory-list-update-delete",
+      "title": "Add memory list, update, and soft-delete to EncryptedMemory",
+      "issue": 37,
+      "priority": 41,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "packages/agent/src/memory.ts",
+        "packages/agent/src/memory.test.ts",
+        "packages/core/src/d1-mock.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/schema.sql"
+      ],
+      "estimatedMinutes": 30,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "shared-records",
+      "title": "Implement shared_records — encrypted record sharing between agents",
+      "issue": 38,
+      "priority": 42,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "packages/agent/src/memory.ts",
+        "packages/agent/src/memory.test.ts",
+        "packages/core/src/d1-mock.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "estimatedMinutes": 25,
+      "sprint": "hardening",
+      "dependsOn": [
+        "memory-list-update-delete"
+      ]
+    },
+    {
+      "id": "relay-agent-registry",
+      "title": "Implement relay agent registry and public key directory",
+      "issue": 39,
+      "priority": 43,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/relay.ts",
+        "apps/network/src/relay.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/index.ts"
+      ],
+      "estimatedMinutes": 25,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "agent-inbox",
+      "title": "Implement agent inbox for receiving messages",
+      "issue": 40,
+      "priority": 44,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/agent-do.test.ts",
+        "packages/core/src/lexicons.ts"
+      ],
+      "estimatedMinutes": 25,
+      "sprint": "hardening",
+      "dependsOn": [
+        "lexicon-validation"
+      ]
+    },
+    {
+      "id": "error-handling",
+      "title": "Add error handling wrappers to all route handlers",
+      "issue": 41,
+      "priority": 45,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/relay.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/errors.ts"
+      ],
+      "estimatedMinutes": 20,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "relay-subscription-filtering",
+      "title": "Implement relay subscription filtering for collections and DIDs",
+      "issue": 42,
+      "priority": 46,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/relay.ts",
+        "apps/network/src/relay.test.ts"
+      ],
+      "estimatedMinutes": 15,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "websocket-handlers",
+      "title": "Implement WebSocket message handlers for AgentDO and RelayDO",
+      "issue": 43,
+      "priority": 47,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/relay.ts"
+      ],
+      "estimatedMinutes": 20,
+      "sprint": "hardening",
+      "dependsOn": [
+        "relay-subscription-filtering"
+      ]
+    },
+    {
+      "id": "auth-middleware",
+      "title": "Add auth middleware (bearer token) to all endpoints",
+      "issue": 44,
+      "priority": 48,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/index.ts",
+        "apps/network/src/auth.ts",
+        "apps/network/src/auth.test.ts"
+      ],
+      "estimatedMinutes": 20,
+      "sprint": "hardening",
+      "dependsOn": []
+    },
+    {
+      "id": "consolidate-mocks-cors",
+      "title": "Consolidate D1 mock and add CORS headers",
+      "issue": 45,
+      "priority": 49,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
+      "files": [
+        "apps/network/src/agent-do.test.ts",
+        "packages/core/src/d1-mock.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/cors.ts"
+      ],
+      "estimatedMinutes": 15,
+      "sprint": "hardening",
+      "dependsOn": []
     }
   ],
   "sprints": [
