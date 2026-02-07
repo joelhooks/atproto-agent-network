@@ -95,3 +95,18 @@ Learnings: none.
 Tests: `pnpm turbo test --filter=@atproto-agent/core`
 
 Notes: `hive_cells` is not available in this environment (`command not found`).
+
+---
+[2026-02-07T20:15:59.733Z]
+Completed: Create test utilities and fixtures
+Files: none
+Summary: **Summary**
+- Added deterministic fixture helpers and core type factories in `packages/core/src/test-utils.ts`.
+- Added tests covering fixture helpers, defaults, and overrides in `packages/core/src/test-utils.test.ts`.
+
+**Tests**
+- `pnpm vitest run packages/core/src/test-utils.test.ts`
+
+**Notes**
+- `openclaw message` failed with `too many arguments for 'message'`; let me know the expected usage.
+-
