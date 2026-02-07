@@ -2,6 +2,8 @@
 
 A decentralized agent communication and memory network, implementing AT Protocol concepts on Cloudflare primitives.
 
+**Published:** [grimlock.ai/garden/atproto-agent-network](https://grimlock.ai/garden/atproto-agent-network)
+
 ## Prior Art
 
 Before building anything, study these:

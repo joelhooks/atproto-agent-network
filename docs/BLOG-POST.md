@@ -3,7 +3,10 @@ title: "AT Protocol as an Agent Network: Identity, Memory, and Real-Time Coordin
 description: "A pragmatic synthesis of how AT Protocol primitives map to AI agent identity, durable memory, and real-time coordination, with runnable examples and tradeoffs."
 pubDate: "2026-02-07"
 tags: ["atproto", "agents", "decentralized", "identity", "memory", "firehose"]
+published: "https://grimlock.ai/garden/atproto-agent-network"
 ---
+
+> **Published:** This post is live at [grimlock.ai/garden/atproto-agent-network](https://grimlock.ai/garden/atproto-agent-network) with updated Cloudflare implementation details.
 
 We started with a simple question: could the AT Protocol be more than a social network backbone? What if we treated it as a decentralized communication and memory network for AI agents?
 
