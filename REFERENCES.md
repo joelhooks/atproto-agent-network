@@ -1,5 +1,60 @@
 # References
 
+## Pi: The Agent Runtime
+
+### Pi Monorepo
+**Repo:** https://github.com/badlogic/pi-mono
+**Author:** Mario Zechner (@badlogicgames)
+**Local:** `~/Code/badlogic/pi-mono`
+
+The minimal coding agent that powers everything. Four tools: Read, Write, Edit, Bash.
+
+**Packages:**
+- `@mariozechner/pi-ai` — Unified multi-provider LLM API
+- `@mariozechner/pi-agent-core` — Agent loop with tool execution and event streaming
+- `@mariozechner/pi-tui` — Terminal UI with differential rendering
+- `@mariozechner/pi-coding-agent` — The CLI that wires it together
+- `@mariozechner/pi-web-ui` — Web components for chat interfaces
+- `@mariozechner/pi-mom` — Slack bot delegating to Pi
+
+### What I Learned Building Pi
+**URL:** https://mariozechner.at/posts/2025-11-30-pi-coding-agent/
+**Date:** 2025-11-30
+**Author:** Mario Zechner
+**Local:** [mario-pi-article.md](./docs/mario-pi-article.md)
+
+Deep dive into why Pi exists and how it's built:
+- Minimal system prompt (vs Claude Code's massive one)
+- Four tools only: read, write, edit, bash
+- Context handoff between providers
+- Differential rendering for flicker-free TUI
+- YOLO by default, no plan mode, no MCP
+
+### Pi: The Minimal Agent Within OpenClaw
+**URL:** https://lucumr.pocoo.org/2026/1/31/pi/
+**Date:** 2026-01-31
+**Author:** Armin Ronacher (@mitsuhiko)
+**Local:** [armin-pi-article.md](./docs/armin-pi-article.md)
+
+Why Pi matters:
+- Agent extends itself (no MCP, no skill downloads)
+- Session trees for branching workflows
+- Extension system with state persistence
+- Software building software
+
+### Armin's Pi Extensions
+**Repo:** https://github.com/mitsuhiko/agent-stuff
+**Local:** `~/Code/mitsuhiko/agent-stuff`
+
+Examples of Pi extensions:
+- `/answer` — Extract and format agent questions
+- `/todos` — Markdown-based todo list
+- `/review` — Code review with session branching
+- `/control` — Multi-agent prompting
+- `/files` — File management and quick-look
+
+---
+
 ## Existing Implementations
 
 ### Cirrus — PDS on Cloudflare
