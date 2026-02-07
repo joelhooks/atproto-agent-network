@@ -545,7 +545,8 @@
       ],
       "estimatedMinutes": 15,
       "sprint": "foundations-fix",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     }
   ],
   "sprints": [
