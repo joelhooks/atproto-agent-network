@@ -150,6 +150,75 @@ Official guide for running your own PDS. Covers traditional deployment (Docker o
 
 ---
 
+## moltworker — OpenClaw on Cloudflare Sandbox
+**Repo:** https://github.com/cloudflare/moltworker (★ starred)
+**Blog:** https://blog.cloudflare.com/moltworker-self-hosted-ai-agent/
+**Purpose:** Run OpenClaw personal AI assistant in Cloudflare Sandbox containers
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Cloudflare Worker                        │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ Hono Router                                         │    │
+│  │ • Authentication (CF Access + Gateway Token)        │    │
+│  │ • Admin UI at /_admin/                              │    │
+│  │ • WebSocket proxy with message interception         │    │
+│  │ • Sandbox lifecycle management                      │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                           │                                 │
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ Cloudflare Sandbox Container                        │    │
+│  │ • Node.js 22                                        │    │
+│  │ • OpenClaw gateway process                          │    │
+│  │ • Skills directory (/root/clawd/skills/)            │    │
+│  │ • Browser automation via CDP                        │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                           │                                 │
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ R2 Bucket                                           │    │
+│  │ • Persistent storage (backup/restore on restart)    │    │
+│  │ • Cron sync every 5 minutes                         │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- Sandbox containers with configurable sleep (`SANDBOX_SLEEP_AFTER`)
+- Device pairing for auth (Telegram, Discord, Slack, web)
+- R2 backup/restore for persistence across restarts
+- CDP shim for browser automation
+- ~$35/mo for always-on, less with sleep configured
+
+**Cost Estimate:**
+| Resource | Cost |
+|----------|------|
+| Memory (4 GiB, 24/7) | ~$26/mo |
+| CPU (~10% util) | ~$2/mo |
+| Disk (8 GB) | ~$1.50/mo |
+| Workers Paid | $5/mo |
+| **Total** | **~$34.50/mo** |
+
+**Dockerfile Base:** `cloudflare/sandbox:0.7.0`
+
+---
+
+## Serverless Matrix Homeserver
+**Blog:** https://blog.cloudflare.com/serverless-matrix-homeserver-workers/
+**Purpose:** Matrix homeserver on Cloudflare Workers
+
+Another example of running a federation-capable server on CF primitives. Shows how to handle:
+- User identity and registration
+- Room state and events
+- Federation with other servers
+- Real-time sync via SSE/WebSocket
+
+Relevant patterns for agent coordination.
+
+---
+
 ## Cloudflare Primitives
 
 | Primitive | Use Case | Limits |
