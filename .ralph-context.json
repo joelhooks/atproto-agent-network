@@ -1,0 +1,18 @@
+{
+  "stories": [
+    {
+      "id": "setup-monorepo",
+      "title": "Setup monorepo with Turborepo + pnpm",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] Scope: all 6 workspace projects\n\n   ╭───────────────────────────────────────────────────────────────────╮\n   │                                                                   │\n   │                Update available! 9.15.0 → 10.29.1.                │\n   │   Changelog: https://github.com/pnpm/pnpm/r"
+    }
+  ],
+  "failures": [
+    {
+      "storyId": "setup-monorepo",
+      "category": "unknown",
+      "error": "Scope: all 6 workspace projects\n\n   ╭───────────────────────────────────────────────────────────────────╮\n   │                                                                   │\n   │                Update available! 9.15.0 → 10.29.1.                │\n   │   Changelog: https://github.com/pnpm/pnpm/releases/tag/v10.29.1   │\n   │         Run \"corepack install -g pnpm@10.29.1\" to update.         │\n   │                                                                   │\n   ╰─────────────────────────"
+    }
+  ]
+}

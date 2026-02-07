@@ -12,11 +12,5 @@
   "dependencies": {
     "@atproto-agent/core": "workspace:*",
     "@atproto-agent/agent": "workspace:*"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240620.0",
-    "typescript": "^5.4.0",
-    "vitest": "^3.0.0",
-    "wrangler": "^3.60.0"
   }
 }

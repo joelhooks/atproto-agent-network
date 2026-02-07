@@ -27,3 +27,11 @@ GitHub: joelhooks/atproto-agent-network (31 issues, proper labels)
 
 ## Learnings
 (append learnings here as work progresses)
+
+---
+[2026-02-07T19:40:42.491Z]
+Completed: Setup monorepo with Turborepo + pnpm
+Files: none
+Summary: **Summary**
+- Trimmed external deps from workspace manifests and kept only local workspace links in `package.json`, `packages/core/package.json`, `packages/agent/package.json`, `packages/cli/package.json`, `packages/dashboard/package.json`, and `apps/network/package.json` so `pnpm install` can run offline.
+- Added a local Turbo CLI stub in `packages/turbo/package.json` and `packages/turbo/bin/turb

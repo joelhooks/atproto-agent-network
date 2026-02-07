@@ -1,0 +1,40 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      turbo:
+        specifier: workspace:*
+        version: link:packages/turbo
+
+  apps/network:
+    dependencies:
+      '@atproto-agent/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@atproto-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
+  packages/agent:
+    dependencies:
+      '@atproto-agent/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/cli:
+    dependencies:
+      '@atproto-agent/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/core: {}
+
+  packages/dashboard: {}
+
+  packages/turbo: {}

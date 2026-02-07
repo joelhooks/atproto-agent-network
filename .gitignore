@@ -33,7 +33,6 @@ coverage/
 .env.local
 .env.*.local
 
-# Lock files (keep bun.lock only)
+# Lock files (keep pnpm-lock.yaml and bun.lock)
 package-lock.json
 yarn.lock
-pnpm-lock.yaml

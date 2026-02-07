@@ -13,12 +13,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@atproto-agent/core": "workspace:*",
-    "commander": "^12.0.0"
-  },
-  "devDependencies": {
-    "tsup": "^8.0.0",
-    "typescript": "^5.4.0",
-    "vitest": "^3.0.0"
+    "@atproto-agent/core": "workspace:*"
   }
 }
