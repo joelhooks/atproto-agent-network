@@ -314,6 +314,8 @@ wrangler tail                   # View logs
 - ❌ Make architecture decisions without Oracle approval
 - ❌ Use PGLite (deprecated, use D1)
 - ❌ Build custom agent loop (use Pi)
+- ❌ **Hand-write package.json dependencies** — NEVER manually edit dependency versions or create stub packages
+- ❌ Create fake workspace packages to satisfy imports
 
 ## Do This
 
@@ -323,3 +325,4 @@ wrangler tail                   # View logs
 - ✅ Store learnings in hivemind
 - ✅ Commit frequently
 - ✅ Ping Oracle at gates
+- ✅ **ALWAYS install packages from CLI**: `pnpm add <pkg>` or `pnpm add -D <pkg>` — never hand-write versions in package.json
