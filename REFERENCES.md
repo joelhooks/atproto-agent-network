@@ -104,16 +104,52 @@ Requires `nodejs_compat` compatibility flag for DNS handle resolution.
 
 ---
 
+## Cloudflare Blog Posts (Primary Sources)
+
+Full text archived in `docs/cloudflare-blog-*.md`.
+
+### Moltworker: Self-Hosted AI Agent
+**URL:** https://blog.cloudflare.com/moltworker-self-hosted-ai-agent/
+**Date:** 2026-01-29
+**Authors:** Celso Martinho, Brian Brunner, Sid Chatterjee, Andreas Jansson
+**Local:** [cloudflare-blog-moltworker.md](./docs/cloudflare-blog-moltworker.md)
+
+OpenClaw running on Cloudflare Sandbox containers. Key patterns:
+- Sandbox SDK for isolated code execution
+- AI Gateway for provider routing
+- R2 for persistent storage
+- Browser Rendering via CDP proxy
+- Zero Trust Access for auth
+
+### Serverless Statusphere: ATProto on Cloudflare
+**URL:** https://blog.cloudflare.com/serverless-statusphere/
+**Date:** 2025-07-24
+**Author:** Inanna Malick
+**Local:** [cloudflare-blog-statusphere.md](./docs/cloudflare-blog-statusphere.md)
+
+Complete ATProto app (Statusphere) on Workers. Key patterns:
+- DID resolution with KV caching
+- OAuth via Durable Objects
+- D1 for record storage
+- Cron Triggers for Jetstream polling
+- Durable Objects for WebSocket fanout
+
+### Serverless Matrix Homeserver
+**URL:** https://blog.cloudflare.com/serverless-matrix-homeserver-workers/
+**Date:** 2026-01-27
+**Author:** Nick Kuntz
+**Local:** [cloudflare-blog-matrix.md](./docs/cloudflare-blog-matrix.md)
+
+Matrix homeserver on Workers with post-quantum TLS. Key patterns:
+- D1 replaces PostgreSQL (25+ tables)
+- KV replaces Redis (ephemeral state)
+- R2 replaces filesystem (media)
+- Durable Objects for atomicity (E2EE key claims)
+- Sliding Sync for mobile efficiency
+
+---
+
 ## Official Documentation
-
-### Cloudflare Blog: Serverless ATProto
-**URL:** https://blog.cloudflare.com/serverless-atproto/
-
-Official walkthrough of building atproto apps on Cloudflare. Covers:
-- PDS architecture on Workers
-- Durable Objects for state
-- R2 for blob storage
-- OAuth implementation
 
 ---
 
