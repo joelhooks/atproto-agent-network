@@ -28,6 +28,19 @@ export async function generateEd25519Keypair(): Promise<CryptoKeyPair> {
   )
 }
 
+export async function deriveSharedSecret(
+  privateKey: CryptoKey,
+  publicKey: CryptoKey
+): Promise<Uint8Array> {
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'X25519', public: publicKey },
+    privateKey,
+    256
+  )
+
+  return new Uint8Array(bits)
+}
+
 export async function encryptWithDek(
   plaintext: Uint8Array,
   dek: Uint8Array,

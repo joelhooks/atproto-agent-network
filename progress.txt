@@ -184,3 +184,21 @@ Learnings:
 
 Notes:
 - `hive
+
+---
+[2026-02-07T20:29:02.470Z]
+Completed: Implement deriveSharedSecret
+Files: none
+Summary: Skill used: `envelope-encryption` (X25519 shared-secret guidance).
+
+**Summary**
+- Added `deriveSharedSecret` using X25519 `deriveBits` in `packages/core/src/crypto.ts`.
+- Added a unit test verifying both parties derive the same 32-byte secret in `packages/core/src/crypto.test.ts`.
+
+**Tests**
+- `pnpm vitest run packages/core/src/crypto.test.ts -t 'deriveSharedSecret'`
+
+**Learnings**
+- None.
+
+**Note

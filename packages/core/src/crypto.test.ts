@@ -1,4 +1,5 @@
 import {
+  deriveSharedSecret,
   exportPublicKey,
   generateEd25519Keypair,
   generateX25519Keypair,
@@ -68,6 +69,19 @@ describe('generateEd25519Keypair', () => {
     expect(keypair.privateKey.extractable).toBe(true)
     expect(keypair.privateKey.usages).toContain('sign')
     expect(keypair.publicKey.usages).toContain('verify')
+  })
+})
+
+describe('deriveSharedSecret', () => {
+  it('derives the same shared secret for both parties', async () => {
+    const alice = await generateX25519Keypair()
+    const bob = await generateX25519Keypair()
+
+    const aliceSecret = await deriveSharedSecret(alice.privateKey, bob.publicKey)
+    const bobSecret = await deriveSharedSecret(bob.privateKey, alice.publicKey)
+
+    expect(aliceSecret).toEqual(bobSecret)
+    expect(aliceSecret).toHaveLength(32)
   })
 })
 
