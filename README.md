@@ -612,6 +612,7 @@ See `/docs` for detailed research on each component:
 - [SECURITY.md](./docs/SECURITY.md) - Trust and encryption
 - [IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) - atproto code examples
 - [BLOG-POST.md](./docs/BLOG-POST.md) - Synthesis and runnable demo
+- [O11Y.md](./docs/O11Y.md) - **Observability: agents debugging agents**
 
 ## Sources
 
