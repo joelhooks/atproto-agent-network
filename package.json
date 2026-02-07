@@ -1,17 +1,20 @@
 {
   "name": "atproto-agent-network",
   "private": true,
-  "packageManager": "bun@1.1.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
+    "test:watch": "turbo test:watch",
     "typecheck": "turbo typecheck",
     "deploy": "turbo deploy",
-    "dev": "turbo dev"
+    "dev": "turbo dev",
+    "lint": "turbo lint"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0"
   }
 }

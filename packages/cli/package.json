@@ -6,8 +6,10 @@
     "zap": "./dist/index.js"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node && tsc --emitDeclarationOnly",
-    "test": "bun test src/",
+    "build": "tsup src/index.ts --format esm --dts",
+    "build:binary": "bun build ./src/index.ts --compile --outfile dist/zap",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,7 +17,8 @@
     "commander": "^12.0.0"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.4.0"
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
   }
 }

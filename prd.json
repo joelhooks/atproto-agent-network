@@ -4,71 +4,85 @@
   "version": "0.1.0",
   "repository": "https://github.com/joelhooks/atproto-agent-network",
   "projectBoard": "https://github.com/users/joelhooks/projects/1",
+  "stack": {
+    "packageManager": "pnpm",
+    "testRunner": "vitest",
+    "buildTool": "tsup",
+    "monorepo": "turborepo",
+    "runtime": "cloudflare-workers",
+    "cli": "bun-compiled"
+  },
   "stories": [
     {
       "id": "setup-monorepo",
-      "title": "Setup monorepo with Turborepo + Bun",
+      "title": "Setup monorepo with Turborepo + pnpm",
       "issue": 6,
       "priority": 0,
-      "validationCommand": "bun install && bun turbo build --dry-run && echo PASS",
-      "files": ["package.json", "turbo.json", ".gitignore"],
+      "validationCommand": "pnpm install && pnpm turbo build --dry-run && echo PASS",
+      "files": ["package.json", "pnpm-workspace.yaml", "turbo.json", ".gitignore"],
       "estimatedMinutes": 10,
-      "sprint": "bootstrap"
+      "sprint": "bootstrap",
+      "passes": false
     },
     {
       "id": "install-vitest",
       "title": "Install Vitest and create root config",
       "issue": 24,
       "priority": 1,
-      "validationCommand": "bun test --passWithNoTests 2>&1 | grep -qE '(No test|passed|✓)' && echo PASS",
-      "files": ["package.json", "vitest.config.ts"],
+      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|✓|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
+      "files": ["vitest.config.ts", "package.json"],
       "estimatedMinutes": 15,
       "dependsOn": ["setup-monorepo"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "identity-tests",
       "title": "Create first unit test for identity.ts",
       "issue": 25,
       "priority": 2,
-      "validationCommand": "bun test packages/core/src/identity.test.ts",
+      "validationCommand": "pnpm vitest run packages/core/src/identity.test.ts",
       "files": ["packages/core/src/identity.test.ts", "packages/core/src/identity.ts"],
       "estimatedMinutes": 20,
       "dependsOn": ["install-vitest"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "vitest-workspace",
       "title": "Create vitest workspace config for monorepo",
       "issue": 26,
       "priority": 3,
-      "validationCommand": "bun test packages/core 2>&1 | grep -qE '(passed|✓)' && echo PASS",
+      "validationCommand": "pnpm vitest run --filter @atproto-agent/core",
       "files": ["vitest.workspace.ts", "packages/core/vitest.config.ts"],
       "estimatedMinutes": 15,
       "dependsOn": ["identity-tests"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "turbo-test-task",
       "title": "Add turbo task for test",
       "issue": 27,
       "priority": 4,
-      "validationCommand": "bun turbo test --filter=core 2>&1 | grep -qE '(passed|✓|Tasks:)' && echo PASS",
-      "files": ["turbo.json", "packages/core/package.json"],
+      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS",
+      "files": ["turbo.json"],
       "estimatedMinutes": 15,
       "dependsOn": ["vitest-workspace"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "test-utilities",
       "title": "Create test utilities and fixtures",
       "issue": 15,
       "priority": 5,
-      "validationCommand": "bun test packages/core/src/test-utils.test.ts 2>&1 | grep -qE '(passed|✓)' && echo PASS",
+      "validationCommand": "pnpm vitest run packages/core/src/test-utils.test.ts",
       "files": ["packages/core/src/test-utils.ts", "packages/core/src/test-utils.test.ts"],
       "estimatedMinutes": 25,
       "dependsOn": ["turbo-test-task"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "ci-workflow",
@@ -79,148 +93,161 @@
       "files": [".github/workflows/ci.yml"],
       "estimatedMinutes": 20,
       "dependsOn": ["turbo-test-task"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "pre-commit-hooks",
       "title": "Add pre-commit hooks (lint, typecheck, test)",
       "issue": 19,
       "priority": 7,
-      "validationCommand": "test -f .husky/pre-commit || test -f .git/hooks/pre-commit && echo PASS",
+      "validationCommand": "test -f .husky/pre-commit && echo PASS",
       "files": [".husky/pre-commit", "package.json"],
       "estimatedMinutes": 15,
       "dependsOn": ["ci-workflow"],
-      "sprint": "testing"
+      "sprint": "testing",
+      "passes": false
     },
     {
       "id": "generate-x25519",
       "title": "Implement generateX25519Keypair",
       "issue": 28,
       "priority": 10,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='generateX25519Keypair'",
+      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'",
       "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
       "estimatedMinutes": 30,
       "dependsOn": ["turbo-test-task"],
-      "sprint": "crypto"
+      "sprint": "crypto",
+      "passes": false
     },
     {
       "id": "generate-ed25519",
       "title": "Implement generateEd25519Keypair",
       "issue": 29,
       "priority": 11,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='generateEd25519Keypair'",
+      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'generateEd25519Keypair'",
       "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
       "estimatedMinutes": 20,
       "dependsOn": ["generate-x25519"],
-      "sprint": "crypto"
+      "sprint": "crypto",
+      "passes": false
     },
     {
       "id": "export-public-key",
       "title": "Implement exportPublicKey (multibase)",
       "issue": 30,
       "priority": 12,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='exportPublicKey'",
+      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'exportPublicKey'",
       "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
       "estimatedMinutes": 30,
       "dependsOn": ["generate-x25519"],
-      "sprint": "crypto"
+      "sprint": "crypto",
+      "passes": false
     },
     {
       "id": "derive-shared-secret",
       "title": "Implement deriveSharedSecret",
       "issue": 31,
       "priority": 13,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='deriveSharedSecret'",
+      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'deriveSharedSecret'",
       "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
       "estimatedMinutes": 20,
       "dependsOn": ["generate-x25519"],
-      "sprint": "crypto"
+      "sprint": "crypto",
+      "passes": false
     },
     {
       "id": "envelope-encryption",
       "title": "Implement envelope encryption (DEK + encrypt/decrypt)",
       "issue": 8,
       "priority": 14,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='envelope'",
+      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'envelope'",
       "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
       "estimatedMinutes": 45,
       "dependsOn": ["derive-shared-secret"],
       "sprint": "crypto",
-      "hitlGate": "Security review required before proceeding"
+      "hitlGate": "Security review required before proceeding",
+      "passes": false
     },
     {
       "id": "d1-schema",
       "title": "Create D1 schema for encrypted records",
       "issue": 9,
       "priority": 20,
-      "validationCommand": "test -f apps/network/schema.sql && bun test apps/network/src/schema.test.ts",
+      "validationCommand": "test -f apps/network/schema.sql && pnpm vitest run apps/network/src/schema.test.ts",
       "files": ["apps/network/schema.sql", "apps/network/src/schema.test.ts"],
       "estimatedMinutes": 30,
       "dependsOn": ["envelope-encryption"],
-      "sprint": "storage"
+      "sprint": "storage",
+      "passes": false
     },
     {
       "id": "pi-agent-wrapper",
       "title": "Implement Pi agent wrapper in packages/agent",
       "issue": 10,
       "priority": 21,
-      "validationCommand": "bun test packages/agent/src/agent.test.ts",
+      "validationCommand": "pnpm vitest run packages/agent/src/agent.test.ts",
       "files": ["packages/agent/src/agent.ts", "packages/agent/src/agent.test.ts"],
       "estimatedMinutes": 45,
       "dependsOn": ["turbo-test-task"],
-      "sprint": "storage"
+      "sprint": "storage",
+      "passes": false
     },
     {
       "id": "encrypted-memory",
       "title": "Implement EncryptedMemory class in packages/agent",
       "issue": 11,
       "priority": 22,
-      "validationCommand": "bun test packages/agent/src/memory.test.ts",
+      "validationCommand": "pnpm vitest run packages/agent/src/memory.test.ts",
       "files": ["packages/agent/src/memory.ts", "packages/agent/src/memory.test.ts"],
       "estimatedMinutes": 60,
       "dependsOn": ["envelope-encryption", "d1-schema"],
-      "sprint": "storage"
+      "sprint": "storage",
+      "passes": false
     },
     {
       "id": "wire-up-agentdo",
       "title": "Wire up AgentDO with Pi agent and encrypted memory",
       "issue": 12,
       "priority": 23,
-      "validationCommand": "bun test apps/network/src/agent-do.test.ts",
+      "validationCommand": "pnpm vitest run apps/network/src/agent-do.test.ts",
       "files": ["apps/network/src/agent-do.ts", "apps/network/src/agent-do.test.ts"],
       "estimatedMinutes": 60,
       "dependsOn": ["pi-agent-wrapper", "encrypted-memory"],
       "sprint": "storage",
-      "hitlGate": "Phase 1 complete - verify no plaintext in D1"
+      "hitlGate": "Phase 1 complete - verify no plaintext in D1",
+      "passes": false
     },
     {
       "id": "integration-test-harness",
       "title": "Setup integration test harness (D1 mock)",
       "issue": 16,
       "priority": 30,
-      "validationCommand": "bun test:integration 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "files": ["vitest.config.integration.ts", "packages/core/src/__tests__/integration/"],
+      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "files": ["vitest.config.integration.ts"],
       "estimatedMinutes": 45,
       "dependsOn": ["d1-schema"],
-      "sprint": "testing-advanced"
+      "sprint": "testing-advanced",
+      "passes": false
     },
     {
       "id": "e2e-test-harness",
       "title": "Setup E2E test harness (miniflare)",
       "issue": 17,
       "priority": 31,
-      "validationCommand": "bun test:e2e 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "files": ["vitest.config.e2e.ts", "apps/network/src/__tests__/e2e/"],
+      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "files": ["vitest.config.e2e.ts"],
       "estimatedMinutes": 60,
       "dependsOn": ["wire-up-agentdo"],
-      "sprint": "testing-advanced"
+      "sprint": "testing-advanced",
+      "passes": false
     }
   ],
   "sprints": [
     {
       "id": "bootstrap",
       "name": "Bootstrap",
-      "goal": "Monorepo builds and typechecks",
+      "goal": "Monorepo builds and typechecks with pnpm + turborepo",
       "stories": ["setup-monorepo"],
       "estimatedHours": 0.25,
       "hitlGate": null
@@ -267,7 +294,8 @@
     "onStoryComplete": {
       "updateParentCheckbox": true,
       "addPRLink": true,
-      "createPR": true
+      "createPR": true,
+      "markPasses": true
     },
     "onStoryFail": {
       "maxRetries": 2,

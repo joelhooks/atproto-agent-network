@@ -8,18 +8,21 @@
     ".": "./dist/index.js",
     "./crypto": "./dist/crypto/index.js",
     "./identity": "./dist/identity/index.js",
-    "./lexicons": "./dist/lexicons/index.js"
+    "./lexicons": "./dist/lexicons/index.js",
+    "./test-utils": "./dist/test-utils.js"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node && tsc --emitDeclarationOnly",
-    "test": "bun test src/",
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.4.0"
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
   }
 }

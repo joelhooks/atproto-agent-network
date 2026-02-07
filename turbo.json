@@ -6,7 +6,12 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
     },
     "typecheck": {
       "dependsOn": ["^build"]
@@ -16,7 +21,8 @@
       "persistent": true
     },
     "deploy": {
-      "dependsOn": ["build"]
-    }
+      "dependsOn": ["build", "test", "typecheck"]
+    },
+    "lint": {}
   }
 }
