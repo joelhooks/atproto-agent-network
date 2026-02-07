@@ -1,0 +1,29 @@
+# atproto-agent-network Progress
+
+## Project Overview
+Private-by-default encrypted memory network for AI agents on AT Protocol.
+GitHub: joelhooks/atproto-agent-network (31 issues, proper labels)
+
+## Critical Rules
+1. TDD IS THE LAW - Write tests FIRST
+2. GitHub issues are source of truth - prd.json syncs from them
+3. Private by default - all memories encrypted
+4. Check CONTEXT.md before starting any work
+
+## Current State
+- Monorepo structure: COMPLETE (turbo, pnpm, packages)
+- Vitest: installed but needs workspace config
+- Crypto primitives: stubs exist in packages/core/src/crypto.ts
+- Tests: need to be written
+
+## Completed Issues
+- #6 Setup monorepo - DONE (structure exists)
+
+## Next Up (from prd.json)
+- #24 Install Vitest root config
+- #25 First unit test for identity.ts
+- #26 Vitest workspace config
+- #27 Turbo test task
+
+## Learnings
+(append learnings here as work progresses)
