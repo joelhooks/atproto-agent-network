@@ -84,40 +84,141 @@ When you hit a gate, ping the Oracle (Joel) with:
 - Security verification results
 - Any decisions that need Oracle Context™
 
-## Workflow
+## Workflow: The Ralph Loop
+
+### TDD is the Law
+
+**Every feature has tests first. No exceptions.**
+
+```
+    RED           GREEN         REFACTOR
+     │              │              │
+     ▼              ▼              ▼
+┌─────────┐   ┌─────────┐   ┌─────────┐
+│  Write  │   │  Write  │   │  Clean  │
+│ failing │──▶│ minimal │──▶│  code,  │
+│  test   │   │  code   │   │ keep    │
+│         │   │         │   │ tests   │
+└─────────┘   └─────────┘   └─────────┘
+```
+
+### Sprint Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        RALPH LOOP SPRINT                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. PLANNING (#21 template)                                      │
+│     └── Select issues from backlog                               │
+│     └── Verify TDD instructions complete                         │
+│     └── Identify HITL gates                                      │
+│                                                                  │
+│  2. EXECUTION (ralph_iterate)                                    │
+│     └── For each story:                                          │
+│         ├── Write tests (RED)                                    │
+│         ├── Implement (GREEN)                                    │
+│         ├── Refactor                                             │
+│         ├── Commit with "Closes #X"                              │
+│         └── Update epic checkbox                                 │
+│                                                                  │
+│  3. GARDENING (#23)                                              │
+│     └── Update affected issues                                   │
+│     └── Add agent/ready to unblocked issues                      │
+│     └── Update documentation                                     │
+│                                                                  │
+│  4. RETROSPECTIVE (#20 template)                                 │
+│     └── What went well                                           │
+│     └── What went poorly                                         │
+│     └── Process improvements                                     │
+│                                                                  │
+│  5. GROOMING (#22)                                               │
+│     └── Review stale issues                                      │
+│     └── Verify issue quality                                     │
+│     └── Update dependencies                                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### Starting Work
 
 ```bash
-# Check current state
-hive_cells --status open
+# Check prd.json for current sprint
+cat prd.json | jq '.sprints[0]'
+
+# Or check GitHub for agent/ready issues
+gh issue list --label "agent/ready" --limit 10
 
 # Claim a task
-hive_update --id <cell-id> --status in_progress
+gh issue edit <number> --remove-label "agent/ready" --add-label "agent/claimed"
 
 # Load relevant skill
 read .agents/skills/<skill>/SKILL.md
 ```
 
-### During Work
+### During Work (TDD)
 
-- Commit frequently with clear messages
-- Run tests before marking complete
-- Document decisions in code comments or commit messages
-- Store learnings in hivemind
+```bash
+# 1. Write test first
+touch packages/[pkg]/src/[feature].test.ts
+# Write failing tests
+
+# 2. Run test (should fail)
+bun test packages/[pkg]/src/[feature].test.ts
+
+# 3. Implement minimal code to pass
+# Edit packages/[pkg]/src/[feature].ts
+
+# 4. Run test (should pass)
+bun test packages/[pkg]/src/[feature].test.ts
+
+# 5. Commit
+git add -A && git commit -m "test(pkg): add tests for feature"
+git add -A && git commit -m "feat(pkg): implement feature"
+
+# 6. Refactor if needed, ensure tests still pass
+bun test
+```
 
 ### Completing Work
 
 ```bash
-# Verify implementation
-bun test
-bun run typecheck
+# Verify all tests pass
+bun turbo test
 
-# Close the cell
-hive_close --id <cell-id> --reason "Implemented X with Y approach"
+# Verify types
+bun turbo typecheck
 
-# Push
-git add -A && git commit -m "feat(scope): description" && git push
+# Create PR with issue reference
+gh pr create --title "feat(pkg): description" --body "Closes #X
+
+## Changes
+- Added tests for X
+- Implemented X
+- Updated documentation
+
+## Tests
+- packages/pkg/src/feature.test.ts (5 new tests)
+"
+
+# Update epic checkbox (in issue #1 or parent)
+# Add comment linking PR
+
+# Mark for review
+gh issue edit <number> --remove-label "agent/claimed" --add-label "agent/review"
+```
+
+### Gardening After Work
+
+```bash
+# Check what issues are now unblocked
+gh issue list --label "agent/blocked"
+
+# For each unblocked issue:
+gh issue edit <number> --remove-label "agent/blocked" --add-label "agent/ready"
+
+# Update epic progress
+gh issue comment <epic-number> --body "✅ Completed #X - [summary]"
 ```
 
 ## Key Decisions (Already Made)
