@@ -9,5 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }
