@@ -164,30 +164,30 @@ touch packages/[pkg]/src/[feature].test.ts
 # Write failing tests
 
 # 2. Run test (should fail)
-bun test packages/[pkg]/src/[feature].test.ts
+pnpm vitest run packages/[pkg]/src/[feature].test.ts
 
 # 3. Implement minimal code to pass
 # Edit packages/[pkg]/src/[feature].ts
 
 # 4. Run test (should pass)
-bun test packages/[pkg]/src/[feature].test.ts
+pnpm vitest run packages/[pkg]/src/[feature].test.ts
 
 # 5. Commit
 git add -A && git commit -m "test(pkg): add tests for feature"
 git add -A && git commit -m "feat(pkg): implement feature"
 
 # 6. Refactor if needed, ensure tests still pass
-bun test
+pnpm test
 ```
 
 ### Completing Work
 
 ```bash
 # Verify all tests pass
-bun turbo test
+pnpm turbo test
 
 # Verify types
-bun turbo typecheck
+pnpm turbo typecheck
 
 # Create PR with issue reference
 gh pr create --title "feat(pkg): description" --body "Closes #X
@@ -260,7 +260,7 @@ Security tests verify:
 
 ```bash
 # Required
-bun >= 1.0
+pnpm >= 9.0
 wrangler >= 3.0
 
 # Development

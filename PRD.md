@@ -9,6 +9,29 @@
 
 ---
 
+## Stack
+
+| Concern | Choice | Notes |
+|---------|--------|-------|
+| Package Manager | **pnpm** | Stable monorepo support |
+| Test Runner | **Vitest** | Best-in-class for TypeScript |
+| Build Tool | **tsup** | Fast, simple ESM builds |
+| Monorepo | **Turborepo** | Task orchestration + caching |
+| Runtime | **Cloudflare Workers** | Durable Objects for agents |
+| CLI Binary | **bun compile** | Single-file distribution |
+
+### Commands
+
+```bash
+pnpm install              # Install deps
+pnpm test                 # Run all tests (vitest via turbo)
+pnpm turbo build          # Build all packages
+pnpm turbo typecheck      # Type check all packages
+pnpm vitest run <file>    # Run specific test file
+```
+
+---
+
 ## Quick Links
 
 ### Epics
@@ -114,15 +137,15 @@ Stories in `prd.json` have `dependsOn` arrays:
 ### Sprint 0: Bootstrap
 | Story | Issue | Validation | Est. |
 |-------|-------|------------|------|
-| Setup monorepo | [#6](https://github.com/joelhooks/atproto-agent-network/issues/6) | `bun turbo build --dry-run` | 10m |
+| Setup monorepo | [#6](https://github.com/joelhooks/atproto-agent-network/issues/6) | `pnpm turbo build --dry-run` | 10m |
 
 ### Sprint 1: Testing Foundation
 | Story | Issue | Validation | Est. |
 |-------|-------|------------|------|
-| Install Vitest | [#24](https://github.com/joelhooks/atproto-agent-network/issues/24) | `bun test --passWithNoTests` | 15m |
-| First unit test | [#25](https://github.com/joelhooks/atproto-agent-network/issues/25) | `bun test identity.test` | 20m |
+| Install Vitest | [#24](https://github.com/joelhooks/atproto-agent-network/issues/24) | `pnpm vitest --passWithNoTests` | 15m |
+| First unit test | [#25](https://github.com/joelhooks/atproto-agent-network/issues/25) | `pnpm vitest run identity.test` | 20m |
 | Workspace config | [#26](https://github.com/joelhooks/atproto-agent-network/issues/26) | Package tests work | 15m |
-| Turbo test task | [#27](https://github.com/joelhooks/atproto-agent-network/issues/27) | `bun turbo test` | 15m |
+| Turbo test task | [#27](https://github.com/joelhooks/atproto-agent-network/issues/27) | `pnpm turbo test` | 15m |
 | Test utilities | [#15](https://github.com/joelhooks/atproto-agent-network/issues/15) | Fixtures work | 25m |
 | CI workflow | [#18](https://github.com/joelhooks/atproto-agent-network/issues/18) | `.github/workflows/ci.yml` | 20m |
 | Pre-commit hooks | [#19](https://github.com/joelhooks/atproto-agent-network/issues/19) | Hooks trigger | 15m |
@@ -190,7 +213,7 @@ Every story follows **RED → GREEN → REFACTOR**:
 │  ┌─────────┐                                                     │
 │  │   RED   │ Write failing test first                           │
 │  │         │ - Copy test code from issue body                    │
-│  │         │ - Run: bun test <file> → MUST FAIL                  │
+│  │         │ - Run: pnpm vitest run <file> → MUST FAIL           │
 │  └────┬────┘                                                     │
 │       │                                                          │
 │       ▼                                                          │
@@ -198,13 +221,13 @@ Every story follows **RED → GREEN → REFACTOR**:
 │  │  GREEN  │ Minimal code to pass                               │
 │  │         │ - Copy implementation from issue body               │
 │  │         │ - Adapt as needed                                   │
-│  │         │ - Run: bun test <file> → MUST PASS                  │
+│  │         │ - Run: pnpm vitest run <file> → MUST PASS           │
 │  └────┬────┘                                                     │
 │       │                                                          │
 │       ▼                                                          │
 │  ┌─────────┐                                                     │
 │  │REFACTOR │ Clean up                                            │
-│  │         │ - Run: bun turbo typecheck                          │
+│  │         │ - Run: pnpm turbo typecheck                         │
 │  │         │ - Commit: git commit -m "feat(...): ..."            │
 │  └─────────┘                                                     │
 │                                                                  │
@@ -227,8 +250,8 @@ eval "$(cat prd.json | jq -r '.stories[] | select(.issue == 24) | .validationCom
 
 ```bash
 # 1. Run full validation
-bun turbo test
-bun turbo typecheck
+pnpm turbo test
+pnpm turbo typecheck
 
 # 2. Commit with issue reference
 git add -A
