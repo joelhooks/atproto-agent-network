@@ -137,3 +137,17 @@ Summary: **Summary**
 
 **Learnings**
 - None.
+
+---
+[2026-02-07T20:23:43.398Z]
+Completed: Implement generateX25519Keypair
+Files: none
+Summary: **Summary**
+- Added `generateX25519Keypair` using WebCrypto X25519 keygen in `packages/core/src/crypto.ts`.
+- Added unit coverage for X25519 keypair generation in `packages/core/src/crypto.test.ts`.
+
+**Tests**
+- `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'`
+
+**Notes**
+- Progress report via `openclaw system event --text "[COMPLETE] …" --mode now` failed with `SystemE

@@ -12,6 +12,14 @@ export async function generateNonce(): Promise<Uint8Array> {
   return crypto.getRandomValues(new Uint8Array(12))
 }
 
+export async function generateX25519Keypair(): Promise<CryptoKeyPair> {
+  return crypto.subtle.generateKey(
+    { name: 'X25519' },
+    true,
+    ['deriveBits']
+  )
+}
+
 export async function encryptWithDek(
   plaintext: Uint8Array,
   dek: Uint8Array,
@@ -56,5 +64,5 @@ export async function decryptWithDek(
   return new Uint8Array(plaintext)
 }
 
-// TODO: X25519 key generation and DEK encryption
+// TODO: DEK encryption helpers
 // See .agents/skills/envelope-encryption for full implementation
