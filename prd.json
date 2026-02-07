@@ -4,154 +4,137 @@
   "version": "0.0.1",
   "stories": [
     {
-      "id": "setup-vitest",
-      "title": "Setup Vitest with coverage",
-      "description": "Configure Vitest for unit testing across all packages",
-      "issue": 14,
+      "id": "install-vitest",
+      "title": "Install Vitest and create root config",
+      "issue": 24,
       "priority": 1,
-      "validationCommand": "bun test packages/core",
-      "acceptanceCriteria": [
-        "bun test runs and passes",
-        "Coverage report in coverage/",
-        "Sample test for identity passes"
-      ]
+      "validationCommand": "bun test 2>&1 | grep -qE '(No test files found|✓)' && echo PASS",
+      "files": ["package.json", "vitest.config.ts"],
+      "estimatedMinutes": 15
     },
     {
-      "id": "test-utilities",
-      "title": "Create test utilities and fixtures",
-      "description": "Shared test utilities for consistent testing",
-      "issue": 15,
+      "id": "identity-tests",
+      "title": "Create first unit test for identity.ts",
+      "issue": 25,
       "priority": 2,
-      "validationCommand": "bun test packages/core/src/test-utils",
-      "acceptanceCriteria": [
-        "createTestIdentity() generates valid keypairs",
-        "createTestRecord() creates encrypted records",
-        "All fixtures have tests"
-      ],
-      "dependsOn": ["setup-vitest"]
+      "validationCommand": "bun test packages/core/src/identity.test.ts",
+      "files": ["packages/core/src/identity.test.ts"],
+      "estimatedMinutes": 20,
+      "dependsOn": ["install-vitest"]
+    },
+    {
+      "id": "vitest-workspace",
+      "title": "Create vitest workspace config",
+      "issue": 26,
+      "priority": 3,
+      "validationCommand": "bun test packages/core 2>&1 | grep -q '✓'",
+      "files": ["vitest.workspace.ts", "packages/core/vitest.config.ts"],
+      "estimatedMinutes": 15,
+      "dependsOn": ["identity-tests"]
+    },
+    {
+      "id": "turbo-test-task",
+      "title": "Add turbo task for test",
+      "issue": 27,
+      "priority": 4,
+      "validationCommand": "bun turbo test --filter=core 2>&1 | grep -qE '(✓|passed)'",
+      "files": ["turbo.json", "packages/core/package.json"],
+      "estimatedMinutes": 15,
+      "dependsOn": ["vitest-workspace"]
     },
     {
       "id": "ci-workflow",
-      "title": "Add CI workflow (GitHub Actions)",
-      "description": "CI that blocks merges on test failure",
+      "title": "Add CI workflow",
       "issue": 18,
-      "priority": 3,
-      "validationCommand": "cat .github/workflows/ci.yml",
-      "acceptanceCriteria": [
-        "CI runs on push and PR",
-        "Workflow file exists and is valid YAML"
-      ]
-    },
-    {
-      "id": "x25519-keys",
-      "title": "Implement X25519 key generation",
-      "description": "X25519 keypair generation and export",
-      "issue": 7,
-      "priority": 4,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts",
-      "acceptanceCriteria": [
-        "generateX25519Keypair works",
-        "generateEd25519Keypair works",
-        "exportPublicKey returns multibase",
-        "deriveSharedSecret works"
-      ],
-      "dependsOn": ["setup-vitest"]
-    },
-    {
-      "id": "envelope-encryption",
-      "title": "Implement envelope encryption",
-      "description": "DEK per record, encrypted with agent public key",
-      "issue": 8,
       "priority": 5,
-      "validationCommand": "bun test packages/core/src/crypto.test.ts",
-      "acceptanceCriteria": [
-        "encryptRecord returns encrypted data",
-        "decryptRecord recovers plaintext",
-        "No plaintext in encrypted output",
-        "Different nonce each call"
-      ],
-      "dependsOn": ["x25519-keys"]
+      "validationCommand": "test -f .github/workflows/ci.yml && echo PASS",
+      "files": [".github/workflows/ci.yml"],
+      "estimatedMinutes": 20,
+      "dependsOn": ["turbo-test-task"]
     },
     {
-      "id": "d1-schema",
-      "title": "Create D1 schema for encrypted records",
-      "description": "D1 schema with encrypted columns",
-      "issue": 9,
+      "id": "generate-x25519",
+      "title": "Implement generateX25519Keypair",
+      "issue": 28,
       "priority": 6,
-      "validationCommand": "cat apps/network/schema.sql",
-      "acceptanceCriteria": [
-        "Schema includes all columns",
-        "All ciphertext columns are BLOB",
-        "Proper indexes"
-      ]
+      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='generateX25519Keypair'",
+      "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
+      "estimatedMinutes": 30,
+      "dependsOn": ["turbo-test-task"]
     },
     {
-      "id": "pi-agent-wrapper",
-      "title": "Implement Pi agent wrapper",
-      "description": "Wrap Pi runtime for Durable Objects",
-      "issue": 10,
+      "id": "generate-ed25519",
+      "title": "Implement generateEd25519Keypair",
+      "issue": 29,
       "priority": 7,
-      "validationCommand": "bun test packages/agent",
-      "acceptanceCriteria": [
-        "Can create agent instance",
-        "Can prompt and get response",
-        "Remember/recall tools exist"
-      ],
-      "dependsOn": ["envelope-encryption"]
+      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='generateEd25519Keypair'",
+      "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
+      "estimatedMinutes": 20,
+      "dependsOn": ["generate-x25519"]
     },
     {
-      "id": "encrypted-memory",
-      "title": "Implement EncryptedMemory class",
-      "description": "Store and retrieve encrypted records",
-      "issue": 11,
+      "id": "export-public-key",
+      "title": "Implement exportPublicKey",
+      "issue": 30,
       "priority": 8,
-      "validationCommand": "bun test packages/agent/src/memory.test.ts",
-      "acceptanceCriteria": [
-        "store() encrypts content",
-        "retrieve() decrypts content",
-        "list() returns metadata only",
-        "No plaintext in D1"
-      ],
-      "dependsOn": ["envelope-encryption", "d1-schema"]
+      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='exportPublicKey'",
+      "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
+      "estimatedMinutes": 30,
+      "dependsOn": ["generate-x25519"]
+    },
+    {
+      "id": "derive-shared-secret",
+      "title": "Implement deriveSharedSecret",
+      "issue": 31,
+      "priority": 9,
+      "validationCommand": "bun test packages/core/src/crypto.test.ts --testNamePattern='deriveSharedSecret'",
+      "files": ["packages/core/src/crypto.ts", "packages/core/src/crypto.test.ts"],
+      "estimatedMinutes": 20,
+      "dependsOn": ["generate-x25519"]
     }
   ],
   "sprints": [
     {
       "id": "sprint-0",
-      "name": "Foundation",
-      "goal": "Testing infrastructure and CI",
-      "stories": ["setup-vitest", "test-utilities", "ci-workflow"],
+      "name": "Testing Foundation",
+      "goal": "Vitest + CI working across monorepo",
+      "stories": ["install-vitest", "identity-tests", "vitest-workspace", "turbo-test-task", "ci-workflow"],
+      "estimatedHours": 1.5,
       "hitlGate": null
     },
     {
       "id": "sprint-1",
-      "name": "Crypto Core",
-      "goal": "X25519 keys and envelope encryption",
-      "stories": ["x25519-keys", "envelope-encryption"],
-      "hitlGate": "Security review: verify crypto implementation"
-    },
-    {
-      "id": "sprint-2",
-      "name": "Storage Layer",
-      "goal": "D1 schema and encrypted memory",
-      "stories": ["d1-schema", "pi-agent-wrapper", "encrypted-memory"],
-      "hitlGate": "Security gate: verify no plaintext in D1"
+      "name": "Crypto Primitives",
+      "goal": "X25519 + Ed25519 key generation and exchange",
+      "stories": ["generate-x25519", "generate-ed25519", "export-public-key", "derive-shared-secret"],
+      "estimatedHours": 2,
+      "hitlGate": "Security review: verify crypto implementation is correct"
     }
   ],
   "loopConfig": {
-    "maxIterations": 10,
-    "validationTimeout": 120,
+    "maxIterations": 12,
+    "validationTimeout": 60,
     "autoCommit": true,
+    "commitPrefix": "feat|test|chore",
     "branchPrefix": "feat/",
+    "onStoryComplete": {
+      "updateParentCheckbox": true,
+      "addPRLink": true
+    },
     "retrospective": {
       "enabled": true,
-      "afterStories": 3,
-      "template": "#20"
+      "afterSprint": true,
+      "issueTemplate": 20
     },
     "gardening": {
-      "updateEpicCheckboxes": true,
-      "linkPRsToIssues": true,
-      "updateBlockedIssues": true
+      "updateBlockedIssues": true,
+      "closeParentWhenChildrenDone": true
     }
+  },
+  "labels": {
+    "ready": "agent/ready",
+    "claimed": "agent/claimed",
+    "blocked": "agent/blocked",
+    "review": "agent/review"
   }
 }
