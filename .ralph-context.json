@@ -111,6 +111,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Summary:\n- Wired `AgentDO` to create/load identity, set up `EncryptedMemory`, and initialize `PiAgentWrapper` with `remember`/`recall` tools plus concrete `identity`, `prompt`, and `memory` handlers.\n- Added `apps/network/src/agent-do.test.ts` covering identity/public keys, prompt forwarding/tool wiring, and encrypted memory roundtrip.\n\nTests:\n- `pnpm vitest run apps/network/src/agent-do.test.ts`\n\nLearnings:\n- None.\n\nNote: `hive_cells --status open` failed locally (`command not found`)."
+    },
+    {
+      "id": "integration-test-harness",
+      "title": "Setup integration test harness (D1 mock)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Using `d1-patterns` skill to align the mock with the D1 records table shape.\n\n**Summary**\n- Added an in-memory D1 mock harness for integration tests in `packages/core/src/d1-mock.ts`.\n- Added a focused integration test that validates insert/select behavior in `packages/core/src/d1-mock.integration.test.ts`.\n- Added an integration Vitest config in `vitest.config.integration.ts` targeting `**/*.integration.test.ts`.\n\n**Tests**\n- `pnpm vitest run --config vitest.config.integration.ts`\n\n**Learnings*"
     }
   ],
   "failures": [

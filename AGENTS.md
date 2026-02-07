@@ -256,6 +256,34 @@ Security tests verify:
 - Sharing requires explicit action
 - Key rotation doesn't break access
 
+## Secrets (agent-secrets)
+
+Credentials are managed via `agent-secrets` under the `atproto-agents` namespace:
+
+| Secret | Purpose |
+|--------|---------|
+| `atproto-agents::cloudflare_api_key` | Cloudflare API key for Workers/DO deployment |
+| `atproto-agents::cloudflare_account_id` | Cloudflare account ID |
+| `atproto-agents::openrouter_api_key` | OpenRouter API key for LLM access |
+
+```bash
+# Lease credentials for a session (2h default)
+secrets lease atproto-agents::cloudflare_api_key --ttl 2h
+secrets lease atproto-agents::cloudflare_account_id --ttl 2h
+secrets lease atproto-agents::openrouter_api_key --ttl 2h
+
+# Or inject into a command directly
+secrets exec --namespace atproto-agents -- wrangler deploy
+
+# Revoke all leases when done
+secrets revoke --namespace atproto-agents
+
+# Check what's available
+secrets health
+```
+
+**Do NOT hardcode credentials.** Always lease from `agent-secrets`.
+
 ## Environment
 
 ```bash

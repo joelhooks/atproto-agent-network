@@ -274,3 +274,14 @@ Summary: Using `d1-patterns` skill to align the mock with the D1 records table s
 - Added an in-memory D1 mock harness for integration tests in `packages/core/src/d1-mock.ts`.
 - Added a focused integration test that validates insert/select behavior in `packages/core/src/d1-mock.integration.test.ts`.
 - Added an integration Vitest config in `vitest.config.integration.ts` targeting `**/*.inte
+
+---
+[2026-02-07T21:11:02.952Z]
+Completed: Setup E2E test harness (miniflare)
+Files: none
+Summary: Used `cloudflare` skill to align the Miniflare E2E harness setup.
+
+**Summary**
+- Added E2E Vitest config in `vitest.config.e2e.ts` to discover `*.e2e.test.ts`.
+- Added Miniflare-backed smoke tests for network metadata and AgentDO identity in `apps/network/src/network.e2e.test.ts`; the Miniflare suite is skipped when the module is unavailable.
+- Added `miniflare` dev dependency in `package.json` (l
