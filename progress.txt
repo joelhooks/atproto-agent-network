@@ -123,3 +123,17 @@ Tests:
 
 Learnings:
 - None.
+
+---
+[2026-02-07T20:18:38.207Z]
+Completed: Add pre-commit hooks (lint, typecheck, test)
+Files: none
+Summary: **Summary**
+- Added a pre-commit hook to run `pnpm lint`, `pnpm typecheck`, and `pnpm test` in `.husky/pre-commit`.
+- Added a `prepare` script to configure `core.hooksPath` to `.husky` in `package.json`.
+
+**Tests**
+- Not run (config-only change).
+
+**Learnings**
+- None.

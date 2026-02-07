@@ -10,7 +10,8 @@
     "typecheck": "turbo typecheck",
     "deploy": "turbo deploy",
     "dev": "turbo dev",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "prepare": "sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'"
   },
   "devDependencies": {
     "turbo": "workspace:*",

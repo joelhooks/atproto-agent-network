@@ -41,6 +41,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Summary**\n- Added deterministic fixture helpers and core type factories in `packages/core/src/test-utils.ts`.\n- Added tests covering fixture helpers, defaults, and overrides in `packages/core/src/test-utils.test.ts`.\n\n**Tests**\n- `pnpm vitest run packages/core/src/test-utils.test.ts`\n\n**Notes**\n- `openclaw message` failed with `too many arguments for 'message'`; let me know the expected usage.\n- `git status` shows `.ralph-context.json` modified; I did not change it. How should we handle it?"
+    },
+    {
+      "id": "ci-workflow",
+      "title": "Add CI workflow (GitHub Actions)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Summary:\n- Added GitHub Actions CI workflow to run `pnpm test` on push and pull_request: `.github/workflows/ci.yml`.\n\nTests:\n- `test -f .github/workflows/ci.yml && echo PASS`\n\nLearnings:\n- None."
     }
   ],
   "failures": [
