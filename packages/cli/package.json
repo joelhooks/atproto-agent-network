@@ -1,0 +1,21 @@
+{
+  "name": "@atproto-agent/cli",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "zap": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node && tsc --emitDeclarationOnly",
+    "test": "bun test src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@atproto-agent/core": "workspace:*",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@atproto-agent/agent",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node && tsc --emitDeclarationOnly",
+    "test": "bun test src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@atproto-agent/core": "workspace:*",
+    "@mariozechner/pi-agent-core": "^0.1.0",
+    "@mariozechner/pi-ai": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}

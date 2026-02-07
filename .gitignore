@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Build outputs
+dist/
+.turbo/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Lock files (keep bun.lock only)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
