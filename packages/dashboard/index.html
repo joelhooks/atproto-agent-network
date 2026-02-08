@@ -313,7 +313,21 @@
     /* Responsive */
     @media (max-width: 768px) {
       .grid { grid-template-columns: 1fr; }
-      .header { flex-wrap: wrap; gap: 0.5rem; }
+      .header { flex-wrap: wrap; gap: 0.5rem; padding: 1rem; }
+      .header-left { width: 100%; }
+      .stats-bar { flex-wrap: wrap; }
+      .stat { min-width: 45%; }
+      .panel { padding: 0.75rem; }
+      .feed { max-height: calc(100vh - 300px); }
+      .agent-card { padding: 0.6rem; }
+      .memory-text { font-size: 0.65rem; }
+    }
+
+    @media (max-width: 480px) {
+      .header h1 { font-size: 1rem; }
+      .stat-value { font-size: 1.2rem; }
+      .event { gap: 0.5rem; }
+      .event-icon { width: 24px; height: 24px; font-size: 0.7rem; }
     }
   </style>
 </head>
