@@ -282,7 +282,7 @@
         "d1-schema"
       ],
       "sprint": "storage",
-      "passes": false
+      "passes": true
     },
     {
       "id": "wire-up-agentdo",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T03:14:48.385Z",
-    "totalIterations": 48
+    "lastIteration": "2026-02-08T03:22:28.119Z",
+    "totalIterations": 49
   }
 }

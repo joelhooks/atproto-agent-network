@@ -146,6 +146,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`apps/network/src/schema.test.ts` normali\n`apps/network/src/schema.test.ts` normali\nThe command in AGENTS.md, `swarm hive cells --status open`, is outdated; use `swarm cells --status open` instead (the former errors with “Unknown command: hive”)."
+    },
+    {
+      "id": "pi-agent-wrapper",
+      "title": "Implement Pi agent wrapper in packages/agent",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "### Technical Discovery\n`packages/agent/src/agent.ts` implements a la\n`packages/agent/src/agent.ts` implements a la\n`initiali"
     }
   ],
   "failures": [
