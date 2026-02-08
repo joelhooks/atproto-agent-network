@@ -4,9 +4,7 @@ compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-# Cloudflare AI Gateway slug (Dashboard -> AI -> AI Gateway)
 AI_GATEWAY_SLUG = "atproto-agent-network"
-# Default OpenRouter reasoning model
 OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
 
 # Durable Objects
@@ -22,47 +20,26 @@ class_name = "RelayDO"
 [[d1_databases]]
 binding = "DB"
 database_name = "agent-records"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "98bf7535-be31-42cb-a4fa-0767d294b5f1"
 
-# Blob storage
-[[r2_buckets]]
-binding = "BLOBS"
-bucket_name = "agent-blobs"
-
-# Vector search
-[[vectorize]]
-binding = "VECTORIZE"
-index_name = "agent-memory"
-
-# Message queue
-[[queues.producers]]
-queue = "agent-messages"
-binding = "MESSAGE_QUEUE"
-
-[[queues.consumers]]
-queue = "agent-messages"
-max_batch_size = 10
-max_batch_timeout = 30
-
-# AI
-[ai]
-binding = "AI"
-
-# Migrations
+# Migrations (Durable Objects)
 [[migrations]]
 tag = "v1"
 new_classes = ["AgentDO", "RelayDO"]
 
-[env.production]
-name = "agent-network"
-
-[env.production.vars]
-AI_GATEWAY_SLUG = "atproto-agent-network"
-OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
-
-[env.staging]
-name = "agent-network-staging"
-
-[env.staging.vars]
-AI_GATEWAY_SLUG = "atproto-agent-network"
-OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
+# NOTE: R2, Vectorize, Queues, and AI bindings removed until account features are enabled.
+# Re-add when ready:
+# [[r2_buckets]]
+# binding = "BLOBS"
+# bucket_name = "agent-blobs"
+#
+# [[vectorize]]
+# binding = "VECTORIZE"
+# index_name = "agent-memory"
+#
+# [[queues.producers]]
+# queue = "agent-messages"
+# binding = "MESSAGE_QUEUE"
+#
+# [ai]
+# binding = "AI"
