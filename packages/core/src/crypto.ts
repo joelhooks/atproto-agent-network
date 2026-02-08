@@ -4,6 +4,12 @@
  * Pattern: DEK per record, encrypted with agent's public key
  */
 
+function asBufferSource(bytes: Uint8Array): BufferSource {
+  // TypeScript's lib types can be stricter than the WebCrypto runtime here
+  // (e.g. ArrayBuffer vs SharedArrayBuffer). We only deal in Uint8Array bytes.
+  return bytes as unknown as BufferSource
+}
+
 export async function generateDek(): Promise<Uint8Array> {
   return crypto.getRandomValues(new Uint8Array(32))
 }
@@ -13,19 +19,23 @@ export async function generateNonce(): Promise<Uint8Array> {
 }
 
 export async function generateX25519Keypair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(
+  const key = await crypto.subtle.generateKey(
     { name: 'X25519' },
     true,
     ['deriveBits']
   )
+  if (!('publicKey' in key)) throw new Error('Expected X25519 CryptoKeyPair')
+  return key
 }
 
 export async function generateEd25519Keypair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(
+  const key = await crypto.subtle.generateKey(
     { name: 'Ed25519' },
     true,
     ['sign', 'verify']
   )
+  if (!('publicKey' in key)) throw new Error('Expected Ed25519 CryptoKeyPair')
+  return key
 }
 
 export type StoredKeyAlgorithm = 'Ed25519' | 'X25519'
@@ -100,16 +110,16 @@ export async function encryptWithDek(
 ): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     'raw',
-    dek,
+    asBufferSource(dek),
     'AES-GCM',
     false,
     ['encrypt']
   )
   
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce },
+    { name: 'AES-GCM', iv: asBufferSource(nonce) },
     key,
-    plaintext
+    asBufferSource(plaintext)
   )
   
   return new Uint8Array(ciphertext)
@@ -122,16 +132,16 @@ export async function decryptWithDek(
 ): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     'raw',
-    dek,
+    asBufferSource(dek),
     'AES-GCM',
     false,
     ['decrypt']
   )
   
   const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: nonce },
+    { name: 'AES-GCM', iv: asBufferSource(nonce) },
     key,
-    ciphertext
+    asBufferSource(ciphertext)
   )
   
   return new Uint8Array(plaintext)
@@ -271,7 +281,7 @@ async function deriveEnvelopeKey(
 ): Promise<CryptoKey> {
   const baseKey = await crypto.subtle.importKey(
     'raw',
-    sharedSecret,
+    asBufferSource(sharedSecret),
     'HKDF',
     false,
     ['deriveKey']
@@ -281,8 +291,8 @@ async function deriveEnvelopeKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt,
-      info: ENVELOPE_INFO,
+      salt: asBufferSource(salt),
+      info: asBufferSource(ENVELOPE_INFO),
     },
     baseKey,
     { name: 'AES-GCM', length: 256 },
@@ -309,9 +319,9 @@ export async function encryptDekForPublicKey(
   const nonce = crypto.getRandomValues(new Uint8Array(ENVELOPE_NONCE_LENGTH))
   const aesKey = await deriveEnvelopeKey(sharedSecret, salt)
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce },
+    { name: 'AES-GCM', iv: asBufferSource(nonce) },
     aesKey,
-    dek
+    asBufferSource(dek)
   )
 
   const ephemeralRaw = new Uint8Array(
@@ -339,7 +349,7 @@ export async function decryptDekWithPrivateKey(
 
   const senderPublicKey = await crypto.subtle.importKey(
     'raw',
-    ephemeralPublicKey,
+    asBufferSource(ephemeralPublicKey),
     { name: 'X25519' },
     true,
     []
@@ -352,9 +362,9 @@ export async function decryptDekWithPrivateKey(
   const aesKey = await deriveEnvelopeKey(sharedSecret, salt)
 
   const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: nonce },
+    { name: 'AES-GCM', iv: asBufferSource(nonce) },
     aesKey,
-    ciphertext
+    asBufferSource(ciphertext)
   )
 
   return new Uint8Array(plaintext)

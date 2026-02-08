@@ -90,6 +90,20 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Validation already passes for this story.\n\n- `packages/core/src/test-utils.ts` already contains deterministic fixture helpers/factories (seedable `createTidFixture()`, `resetFixtureState()`, DID/record-id builders, byte fixtures, and core + lexicon type fixtures).\n- `packages/core/src/test-utils.test.ts` already covers these (7 tests).\n\n**Validation**\n- `pnpm vitest run packages/core/src/test-utils.test.ts` (passes: 7/7)\n\n**Files modified (and why)**\n- None\n\n**Tests added/modified**\n- None\n\n**Wh"
+    },
+    {
+      "id": "ci-workflow",
+      "title": "Add CI workflow (GitHub Actions)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.\n\n**Files modified (and why)**\n- None; `.github/workflows/ci.yml` already exists and runs `pnpm test` on `push`/`pull_request`.\n\n**Tests added/modified**\n- None.\n\n**What I learned**\n- The repo’s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config.ts` (covers `packages/*` and `apps/*`).\n\n**Gotchas**\n- Root `pnpm test` only runs Vitest if `vitest"
+    },
+    {
+      "id": "pre-commit-hooks",
+      "title": "Add pre-commit hooks (lint, typecheck, test)",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
     }
   ],
   "failures": [
@@ -122,6 +136,16 @@
       "storyId": "install-vitest",
       "category": "build_error",
       "error": "\n> atproto-agent-network@ vitest /home/joel/Code/joelhooks/atproto-agent-network\n> node ./scripts/vitest.mjs \"run\" \"--passWithNoTests\"\n\n\n RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |@atproto-agent/agent| src/memory.test.ts (7 tests) 112ms\n ✓ |@atproto-agent/network| src/index.test.ts (9 tests) 250ms\n ✓ |@atproto-agent/network| src/agent-do.test.ts (15 tests) 335ms\n ✓ |@atproto-agent/core| src/crypto.test.ts (8 tests) 57ms\n ✓ |@atproto-agent/network| src/relay.test.ts (7 test"
+    },
+    {
+      "storyId": "pre-commit-hooks",
+      "category": "unknown",
+      "error": "PASS\n"
+    },
+    {
+      "storyId": "pre-commit-hooks",
+      "category": "unknown",
+      "error": "PASS\n"
     }
   ]
 }

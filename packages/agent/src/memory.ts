@@ -194,6 +194,9 @@ export class EncryptedMemory {
       return true
     }
 
+    if (row.encrypted_dek === null) {
+      throw new Error('EncryptedMemory.update missing encrypted_dek for private record')
+    }
     const encryptedDek = toUint8Array(row.encrypted_dek, 'encrypted_dek')
     const dek = await decryptDekWithPrivateKey(
       encryptedDek,
@@ -243,6 +246,9 @@ export class EncryptedMemory {
       throw new Error('EncryptedMemory.share cannot share public records')
     }
 
+    if (row.encrypted_dek === null) {
+      throw new Error('EncryptedMemory.share missing encrypted_dek for private record')
+    }
     const encryptedDek = toUint8Array(row.encrypted_dek, 'encrypted_dek')
     const dek = await decryptDekWithPrivateKey(
       encryptedDek,

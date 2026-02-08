@@ -158,3 +158,31 @@ Summary: Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.
 
 **What I learned**
 - The repo’s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config
+
+---
+[2026-02-08T02:21:41.239Z]
+Failed: Add pre-commit hooks (lint, typecheck, test) [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T02:31:54.676Z]
+Failed: Add pre-commit hooks (lint, typecheck, test) [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T02:36:47.985Z]
+Completed: Add pre-commit hooks (lint, typecheck, test)
+Files: none
+Summary: **Implemented**
+- `.husky/pre-commit`: enabled `pnpm lint`, `pnpm typecheck`, `pnpm test` (previously commented out).
+- `packages/core/src/pre-commit-hook.test.ts`: added a test that asserts the pre-commit hook contains those three commands (uncommented).
+
+**Tests added/modified**
+- Added `packages/core/src/pre-commit-hook.test.ts`.
+
+**Validation**
+- `test -f .husky/pre-commit && echo PASS` => `PA

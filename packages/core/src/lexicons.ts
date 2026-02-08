@@ -46,7 +46,7 @@ export const TaskRequest = z.object({
   sender: z.string(),
   recipient: z.string(),
   task: z.string(),
-  params: z.record(z.unknown()).optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
   deadline: z.string().datetime().optional(),
   replyTo: z.string(),
   resultVisibility: z.enum(['private', 'shared', 'public']).default('private'),

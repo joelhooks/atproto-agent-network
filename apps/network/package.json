@@ -10,7 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@atproto-agent/agent": "workspace:*",
     "@atproto-agent/core": "workspace:*",
-    "@atproto-agent/agent": "workspace:*"
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260207.0"
   }
 }

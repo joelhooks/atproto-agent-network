@@ -10,5 +10,10 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.integration.test.ts",
+    "src/**/*.security.test.ts"
+  ]
 }

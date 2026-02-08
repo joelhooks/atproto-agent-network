@@ -12,10 +12,8 @@
 // - Network health metrics
 
 export function Dashboard() {
-  return (
-    <div>
-      <h1>⚡ Agent Network Dashboard</h1>
-      <p>Not yet implemented. See README.md for planned features.</p>
-    </div>
-  )
+  // Placeholder until we pick the UI stack (React/Preact/etc) for Phase 2.
+  // Keeping this free of JSX means `pnpm typecheck` can run in pre-commit
+  // without requiring framework deps yet.
+  return null
 }

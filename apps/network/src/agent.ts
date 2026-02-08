@@ -48,7 +48,7 @@ interface StoredAgentIdentityV1 {
 
 export class AgentDO extends DurableObject {
   private readonly did: string
-  private readonly env: AgentEnv
+  private readonly agentEnv: AgentEnv
   private initialized = false
   private initializing: Promise<void> | null = null
   private registeredWithRelay = false
@@ -58,7 +58,7 @@ export class AgentDO extends DurableObject {
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
-    this.env = env
+    this.agentEnv = env
     this.did = createDid(ctx.id.toString())
   }
   
@@ -154,18 +154,23 @@ export class AgentDO extends DurableObject {
         await this.ctx.storage.put('identity', persisted)
       }
 
-      this.memory = new EncryptedMemory(this.env.DB, this.env.BLOBS, this.identity)
+      this.memory = new EncryptedMemory(
+        this.agentEnv.DB,
+        this.agentEnv.BLOBS,
+        this.identity
+      )
 
       const tools = this.buildTools()
       const systemPrompt =
-        this.env.PI_SYSTEM_PROMPT ?? 'You are a Pi agent running on the AT Protocol Agent Network.'
-      const model = this.env.PI_AGENT_MODEL ?? this.env.AI ?? { provider: 'unknown' }
+        this.agentEnv.PI_SYSTEM_PROMPT ??
+        'You are a Pi agent running on the AT Protocol Agent Network.'
+      const model = this.agentEnv.PI_AGENT_MODEL ?? this.agentEnv.AI ?? { provider: 'unknown' }
 
       this.agent = new PiAgentWrapper({
         systemPrompt,
         model,
         tools,
-        agentFactory: this.env.PI_AGENT_FACTORY,
+        agentFactory: this.agentEnv.PI_AGENT_FACTORY,
       })
 
       this.initialized = true
@@ -193,7 +198,8 @@ export class AgentDO extends DurableObject {
           },
           required: ['record'],
         },
-        execute: async (params: { record?: unknown }) => {
+        execute: async (...args: unknown[]) => {
+          const params = args[0]
           const record =
             params && typeof params === 'object' && 'record' in params
               ? (params as { record?: unknown }).record
@@ -222,11 +228,16 @@ export class AgentDO extends DurableObject {
           },
           required: ['id'],
         },
-        execute: async (params: { id?: string }) => {
-          if (!params?.id) {
+        execute: async (...args: unknown[]) => {
+          const params = args[0]
+          const id =
+            params && typeof params === 'object' && 'id' in params
+              ? (params as { id?: unknown }).id
+              : null
+          if (!id || typeof id !== 'string') {
             throw new Error('recall requires an id')
           }
-          const record = await memory.retrieve(params.id)
+          const record = await memory.retrieve(id)
           return { record }
         },
       },
@@ -270,7 +281,7 @@ export class AgentDO extends DurableObject {
 
   private async registerWithRelay(publicKeys: { encryption: string; signing: string }): Promise<void> {
     if (this.registeredWithRelay) return
-    const relayNamespace = this.env.RELAY
+    const relayNamespace = this.agentEnv.RELAY
     if (!relayNamespace) return
 
     const relayId = relayNamespace.idFromName('main')
@@ -299,12 +310,27 @@ export class AgentDO extends DurableObject {
       return new Response('Method not allowed', { status: 405 })
     }
 
-    const payload = await request.json().catch(() => null)
-    if (!payload || typeof payload.prompt !== 'string') {
+    const payload = (await request.json().catch(() => null)) as unknown
+    const prompt =
+      payload && typeof payload === 'object' && 'prompt' in payload
+        ? (payload as { prompt?: unknown }).prompt
+        : null
+
+    if (!prompt || typeof prompt !== 'string') {
       return Response.json({ error: 'prompt is required' }, { status: 400 })
     }
 
-    const result = await this.agent.prompt(payload.prompt, payload.options)
+    const options =
+      payload && typeof payload === 'object' && 'options' in payload
+        ? (payload as { options?: unknown }).options
+        : undefined
+
+    const result = await this.agent.prompt(
+      prompt,
+      options && typeof options === 'object'
+        ? (options as Record<string, unknown>)
+        : undefined
+    )
     return Response.json(result)
   }
   
