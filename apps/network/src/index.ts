@@ -9,6 +9,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
 
 import { requireAdminBearerAuth } from './auth'
+import { applyCorsHeaders, corsPreflightResponse } from './cors'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
@@ -21,11 +22,16 @@ export interface Env {
   MESSAGE_QUEUE: Queue
   AI: Ai
   ADMIN_TOKEN?: string
+  CORS_ORIGIN?: string
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return withErrorHandling(
+    if (request.method === 'OPTIONS') {
+      return corsPreflightResponse(request, env)
+    }
+
+    const response = await withErrorHandling(
       async () => {
         const url = new URL(request.url)
         const normalizedPathname = url.pathname.replace(/\/+$/, '')
@@ -127,6 +133,8 @@ export default {
       },
       { route: 'network.fetch', request }
     )
+
+    return applyCorsHeaders(response, request, env)
   },
 }
 
