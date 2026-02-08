@@ -30,3 +30,12 @@ CREATE TABLE shared_records (
 );
 
 CREATE INDEX idx_shared_recipient ON shared_records(recipient_did);
+
+-- Agent registry (names -> DIDs)
+CREATE TABLE agents (
+  name TEXT PRIMARY KEY,
+  did TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_agents_created_at ON agents(created_at);

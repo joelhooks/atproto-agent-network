@@ -1105,6 +1105,58 @@ describe('AgentDO', () => {
     expect(config3).toEqual(config2)
   })
 
+  it('creates an agent via /create, persists config, and starts the alarm chain', async () => {
+    const { state, storage } = createState('agent-create')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(
+      new Request('https://example/agents/alice/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'alice',
+          personality: 'You are Alice.',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as any
+    expect(body).toMatchObject({
+      did: expect.stringMatching(/^did:cf:/),
+      publicKeys: {
+        encryption: expect.stringMatching(/^z/),
+        signing: expect.stringMatching(/^z/),
+      },
+      config: expect.objectContaining({
+        name: 'alice',
+        personality: 'You are Alice.',
+        model: 'moonshotai/kimi-k2.5',
+      }),
+      loop: expect.objectContaining({
+        loopRunning: true,
+        nextAlarm: expect.any(Number),
+      }),
+    })
+
+    const storedConfig = await storage.get<Record<string, unknown>>('config')
+    expect(storedConfig).toMatchObject({
+      name: 'alice',
+      personality: 'You are Alice.',
+      model: 'moonshotai/kimi-k2.5',
+    })
+
+    const alarm = await storage.getAlarm()
+    expect(alarm).not.toBeNull()
+  })
+
   it('handles prompt messages over the agent websocket', async () => {
     const { state } = createState('agent-ws')
     const prompt = vi.fn().mockResolvedValue({ content: 'ok' })

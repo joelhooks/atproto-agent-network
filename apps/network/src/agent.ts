@@ -276,6 +276,11 @@ export class AgentDO extends DurableObject {
               () => this.getIdentity(),
               { route: 'AgentDO.identity', request }
             )
+          case 'create':
+            return withErrorHandling(
+              () => this.handleCreate(request),
+              { route: 'AgentDO.create', request }
+            )
           case 'prompt':
             return withErrorHandling(
               () => this.handlePrompt(request),
@@ -312,6 +317,96 @@ export class AgentDO extends DurableObject {
       },
       { route: 'AgentDO.fetch', request }
     )
+  }
+
+  private async handleCreate(request: Request): Promise<Response> {
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const url = new URL(request.url)
+    const agentName = extractAgentNameFromPath(url.pathname) ?? this.config?.name ?? this.did
+
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const input = payload as Record<string, unknown>
+    const personality = typeof input.personality === 'string' ? input.personality.trim() : ''
+    if (!personality) {
+      return Response.json(
+        { error: 'Invalid agent config', issues: [{ path: ['personality'], message: 'personality is required' }] },
+        { status: 400 }
+      )
+    }
+
+    // Build a full config with defaults, then apply validated overrides.
+    const base = this.createDefaultConfig(agentName)
+    const next: AgentConfig = {
+      ...base,
+      personality,
+      specialty: typeof input.specialty === 'string' ? input.specialty : base.specialty,
+      model: typeof input.model === 'string' ? input.model : base.model,
+      fastModel: typeof input.fastModel === 'string' ? input.fastModel : base.fastModel,
+      loopIntervalMs:
+        typeof input.loopIntervalMs === 'number' && Number.isFinite(input.loopIntervalMs)
+          ? Math.max(MIN_AGENT_LOOP_INTERVAL_MS, input.loopIntervalMs)
+          : base.loopIntervalMs,
+      goals: Array.isArray(input.goals) ? (input.goals.filter((g) => g && typeof g === 'object') as AgentConfig['goals']) : base.goals,
+      enabledTools: Array.isArray(input.enabledTools)
+        ? input.enabledTools.filter((tool): tool is string => typeof tool === 'string')
+        : base.enabledTools,
+    }
+
+    this.config = next
+    await this.ctx.storage.put('config', next)
+
+    // Ensure the Pi wrapper uses the freshly stored config prompt/model.
+    if (this.session) {
+      const tools = this.buildTools()
+      this.tools = tools
+      const agentFactory =
+        this.agentEnv.PI_AGENT_FACTORY ??
+        (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
+          ? createOpenRouterAgentFactory({
+              CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
+              AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
+              OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
+              OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
+            })
+          : undefined)
+
+      this.agent = new PiAgentWrapper({
+        systemPrompt: next.personality,
+        model: next.model,
+        tools,
+        agentFactory,
+        messages: this.session.messages,
+      })
+    }
+
+    const loop = await this.startLoop()
+
+    if (!this.identity) {
+      await this.initialize(agentName)
+    }
+
+    if (!this.identity) {
+      return Response.json({ error: 'Identity unavailable' }, { status: 500 })
+    }
+
+    const encryption = await exportPublicKey(this.identity.encryptionKey.publicKey)
+    const signing = await exportPublicKey(this.identity.signingKey.publicKey)
+    await this.registerWithRelay({ encryption, signing })
+
+    return Response.json({
+      did: this.identity.did,
+      createdAt: this.identity.createdAt,
+      publicKeys: { encryption, signing },
+      config: next,
+      loop,
+    })
   }
 
   async startLoop(): Promise<{ loopRunning: boolean; loopCount: number; nextAlarm: number | null }> {

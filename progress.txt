@@ -504,3 +504,40 @@ Codex: Starting story #55: gather context from skills, Pi tool type definitions,
 Completed: Pi tool definitions
 Files: apps/network/src/agent-do.test.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/relay.test.ts, apps/network/src/relay.ts, packages/agent/src/agent.ts
 Summary: Implemented RELAY-based delivery for the Pi `message` tool and added Relay-side routing to deliver `agent.comms.message` records to recipient AgentDO `/inbox`. Updated tests accordingly. `pnpm typecheck && pnpm test` now pass.
+
+---
+[2026-02-08T20:37:07.048Z]
+Failed: Agent creation API [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:typecheck: 
+@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:typecheck: > ts
+Codex: Starting story #56 (Agent creation API). First step: load existing worker routes, AgentDO config/alarm APIs, auth helper, and current D1 schema so the new POST/GET /agents endpoints can be added test-first without reintroducing prior build/test failure patterns.
+
+---
+[2026-02-08T20:43:23.412Z]
+Completed: Agent creation API
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/relay.test.ts, apps/network/src/relay.ts, packages/agent/src/agent.ts, prd.json, progress.txt, apps/network/schema.sql, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/schema.test.ts, packages/core/src/d1-mock.ts
+Summary: Implemented explicit Agent creation API and enriched agent listing.
+
+Prior failure pattern detected: `timeout` / `build_error` / `test_failure`. Mitigation: kept changes tightly scoped to `apps/network/src/index.ts` + `apps/network/src/index.test.ts`, updated tests first (single-suite RED), then ran package-scoped tests before the full `pnpm typecheck && pnpm test` validation to avoid long blind iterations.
+
+- `POST /agents` (already present) validates via Zod, reserves name in D1 `agents`, forwards to AgentDO `POST /agents/:name/create` (which stores config + starts alarm chain immediately), and returns `{ did, publicKeys, config, loop }`.
+- `GET /agents` now lists registry entries expanded with live AgentDO data: `publicKeys` from `GET /agents/:name/identity` and `config` from `GET /agents/:name/config`.
+- Added/updated tests to cover GET auth + list enrichment.
+
+## Learnings
+### Technical Discovery
+`apps/network/src/agent.ts` already has an AgentDO `POST .../create` route that validates minimal config (personality required), persists full defaults, and calls `startLoop()` (which sets the first alarm to `Date.now()`); the Worker should leverage this instead of duplicating loop/bootstrap logic.
+### Gotcha for Next Iteration
+`GET /agents` should not rely on D1 for public keys/config; D1 only holds `{name,did,created_at}`. To return full details, you must call each AgentDO (`/identity` + `/config`) and handle partial failures per-agent to avoid taking down the whole list.
+### Files Context
+- `apps/network/src/index.ts`: Worker routing, auth boundary, `/agents` POST/GET implementation, D1 registry queries.
+- `apps/network/src/agent.ts`: AgentDO routes; `/create` stores config + starts loop; `/identity` exposes keys; `/config` returns config.
+- `apps/network/src/index.test.ts`: API contract tests for auth, create, duplicate handling, and list behavior.
+
+Also completed:
+- Stored hivemind learning via `swarm memory store ...`.
+- Reported completion via `openclaw system event ...`.

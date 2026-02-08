@@ -5,8 +5,10 @@
  */
 
 import { DurableObject } from 'cloudflare:workers'
+import { z } from 'zod'
 
 import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
+import { createDid } from '../../../packages/core/src/identity'
 
 import { requireAdminBearerAuth } from './auth'
 import { applyCorsHeaders, corsPreflightResponse } from './cors'
@@ -14,6 +16,30 @@ import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
 const WORKER_STARTED_AT = Date.now()
+
+const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
+const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
+const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
+const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
+
+const AgentConfigCreateSchema = z
+  .object({
+    name: z.string().trim().min(1, 'name is required'),
+    personality: z.string().trim().min(1, 'personality is required'),
+    specialty: z.string().optional().default(''),
+    model: z.string().optional().default(DEFAULT_AGENT_MODEL),
+    fastModel: z.string().optional().default(DEFAULT_AGENT_FAST_MODEL),
+    loopIntervalMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(DEFAULT_AGENT_LOOP_INTERVAL_MS)
+      .transform((value) => Math.max(MIN_AGENT_LOOP_INTERVAL_MS, value)),
+    goals: z.array(z.unknown()).optional().default([]),
+    enabledTools: z.array(z.string()).optional().default([]),
+  })
+  .passthrough()
 
 export interface Env {
   AGENTS: DurableObjectNamespace
@@ -62,6 +88,23 @@ function listMissingBindings(env: Partial<Env>): string[] {
   if (!isNonEmptyString(env.ADMIN_TOKEN)) missing.push('ADMIN_TOKEN')
 
   return missing
+}
+
+type AgentRegistryRow = { name: string; did: string; created_at: string }
+
+async function getAgentRegistryRow(db: D1Database, name: string): Promise<AgentRegistryRow | null> {
+  const row = await db
+    .prepare('SELECT name, did, created_at FROM agents WHERE name = ?')
+    .bind(name)
+    .first<AgentRegistryRow>()
+  return row ?? null
+}
+
+async function listAgentRegistryRows(db: D1Database): Promise<AgentRegistryRow[]> {
+  const result = await db
+    .prepare('SELECT name, did, created_at FROM agents')
+    .all<AgentRegistryRow>()
+  return result.results ?? []
 }
 
 export default {
@@ -136,6 +179,112 @@ export default {
         }
 
         // Agent operations
+        if (normalizedPathname === '/agents') {
+          return withErrorHandling(
+            async () => {
+              if (request.method === 'GET') {
+                const registry = await listAgentRegistryRows(env.DB)
+
+                const agents = await Promise.all(
+                  registry.map(async (row) => {
+                    try {
+                      const agentId = env.AGENTS.idFromName(row.name)
+                      const agent = env.AGENTS.get(agentId)
+
+                      const encodedName = encodeURIComponent(row.name)
+                      const [identityRes, configRes] = await Promise.all([
+                        agent.fetch(new Request(`https://agent/agents/${encodedName}/identity`)),
+                        agent.fetch(new Request(`https://agent/agents/${encodedName}/config`)),
+                      ])
+
+                      const identity = identityRes.ok ? await identityRes.json().catch(() => null) : null
+                      const config = configRes.ok ? await configRes.json().catch(() => null) : null
+
+                      return {
+                        name: row.name,
+                        did: (identity && typeof identity === 'object' && 'did' in identity ? (identity as any).did : row.did) as string,
+                        createdAt:
+                          identity && typeof identity === 'object' && 'createdAt' in identity
+                            ? (identity as any).createdAt
+                            : row.created_at,
+                        publicKeys:
+                          identity && typeof identity === 'object' && 'publicKeys' in identity ? (identity as any).publicKeys : undefined,
+                        config: config ?? undefined,
+                      }
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : String(error)
+                      return { name: row.name, did: row.did, createdAt: row.created_at, error: message }
+                    }
+                  })
+                )
+
+                return Response.json({ agents })
+              }
+
+              if (request.method !== 'POST') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const validated = await validateRequestJson(request, AgentConfigCreateSchema, {
+                invalidBodyError: 'Invalid agent config',
+              })
+              if (!validated.ok) return validated.response
+
+              const config = validated.data
+              const name = config.name
+
+              const existing = await getAgentRegistryRow(env.DB, name)
+              if (existing) {
+                return Response.json({ error: 'Agent already exists' }, { status: 409 })
+              }
+
+              const agentId = env.AGENTS.idFromName(name)
+              const agent = env.AGENTS.get(agentId)
+              const createdAt = new Date().toISOString()
+              const did = createDid(agentId.toString())
+
+              // Registry row first so subsequent reads don't implicitly create unknown agents.
+              try {
+                await env.DB
+                  .prepare('INSERT INTO agents (name, did, created_at) VALUES (?, ?, ?)')
+                  .bind(name, did, createdAt)
+                  .run()
+              } catch (error) {
+                // Race-safe: insert may fail on unique constraint.
+                const message = error instanceof Error ? error.message : String(error)
+                if (message.toLowerCase().includes('unique')) {
+                  return Response.json({ error: 'Agent already exists' }, { status: 409 })
+                }
+                throw error
+              }
+
+              let agentResponse: Response
+              try {
+                agentResponse = await agent.fetch(
+                  new Request(`https://agent/agents/${encodeURIComponent(name)}/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config),
+                  })
+                )
+              } catch (error) {
+                await env.DB.prepare('DELETE FROM agents WHERE name = ?').bind(name).run()
+                throw error
+              }
+
+              if (!agentResponse.ok) {
+                await env.DB.prepare('DELETE FROM agents WHERE name = ?').bind(name).run()
+                const text = await agentResponse.text().catch(() => '')
+                return new Response(text || 'Agent create failed', { status: 502 })
+              }
+
+              const payload = await agentResponse.json().catch(() => null)
+              return Response.json(payload)
+            },
+            { route: 'network.agents.root', request }
+          )
+        }
+
         if (normalizedPathname.startsWith('/agents/')) {
           return withErrorHandling(
             async () => {
@@ -144,6 +293,11 @@ export default {
 
               if (!agentName) {
                 return new Response('Agent name required', { status: 400 })
+              }
+
+              const registered = await getAgentRegistryRow(env.DB, agentName)
+              if (!registered) {
+                return Response.json({ error: 'Agent not found' }, { status: 404 })
               }
 
               const leaf = parts.at(-1)

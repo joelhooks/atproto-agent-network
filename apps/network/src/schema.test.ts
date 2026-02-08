@@ -87,4 +87,20 @@ describe('schema.sql', () => {
       expect(normalized).toContain(snippet)
     }
   })
+
+  it('defines an agents registry table', () => {
+    const schema = readFileSync(schemaPath, 'utf8')
+    const normalized = normalize(schema)
+    const agents = extractTable(normalized, 'agents')
+
+    const required = [
+      'name text primary key',
+      'did text not null',
+      'created_at text not null',
+    ]
+
+    for (const snippet of required) {
+      expect(agents).toContain(snippet)
+    }
+  })
 })

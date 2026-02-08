@@ -127,7 +127,7 @@
       "title": "Agent creation API",
       "description": "GitHub Issue #56. API endpoint to create new agents with full config. Add POST /agents route in apps/network/src/index.ts that: 1) Validates AgentConfig schema (name required, personality required, model defaults to moonshotai/kimi-k2.5). 2) Creates DO instance using env.AGENT.idFromName(name). 3) Forwards config to DO which stores it. 4) DO starts alarm chain (first alarm = now). 5) Returns agent identity (DID, public keys, config). Add GET /agents route that lists all known agents (query D1 for registered agents or maintain a registry). Handle duplicate names (409 Conflict). Handle invalid config (400 with validation errors). Auth required (ADMIN_TOKEN bearer). Update the existing agent creation flow (currently agents are created implicitly on first request to /agents/{name}/identity).",
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
         "POST /agents creates agent with config",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 10,
-    "lastIteration": "2026-02-08T20:26:26.147Z"
+    "totalIterations": 11,
+    "lastIteration": "2026-02-08T20:43:23.412Z"
   },
   "totalStories": 11
 }

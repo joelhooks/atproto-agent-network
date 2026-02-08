@@ -309,19 +309,29 @@
     {
       "id": "story-mlde2jqb",
       "title": "Pi tool definitions",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent.ts",
+        "apps/network/src/relay.test.ts",
+        "apps/network/src/relay.ts",
+        "packages/agent/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: Pi AgentTool results are best represented as `{ content: TextContent[], details: any }` (LLM-facing vs UI-facing). For network message delivery, it’s cleaner to route through RelayDO so delivery + firehose fanout happen in one place: implement `POST /relay/message` in `apps/network/src/relay.ts` and have the AgentDO `message` tool call it from `apps/network/src/agent.ts`.\nGotcha: Changing Durable Object constructors (like `RelayDO`) requires updating all unit tests that instantiate them directly; otherwise `tsc` will fail even if the new env fields aren’t used in most routes. Also keep message delivery strict: check non-2xx from relay and throw so the agent loop doesn’t silently continue on failed deliveries.\nFiles Context: `apps/network/src/agent.ts`: `AgentDO.buildTools()` defines the 6 Pi tools; `message` now prefers RELAY `/relay/message` and falls back to direct AGENTS delivery.\n`apps/network/src/relay.ts`: RelayDO now supports `POST /relay/message` to forward messages to recipient agent inbox and fanout an `agent.comms.message` event.\n`apps/network/src/agent-do.test.ts`: updated message-tool test to exercise RELAY-based delivery.\n`apps/network/src/relay.test.ts`: updated constructor calls to pass required `AGENTS` env stub."
+    },
+    {
+      "id": "story-mlde2raq",
+      "title": "Agent creation API",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
+      "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2057",
       "storyTitle": "Pi session persistence in DO storage",
@@ -487,6 +497,17 @@
         "/usr/bin/zsh -lc",
         "rg -n",
         "swarm memory"
+      ]
+    },
+    {
+      "storyId": "story-mlde2raq",
+      "storyTitle": "Agent creation API",
+      "category": "timeout",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n"
       ]
     }
   ]

@@ -20,6 +20,12 @@ export interface SharedRecordRow {
   shared_at: string
 }
 
+export interface AgentRow {
+  name: string
+  did: string
+  created_at: string
+}
+
 interface Condition {
   column: keyof RecordRow
   value: unknown
@@ -27,6 +33,11 @@ interface Condition {
 
 interface SharedCondition {
   column: keyof SharedRecordRow
+  value: unknown
+}
+
+interface AgentCondition {
+  column: keyof AgentRow
   value: unknown
 }
 
@@ -62,6 +73,7 @@ export class D1MockStatement {
 export class D1MockDatabase {
   readonly records = new Map<string, RecordRow>()
   readonly sharedRecords = new Map<string, SharedRecordRow>()
+  readonly agents = new Map<string, AgentRow>()
   private sharedAutoIncrement = 0
 
   prepare(sql: string): D1MockStatement {
@@ -70,6 +82,35 @@ export class D1MockDatabase {
 
   async run(sql: string, params: unknown[]): Promise<void> {
     const normalized = normalizeSql(sql)
+
+    if (normalized.startsWith('insert into agents')) {
+      const [name, did, createdAt] = params
+      const key = String(name)
+      if (this.agents.has(key)) {
+        throw new Error(`UNIQUE constraint failed: agents.name (${key})`)
+      }
+      this.agents.set(key, {
+        name: key,
+        did: String(did),
+        created_at: String(createdAt),
+      })
+      return
+    }
+
+    if (normalized.startsWith('delete from agents')) {
+      const whereClause = extractWhereClause(normalized)
+      if (!whereClause) {
+        this.agents.clear()
+        return
+      }
+      const conditions = parseAgentConditions(whereClause, params)
+      for (const row of Array.from(this.agents.values())) {
+        if (conditions.every((condition) => matchAgentCondition(row, condition))) {
+          this.agents.delete(row.name)
+        }
+      }
+      return
+    }
 
     if (normalized.startsWith('insert into records')) {
       const [
@@ -132,6 +173,11 @@ export class D1MockDatabase {
   async all<T>(sql: string, params: unknown[]): Promise<{ results: T[] }> {
     const normalized = normalizeSql(sql)
 
+    if (normalized.startsWith('select') && normalized.includes('from agents')) {
+      const rows = this.filterAgents(normalized, params)
+      return { results: rows as T[] }
+    }
+
     if (normalized.startsWith('select') && normalized.includes('from records')) {
       const rows = this.filterRecords(normalized, params)
       return { results: rows as T[] }
@@ -166,6 +212,18 @@ export class D1MockDatabase {
     const conditions = parseSharedConditions(whereClause, params)
     return Array.from(this.sharedRecords.values()).filter((row) =>
       conditions.every((condition) => matchSharedCondition(row, condition))
+    )
+  }
+
+  private filterAgents(normalized: string, params: unknown[]): AgentRow[] {
+    const whereClause = extractWhereClause(normalized)
+    if (!whereClause) {
+      return Array.from(this.agents.values())
+    }
+
+    const conditions = parseAgentConditions(whereClause, params)
+    return Array.from(this.agents.values()).filter((row) =>
+      conditions.every((condition) => matchAgentCondition(row, condition))
     )
   }
 
@@ -299,6 +357,31 @@ function parseSharedConditions(clause: string, params: unknown[]): SharedConditi
 }
 
 function matchSharedCondition(row: SharedRecordRow, condition: SharedCondition): boolean {
+  const { column, value } = condition
+  return row[column] === value
+}
+
+function parseAgentConditions(clause: string, params: unknown[]): AgentCondition[] {
+  const parts = clause.split(' and ').map((part) => part.trim())
+  const conditions: AgentCondition[] = []
+  let index = 0
+
+  for (const part of parts) {
+    if (!part) continue
+    const match = part.match(/^(\w+)\s*=\s*\?$/)
+    if (!match) {
+      throw new Error(`Unsupported where clause: ${part}`)
+    }
+    const column = match[1] as keyof AgentRow
+    const value = params[index]
+    conditions.push({ column, value })
+    index += 1
+  }
+
+  return conditions
+}
+
+function matchAgentCondition(row: AgentRow, condition: AgentCondition): boolean {
   const { column, value } = condition
   return row[column] === value
 }

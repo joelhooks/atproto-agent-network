@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
+
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
     // eslint-disable-next-line @typescript-eslint/no-useless-constructor
@@ -24,7 +26,7 @@ function createHealthEnv(overrides: Record<string, unknown> = {}) {
   return {
     AGENTS: createAgentNamespace(agentFetch),
     RELAY: createAgentNamespace(agentFetch),
-    DB: { prepare: vi.fn() },
+    DB: new D1MockDatabase(),
     BLOBS: { get: vi.fn(), put: vi.fn() },
     VECTORIZE: { query: vi.fn() },
     MESSAGE_QUEUE: { send: vi.fn() },
@@ -40,11 +42,19 @@ function createHealthEnv(overrides: Record<string, unknown> = {}) {
   } as never
 }
 
+async function registerAgent(db: D1MockDatabase, input: { name: string; did: string }) {
+  await db
+    .prepare('INSERT INTO agents (name, did, created_at) VALUES (?, ?, ?)')
+    .bind(input.name, input.did, new Date().toISOString())
+    .run()
+}
+
 describe('network worker lexicon validation', () => {
   it('rejects requests without a bearer token before routing', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
       ADMIN_TOKEN,
     } as never
 
@@ -65,6 +75,7 @@ describe('network worker lexicon validation', () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
       ADMIN_TOKEN,
     } as never
 
@@ -88,8 +99,11 @@ describe('network worker lexicon validation', () => {
 
   it('rejects invalid lexicon records at the worker boundary with 400 + issues', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
       ADMIN_TOKEN,
     } as never
 
@@ -119,8 +133,11 @@ describe('network worker lexicon validation', () => {
 
   it('forwards the parsed lexicon record (defaults applied) to the agent DO', async () => {
     const agentFetch = vi.fn(async (req: Request) => Response.json(await req.json()))
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
       ADMIN_TOKEN,
     } as never
 
@@ -153,8 +170,11 @@ describe('network worker lexicon validation', () => {
 
   it('returns 400 with a descriptive message for invalid JSON', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
       ADMIN_TOKEN,
     } as never
 
@@ -181,8 +201,11 @@ describe('network worker lexicon validation', () => {
     const agentFetch = vi.fn(async () => {
       throw new Error('agent down')
     })
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
       ADMIN_TOKEN,
     } as never
 
@@ -213,6 +236,7 @@ describe('network worker CORS', () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
       ADMIN_TOKEN,
     } as never
 
@@ -241,6 +265,7 @@ describe('network worker CORS', () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
       ADMIN_TOKEN,
     } as never
 
@@ -261,8 +286,11 @@ describe('network worker CORS', () => {
 
   it('uses a configured CORS origin when provided', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
       ADMIN_TOKEN,
       CORS_ORIGIN: 'https://dashboard.example',
     } as never
@@ -278,6 +306,222 @@ describe('network worker CORS', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://dashboard.example')
+  })
+})
+
+describe('agent creation API', () => {
+  it('requires admin auth for POST /agents', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'alice', personality: 'test' }),
+      }),
+      env
+    )
+
+    expect(response.status).toBe(401)
+  })
+
+  it('requires admin auth for GET /agents', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(new Request('https://example.com/agents'), env)
+
+    expect(response.status).toBe(401)
+  })
+
+  it('returns 400 with validation issues for invalid AgentConfig', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: new D1MockDatabase(),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: '', personality: '' }),
+      }),
+      env
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid agent config',
+      issues: expect.any(Array),
+    })
+  })
+
+  it('creates an agent, stores registry row, and starts the loop', async () => {
+    const agentFetch = vi.fn(async (req: Request) => {
+      const url = new URL(req.url)
+      if (url.pathname.endsWith('/create') && req.method === 'POST') {
+        const body = (await req.json()) as any
+        return Response.json({
+          did: `did:cf:${body.name}`,
+          createdAt: Date.now(),
+          publicKeys: { encryption: 'enc', signing: 'sig' },
+          config: body,
+          loop: { loopRunning: true, nextAlarm: Date.now() },
+        })
+      }
+      return new Response('unexpected', { status: 500 })
+    })
+
+    const db = new D1MockDatabase()
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: 'alice', personality: 'You are Alice.' }),
+      }),
+      env
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({
+      did: expect.stringMatching(/^did:cf:/),
+      publicKeys: { encryption: 'enc', signing: 'sig' },
+      config: expect.objectContaining({
+        name: 'alice',
+        personality: 'You are Alice.',
+        model: 'moonshotai/kimi-k2.5',
+      }),
+    })
+
+    const row = await db
+      .prepare('SELECT * FROM agents WHERE name = ?')
+      .bind('alice')
+      .first<{ name: string; did: string }>()
+    expect(row).toMatchObject({ name: 'alice', did: expect.stringMatching(/^did:cf:/) })
+  })
+
+  it('returns 409 on duplicate agent name', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: 'alice', personality: 'You are Alice.' }),
+      }),
+      env
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Agent already exists',
+    })
+  })
+
+  it('lists all agents via GET /agents', async () => {
+    const agentFetch = vi.fn(async (req: Request) => {
+      const url = new URL(req.url)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const name = parts[1]
+      const leaf = parts.at(-1)
+
+      if (leaf === 'identity') {
+        return Response.json({
+          did: `did:cf:${name}`,
+          createdAt: 1_700_000_000_000,
+          publicKeys: { encryption: `${name}-enc`, signing: `${name}-sig` },
+        })
+      }
+
+      if (leaf === 'config') {
+        return Response.json({
+          name,
+          personality: `You are ${name}.`,
+          model: 'moonshotai/kimi-k2.5',
+          fastModel: 'google/gemini-2.0-flash-001',
+          loopIntervalMs: 60_000,
+          specialty: '',
+          goals: [],
+          enabledTools: [],
+        })
+      }
+
+      return new Response('unexpected', { status: 500 })
+    })
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+    await registerAgent(db, { name: 'bob', did: 'did:cf:bob' })
+
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      DB: db,
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'alice',
+          did: 'did:cf:alice',
+          publicKeys: { encryption: 'alice-enc', signing: 'alice-sig' },
+          config: expect.objectContaining({ name: 'alice', personality: 'You are alice.' }),
+        }),
+        expect.objectContaining({
+          name: 'bob',
+          did: 'did:cf:bob',
+          publicKeys: { encryption: 'bob-enc', signing: 'bob-sig' },
+          config: expect.objectContaining({ name: 'bob', personality: 'You are bob.' }),
+        }),
+      ]),
+    })
+
+    expect(agentFetch).toHaveBeenCalled()
   })
 })
 
