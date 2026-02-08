@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@atproto-agent/core": "workspace:*"
+    "@atproto-agent/core": "workspace:*",
+    "@mariozechner/pi-agent-core": "0.52.8",
+    "@mariozechner/pi-ai": "0.52.8"
   },
   "devDependencies": {
     "tsup": "^8.5.1"

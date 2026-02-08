@@ -230,6 +230,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "`apps/network/src/index.ts` exposes unauthenticated `GET /health` returning `{ status: \"ok\"|\"error\", missing: string[], uptimeMs }`; the smoke test should assert both HTTP 200 and the JSON fields, not just a 200.\nDon’t rely on brittle `grep`-only checks of JSON; prefer parsing (Node is usually available in CI), and print the response body on failure to avoid “no output captured” debugging loops."
+    },
+    {
+      "id": "story-mlde1mhv",
+      "title": "Install Pi deps + replace AI SDK wrapper",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
     }
   ],
   "failures": [
@@ -306,6 +313,20 @@
       "storyTitle": "Wire real turbo scripts or remove turbo",
       "category": "unknown",
       "error": "PASS\n",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde1mhv",
+      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 77d357dce4ecfede\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde1mhv",
+      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 4b3d7aa0d2a81daf\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
       "toolNames": []
     }
   ]

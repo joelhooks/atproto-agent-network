@@ -1,215 +1,97 @@
-# Infrastructure Deployment — atproto-agent-network
+## CRITICAL CONTEXT FOR ALL STORIES
 
-## Project Overview
-Decentralized agent communication/memory network on Cloudflare Workers.
-All 32 implementation stories are COMPLETE. This loop deploys to production.
+### Project Structure
+- Monorepo: pnpm workspaces + turborepo
+- `apps/network/` — Cloudflare Worker (main API + Durable Objects)
+- `packages/agent/` — Agent wrapper + encrypted memory
+- `packages/core/` — Crypto, identity, validation, types
+- `packages/dashboard/` — highswarm.com (CF Workers Site)
+- `packages/cli/` — CLI tools
 
-## Architecture
-- **Runtime:** Cloudflare Workers with Durable Objects
-- **Database:** D1 (SQLite edge)
-- **Storage:** R2 (blob), Vectorize (vector search)
-- **Messaging:** Queues
-- **AI:** Workers AI (embeddings) + OpenRouter via CF AI Gateway (reasoning)
-- **Monorepo:** pnpm + turborepo
+### Current Architecture
+- AgentDO in `apps/network/src/agent.ts` — Durable Object per agent
+- `apps/network/src/agent-factory.ts` — AI SDK generateText() wrapper (REPLACE WITH PI)
+- `apps/network/src/ai-provider.ts` — OpenRouter via CF AI Gateway config (KEEP GATEWAY ROUTING)
+- `packages/agent/src/agent.ts` — PiAgentWrapper class
+- `packages/agent/src/memory.ts` — EncryptedMemory (D1 + R2)
+- RelayDO in `apps/network/src/relay.ts` — WebSocket relay
 
-## Repository Structure
-```
-apps/network/           — Main CF Worker (Durable Objects, routes, auth)
-  src/index.ts          — Entry point, request routing
-  src/agent.ts          — AgentDO class (Durable Object)
-  src/relay.ts          — RelayDO class (Durable Object)
-  src/auth.ts           — Bearer token auth middleware
-  src/cors.ts           — CORS handling
-  src/http-errors.ts    — Error wrapper
-  src/http-validation.ts — Request validation
-  schema.sql            — D1 schema (records + shared_records tables)
-  wrangler.toml         — CF config (needs updating for production)
-packages/core/          — Crypto, lexicons, validation, identity
-packages/agent/         — PiAgentWrapper, EncryptedMemory
-packages/cli/           — CLI tool
-packages/dashboard/     — Dashboard SPA (stub)
-```
+### Pi Packages (v0.52.8)
+- `@mariozechner/pi-ai` — Unified LLM API: `getModel()`, `complete()`, `Context`, multi-provider handoff
+- `@mariozechner/pi-agent-core` — Agent loop: `Agent`, `AgentTool`, tool execution, event streaming
 
-## Current wrangler.toml (needs updating)
-```toml
-name = "agent-network"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
+### Key Rules
+- NEVER hand-write package.json — use `pnpm add`
+- Tests: `vitest` — run with `pnpm test` from root (86 tests across 17 files)
+- Typecheck: `pnpm typecheck` from root
+- Deploy: `npx wrangler deploy` in apps/network or packages/dashboard
+- CF AI Gateway URL: `https://gateway.ai.cloudflare.com/v1/{accountId}/{slug}/openrouter`
+- Default model: `moonshotai/kimi-k2.5` (reasoning), `google/gemini-2.0-flash-001` (fast)
+- All agents have DIDs, Ed25519 signing keys, X25519 encryption keys
 
-[[durable_objects.bindings]]
-name = "AGENTS"
-class_name = "AgentDO"
+### Design Doc
+See `docs/AGENT-LOOP-DESIGN.md` for full architecture
 
-[[durable_objects.bindings]]
-name = "RELAY"
-class_name = "RelayDO"
+### Deployed Resources
+- Worker: agent-network-production.joelhooks.workers.dev
+- D1: agent-records (98bf7535-be31-42cb-a4fa-0767d294b5f1)
+- R2: agent-blobs
+- Vectorize: agent-memory (1024 dims, cosine)
+- Queue: agent-messages
+- Live agents: grimlock, scout (with DIDs + keys)
 
-[[d1_databases]]
-binding = "DB"
-database_name = "agent-records"
-database_id = "YOUR_D1_DATABASE_ID"
-
-[[r2_buckets]]
-binding = "BLOBS"
-bucket_name = "agent-blobs"
-
-[[vectorize]]
-binding = "VECTORIZE"
-index_name = "agent-memory"
-
-[[queues.producers]]
-queue = "agent-messages"
-binding = "MESSAGE_QUEUE"
-
-[[queues.consumers]]
-queue = "agent-messages"
-max_batch_size = 10
-max_batch_timeout = 30
-
-[ai]
-binding = "AI"
-
-[[migrations]]
-tag = "v1"
-new_classes = ["AgentDO", "RelayDO"]
-```
-
-## Current Env Interface
-```typescript
-export interface Env {
-  AGENTS: DurableObjectNamespace
-  RELAY: DurableObjectNamespace
-  DB: D1Database
-  BLOBS: R2Bucket
-  VECTORIZE: VectorizeIndex
-  MESSAGE_QUEUE: Queue
-  AI: Ai
-  ADMIN_TOKEN?: string
-  CORS_ORIGIN?: string
-}
-```
-
-## AI Gateway Architecture (from docs/AI-GATEWAY-ARCHITECTURE.md)
-```
-Agent Code (Vercel AI SDK)
-  → Cloudflare AI Gateway (observability, caching, fallback)
-    → OpenRouter (model routing — Kimi 2.5, Claude, Gemini, etc.)
-    → Workers AI (edge embeddings)
-```
-
-Key patterns:
-- OpenRouter through CF AI Gateway: baseURL = `https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${AI_GATEWAY_SLUG}/openrouter`
-- Workers AI for embeddings: use native `env.AI` binding directly
-- Model: moonshot/kimi-k2 primary, Claude fallback
-
-## D1 Schema (apps/network/schema.sql)
-- `records` table: id, did, collection, rkey, ciphertext, encrypted_dek, nonce, public, timestamps
-- `shared_records` table: record_id, recipient_did, encrypted_dek, shared_at
-
-## Secrets Available (via `wrangler secret put`)
-- OPENROUTER_API_KEY — OpenRouter API key for AI inference
-- ADMIN_TOKEN — Bearer token for admin endpoints
-
-## Test Suite
-77 tests across 14 files, all passing. Use `pnpm vitest run --passWithNoTests`.
-
-## CRITICAL RULES
-1. **NEVER hand-write package.json** — only use `pnpm add <pkg>` to add deps
-2. **NEVER create fake workspace packages** — use real npm deps
-3. **Use pnpm** — not npm or yarn
-4. **TDD** — write tests first when creating new modules
-5. **All tests must pass** before marking a story complete
-6. **wrangler.toml main should point to src/index.ts** — wrangler bundles TypeScript natively
-7. **Add compatibility_flags = ["nodejs_compat"]** — needed for Node.js crypto APIs
-8. **The deploy.sh script is for DOCUMENTATION** — actual deploy happens via wrangler CLI
-9. **Do NOT install @cloudflare/ai or ai SDK packages** unless the story explicitly requires them — keep deps minimal
-
-## Common Pitfalls from Prior Loops
-- Piped validation commands hide errors — run commands WITHOUT piping first to see full output
-- vitest workspace config was removed — use root vitest.config.ts with include globs
-- E2E tests use separate vitest.config.e2e.ts with miniflare globalSetup
-- DO classes must extend DurableObject from 'cloudflare:workers'
-- CryptoKey objects can't be stored directly in DO storage — serialize to JWK
+### DO NOT
+- Do NOT remove existing test files or break the 86 passing tests
+- Do NOT change the wrangler.toml bindings without understanding the deployed resources
+- Do NOT use `ai` (Vercel AI SDK) package after story 1 replaces it with Pi
+- Do NOT create mock/stub implementations — use real Pi APIs
 
 ---
-[2026-02-08T04:44:12.845Z]
-Completed: Wire real turbo scripts or remove turbo
-Files: none
-Summary: Prior failure pattern detected: **unknown**. Mitigation: run the validation suite without `| grep` first to confirm real Vitest pass/fail, then run the exact piped validation command; also complete the mandatory `swarm memory store ...` + `openclaw system event ...` steps so the iteration doesn’t get marked “unknown” due to missing side-effects.
+[2026-02-08T07:06:24.668Z]
+Failed: Install Pi deps + replace AI SDK wrapper [build_error]
+Validation: 
+> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network
+• Running typecheck in 5 packages
+• Remote caching disabled
+@atp
+Codex: 
 
 ---
-[2026-02-08T04:48:54.189Z]
-Completed: Create production-ready wrangler.toml with real resource placeholders
-Files: none
-Summary: Updated `apps/network/wrangler.toml` to be production-ready:
+[INTERVENTION] Story 1 is taking too long. SKIP reading PI-POC.md, O11Y.md, and skills.
+Focus ONLY on:
+1. Run: pnpm add @mariozechner/pi-ai @mariozechner/pi-agent-core --filter @atproto-agent/agent
+2. Run: pnpm add @mariozechner/pi-ai --filter @atproto-agent/network
+3. Read apps/network/src/agent-factory.ts and apps/network/src/ai-provider.ts
+4. Rewrite them to use Pi's API instead of AI SDK
+5. Update imports, remove old deps
+6. Run validation
 
-- Added `compatibility_flags = ["nodejs_compat"]`
-- Added `[vars]` with `AI_GATEWAY_SLUG` and `OPENROUTER_MODEL_DEFAULT`
-- Set D1 `database_id = "REPLACE_WITH_D1_ID"`
-- Ensured bindings for `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORIZE`, `MESSAGE_QUEUE`, `AI`
-- Added `[env.production]` and `[env.staging]` (staging uses `name = "agent-net
+Pi API quick reference:
+- import { getModel, complete } from '@mariozechner/pi-ai'
+- const model = getModel('openrouter', 'moonshotai/kimi-k2.5')
+- const response = await complete(model, context, { tools })
+- Context = { messages: Array<{role: string, content: string}> }
 
----
-[2026-02-08T04:57:17.775Z]
-Completed: Create deploy.sh script for Cloudflare resource provisioning
-Files: none
-Summary: Created `scripts/deploy.sh` (executable) to provision Cloudflare resources (D1 + schema apply, R2, Vectorize, Queue) and set secrets (`OPENROUTER_API_KEY`, `ADMIN_TOKEN`), with idempotency checks and optional `--write-config` to patch `apps/network/wrangler.toml`.
-
-Added `apps/network/src/deploy-script.test.ts` to enforce the script exists, is executable, and contains the required provisioning com
+DO NOT spend time reading unrelated docs. Just swap the deps and make tests pass.
 
 ---
-[2026-02-08T05:06:05.516Z]
-Completed: Implement AI Gateway + OpenRouter provider module
-Files: none
-Summary: Prior failure pattern detected: `unknown` + `build_error`. Mitigation: ran `pnpm vitest run apps/network/src/ai-provider.test.ts` **without** piping first to see real failures, then ran the exact piped validation; also completed the required `swarm memory store ...` and `openclaw system event ...` side-effects.
+[2026-02-08T07:16:49.457Z]
+Failed: Install Pi deps + replace AI SDK wrapper [build_error]
+Validation: 
+> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
 
-Implemented the AI Gateway + OpenRouter provider module:
-
-- Added `apps/network/src/ai
-
----
-[2026-02-08T05:23:18.489Z]
-Completed: Update Env interface with all production bindings and secrets
-Files: none
-Summary: Prior failure pattern detected: `unknown`. Mitigation: ran `pnpm vitest run --passWithNoTests` without piping while checking failures, then ran the exact piped validation command; also completed the mandatory `swarm memory store ...` + `openclaw system event ...` side-effects.
-
-**Changes**
-- Updated `apps/network/src/index.ts` to make `Env` include all production bindings + vars/secrets (and made 
+• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network
+• Running typecheck in 5 packages
+• Remote caching disabled
+@atp
+Codex: 
 
 ---
-[2026-02-08T05:30:24.385Z]
-Completed: Add /health endpoint with binding checks
+[2026-02-08T07:17:37.119Z]
+Completed: Install Pi deps + replace AI SDK wrapper
 Files: none
-Summary: Prior failure pattern detected: `unknown` / `build_error`. Mitigation: ran `pnpm vitest run apps/network/src/index.test.ts` *without* piping first to see real failures, then ran the exact piped validation command.
-
-- Added unauthenticated `GET /health` that checks required bindings/vars and returns `200` with `{ status: "ok", missing: [], uptimeMs }` or `500` with `{ status: "error", missing: [...
-
----
-[2026-02-08T05:36:44.624Z]
-Completed: Verify wrangler build succeeds locally
-Files: none
-Summary: Prior failure pattern detected: `unknown` (piped validation can hide real failures). Mitigation: ran `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` *without* piping first, then ran the exact validation command.
-
-Validation:
-```bash
-cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS
-
-
----
-[2026-02-08T05:41:14.777Z]
-Completed: Create GitHub Actions deploy workflow
-Files: none
-Summary: Prior failure pattern detected: `unknown` + `build_error` (silent/piped validations hide real errors). Mitigation: ran the exact validation command before/after, and inspected `.github/workflows/` and the new file directly instead of relying on quiet `grep -q` output.
-
-Created GitHub Actions deploy workflow: `.github/workflows/deploy.yml`
-- Triggers on `push` to `main` and `workflow_dispatch` (inp
-
----
-[2026-02-08T05:45:21.985Z]
-Completed: Create post-deploy smoke test script
-Files: none
-Summary: Prior failure pattern detected: `unknown` (silent failures from quiet validations). Mitigation: ran `bash -n scripts/smoke-test.sh` and the exact validation command (no piping) to surface real errors.
-
-Created executable post-deploy smoke test script: `scripts/smoke-test.sh`
-- Calls unauthenticated `GET /health`, validates `status=ok`, `missing=[]`, `uptimeMs` is a number
-- Supports `--url` or `SM
+Summary: Next: removing `ai` and `@openrouter/ai-sdk-provider` from `@atproto-agent/network`, then rewriting `apps/network/src/ai-provider.ts` and `apps/network/src/agent-factory.ts` to use Pi’s `getModel` + `complete`.

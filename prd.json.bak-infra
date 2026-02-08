@@ -1,0 +1,96 @@
+{
+  "name": "atproto-agent-network-infra",
+  "description": "Deploy atproto-agent-network to Cloudflare Workers",
+  "version": "0.2.0",
+  "repository": "https://github.com/joelhooks/atproto-agent-network",
+  "stories": [
+    {
+      "id": "wrangler-toml-production",
+      "title": "Create production-ready wrangler.toml with real resource placeholders",
+      "priority": 1,
+      "validationCommand": "grep -q 'nodejs_compat' apps/network/wrangler.toml && grep -q 'AI_GATEWAY_SLUG' apps/network/wrangler.toml && grep -q 'env.production' apps/network/wrangler.toml && echo PASS",
+      "files": [
+        "apps/network/wrangler.toml"
+      ],
+      "passes": true
+    },
+    {
+      "id": "cf-deploy-script",
+      "title": "Create deploy.sh script for Cloudflare resource provisioning",
+      "priority": 2,
+      "validationCommand": "test -x scripts/deploy.sh && grep -q 'd1 create' scripts/deploy.sh && grep -q 'r2 bucket create' scripts/deploy.sh && echo PASS",
+      "files": [
+        "scripts/deploy.sh"
+      ],
+      "passes": true
+    },
+    {
+      "id": "ai-gateway-provider",
+      "title": "Implement AI Gateway + OpenRouter provider module",
+      "priority": 3,
+      "validationCommand": "pnpm vitest run apps/network/src/ai-provider.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": [
+        "apps/network/src/ai-provider.ts",
+        "apps/network/src/ai-provider.test.ts"
+      ],
+      "passes": true
+    },
+    {
+      "id": "env-type-updates",
+      "title": "Update Env interface with all production bindings and secrets",
+      "priority": 4,
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": [
+        "apps/network/src/index.ts"
+      ],
+      "passes": true
+    },
+    {
+      "id": "health-endpoint",
+      "title": "Add /health endpoint with binding checks",
+      "priority": 5,
+      "validationCommand": "pnpm vitest run apps/network/src/index.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": [
+        "apps/network/src/index.ts",
+        "apps/network/src/index.test.ts"
+      ],
+      "passes": true
+    },
+    {
+      "id": "wrangler-build-check",
+      "title": "Verify wrangler build succeeds locally",
+      "priority": 6,
+      "validationCommand": "cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS",
+      "files": [
+        "apps/network/package.json",
+        "apps/network/wrangler.toml"
+      ],
+      "passes": true
+    },
+    {
+      "id": "github-actions-deploy",
+      "title": "Create GitHub Actions deploy workflow",
+      "priority": 7,
+      "validationCommand": "test -f .github/workflows/deploy.yml && grep -q 'wrangler-action' .github/workflows/deploy.yml && echo PASS",
+      "files": [
+        ".github/workflows/deploy.yml"
+      ],
+      "passes": true
+    },
+    {
+      "id": "smoke-test-script",
+      "title": "Create post-deploy smoke test script",
+      "priority": 8,
+      "validationCommand": "test -x scripts/smoke-test.sh && grep -q '/health' scripts/smoke-test.sh && echo PASS",
+      "files": [
+        "scripts/smoke-test.sh"
+      ],
+      "passes": true
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-08T04:57:17.775Z",
+    "lastIteration": "2026-02-08T05:45:21.984Z",
+    "totalIterations": 7
+  }
+}

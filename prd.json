@@ -1,96 +1,141 @@
 {
-  "name": "atproto-agent-network-infra",
-  "description": "Deploy atproto-agent-network to Cloudflare Workers",
-  "version": "0.2.0",
-  "repository": "https://github.com/joelhooks/atproto-agent-network",
+  "version": "1.0",
+  "projectName": "atproto-agent-network-pi-loop",
+  "description": "Epic #50: Real Pi Agent Loop — DO IS the Agent. Replace AI SDK with Pi, implement persistent agent config, session trees, alarm-driven autonomous loop, Pi tools, agent creation API, dashboard enhancements, and self-extending agents.",
   "stories": [
     {
-      "id": "wrangler-toml-production",
-      "title": "Create production-ready wrangler.toml with real resource placeholders",
+      "id": "story-mlde1mhv",
+      "title": "Install Pi deps + replace AI SDK wrapper",
+      "description": "**QUICK SWAP: AI SDK → Pi**\n\nDo NOT read docs. Execute these steps in order:\n\n1. Install Pi packages in @atproto-agent/agent workspace:\n   ```bash\n   cd /home/joel/Code/joelhooks/atproto-agent-network\n   pnpm add @mariozechner/pi-ai@0.52.8 @mariozechner/pi-agent-core@0.52.8 --filter @atproto-agent/agent\n   ```\n\n2. Install Pi in @atproto-agent/network workspace:\n   ```bash\n   pnpm add @mariozechner/pi-ai@0.52.8 --filter @atproto-agent/network\n   ```\n\n3. Remove old AI SDK deps:\n   ```bash\n   pnpm remove ai @openrouter/ai-sdk-provider --filter @atproto-agent/network\n   ```\n\n4. Rewrite apps/network/src/ai-provider.ts to use Pi's getModel + complete\n   Replace entire file with:\n   ```typescript\n   import { getModel, complete, type Context } from '@mariozechner/pi-ai'\n   \n   export function getOpenRouterModel(modelId: string) {\n     return getModel('openrouter', modelId)\n   }\n   \n   export async function completeWithOpenRouter(\n     model: string,\n     context: Context,\n     options?: { tools?: any[] }\n   ) {\n     const model_obj = getOpenRouterModel(model)\n     return complete(model_obj, context, options)\n   }\n   ```\n\n5. Rewrite apps/network/src/agent-factory.ts:\n   Replace generateText call with complete call:\n   ```typescript\n   import { complete, type Context } from '@mariozechner/pi-ai'\n   import { getOpenRouterModel } from './ai-provider'\n   \n   export function createOpenRouterAgentFactory(env: any) {\n     return (init: any) => ({\n       async prompt(input: string, options?: any) {\n         const model = getOpenRouterModel(env.OPENROUTER_MODEL_DEFAULT)\n         const context: Context = { messages: [] }\n         context.messages.push({ role: 'user', content: input })\n         const result = await complete(model, context, { tools: [] })\n         return { text: result.text || '', model: model.id }\n       }\n     })\n   }\n   ```\n\n6. Run validation (capture full output):\n   ```bash\n   pnpm typecheck 2>&1 | head -100\n   pnpm test 2>&1 | tail -30\n   ```\n\nDone when: all 86 tests pass + typecheck clean + no \"ai\" imports remain",
       "priority": 1,
-      "validationCommand": "grep -q 'nodejs_compat' apps/network/wrangler.toml && grep -q 'AI_GATEWAY_SLUG' apps/network/wrangler.toml && grep -q 'env.production' apps/network/wrangler.toml && echo PASS",
-      "files": [
-        "apps/network/wrangler.toml"
-      ],
-      "passes": true
+      "passes": true,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "pnpm install succeeds with Pi packages",
+        "No imports from 'ai' or '@openrouter/ai-sdk-provider' remain",
+        "Agent /prompt endpoint uses Pi complete()",
+        "All 86+ tests pass",
+        "TypeScript compiles clean"
+      ]
     },
     {
-      "id": "cf-deploy-script",
-      "title": "Create deploy.sh script for Cloudflare resource provisioning",
+      "id": "story-mlde1tos",
+      "title": "Agent config schema + DO storage",
+      "description": "GitHub Issue #52. Define and persist per-agent configuration in DO storage. Create AgentConfig interface: name, personality (system prompt), specialty, model (default moonshotai/kimi-k2.5), fastModel (google/gemini-2.0-flash-001), loopIntervalMs (default 60000), goals array (AgentGoal with id/description/priority/status/progress/createdAt/completedAt), enabledTools array. Store config in DO storage under 'config' key in AgentDO (apps/network/src/agent.ts). Add GET /agents/{name}/config endpoint (returns config). Add PATCH /agents/{name}/config endpoint (partial update, merges with existing). Config is set at agent creation time and updatable at runtime. Add types to packages/core/src/types.ts or a new file. Add tests for config CRUD operations.",
       "priority": 2,
-      "validationCommand": "test -x scripts/deploy.sh && grep -q 'd1 create' scripts/deploy.sh && grep -q 'r2 bucket create' scripts/deploy.sh && echo PASS",
-      "files": [
-        "scripts/deploy.sh"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "AgentConfig interface defined with all fields",
+        "Config persists in DO storage across requests",
+        "GET /agents/{name}/config returns stored config",
+        "PATCH /agents/{name}/config merges updates",
+        "Tests for config storage and retrieval"
+      ]
     },
     {
-      "id": "ai-gateway-provider",
-      "title": "Implement AI Gateway + OpenRouter provider module",
+      "id": "story-mlde2057",
+      "title": "Pi session persistence in DO storage",
+      "description": "GitHub Issue #53. Persist Pi session context (messages array) in DO storage so agents maintain conversation history across alarms and DO evictions. In AgentDO (apps/network/src/agent.ts): save Pi Context messages to DO storage after each interaction under 'session' key. Load session on DO initialize(). Implement window management: keep last 50 messages in DO storage, archive overflow to D1 (agent-records). Add helper methods: loadSession(), saveSession(), trimSession(). The session should include role, content, timestamp, and any tool call results. Support Pi session branching concept (store branch points). Add tests for session save/load/trim/branch.",
       "priority": 3,
-      "validationCommand": "pnpm vitest run apps/network/src/ai-provider.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": [
-        "apps/network/src/ai-provider.ts",
-        "apps/network/src/ai-provider.test.ts"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "Session messages persist in DO storage",
+        "Session loads correctly on DO init",
+        "Window management trims to 50 messages",
+        "Overflow archived to D1",
+        "Tests for save/load/trim"
+      ]
     },
     {
-      "id": "env-type-updates",
-      "title": "Update Env interface with all production bindings and secrets",
+      "id": "story-mlde2anm",
+      "title": "Alarm-driven Pi agent loop",
+      "description": "GitHub Issue #54. The core autonomous loop using DO alarms + Pi. Implement alarm() handler in AgentDO that runs the observe/think/act/reflect cycle: 1) OBSERVE: check inbox for messages from other agents via memory.list({collection: 'agent.comms.message'}), check for new events. 2) THINK: load Pi session, build loop prompt with observations + goals + relevant memories, call Pi complete() with kimi-k2.5 model. 3) ACT: Pi executes tool calls (remember, recall, message, etc). 4) REFLECT: save session, update goals if agent decided to. 5) SLEEP: set next alarm via ctx.storage.setAlarm(Date.now() + config.loopIntervalMs). Start alarm chain when agent config is first set or on first message. Add safety: max 5 tool call steps per alarm, 30s timeout, error handling that doesnt break the alarm chain. Broadcast loop events via WebSocket to connected dashboard clients. Add a startLoop() method and stopLoop() method accessible via API.",
       "priority": 4,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": [
-        "apps/network/src/index.ts"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "alarm() handler runs loop cycle",
+        "Agent checks inbox and processes messages",
+        "Agent uses Pi complete() with session context",
+        "Alarm chain continues autonomously",
+        "WebSocket broadcasts loop events",
+        "Safety limits prevent runaway loops",
+        "Tests for alarm lifecycle"
+      ]
     },
     {
-      "id": "health-endpoint",
-      "title": "Add /health endpoint with binding checks",
+      "id": "story-mlde2jqb",
+      "title": "Pi tool definitions",
+      "description": "GitHub Issue #55. Define Pi-native tools for agents. Rewrite buildTools() in AgentDO to return Pi AgentTool format with split output (text for LLM) and details (structured for dashboard). Tools: 1) remember — store encrypted memory record, returns {output: \"Stored memory {id}\", details: {id}}. 2) recall — search memories semantically using Vectorize binding if available, fallback to list+filter, returns matching memories. 3) message — send agent.comms.message to another agent DO via RELAY namespace, includes sender DID and content. 4) search — semantic search across all agent memories on the network (query Vectorize index). 5) set_goal — add/update/complete goals on the agent config stored in DO. 6) think_aloud — record reasoning that gets broadcast via WebSocket to dashboard but NOT included in LLM context (UI-only). Each tool should have proper TypeBox or JSON Schema parameter definitions.",
       "priority": 5,
-      "validationCommand": "pnpm vitest run apps/network/src/index.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": [
-        "apps/network/src/index.ts",
-        "apps/network/src/index.test.ts"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "All 6 tools defined with proper schemas",
+        "Tools return split output/details",
+        "remember tool stores encrypted memory",
+        "message tool delivers to target agent DO",
+        "set_goal tool updates agent config",
+        "think_aloud broadcasts via WebSocket only",
+        "Tests for each tool"
+      ]
     },
     {
-      "id": "wrangler-build-check",
-      "title": "Verify wrangler build succeeds locally",
+      "id": "story-mlde2raq",
+      "title": "Agent creation API",
+      "description": "GitHub Issue #56. API endpoint to create new agents with full config. Add POST /agents route in apps/network/src/index.ts that: 1) Validates AgentConfig schema (name required, personality required, model defaults to moonshotai/kimi-k2.5). 2) Creates DO instance using env.AGENT.idFromName(name). 3) Forwards config to DO which stores it. 4) DO starts alarm chain (first alarm = now). 5) Returns agent identity (DID, public keys, config). Add GET /agents route that lists all known agents (query D1 for registered agents or maintain a registry). Handle duplicate names (409 Conflict). Handle invalid config (400 with validation errors). Auth required (ADMIN_TOKEN bearer). Update the existing agent creation flow (currently agents are created implicitly on first request to /agents/{name}/identity).",
       "priority": 6,
-      "validationCommand": "cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS",
-      "files": [
-        "apps/network/package.json",
-        "apps/network/wrangler.toml"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "POST /agents creates agent with config",
+        "Agent starts looping immediately after creation",
+        "GET /agents lists all agents",
+        "409 on duplicate name",
+        "400 on invalid config",
+        "Auth required",
+        "Tests for creation flow"
+      ]
     },
     {
-      "id": "github-actions-deploy",
-      "title": "Create GitHub Actions deploy workflow",
+      "id": "story-mlde2zb2",
+      "title": "Dashboard: agent thoughts, goals, loop activity",
+      "description": "GitHub Issue #57. Enhance highswarm.com dashboard (packages/dashboard/index.html) to show real agent activity. 1) Agent detail view: click agent card to expand and show current goals with status indicators, recent think_aloud output, memory count, loop status (last alarm time, next alarm, iteration count), model being used, personality snippet. 2) Live activity feed improvements: show tool calls with structured details (not just raw text), show goal updates, show inter-agent messages with sender/recipient, show think_aloud entries styled differently (italic/dimmed — internal thought). 3) Fetch agent config from GET /agents/{name}/config and display. 4) Show loop heartbeat indicator (pulsing when alarm is active). Keep the existing dark theme and monospace aesthetic. Mobile responsive.",
       "priority": 7,
-      "validationCommand": "test -f .github/workflows/deploy.yml && grep -q 'wrangler-action' .github/workflows/deploy.yml && echo PASS",
-      "files": [
-        ".github/workflows/deploy.yml"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm --filter dashboard build && pnpm typecheck",
+      "acceptanceCriteria": [
+        "Agent cards expand to show detail view",
+        "Goals displayed with status",
+        "think_aloud visible in feed",
+        "Tool call details shown",
+        "Loop heartbeat indicator works",
+        "Dashboard builds successfully",
+        "Mobile responsive"
+      ]
     },
     {
-      "id": "smoke-test-script",
-      "title": "Create post-deploy smoke test script",
+      "id": "story-mlde37m4",
+      "title": "Self-extending agents (R2 extension storage)",
+      "description": "GitHub Issue #58. Enable agents to write their own Pi extensions stored in R2. 1) Add write_extension tool: agent provides extension name and code, stored in R2 under extensions/{agentName}/{extensionName}.js. 2) Add load_extensions() method in AgentDO: on initialize(), list R2 objects under extensions/{agentName}/, load each as a module. Extensions export an activate(agent) function that can register additional tools. 3) Extension hot-reload: after write_extension, mark that extensions need reload on next alarm cycle. 4) Add list_extensions tool: shows what extensions the agent has. 5) Add remove_extension tool: deletes from R2. 6) Safety limits: max 10 extensions per agent, max 50KB per extension, no eval() — use structured tool registration only. 7) Bootstrap: on first loop, if agent has no extensions, provide a hint in the system prompt about self-extension capability. This is the Pi philosophy: agents extend themselves rather than downloading skills.",
       "priority": 8,
-      "validationCommand": "test -x scripts/smoke-test.sh && grep -q '/health' scripts/smoke-test.sh && echo PASS",
-      "files": [
-        "scripts/smoke-test.sh"
-      ],
-      "passes": true
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "acceptanceCriteria": [
+        "write_extension stores code in R2",
+        "Extensions load on DO init",
+        "Hot-reload works after writing",
+        "list_extensions and remove_extension work",
+        "Safety limits enforced",
+        "Tests for extension lifecycle"
+      ]
     }
   ],
   "metadata": {
-    "createdAt": "2026-02-08T04:57:17.775Z",
-    "lastIteration": "2026-02-08T05:45:21.984Z",
-    "totalIterations": 7
+    "createdAt": "2026-02-08T06:54:17.324Z",
+    "totalIterations": 1,
+    "lastIteration": "2026-02-08T07:17:37.119Z"
   }
 }
