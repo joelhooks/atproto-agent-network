@@ -49,26 +49,63 @@ GitHub: joelhooks/atproto-agent-network
 - ❌ Do NOT duplicate functionality that already exists in core/agent packages
 - ❌ E2E tests (network.e2e.test.ts) are SKIPPED — they need @cloudflare/vitest-pool-workers migration
 
-### What's Already Done (passes: true)
+### What's Already Done (25/32 stories passed — passes: true)
 - Setup monorepo, vitest, identity tests, workspace config, turbo tasks
 - Test utilities and fixtures, CI workflow, pre-commit hooks
 - X25519, Ed25519 keypairs, exportPublicKey, deriveSharedSecret
-- Envelope encryption, D1 schema, Pi agent wrapper, EncryptedMemory
-- AgentDO wiring, integration/E2E test harnesses
+- Envelope encryption (DEK + encrypt/decrypt), D1 schema, Pi agent wrapper
 - Lexicon validation, memory CRUD, shared records
 - Relay agent registry, agent inbox, error handling
 - Relay subscription filtering, WebSocket handlers
 - Auth middleware, CORS headers, D1 mock consolidation
-- Key serialization fix (JWK), lockfile fix, turbo stubs fix
 
-### What Remains (passes: false — YOUR WORK)
-These stories need implementation. Check existing code first — some may already be partially done:
-- Testing infrastructure stories (vitest already installed and working)
-- Crypto primitive stories (crypto.ts already has full implementation)
-- Storage/schema stories (D1 schema, EncryptedMemory already exist)
-- Advanced integration stories
+### What Remains (7 stories — passes: false — YOUR WORK)
 
-**IMPORTANT**: Many "remaining" stories may already be implemented from loop 1. If validation passes without changes, commit with a note that it was already done. Don't re-implement existing code.
+1. **encrypted-memory** — Implement EncryptedMemory class in packages/agent
+   - Files: packages/agent/src/memory.ts, packages/agent/src/memory.test.ts
+   - Validation: `pnpm vitest run packages/agent/src/memory.test.ts`
+   - Note: memory.ts already exists with create/read/list/update/softDelete. Check if tests pass as-is.
+
+2. **wire-up-agentdo** — Wire up AgentDO with Pi agent and encrypted memory
+   - Files: apps/network/src/agent-do.ts, apps/network/src/agent-do.test.ts
+   - Validation: `pnpm vitest run apps/network/src/agent-do.test.ts`
+   - Note: agent-do.test.ts already exists. Check existing implementation first.
+
+3. **integration-test-harness** — Setup integration test harness (D1 mock)
+   - Files: vitest.config.integration.ts
+   - Validation: `pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS`
+
+4. **e2e-test-harness** — Setup E2E test harness (miniflare)
+   - Files: vitest.config.e2e.ts
+   - Validation: `pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS`
+
+5. **fix-key-serialization** — Fix CryptoKeyPair serialization in DO storage
+   - Files: packages/core/src/crypto.ts, packages/core/src/types.ts, packages/core/src/crypto.test.ts, apps/network/src/agent.ts, apps/network/src/agent-do.test.ts
+   - Validation: `pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
+
+6. **fix-lockfile-miniflare** — Fix lockfile sync and install miniflare
+   - Files: pnpm-lock.yaml, apps/network/src/network.e2e.test.ts
+   - Validation: `pnpm install && pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
+
+7. **fix-turbo-stubs** — Wire real turbo scripts or remove turbo
+   - Files: turbo.json, packages/core/package.json, packages/agent/package.json, packages/cli/package.json, apps/network/package.json, package.json
+   - Validation: `pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
+
+**IMPORTANT**: Many stories may already be partially or fully implemented from earlier loops. If validation passes without changes, commit with a note that it was already done. Don't re-implement existing code.
+
+### 🚨 DIRECTIVE: DO NOT STOP
+- Complete ALL remaining stories. Do not stop after one or two.
+- If a story's validation already passes, commit it and IMMEDIATELY move to the next.
+- If a story fails, retry with a different approach. Do NOT give up.
+- Use ALL available iterations to finish every pending story.
+- The goal is 32/32 stories passing. Nothing less.
+
+### Failure Patterns from Loops 1-4 (LEARN FROM THESE)
+- **Timeout failures (codexOutputLength: 38)**: 6 failures across all loops had output length of only 38 bytes — meaning Codex timed out without producing meaningful output. If you're stuck, commit partial progress and move on.
+- **pre-commit-hooks**: Failed 2x before passing on 3rd attempt. The issue was missing lint/typecheck scripts. Solution: ensure scripts exist in package.json before referencing them.
+- **Validation piping**: Some validation commands use `grep -qE` which suppresses output. Run the validation command directly (no piping) to debug if it fails.
+- **Already-implemented stories**: Many stories in loops 1-3 passed immediately because code already existed. Check first, don't re-implement.
+- **pnpm workspace resolution**: Use `@atproto-agent/core` not relative paths. Workspace packages resolve via pnpm.
 
 ---
 [2026-02-08T01:56:47.757Z]
