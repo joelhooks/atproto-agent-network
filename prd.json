@@ -488,7 +488,8 @@
       ],
       "estimatedMinutes": 20,
       "sprint": "hardening",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "consolidate-mocks-cors",
@@ -677,7 +678,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T00:53:24.750Z",
-    "totalIterations": 31
+    "lastIteration": "2026-02-08T01:00:59.927Z",
+    "totalIterations": 32
   }
 }

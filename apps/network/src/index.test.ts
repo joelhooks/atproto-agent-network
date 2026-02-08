@@ -16,11 +16,57 @@ function createAgentNamespace(agentFetch: (req: Request) => Promise<Response>) {
   }
 }
 
+const ADMIN_TOKEN = 'test-admin-token'
+
 describe('network worker lexicon validation', () => {
+  it('rejects requests without a bearer token before routing', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(new Request('https://example.com/agents/alice/identity'), env)
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Unauthorized',
+    })
+    expect(agentFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects requests without a bearer token before parsing JSON bodies', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents/alice/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{',
+      }),
+      env
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Unauthorized',
+    })
+    expect(agentFetch).not.toHaveBeenCalled()
+  })
+
   it('rejects invalid lexicon records at the worker boundary with 400 + issues', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
     } as never
 
     const { default: worker } = await import('./index')
@@ -33,7 +79,7 @@ describe('network worker lexicon validation', () => {
     const response = await worker.fetch(
       new Request('https://example.com/agents/alice/memory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
         body: JSON.stringify(invalidRecord),
       }),
       env
@@ -51,6 +97,7 @@ describe('network worker lexicon validation', () => {
     const agentFetch = vi.fn(async (req: Request) => Response.json(await req.json()))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
     } as never
 
     const { default: worker } = await import('./index')
@@ -66,7 +113,7 @@ describe('network worker lexicon validation', () => {
     const response = await worker.fetch(
       new Request('https://example.com/agents/alice/memory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
         body: JSON.stringify(record),
       }),
       env
@@ -84,6 +131,7 @@ describe('network worker lexicon validation', () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
     } as never
 
     const { default: worker } = await import('./index')
@@ -91,7 +139,7 @@ describe('network worker lexicon validation', () => {
     const response = await worker.fetch(
       new Request('https://example.com/agents/alice/memory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
         body: '{',
       }),
       env
@@ -111,12 +159,15 @@ describe('network worker lexicon validation', () => {
     })
     const env = {
       AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
     } as never
 
     const { default: worker } = await import('./index')
 
     const response = await worker.fetch(
-      new Request('https://example.com/agents/alice/identity'),
+      new Request('https://example.com/agents/alice/identity', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
       env
     )
 

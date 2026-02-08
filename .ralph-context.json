@@ -41,6 +41,13 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] PASS\n"
+    },
+    {
+      "id": "websocket-handlers",
+      "title": "Implement WebSocket message handlers for AgentDO and RelayDO",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Files Modified (and why)**\n- `apps/network/src/agent.ts`: implemented `AgentDO.webSocketMessage()` to handle `{\"type\":\"prompt\",\"id\",\"prompt\",\"options\"}` (plus raw-text prompts) and reply with `{\"type\":\"prompt.result\",\"id\",\"result\"}`; added basic hibernation metadata in `handleWebSocket()` and `webSocketError()` logging.\n- `apps/network/src/relay.ts`: implemented `RelayDO.webSocketMessage()` to accept `{\"type\":\"subscribe\",\"collections\",\"dids\"}` updates, persist them via `ws.serializeAttachment("
     }
   ],
   "failures": [

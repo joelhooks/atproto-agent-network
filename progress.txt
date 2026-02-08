@@ -474,3 +474,13 @@ Files: none
 Summary: **Files Modified (and why)**
 - `apps/network/src/agent.ts`: implemented `AgentDO.webSocketMessage()` to handle `{"type":"prompt","id","prompt","options"}` (plus raw-text prompts) and reply with `{"type":"prompt.result","id","result"}`; added basic hibernation metadata in `handleWebSocket()` and `webSocketError()` logging.
 - `apps/network/src/relay.ts`: implemented `RelayDO.webSocketMessage()` to a
+
+---
+[2026-02-08T01:00:59.928Z]
+Completed: Add auth middleware (bearer token) to all endpoints
+Files: none
+Summary: Implemented a shared bearer-token gate for the Worker so **every public endpoint** is protected.
+
+**Files modified (and why)**
+- `apps/network/src/auth.ts`: added `requireAdminBearerAuth()` that enforces `Authorization: Bearer <token>` against `env.ADMIN_TOKEN` (fails closed with `500` if not configured).
+- `apps/network/src/index.ts`: added the auth middleware at the top of `fetch()` so it runs b

@@ -8,6 +8,7 @@ import { DurableObject } from 'cloudflare:workers'
 
 import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
 
+import { requireAdminBearerAuth } from './auth'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
@@ -19,6 +20,7 @@ export interface Env {
   VECTORIZE: VectorizeIndex
   MESSAGE_QUEUE: Queue
   AI: Ai
+  ADMIN_TOKEN?: string
 }
 
 export default {
@@ -27,6 +29,9 @@ export default {
       async () => {
         const url = new URL(request.url)
         const normalizedPathname = url.pathname.replace(/\/+$/, '')
+
+        const auth = requireAdminBearerAuth(request, env)
+        if (auth) return auth
 
         // Dashboard
         if (normalizedPathname === '/dashboard' || normalizedPathname.startsWith('/dashboard/')) {
