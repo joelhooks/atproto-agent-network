@@ -425,13 +425,59 @@ Files: prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, app
 Summary: Implemented Story 4b observe phase in AgentDO. Added public `observe()` returning a structured Observations object, which lists unread `agent.comms.message` inbox records (already decrypted by EncryptedMemory), marks them processed via encrypted update (`processedAt`), and drains `pendingEvents` since `lastAlarmAt`. Wired `alarm()` to call `observe()` each tick and persist `lastObservations` in DO storage. Added TDD unit tests covering empty inbox, message processing, event draining, and alarm wiring. Ran full validation (typecheck + tests). Deployed to production and ran smoke test (/health). Attempted story-specific live inbox/loop tests but admin-protected routes returned 401 (ADMIN_TOKEN mismatch). Prior failure pattern detected: build_error/test_failure with missing logs; mitigation: ran typecheck/tests unpiped and fixed the surfaced TS2345 issue by passing an `EncryptedMemoryRecord` (with `$type`) into `EncryptedMemory.update()`.
 
 ---
-[2026-02-08T18:44:03.237Z]
-Completed: 4c: Think/Act/Reflect — Pi loop cycle
-Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
-Summary: Starting story 4c. First step is to load the Pi agent skill + current AgentDO/agent wrapper code, plus Pi upstream API references, then write failing tests in apps/network/src/agent-do.test.ts for think/act/reflect before implementing.
+[2026-02-08T18:52:09.781Z]
+Failed: 4c: Think/Act/Reflect — Pi loop cycle [test_failure]
+Validation: • turbo 2.8.3
+stderr | src/agent-do.test.ts > AgentDO > alarm() broadcasts loop lifecycle events to connected WebSocket clients
+Unhandled route error {
+  route: [32m'AgentDO.websocket'[39m,
+  method: [32m'GET'[39m,
+  url: [32m'https://example/ws'[39m,
+  error: ReferenceError: WebSocketPair is 
+Codex: Starting story 4c implementation. Next step: read the pi-agent skill instructions, run `swarm memory find` for this story, and open the current AgentDO + Pi wrapper code to write failing think/act/reflect tests before implementing.
 
 ---
-[2026-02-08T18:45:10.384Z]
-Completed: 4d: WebSocket broadcast of loop events
-Files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
-Summary: Starting story 4d (WS broadcast of loop events). Next: inspect `docs/O11Y.md`, the existing AgentDO loop code, and the `cloudflare-do` + `zap-cli` skills, then write failing tests in `apps/network/src/agent-do.test.ts` before implementing broadcasting in `apps/network/src/agent.ts`.
+[2026-02-08T18:55:23.590Z]
+Failed: 4c: Think/Act/Reflect — Pi loop cycle [test_failure]
+Validation: • turbo 2.8.3
+stderr | src/agent-do.test.ts > AgentDO > alarm() broadcasts loop lifecycle events to connected WebSocket clients
+Unhandled route error {
+  route: [32m'AgentDO.websocket'[39m,
+  method: [32m'GET'[39m,
+  url: [32m'https://example/ws'[39m,
+  error: ReferenceError: WebSocketPair is 
+Codex: Loaded `pi-agent` + `cloudflare-do` skill docs and pulled the existing hivemind hits for story 4c. Next I’m opening the current `AgentDO` implementation + tests (including the failing WebSocketPair path) so we can write RED tests for think/act/reflect and fix the root-cause test environment gap.
+
+---
+[2026-02-08T19:07:20.172Z]
+Failed: 4c: Think/Act/Reflect — Pi loop cycle [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:typecheck: 
+@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:typecheck: > ts
+Codex: Starting story 4c. First I’m going to (1) read the `pi-agent` skill, PI-POC, and the current AgentDO/Pi wrapper code, and (2) fix the recurring test failure (`WebSocketPair is not defined`) so we can get back to writing RED tests for think/act/reflect.
+
+---
+[2026-02-08T19:18:30.265Z]
+Failed: 4d: WebSocket broadcast of loop events [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: Starting story 4d (WS broadcast of loop events). First step: pull prior hivemind context, open `docs/O11Y.md` and the current AgentDO implementation/tests to design the correct event payload and remove the recurring `WebSocketPair is not defined` failure path.
+
+---
+[2026-02-08T19:20:09.698Z]
+Failed: 4d: WebSocket broadcast of loop events [test_failure]
+Validation: • turbo 2.8.3
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]
+Error: Transform failed with 1 error:
+/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected ")" but found end 
+Codex: Starting story 4d. First I’m going to (1) run the required `swarm memory find` for this story topic, and (2) open `docs/O11Y.md` plus the current AgentDO implementation/routes/tests so we can implement WS broadcast without repeating the prior `WebSocketPair is not defined` failure pattern.

@@ -287,8 +287,16 @@
     {
       "id": "story-4c-think-act-reflect",
       "title": "4c: Think/Act/Reflect — Pi loop cycle",
-      "status": "completed",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
+    },
+    {
+      "id": "story-4d-ws-broadcast",
+      "title": "4d: WebSocket broadcast of loop events",
+      "status": "failed",
       "filesModified": [
+        ".agents/STONE-TABLET.md",
         ".ralph-context.json",
         ".ralph-iterations.jsonl",
         "apps/network/src/agent-do.test.ts",
@@ -296,45 +304,10 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "{\"success\":true,\"summary\":\"Starting story 4c. First step is to load the Pi agent skill + current AgentDO/agent wrapper code, plus Pi upstream API references, then write failing tests in apps/network/src/agent-do.test.ts for think/act/reflect before implementing.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "[test_failure] • turbo 2.8.3\n\n⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]\nError: Transform failed with 1 error:\n/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected \")\" but found end "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde1tos",
-      "storyTitle": "Agent config schema + DO storage",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde1mhv",
-      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
-      "category": "test_failure",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde1mhv",
-      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2057",
       "storyTitle": "Pi session persistence in DO storage",
@@ -444,6 +417,65 @@
       "category": "build_error",
       "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
       "toolNames": []
+    },
+    {
+      "storyId": "story-4c-think-act-reflect",
+      "storyTitle": "4c: Think/Act/Reflect — Pi loop cycle",
+      "category": "test_failure",
+      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > alarm() broadcasts loop lifecycle events to connected WebSocket clients\nUnhandled route error {\n  route: \u001b[32m'AgentDO.websocket'\u001b[39m,\n  method: \u001b[32m'GET'\u001b[39m,\n  url: \u001b[32m'https://example/ws'\u001b[39m,\n  error: ReferenceError: WebSocketPair is not defined\n      at AgentDO.handleWebSocket \u001b[90m(/home/joel/Code/joelhooks/atproto-agent-network/\u001b[39mapps/network/src/agent.ts:594:18\u001b[90m)\u001b[39m\n      at route \u001b[90m(/home/joel/Code/joelhooks/atpro",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4c-think-act-reflect",
+      "storyTitle": "4c: Think/Act/Reflect — Pi loop cycle",
+      "category": "test_failure",
+      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > alarm() broadcasts loop lifecycle events to connected WebSocket clients\nUnhandled route error {\n  route: \u001b[32m'AgentDO.websocket'\u001b[39m,\n  method: \u001b[32m'GET'\u001b[39m,\n  url: \u001b[32m'https://example/ws'\u001b[39m,\n  error: ReferenceError: WebSocketPair is not defined\n      at AgentDO.handleWebSocket \u001b[90m(/home/joel/Code/joelhooks/atproto-agent-network/\u001b[39mapps/network/src/agent.ts:594:18\u001b[90m)\u001b[39m\n      at route \u001b[90m(/home/joel/Code/joelhooks/atpro",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc"
+      ]
+    },
+    {
+      "storyId": "story-4c-think-act-reflect",
+      "storyTitle": "4c: Think/Act/Reflect — Pi loop cycle",
+      "category": "timeout",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "git diff",
+        "secrets --help",
+        "secrets exec",
+        "secrets lease"
+      ]
+    },
+    {
+      "storyId": "story-4d-ws-broadcast",
+      "storyTitle": "4d: WebSocket broadcast of loop events",
+      "category": "timeout",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "node -p",
+        "secrets lease",
+        "secrets --help",
+        "secrets health",
+        "secrets exec"
+      ]
+    },
+    {
+      "storyId": "story-4d-ws-broadcast",
+      "storyTitle": "4d: WebSocket broadcast of loop events",
+      "category": "test_failure",
+      "error": "• turbo 2.8.3\n\n⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]\nError: Transform failed with 1 error:\n/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected \")\" but found end of file\n  Plugin: vite:esbuild\n  File: /home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0\n  \n  Expected \")\" but found end of file\n  1470 |    })\n  1471 |  }\n  147",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n"
+      ]
     }
   ]
 }

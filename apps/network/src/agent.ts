@@ -24,9 +24,9 @@ import {
   importCryptoKeyPairJwk,
   type StoredCryptoKeyPairJwk,
 } from '../../../packages/core/src/crypto'
-import { createDid } from '../../../packages/core/src/identity'
+import { createDid, generateTid } from '../../../packages/core/src/identity'
 import { validateLexiconRecord } from '../../../packages/core/src/validation'
-import type { AgentConfig, AgentGoal, AgentIdentity } from '../../../packages/core/src/types'
+import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../../packages/core/src/types'
 
 import { withErrorHandling } from './http-errors'
 
@@ -130,6 +130,24 @@ function extractAgentNameFromPath(pathname: string): string | undefined {
   return undefined
 }
 
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes)
+  crypto.getRandomValues(buf)
+  return Array.from(buf)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function createTraceId(): string {
+  // OpenTelemetry trace_id: 16 bytes => 32 hex chars.
+  return randomHex(16)
+}
+
+function createSpanId(): string {
+  // OpenTelemetry span_id: 8 bytes => 16 hex chars.
+  return randomHex(8)
+}
+
 export class AgentDO extends DurableObject {
   private readonly did: string
   private readonly agentEnv: AgentEnv
@@ -142,11 +160,69 @@ export class AgentDO extends DurableObject {
   private tools: PiAgentTool[] = []
   private config: AgentConfig | null = null
   private session: StoredAgentSessionV1 | null = null
+  private sessionId: string | null = null
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
     this.agentEnv = env
     this.did = createDid(ctx.id.toString())
+  }
+
+  private async getOrCreateSessionId(): Promise<string> {
+    if (this.sessionId) return this.sessionId
+    const stored = await this.ctx.storage.get<string>('sessionId')
+    if (typeof stored === 'string' && stored.length > 0) {
+      this.sessionId = stored
+      return stored
+    }
+    const created = crypto.randomUUID()
+    await this.ctx.storage.put('sessionId', created)
+    this.sessionId = created
+    return created
+  }
+
+  private async broadcastLoopEvent(input: {
+    event_type: string
+    trace_id: string
+    span_id: string
+    parent_span_id?: string
+    outcome?: AgentEvent['outcome']
+    context?: Record<string, unknown>
+    error?: AgentEvent['error']
+  }): Promise<void> {
+    const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
+    if (!sockets.length) return
+
+    const payload: AgentEvent = {
+      id: generateTid(),
+      agent_did: this.did,
+      session_id: await this.getOrCreateSessionId(),
+      event_type: input.event_type,
+      outcome: input.outcome ?? 'success',
+      timestamp: new Date().toISOString(),
+      trace_id: input.trace_id,
+      span_id: input.span_id,
+      parent_span_id: input.parent_span_id,
+      context: input.context ?? {},
+      error: input.error,
+    }
+
+    const message = JSON.stringify(payload)
+
+    for (const ws of sockets) {
+      try {
+        // 1 === OPEN in standard WebSocket API.
+        if ((ws as unknown as { readyState?: number }).readyState !== 1) continue
+        ws.send(message)
+      } catch {
+        // Best-effort: stale sockets can linger in DO hibernation lists.
+        try {
+          ws.close(1011, 'stale connection')
+        } catch {
+          // ignore
+        }
+      }
+    }
   }
   
   async fetch(request: Request): Promise<Response> {
@@ -253,6 +329,17 @@ export class AgentDO extends DurableObject {
       await this.ctx.storage.setAlarm(Date.now())
     }
 
+    try {
+      await this.broadcastLoopEvent({
+        event_type: 'loop.started',
+        trace_id: createTraceId(),
+        span_id: createSpanId(),
+        context: { did: this.did, startedAt: Date.now() },
+      })
+    } catch {
+      // Don't let WS broadcasting break the start API.
+    }
+
     return this.getLoopStatus()
   }
 
@@ -277,6 +364,8 @@ export class AgentDO extends DurableObject {
       return
     }
 
+    const traceId = createTraceId()
+
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
     let observations: Observations | null = null
     let thought: ThinkResult | null = null
@@ -295,39 +384,107 @@ export class AgentDO extends DurableObject {
     intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
 
     try {
+      await this.broadcastLoopEvent({
+        event_type: 'loop.observe',
+        trace_id: traceId,
+        span_id: createSpanId(),
+      })
       observations = await this.observe()
       await this.ctx.storage.put('lastObservations', observations)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO observe failed', { did: this.did, error: message })
+      try {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.error',
+          trace_id: traceId,
+          span_id: createSpanId(),
+          outcome: 'error',
+          context: { phase: 'observe' },
+          error: { code: 'observe_failed', message, retryable: true },
+        })
+      } catch {
+        // ignore
+      }
       // Continue: observation errors must not break the chain.
     }
 
     try {
       if (observations) {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.think',
+          trace_id: traceId,
+          span_id: createSpanId(),
+        })
         thought = await this.think(observations)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO think failed', { did: this.did, error: message })
+      try {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.error',
+          trace_id: traceId,
+          span_id: createSpanId(),
+          outcome: 'error',
+          context: { phase: 'think' },
+          error: { code: 'think_failed', message, retryable: true },
+        })
+      } catch {
+        // ignore
+      }
       // Continue: think errors must not break the chain.
     }
 
     try {
       if (thought) {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.act',
+          trace_id: traceId,
+          span_id: createSpanId(),
+        })
         acted = await this.act(thought)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO act failed', { did: this.did, error: message })
+      try {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.error',
+          trace_id: traceId,
+          span_id: createSpanId(),
+          outcome: 'error',
+          context: { phase: 'act' },
+          error: { code: 'act_failed', message, retryable: true },
+        })
+      } catch {
+        // ignore
+      }
       // Continue: action errors must not break the chain.
     }
 
     try {
+      await this.broadcastLoopEvent({
+        event_type: 'loop.reflect',
+        trace_id: traceId,
+        span_id: createSpanId(),
+      })
       await this.reflect({ observations, thought, acted })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO reflect failed', { did: this.did, error: message })
+      try {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.error',
+          trace_id: traceId,
+          span_id: createSpanId(),
+          outcome: 'error',
+          context: { phase: 'reflect' },
+          error: { code: 'reflect_failed', message, retryable: true },
+        })
+      } catch {
+        // ignore
+      }
       // Continue: reflect errors must not break the chain.
     }
 
@@ -350,6 +507,16 @@ export class AgentDO extends DurableObject {
 
     try {
       await this.ctx.storage.setAlarm(Date.now() + intervalMs)
+      try {
+        await this.broadcastLoopEvent({
+          event_type: 'loop.sleep',
+          trace_id: traceId,
+          span_id: createSpanId(),
+          context: { intervalMs, nextAlarmAt: Date.now() + intervalMs },
+        })
+      } catch {
+        // ignore
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO alarm reschedule error', { did: this.did, error: message })
