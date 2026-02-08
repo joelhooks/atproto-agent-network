@@ -85,12 +85,12 @@
       "files": [
         "scripts/smoke-test.sh"
       ],
-      "passes": false
+      "passes": true
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T04:57:17.775Z",
-    "lastIteration": "2026-02-08T05:41:14.776Z",
-    "totalIterations": 6
+    "lastIteration": "2026-02-08T05:45:21.984Z",
+    "totalIterations": 7
   }
 }

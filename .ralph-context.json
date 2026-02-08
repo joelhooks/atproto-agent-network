@@ -216,6 +216,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\n\n### Gotcha for Next Iteration\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `"
+    },
+    {
+      "id": "github-actions-deploy",
+      "title": "Create GitHub Actions deploy workflow",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "GitHub Actions can deploy this monorepo Worker via `cloudflare/wrangler-action@v3` by setting `workingDirectory: apps/network` and selecting the Wrangler env with a `workflow_dispatch` input in `.github/workflows/deploy.yml`.\nThe story validation is silent on failure; if it doesn’t print `PASS`, immediately `ls -la .github/workflows` and `rg -n 'wrangler-action' .github/workflows/deploy.yml` to see what’s wrong (don’t debug via quiet greps/pipes)."
     }
   ],
   "failures": [

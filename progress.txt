@@ -203,3 +203,13 @@ Summary: Prior failure pattern detected: `unknown` + `build_error` (silent/piped
 
 Created GitHub Actions deploy workflow: `.github/workflows/deploy.yml`
 - Triggers on `push` to `main` and `workflow_dispatch` (inp
+
+---
+[2026-02-08T05:45:21.985Z]
+Completed: Create post-deploy smoke test script
+Files: none
+Summary: Prior failure pattern detected: `unknown` (silent failures from quiet validations). Mitigation: ran `bash -n scripts/smoke-test.sh` and the exact validation command (no piping) to surface real errors.
+
+Created executable post-deploy smoke test script: `scripts/smoke-test.sh`
+- Calls unauthenticated `GET /health`, validates `status=ok`, `missing=[]`, `uptimeMs` is a number
+- Supports `--url` or `SM
