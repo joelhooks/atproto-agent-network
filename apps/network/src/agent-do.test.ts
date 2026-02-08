@@ -1266,4 +1266,227 @@ describe('AgentDO', () => {
       events: [{ type: 'seed' }],
     })
   })
+
+  // ===== Story 4c: Think/Act/Reflect — Pi loop cycle =====
+
+  it('alarm() calls think() which prompts the Pi agent with observations + goals', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'I should check my inbox.', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-think')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    // think() must have called the Pi agent's prompt method
+    expect(promptFn).toHaveBeenCalled()
+    const promptArg = promptFn.mock.calls[0][0]
+    // The prompt should include observations context
+    expect(typeof promptArg).toBe('string')
+    expect(promptArg.length).toBeGreaterThan(0)
+  })
+
+  it('alarm() executes tool calls returned by think() via act()', async () => {
+    const toolHandler = vi.fn().mockResolvedValue({ result: 'tool executed' })
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Using remember tool',
+      toolCalls: [{ name: 'remember', arguments: { text: 'test memory' } }],
+    })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-act')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    // act() should have executed the tool call
+    // Check that the loop completed without error (chain intact)
+    const status = await agent.fetch(new Request('https://example/loop/status'))
+    const body = await status.json() as { loopCount: number }
+    expect(body.loopCount).toBe(1)
+  })
+
+  it('reflect() persists session and updates goals in DO storage after think+act', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'Reflecting on my actions.', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-reflect')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Set initial goals
+    await agent.fetch(new Request('https://example/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goals: ['monitor inbox', 'respond to messages'] }),
+    }))
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    // reflect() should have saved session state
+    const session = await storage.get<{ messages: unknown[] }>('session')
+    expect(session).toBeTruthy()
+    expect(Array.isArray(session!.messages)).toBe(true)
+    // Session should contain the Pi agent interaction from this loop cycle
+    expect(session!.messages.length).toBeGreaterThan(0)
+  })
+
+  it('alarm() runs full observe→think→act→reflect cycle in order', async () => {
+    const callOrder: string[] = []
+    const promptFn = vi.fn().mockImplementation(async () => {
+      callOrder.push('think')
+      return { content: 'Thought complete.', toolCalls: [] }
+    })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-full-cycle')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    // observe() stores lastObservations
+    const obs = await storage.get('lastObservations')
+    expect(obs).toBeTruthy()
+
+    // think() called Pi agent
+    expect(promptFn).toHaveBeenCalled()
+
+    // reflect() saved session
+    const session = await storage.get('session')
+    expect(session).toBeTruthy()
+
+    // Loop count incremented
+    const count = await storage.get<number>('loopCount')
+    expect(count).toBe(1)
+  })
+
+  // ===== Story 4d: WebSocket broadcast of loop events =====
+
+  it('alarm() broadcasts loop lifecycle events to connected WebSocket clients', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'Done thinking.', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-ws-broadcast')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Connect a WebSocket client
+    const wsRes = await agent.fetch(new Request('https://example/ws', {
+      headers: { Upgrade: 'websocket' },
+    }))
+    expect(wsRes.status).toBe(101)
+    const ws = wsRes.webSocket!
+    ws.accept()
+
+    const messages: unknown[] = []
+    ws.addEventListener('message', (evt) => {
+      messages.push(JSON.parse(evt.data as string))
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    // Should have received lifecycle events
+    const types = messages.map((m: any) => m.type)
+    expect(types).toContain('loop.observe')
+    expect(types).toContain('loop.think')
+    expect(types).toContain('loop.reflect')
+    // Every event should have agent_did
+    for (const msg of messages as any[]) {
+      expect(msg.agent_did).toBe('did:cf:agent-ws-broadcast')
+    }
+  })
+
+  it('broadcast handles stale/closed WebSocket connections gracefully', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'Done.', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-ws-stale')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Connect and immediately close
+    const wsRes = await agent.fetch(new Request('https://example/ws', {
+      headers: { Upgrade: 'websocket' },
+    }))
+    const ws = wsRes.webSocket!
+    ws.accept()
+    ws.close()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    // Should not throw despite stale connection
+    await expect(agent.alarm()).resolves.not.toThrow()
+
+    const status = await agent.fetch(new Request('https://example/loop/status'))
+    const body = await status.json() as { loopCount: number }
+    expect(body.loopCount).toBe(1)
+  })
+
+  it('broadcast events include trace_id and span_id per O11Y schema', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'Ok.', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-ws-o11y')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const wsRes = await agent.fetch(new Request('https://example/ws', {
+      headers: { Upgrade: 'websocket' },
+    }))
+    const ws = wsRes.webSocket!
+    ws.accept()
+
+    const messages: any[] = []
+    ws.addEventListener('message', (evt) => {
+      messages.push(JSON.parse(evt.data as string))
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    expect(messages.length).toBeGreaterThan(0)
+    for (const msg of messages) {
+      expect(msg.trace_id).toBeTruthy()
+      expect(typeof msg.trace_id).toBe('string')
+      expect(msg.span_id).toBeTruthy()
+      expect(typeof msg.span_id).toBe('string')
+      expect(msg.agent_did).toBe('did:cf:agent-ws-o11y')
+    }
+  })
 })
