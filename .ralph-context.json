@@ -195,6 +195,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "`miniflare` is consumed by the E2E harness in `scripts/e2e/miniflare.ts` (`import { Miniflare } from \"miniflare\"`), and the repo keeps it as a root devDependency (`package.json`) with the resolved version pinned in `pnpm-lock.yaml`.\nThe validation pipeline (`... | grep -qE \"passed\"`) can swallow the real Vitest failure output; run `pnpm vitest run --passWithNoTests` without piping when debugging. Also, Miniflare is ESM: use `import(\"miniflare\")`, not `require(\"miniflare\")`, for quick sanity checks."
+    },
+    {
+      "id": "wrangler-toml-production",
+      "title": "Create production-ready wrangler.toml with real resource placeholders",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "### Technical Discovery\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`database_id = \"REPLACE_WITH_D1_ID\"` is intentionally non-real; any `wrangler deploy` (including `--dry-run`) may fail until it’s replaced with the actual D1 UUID from `wrangler d1 create`."
     }
   ],
   "failures": [

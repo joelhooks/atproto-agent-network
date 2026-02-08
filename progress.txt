@@ -148,3 +148,11 @@ Summary: Updated `apps/network/wrangler.toml` to be production-ready:
 - Set D1 `database_id = "REPLACE_WITH_D1_ID"`
 - Ensured bindings for `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORIZE`, `MESSAGE_QUEUE`, `AI`
 - Added `[env.production]` and `[env.staging]` (staging uses `name = "agent-net
+
+---
+[2026-02-08T04:57:17.775Z]
+Completed: Create deploy.sh script for Cloudflare resource provisioning
+Files: none
+Summary: Created `scripts/deploy.sh` (executable) to provision Cloudflare resources (D1 + schema apply, R2, Vectorize, Queue) and set secrets (`OPENROUTER_API_KEY`, `ADMIN_TOKEN`), with idempotency checks and optional `--write-config` to patch `apps/network/wrangler.toml`.
+
+Added `apps/network/src/deploy-script.test.ts` to enforce the script exists, is executable, and contains the required provisioning com
