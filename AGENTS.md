@@ -258,6 +258,12 @@ Before implementing, study the source code directly:
   - `packages/agent/src/tools/` — Built-in tools (read, write, edit, bash)
   - **READ THIS CODE before implementing Pi integration. Don't guess the API.**
 
+- **[pi-skills](https://github.com/badlogic/pi-skills)** — Pi skill format and examples
+  - **LOCAL:** `~/Code/badlogic/pi-skills`
+  - Skill format: `SKILL.md` with YAML frontmatter (name, description) + instructions
+  - Examples: brave-search, browser-tools, gmail/calendar/drive CLIs
+  - **Reference this when implementing self-extending agents (story 8) and Pi tools (story 5)**
+
 - **[Cirrus](https://github.com/ascorbic/cirrus)** — Production PDS on Cloudflare
   - **LOCAL:** `~/Code/ascorbic/cirrus`
 
