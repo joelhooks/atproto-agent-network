@@ -1,685 +1,72 @@
 {
-  "name": "atproto-agent-network",
-  "description": "Decentralized agent communication and memory network on Cloudflare",
-  "version": "0.1.0",
+  "name": "atproto-agent-network-infra",
+  "description": "Deploy atproto-agent-network to Cloudflare Workers",
+  "version": "0.2.0",
   "repository": "https://github.com/joelhooks/atproto-agent-network",
-  "projectBoard": "https://github.com/users/joelhooks/projects/1",
-  "stack": {
-    "packageManager": "pnpm",
-    "testRunner": "vitest",
-    "buildTool": "tsup",
-    "monorepo": "turborepo",
-    "runtime": "cloudflare-workers",
-    "cli": "bun-compiled"
-  },
   "stories": [
     {
-      "id": "setup-monorepo",
-      "title": "Setup monorepo with Turborepo + pnpm",
-      "issue": 6,
-      "priority": 0,
-      "validationCommand": "pnpm install && pnpm turbo build --dry-run && echo PASS",
-      "files": [
-        "package.json",
-        "pnpm-workspace.yaml",
-        "turbo.json",
-        ".gitignore"
-      ],
-      "estimatedMinutes": 10,
-      "sprint": "bootstrap",
-      "passes": true
-    },
-    {
-      "id": "install-vitest",
-      "title": "Install Vitest and create root config",
-      "issue": 24,
+      "id": "wrangler-toml-production",
+      "title": "Create production-ready wrangler.toml with real resource placeholders",
       "priority": 1,
-      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|✓|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
-      "files": [
-        "vitest.config.ts",
-        "package.json"
-      ],
-      "estimatedMinutes": 15,
-      "dependsOn": [
-        "setup-monorepo"
-      ],
-      "sprint": "testing",
+      "validationCommand": "grep -q 'nodejs_compat' apps/network/wrangler.toml && grep -q 'AI_GATEWAY_SLUG' apps/network/wrangler.toml && grep -q 'env.production' apps/network/wrangler.toml && echo PASS",
+      "files": ["apps/network/wrangler.toml"],
       "passes": true
     },
     {
-      "id": "identity-tests",
-      "title": "Create first unit test for identity.ts",
-      "issue": 25,
+      "id": "cf-deploy-script",
+      "title": "Create deploy.sh script for Cloudflare resource provisioning",
       "priority": 2,
-      "validationCommand": "pnpm vitest run packages/core/src/identity.test.ts",
-      "files": [
-        "packages/core/src/identity.test.ts",
-        "packages/core/src/identity.ts"
-      ],
-      "estimatedMinutes": 20,
-      "dependsOn": [
-        "install-vitest"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "test -x scripts/deploy.sh && grep -q 'd1 create' scripts/deploy.sh && grep -q 'r2 bucket create' scripts/deploy.sh && echo PASS",
+      "files": ["scripts/deploy.sh"],
+      "passes": false
     },
     {
-      "id": "vitest-workspace",
-      "title": "Create vitest workspace config for monorepo",
-      "issue": 26,
+      "id": "ai-gateway-provider",
+      "title": "Implement AI Gateway + OpenRouter provider module",
       "priority": 3,
-      "validationCommand": "pnpm vitest run --filter @atproto-agent/core",
-      "files": [
-        "vitest.workspace.ts",
-        "packages/core/vitest.config.ts"
-      ],
-      "estimatedMinutes": 15,
-      "dependsOn": [
-        "identity-tests"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "pnpm vitest run apps/network/src/ai-provider.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": ["apps/network/src/ai-provider.ts", "apps/network/src/ai-provider.test.ts"],
+      "passes": false
     },
     {
-      "id": "turbo-test-task",
-      "title": "Add turbo task for test",
-      "issue": 27,
+      "id": "env-type-updates",
+      "title": "Update Env interface with all production bindings and secrets",
       "priority": 4,
-      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS",
-      "files": [
-        "turbo.json"
-      ],
-      "estimatedMinutes": 15,
-      "dependsOn": [
-        "vitest-workspace"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": ["apps/network/src/index.ts"],
+      "passes": false
     },
     {
-      "id": "test-utilities",
-      "title": "Create test utilities and fixtures",
-      "issue": 15,
+      "id": "health-endpoint",
+      "title": "Add /health endpoint with binding checks",
       "priority": 5,
-      "validationCommand": "pnpm vitest run packages/core/src/test-utils.test.ts",
-      "files": [
-        "packages/core/src/test-utils.ts",
-        "packages/core/src/test-utils.test.ts"
-      ],
-      "estimatedMinutes": 25,
-      "dependsOn": [
-        "turbo-test-task"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "pnpm vitest run apps/network/src/index.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
+      "files": ["apps/network/src/index.ts", "apps/network/src/index.test.ts"],
+      "passes": false
     },
     {
-      "id": "ci-workflow",
-      "title": "Add CI workflow (GitHub Actions)",
-      "issue": 18,
+      "id": "wrangler-build-check",
+      "title": "Verify wrangler build succeeds locally",
       "priority": 6,
-      "validationCommand": "test -f .github/workflows/ci.yml && echo PASS",
-      "files": [
-        ".github/workflows/ci.yml"
-      ],
-      "estimatedMinutes": 20,
-      "dependsOn": [
-        "turbo-test-task"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS",
+      "files": ["apps/network/package.json", "apps/network/wrangler.toml"],
+      "passes": false
     },
     {
-      "id": "pre-commit-hooks",
-      "title": "Add pre-commit hooks (lint, typecheck, test)",
-      "issue": 19,
+      "id": "github-actions-deploy",
+      "title": "Create GitHub Actions deploy workflow",
       "priority": 7,
-      "validationCommand": "test -f .husky/pre-commit && echo PASS",
-      "files": [
-        ".husky/pre-commit",
-        "package.json"
-      ],
-      "estimatedMinutes": 15,
-      "dependsOn": [
-        "ci-workflow"
-      ],
-      "sprint": "testing",
-      "passes": true
+      "validationCommand": "test -f .github/workflows/deploy.yml && grep -q 'wrangler-action' .github/workflows/deploy.yml && echo PASS",
+      "files": [".github/workflows/deploy.yml"],
+      "passes": false
     },
     {
-      "id": "generate-x25519",
-      "title": "Implement generateX25519Keypair",
-      "issue": 28,
-      "priority": 10,
-      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/crypto.test.ts"
-      ],
-      "estimatedMinutes": 30,
-      "dependsOn": [
-        "turbo-test-task"
-      ],
-      "sprint": "crypto",
-      "passes": true
-    },
-    {
-      "id": "generate-ed25519",
-      "title": "Implement generateEd25519Keypair",
-      "issue": 29,
-      "priority": 11,
-      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'generateEd25519Keypair'",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/crypto.test.ts"
-      ],
-      "estimatedMinutes": 20,
-      "dependsOn": [
-        "generate-x25519"
-      ],
-      "sprint": "crypto",
-      "passes": true
-    },
-    {
-      "id": "export-public-key",
-      "title": "Implement exportPublicKey (multibase)",
-      "issue": 30,
-      "priority": 12,
-      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'exportPublicKey'",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/crypto.test.ts"
-      ],
-      "estimatedMinutes": 30,
-      "dependsOn": [
-        "generate-x25519"
-      ],
-      "sprint": "crypto",
-      "passes": true
-    },
-    {
-      "id": "derive-shared-secret",
-      "title": "Implement deriveSharedSecret",
-      "issue": 31,
-      "priority": 13,
-      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'deriveSharedSecret'",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/crypto.test.ts"
-      ],
-      "estimatedMinutes": 20,
-      "dependsOn": [
-        "generate-x25519"
-      ],
-      "sprint": "crypto",
-      "passes": true
-    },
-    {
-      "id": "envelope-encryption",
-      "title": "Implement envelope encryption (DEK + encrypt/decrypt)",
-      "issue": 8,
-      "priority": 14,
-      "validationCommand": "pnpm vitest run packages/core/src/crypto.test.ts -t 'envelope'",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/crypto.test.ts"
-      ],
-      "estimatedMinutes": 45,
-      "dependsOn": [
-        "derive-shared-secret"
-      ],
-      "sprint": "crypto",
-      "hitlGate": "Security review required before proceeding",
-      "passes": true
-    },
-    {
-      "id": "d1-schema",
-      "title": "Create D1 schema for encrypted records",
-      "issue": 9,
-      "priority": 20,
-      "validationCommand": "test -f apps/network/schema.sql && pnpm vitest run apps/network/src/schema.test.ts",
-      "files": [
-        "apps/network/schema.sql",
-        "apps/network/src/schema.test.ts"
-      ],
-      "estimatedMinutes": 30,
-      "dependsOn": [
-        "envelope-encryption"
-      ],
-      "sprint": "storage",
-      "passes": true
-    },
-    {
-      "id": "pi-agent-wrapper",
-      "title": "Implement Pi agent wrapper in packages/agent",
-      "issue": 10,
-      "priority": 21,
-      "validationCommand": "pnpm vitest run packages/agent/src/agent.test.ts",
-      "files": [
-        "packages/agent/src/agent.ts",
-        "packages/agent/src/agent.test.ts"
-      ],
-      "estimatedMinutes": 45,
-      "dependsOn": [
-        "turbo-test-task"
-      ],
-      "sprint": "storage",
-      "passes": true
-    },
-    {
-      "id": "encrypted-memory",
-      "title": "Implement EncryptedMemory class in packages/agent",
-      "issue": 11,
-      "priority": 22,
-      "validationCommand": "pnpm vitest run packages/agent/src/memory.test.ts",
-      "files": [
-        "packages/agent/src/memory.ts",
-        "packages/agent/src/memory.test.ts"
-      ],
-      "estimatedMinutes": 60,
-      "dependsOn": [
-        "envelope-encryption",
-        "d1-schema"
-      ],
-      "sprint": "storage",
-      "passes": true
-    },
-    {
-      "id": "wire-up-agentdo",
-      "title": "Wire up AgentDO with Pi agent and encrypted memory",
-      "issue": 12,
-      "priority": 23,
-      "validationCommand": "pnpm vitest run apps/network/src/agent-do.test.ts",
-      "files": [
-        "apps/network/src/agent-do.ts",
-        "apps/network/src/agent-do.test.ts"
-      ],
-      "estimatedMinutes": 60,
-      "dependsOn": [
-        "pi-agent-wrapper",
-        "encrypted-memory"
-      ],
-      "sprint": "storage",
-      "hitlGate": "Phase 1 complete - verify no plaintext in D1",
-      "passes": true
-    },
-    {
-      "id": "integration-test-harness",
-      "title": "Setup integration test harness (D1 mock)",
-      "issue": 16,
-      "priority": 30,
-      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "files": [
-        "vitest.config.integration.ts"
-      ],
-      "estimatedMinutes": 45,
-      "dependsOn": [
-        "d1-schema"
-      ],
-      "sprint": "testing-advanced",
-      "passes": true
-    },
-    {
-      "id": "e2e-test-harness",
-      "title": "Setup E2E test harness (miniflare)",
-      "issue": 17,
-      "priority": 31,
-      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "files": [
-        "vitest.config.e2e.ts"
-      ],
-      "estimatedMinutes": 60,
-      "dependsOn": [
-        "wire-up-agentdo"
-      ],
-      "sprint": "testing-advanced",
-      "passes": true
-    },
-    {
-      "id": "lexicon-validation",
-      "title": "Wire up Zod lexicon validation at API boundaries",
-      "issue": 36,
-      "priority": 38,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "packages/core/src/lexicons.ts",
-        "packages/core/src/validation.ts",
-        "packages/core/src/validation.test.ts",
-        "apps/network/src/agent.ts"
-      ],
-      "estimatedMinutes": 20,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true,
-      "description": "Wire up Zod lexicon validation at API boundaries. The existing test file was added but NO implementation code was shipped. You MUST:\\n1. Import the Zod schemas from packages/core/src/lexicons.ts\\n2. Add validation middleware or helper that validates request bodies against schemas\\n3. Wire validation into the route handlers in packages/network/src/index.ts\\n4. Ensure invalid payloads return 400 with descriptive error messages\\n5. Write tests that verify both valid and invalid payloads\\n\\nDo NOT just add tests — the implementation code is the primary deliverable."
-    },
-    {
-      "id": "memory-list-update-delete",
-      "title": "Add memory list, update, and soft-delete to EncryptedMemory",
-      "issue": 37,
-      "priority": 39,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "packages/agent/src/memory.ts",
-        "packages/agent/src/memory.test.ts",
-        "packages/core/src/d1-mock.ts",
-        "apps/network/src/agent.ts",
-        "apps/network/schema.sql"
-      ],
-      "estimatedMinutes": 30,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true,
-      "description": "Add memory list, update, and soft-delete to EncryptedMemory class. The current class only has write() and read(). You MUST:\\n1. Add list() method — returns all memory record IDs/metadata for an agent (query D1)\\n2. Add update() method — re-encrypts and overwrites an existing record by ID\\n3. Add softDelete() method — marks a record as deleted (adds deleted_at timestamp) without removing data\\n4. Add tests for all three methods using the D1 mock from test-utils\\n5. Update the AgentDO route handlers to expose list/update/delete via API endpoints\\n\\nFiles to modify:\\n- packages/agent/src/encrypted-memory.ts (add methods)\\n- packages/agent/src/encrypted-memory.test.ts (add tests)\\n- packages/network/src/index.ts (add route handlers)"
-    },
-    {
-      "id": "shared-records",
-      "title": "Implement shared_records — encrypted record sharing between agents",
-      "issue": 38,
-      "priority": 42,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "packages/agent/src/memory.ts",
-        "packages/agent/src/memory.test.ts",
-        "packages/core/src/d1-mock.ts",
-        "apps/network/src/agent.ts"
-      ],
-      "estimatedMinutes": 25,
-      "sprint": "hardening",
-      "dependsOn": [
-        "memory-list-update-delete"
-      ],
-      "passes": true
-    },
-    {
-      "id": "relay-agent-registry",
-      "title": "Implement relay agent registry and public key directory",
-      "issue": 39,
-      "priority": 43,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/relay.ts",
-        "apps/network/src/relay.test.ts",
-        "apps/network/src/agent.ts",
-        "apps/network/src/index.ts"
-      ],
-      "estimatedMinutes": 25,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "agent-inbox",
-      "title": "Implement agent inbox for receiving messages",
-      "issue": 40,
-      "priority": 44,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/agent.ts",
-        "apps/network/src/agent-do.test.ts",
-        "packages/core/src/lexicons.ts"
-      ],
-      "estimatedMinutes": 25,
-      "sprint": "hardening",
-      "dependsOn": [
-        "lexicon-validation"
-      ],
-      "passes": true
-    },
-    {
-      "id": "error-handling",
-      "title": "Add error handling wrappers to all route handlers",
-      "issue": 41,
-      "priority": 45,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/agent.ts",
-        "apps/network/src/relay.ts",
-        "apps/network/src/index.ts",
-        "apps/network/src/errors.ts"
-      ],
-      "estimatedMinutes": 20,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "relay-subscription-filtering",
-      "title": "Implement relay subscription filtering for collections and DIDs",
-      "issue": 42,
-      "priority": 46,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/relay.ts",
-        "apps/network/src/relay.test.ts"
-      ],
-      "estimatedMinutes": 15,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "websocket-handlers",
-      "title": "Implement WebSocket message handlers for AgentDO and RelayDO",
-      "issue": 43,
-      "priority": 47,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/agent.ts",
-        "apps/network/src/relay.ts"
-      ],
-      "estimatedMinutes": 20,
-      "sprint": "hardening",
-      "dependsOn": [
-        "relay-subscription-filtering"
-      ],
-      "passes": true
-    },
-    {
-      "id": "auth-middleware",
-      "title": "Add auth middleware (bearer token) to all endpoints",
-      "issue": 44,
-      "priority": 48,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/index.ts",
-        "apps/network/src/auth.ts",
-        "apps/network/src/auth.test.ts"
-      ],
-      "estimatedMinutes": 20,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "consolidate-mocks-cors",
-      "title": "Consolidate D1 mock and add CORS headers",
-      "issue": 45,
-      "priority": 49,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "apps/network/src/agent-do.test.ts",
-        "packages/core/src/d1-mock.ts",
-        "apps/network/src/index.ts",
-        "apps/network/src/cors.ts"
-      ],
-      "estimatedMinutes": 15,
-      "sprint": "hardening",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "fix-key-serialization",
-      "title": "Fix CryptoKeyPair serialization in DO storage",
-      "issue": 46,
-      "priority": 32,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "packages/core/src/crypto.ts",
-        "packages/core/src/types.ts",
-        "packages/core/src/crypto.test.ts",
-        "apps/network/src/agent.ts",
-        "apps/network/src/agent-do.test.ts"
-      ],
-      "estimatedMinutes": 25,
-      "sprint": "foundations-fix",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "fix-lockfile-miniflare",
-      "title": "Fix lockfile sync and install miniflare",
-      "issue": 47,
-      "priority": 33,
-      "validationCommand": "pnpm install && pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "pnpm-lock.yaml",
-        "apps/network/src/network.e2e.test.ts"
-      ],
-      "estimatedMinutes": 10,
-      "sprint": "foundations-fix",
-      "dependsOn": [],
-      "passes": true
-    },
-    {
-      "id": "fix-turbo-stubs",
-      "title": "Wire real turbo scripts or remove turbo",
-      "issue": 48,
-      "priority": 34,
-      "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
-      "files": [
-        "turbo.json",
-        "packages/core/package.json",
-        "packages/agent/package.json",
-        "packages/cli/package.json",
-        "apps/network/package.json",
-        "package.json"
-      ],
-      "estimatedMinutes": 15,
-      "sprint": "foundations-fix",
-      "dependsOn": [],
-      "passes": true
+      "id": "smoke-test-script",
+      "title": "Create post-deploy smoke test script",
+      "priority": 8,
+      "validationCommand": "test -x scripts/smoke-test.sh && grep -q '/health' scripts/smoke-test.sh && echo PASS",
+      "files": ["scripts/smoke-test.sh"],
+      "passes": false
     }
-  ],
-  "sprints": [
-    {
-      "id": "bootstrap",
-      "name": "Bootstrap",
-      "goal": "Monorepo builds and typechecks with pnpm + turborepo",
-      "stories": [
-        "setup-monorepo"
-      ],
-      "estimatedHours": 0.25,
-      "hitlGate": null
-    },
-    {
-      "id": "testing",
-      "name": "Testing Foundation",
-      "goal": "Vitest + CI + pre-commit working across monorepo",
-      "stories": [
-        "install-vitest",
-        "identity-tests",
-        "vitest-workspace",
-        "turbo-test-task",
-        "test-utilities",
-        "ci-workflow",
-        "pre-commit-hooks"
-      ],
-      "estimatedHours": 2,
-      "hitlGate": null
-    },
-    {
-      "id": "crypto",
-      "name": "Crypto Primitives",
-      "goal": "X25519 + Ed25519 key generation, exchange, and envelope encryption",
-      "stories": [
-        "generate-x25519",
-        "generate-ed25519",
-        "export-public-key",
-        "derive-shared-secret",
-        "envelope-encryption"
-      ],
-      "estimatedHours": 2.5,
-      "hitlGate": "Security review: verify crypto implementation is correct and secure"
-    },
-    {
-      "id": "storage",
-      "name": "Encrypted Storage",
-      "goal": "D1 schema + Pi agent + EncryptedMemory + AgentDO wired up",
-      "stories": [
-        "d1-schema",
-        "pi-agent-wrapper",
-        "encrypted-memory",
-        "wire-up-agentdo"
-      ],
-      "estimatedHours": 4,
-      "hitlGate": "Phase 1 complete: Verify no plaintext in D1, all memories encrypted"
-    },
-    {
-      "id": "testing-advanced",
-      "name": "Advanced Testing",
-      "goal": "Integration and E2E test harnesses",
-      "stories": [
-        "integration-test-harness",
-        "e2e-test-harness"
-      ],
-      "estimatedHours": 2,
-      "hitlGate": null
-    }
-  ],
-  "loopConfig": {
-    "maxIterations": 20,
-    "validationTimeout": 120,
-    "autoCommit": true,
-    "commitPrefix": "feat|test|chore|fix",
-    "branchPrefix": "feat/",
-    "onStoryComplete": {
-      "updateParentCheckbox": true,
-      "addPRLink": true,
-      "createPR": true,
-      "markPasses": true
-    },
-    "onStoryFail": {
-      "maxRetries": 2,
-      "addBlockedLabel": true,
-      "commentWithLog": true
-    },
-    "retrospective": {
-      "enabled": true,
-      "afterSprint": true,
-      "issueTemplate": 20
-    },
-    "gardening": {
-      "updateBlockedIssues": true,
-      "closeParentWhenChildrenDone": true,
-      "issueTemplate": 23
-    }
-  },
-  "labels": {
-    "ready": "agent/ready",
-    "claimed": "agent/claimed",
-    "blocked": "agent/blocked",
-    "review": "agent/review",
-    "container": "type/container"
-  },
-  "issueCategories": {
-    "leaf": [
-      "type/task",
-      "agent/ready"
-    ],
-    "container": [
-      "type/container"
-    ],
-    "epic": [
-      "type/epic"
-    ],
-    "meta": [
-      "loop/meta"
-    ]
-  },
-  "metadata": {
-    "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T04:44:12.844Z",
-    "totalIterations": 54
-  }
+  ]
 }
