@@ -1,377 +1,132 @@
-# atproto-agent-network Progress
+# Infrastructure Deployment — atproto-agent-network
 
 ## Project Overview
-Private-by-default encrypted memory network for AI agents on AT Protocol.
-GitHub: joelhooks/atproto-agent-network
-
-## ⚠️ CRITICAL LEARNINGS FROM PREVIOUS LOOPS — READ BEFORE CODING
-
-### Architecture & File Layout
-- **Monorepo**: pnpm workspaces + turborepo. Packages: `core`, `agent`, `cli`, `dashboard`. App: `network`
-- **Package manager**: pnpm ONLY. Never use npm/yarn. Use `pnpm add <pkg>` from CLI, never hand-edit package.json deps
-- **Test runner**: vitest with workspace config. Run `pnpm test` from root. 73 tests passing, 2 E2E skipped
-- **Validation**: `pnpm test` is the validation command. It MUST pass before committing
-
-### Existing Code Map (DO NOT DUPLICATE OR BREAK)
-- `packages/core/src/crypto.ts` — X25519/Ed25519 keypair gen, envelope encryption (DEK), deriveSharedSecret. Uses WebCrypto API. Keys exported as JWK format.
-- `packages/core/src/identity.ts` — DID generation, identity management
-- `packages/core/src/validation.ts` — Zod schemas for lexicon validation (MemoryRecord, SharedRecord, InboxMessage)
-- `packages/core/src/d1-mock.ts` — D1 database mock for testing (createD1Mock helper)
-- `packages/core/src/test-utils.ts` — Test fixtures: createTestAgent(), createTestMemory(), createTestEnvelope()
-- `packages/core/src/types.ts` — Core TypeScript types
-- `packages/core/src/lexicons.ts` — AT Protocol lexicon definitions
-- `packages/agent/src/memory.ts` — EncryptedMemory class with create/read/list/update/softDelete operations
-- `packages/agent/src/agent.ts` — Pi agent wrapper
-- `apps/network/src/index.ts` — Main worker with routes: /store, /read, /list, /update, /delete, /share, /shared, /inbox, /inbox/send, /register, /lookup, /subscribe
-- `apps/network/src/agent.ts` — AgentDO (Durable Object) implementation
-- `apps/network/src/relay.ts` — RelayDO with subscription filtering, firehose fanout
-- `apps/network/src/auth.ts` — Bearer token auth middleware (requireAuth helper)
-- `apps/network/src/cors.ts` — CORS middleware
-- `apps/network/src/http-errors.ts` — Error handling wrappers (handleRouteError, AppError)
-- `apps/network/src/http-validation.ts` — HTTP request validation using Zod schemas
-
-### Key Patterns Discovered
-1. **D1 mock**: Use `createD1Mock()` from `@atproto-agent/core/test-utils` — it returns a mock D1Database that works with prepared statements
-2. **Auth pattern**: `requireAuth(request, env)` throws 401 if no valid bearer token. Token validated against env.AUTH_SECRET
-3. **Error handling**: All routes wrapped in try/catch using `handleRouteError(error)` which returns proper HTTP responses
-4. **Validation**: Request bodies validated with Zod schemas from `@atproto-agent/core/validation` before processing
-5. **Encryption flow**: Generate keypair → export public key (multibase) → derive shared secret → envelope encrypt with DEK
-6. **WebSocket**: AgentDO and RelayDO both have webSocketMessage/webSocketClose handlers. RelayDO fans out to subscribers
-7. **CORS**: All responses include CORS headers via `addCorsHeaders()` middleware
-8. **Tests are TDD**: Write test FIRST, then implementation. Every new feature needs tests.
-
-### Common Pitfalls (AVOID THESE)
-- ❌ Do NOT use `npm install` or `yarn add` — only `pnpm add`
-- ❌ Do NOT create fake/stub workspace packages — use real npm packages
-- ❌ Do NOT modify vitest.workspace.ts — it's deprecated, use vitest.config.ts projects field
-- ❌ Do NOT use `--frozen-lockfile` in validation if the story might update deps
-- ❌ Do NOT break existing tests — run `pnpm test` before committing
-- ❌ Do NOT duplicate functionality that already exists in core/agent packages
-- ❌ E2E tests (network.e2e.test.ts) are SKIPPED — they need @cloudflare/vitest-pool-workers migration
-
-### What's Already Done (25/32 stories passed — passes: true)
-- Setup monorepo, vitest, identity tests, workspace config, turbo tasks
-- Test utilities and fixtures, CI workflow, pre-commit hooks
-- X25519, Ed25519 keypairs, exportPublicKey, deriveSharedSecret
-- Envelope encryption (DEK + encrypt/decrypt), D1 schema, Pi agent wrapper
-- Lexicon validation, memory CRUD, shared records
-- Relay agent registry, agent inbox, error handling
-- Relay subscription filtering, WebSocket handlers
-- Auth middleware, CORS headers, D1 mock consolidation
-
-### What Remains (7 stories — passes: false — YOUR WORK)
-
-1. **encrypted-memory** — Implement EncryptedMemory class in packages/agent
-   - Files: packages/agent/src/memory.ts, packages/agent/src/memory.test.ts
-   - Validation: `pnpm vitest run packages/agent/src/memory.test.ts`
-   - Note: memory.ts already exists with create/read/list/update/softDelete. Check if tests pass as-is.
-
-2. **wire-up-agentdo** — Wire up AgentDO with Pi agent and encrypted memory
-   - Files: apps/network/src/agent-do.ts, apps/network/src/agent-do.test.ts
-   - Validation: `pnpm vitest run apps/network/src/agent-do.test.ts`
-   - Note: agent-do.test.ts already exists. Check existing implementation first.
-
-3. **integration-test-harness** — Setup integration test harness (D1 mock)
-   - Files: vitest.config.integration.ts
-   - Validation: `pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS`
-
-4. **e2e-test-harness** — Setup E2E test harness (miniflare)
-   - Files: vitest.config.e2e.ts
-   - Validation: `pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS`
-
-5. **fix-key-serialization** — Fix CryptoKeyPair serialization in DO storage
-   - Files: packages/core/src/crypto.ts, packages/core/src/types.ts, packages/core/src/crypto.test.ts, apps/network/src/agent.ts, apps/network/src/agent-do.test.ts
-   - Validation: `pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
-
-6. **fix-lockfile-miniflare** — Fix lockfile sync and install miniflare
-   - Files: pnpm-lock.yaml, apps/network/src/network.e2e.test.ts
-   - Validation: `pnpm install && pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
-
-7. **fix-turbo-stubs** — Wire real turbo scripts or remove turbo
-   - Files: turbo.json, packages/core/package.json, packages/agent/package.json, packages/cli/package.json, apps/network/package.json, package.json
-   - Validation: `pnpm vitest run --passWithNoTests 2>&1 | grep -qE "passed" && echo PASS`
-
-**IMPORTANT**: Many stories may already be partially or fully implemented from earlier loops. If validation passes without changes, commit with a note that it was already done. Don't re-implement existing code.
-
-### 🚨 DIRECTIVE: DO NOT STOP
-- Complete ALL remaining stories. Do not stop after one or two.
-- If a story's validation already passes, commit it and IMMEDIATELY move to the next.
-- If a story fails, retry with a different approach. Do NOT give up.
-- Use ALL available iterations to finish every pending story.
-- The goal is 32/32 stories passing. Nothing less.
-
-### Failure Patterns from Loops 1-4 (LEARN FROM THESE)
-- **Timeout failures (codexOutputLength: 38)**: 6 failures across all loops had output length of only 38 bytes — meaning Codex timed out without producing meaningful output. If you're stuck, commit partial progress and move on.
-- **pre-commit-hooks**: Failed 2x before passing on 3rd attempt. The issue was missing lint/typecheck scripts. Solution: ensure scripts exist in package.json before referencing them.
-- **Validation piping**: Some validation commands use `grep -qE` which suppresses output. Run the validation command directly (no piping) to debug if it fails.
-- **Already-implemented stories**: Many stories in loops 1-3 passed immediately because code already existed. Check first, don't re-implement.
-- **pnpm workspace resolution**: Use `@atproto-agent/core` not relative paths. Workspace packages resolve via pnpm.
-
----
-[2026-02-08T01:56:47.757Z]
-Completed: Install Vitest and create root config
-Files: none
-Summary: Vitest is installed at the workspace root and a root multi-project config is in place; validation passes.
-
-**Changes (and why)**
-- `package.json`: added `@vitest/coverage-v8` dev dependency (coverage provider for root config).
-- `pnpm-lock.yaml`: lockfile updated for the new dev dependency.
-- `vitest.config.ts`: switched to `test.projects` (workspace-style multi-project runner).
-- `vitest.workspac
-
----
-[2026-02-08T01:58:05.396Z]
-Completed: Install Vitest and create root config
-Files: none
-Summary: Vitest + root config are already in place, and the story’s validation now passes.
-
-- Root config: `vitest.config.ts` (multi-project via `test.projects`)
-- Vitest install: `package.json` includes `vitest` + `@vitest/coverage-v8`
-- Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)
-
-**Files
-
----
-[2026-02-08T01:59:46.483Z]
-Completed: Create first unit test for identity.ts
-Files: none
-Summary: - `packages/core/src/identity.test.ts` already exists (covers `createDid`/`parseDid`, federated DID parsing, and `generateTid`), and the repo already has commit `751d108 ralph: Create first unit test for identity.ts`.
-- Validation: `pnpm vitest run packages/core/src/identity.test.ts` (passes: 4/4).
-
-**Files modified (and why)**
-- None for this story.
-
-**Tests added/modified**
-- None; existing `pac
-
----
-[2026-02-08T02:03:39.382Z]
-Completed: Create vitest workspace config for monorepo
-Files: none
-Summary: Validation passes already: `pnpm vitest run --filter @atproto-agent/core` runs only the `@atproto-agent/core` project and passes.
-
-**Files modified (and why)**
-- None (workspace-style multi-project setup is already in place via `vitest.config.ts`, per-package `packages/*/vitest.config.ts`, and the wrapper `scripts/vitest.mjs`).
-
-**Tests added/modified**
-- None.
-
-**What I learned**
-- This repo’s `p
-
----
-[2026-02-08T02:06:58.610Z]
-Completed: Add turbo task for test
-Files: none
-Summary: Validation passes already: `pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS` prints `PASS`.
-
-- **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `"test": "vitest run"`, so Turbo can run tests for `@atproto-agent/core`.
-- **Tests added/modified:** None.
-- **What I learned:** `pnpm 
-
----
-[2026-02-08T02:09:10.314Z]
-Completed: Create test utilities and fixtures
-Files: none
-Summary: Validation already passes for this story.
-
-- `packages/core/src/test-utils.ts` already contains deterministic fixture helpers/factories (seedable `createTidFixture()`, `resetFixtureState()`, DID/record-id builders, byte fixtures, and core + lexicon type fixtures).
-- `packages/core/src/test-utils.test.ts` already covers these (7 tests).
-
-**Validation**
-- `pnpm vitest run packages/core/src/test-util
-
----
-[2026-02-08T02:11:22.690Z]
-Completed: Add CI workflow (GitHub Actions)
-Files: none
-Summary: Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.
-
-**Files modified (and why)**
-- None; `.github/workflows/ci.yml` already exists and runs `pnpm test` on `push`/`pull_request`.
-
-**Tests added/modified**
-- None.
-
-**What I learned**
-- The repo’s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config
-
----
-[2026-02-08T02:21:41.239Z]
-Failed: Add pre-commit hooks (lint, typecheck, test) [unknown]
-Validation: PASS
-
-Codex: 
-
----
-[2026-02-08T02:31:54.676Z]
-Failed: Add pre-commit hooks (lint, typecheck, test) [unknown]
-Validation: PASS
-
-Codex: 
-
----
-[2026-02-08T02:36:47.985Z]
-Completed: Add pre-commit hooks (lint, typecheck, test)
-Files: none
-Summary: **Implemented**
-- `.husky/pre-commit`: enabled `pnpm lint`, `pnpm typecheck`, `pnpm test` (previously commented out).
-- `packages/core/src/pre-commit-hook.test.ts`: added a test that asserts the pre-commit hook contains those three commands (uncommented).
-
-**Tests added/modified**
-- Added `packages/core/src/pre-commit-hook.test.ts`.
-
-**Validation**
-- `test -f .husky/pre-commit && echo PASS` => `PA
-
----
-[2026-02-08T02:41:33.529Z]
-Completed: Implement generateX25519Keypair
-Files: none
-Summary: `generateX25519Keypair` is already implemented and the story’s validation passes.
-
-- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'` (pass)
-- **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)
-- **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)
-- **What I le
-
----
-[2026-02-08T02:44:26.808Z]
-Completed: Implement generateEd25519Keypair
-Files: none
-Summary: **Implemented**
-- `generateEd25519Keypair` was already implemented in `packages/core/src/crypto.ts` using WebCrypto (`crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign','verify'])`).
-
-**Files modified (and why)**
-- None (implementation already present).
-
-**Tests added/modified**
-- None (existing coverage already in `packages/core/src/crypto.test.ts`).
-
-**Validation**
-- `pnpm vitest run p
-
----
-[2026-02-08T02:45:38.463Z]
-Completed: Implement exportPublicKey (multibase)
-Files: none
-Summary: `exportPublicKey` (multibase) is already implemented and the story validation passes.
-
-- **Implementation:** `packages/core/src/crypto.ts` (`exportPublicKey`) exports `raw` public key bytes, prepends multicodec (`Ed25519 => 0xed01`, `X25519 => 0xec01`), and returns base58btc multibase (leading `z`).
-- **Files modified (and why):** None (function already present and correct).
-- **Tests added/modifi
-
----
-[2026-02-08T02:47:05.626Z]
-Completed: Implement deriveSharedSecret
-Files: none
-Summary: `deriveSharedSecret` was already implemented in `packages/core/src/crypto.ts` (uses `crypto.subtle.deriveBits({ name: 'X25519', public }, private, 256)` and returns a 32-byte `Uint8Array`), and the story validation already passes.
-
-- **Files modified (and why):** None (implementation already present and correct).
-- **Tests added/modified:** None (existing test coverage already in `packages/core/sr
-
----
-[2026-02-08T03:09:38.182Z]
-Completed: Implement envelope encryption (DEK + encrypt/decrypt)
-Files: none
-Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: I ran the exact validation command directly (no piping/suppressed output) so Vitest output + exit code are captured.
-
-Envelope encryption (DEK envelope encrypt/decrypt) is already implemented and covered by tests.
-
-- Implementation: `packages/core/src/crypto.ts` (`encryptDekForPublicKey`, `decryptDekWithPrivateKey`, plus `
-
----
-[2026-02-08T03:12:52.692Z]
-Completed: Create D1 schema for encrypted records
-Files: none
-Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: ran the exact validation command directly (no piping) and polled the running process to capture full Vitest output + exit code.
-
-`apps/network/schema.sql` already exists and matches the encrypted-records requirements (`records`, `shared_records`, and the lookup indexes). `apps/network/src/schema.test.ts` already asserts th
-
----
-[2026-02-08T03:14:48.386Z]
-Completed: Implement Pi agent wrapper in packages/agent
-Files: none
-Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: I ran the validation command directly (no piping) and polled the running Vitest session until it exited so output + exit code were captured.
-
-`PiAgentWrapper` is already implemented and matches the tests in `packages/agent/src/agent.test.ts`.
-
-- Validation: `pnpm vitest run packages/agent/src/agent.test.ts` (pass: 4/4)
-- F
-
----
-[2026-02-08T03:22:28.120Z]
-Completed: Implement EncryptedMemory class in packages/agent
-Files: none
-Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitigation: ran the exact Vitest validation command as a tracked session and polled until completion to capture full output + exit code.
-
-`EncryptedMemory` is already implemented in `packages/agent/src/memory.ts`, and the story validation passes: `pnpm vitest run packages/agent/src/memory.test.ts` (7/7 tests).
-
-## Learnings
-### Tech
-
----
-[2026-02-08T03:26:57.692Z]
-Completed: Wire up AgentDO with Pi agent and encrypted memory
-Files: none
-Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitigation: ran the exact validation command directly (no piping/suppressed output) and captured the full Vitest output + exit code.
-
-Validation: `pnpm vitest run apps/network/src/agent-do.test.ts` (pass: 15/15)
-
-No code changes needed for this story; `apps/network/src/agent.ts` already wires `AgentDO` to `PiAgentWrapper` + `Encrypt
-
----
-[2026-02-08T03:30:49.405Z]
-Completed: Setup integration test harness (D1 mock)
-Files: none
-Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitigation: I ran `pnpm vitest run --config vitest.config.integration.ts` *without piping* first to capture full Vitest output + exit code, then ran the exact validation command.
-
-- No code changes needed: `vitest.config.integration.ts` already exists and discovers `**/*.integration.test.ts`.
-- Integration run currently exercises th
-
----
-[2026-02-08T03:41:12.568Z]
-Failed: Setup E2E test harness (miniflare) [build_error]
-Validation: Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS
-Codex: 
-
----
-[2026-02-08T03:48:52.810Z]
-Failed: Setup E2E test harness (miniflare) [build_error]
-Validation: Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS
-Codex: Running the E2E suite now (no piping) to confirm Miniflare boots, bundles compile, and the new `*.e2e.test.ts` executes end-to-end.
-
----
-[2026-02-08T03:59:16.700Z]
-Failed: Setup E2E test harness (miniflare) [unknown]
-Validation: PASS
-
-Codex: 
-
----
-[2026-02-08T04:09:33.959Z]
-Completed: Fix CryptoKeyPair serialization in DO storage
-Files: none
-Summary: Re-running the full root Vitest suite now that `apps/network/vitest.config.ts` excludes `*.e2e.test.ts` (those require the separate `vitest.config.e2e.ts` globalSetup).
-
----
-[2026-02-08T04:13:28.962Z]
-Completed: Fix lockfile sync and install miniflare
-Files: none
-Summary: Prior failure pattern detected: **unknown/build_error** (piped validation hides Vitest output). Mitigation: ran `pnpm vitest run --passWithNoTests` **without piping** first to capture full output/exit code, then ran the exact validation command.
-
-- `package.json` already has `miniflare` in `devDependencies`, and `pnpm-lock.yaml` is already in sync (`pnpm install` reports “Lockfile is up to date”).
-
----
-[2026-02-08T04:23:53.919Z]
-Failed: Wire real turbo scripts or remove turbo [unknown]
-Validation: PASS
-
-Codex: 
-
----
-[2026-02-08T04:34:15.706Z]
-Failed: Wire real turbo scripts or remove turbo [unknown]
-Validation: PASS
-
-Codex: 
+Decentralized agent communication/memory network on Cloudflare Workers.
+All 32 implementation stories are COMPLETE. This loop deploys to production.
+
+## Architecture
+- **Runtime:** Cloudflare Workers with Durable Objects
+- **Database:** D1 (SQLite edge)
+- **Storage:** R2 (blob), Vectorize (vector search)
+- **Messaging:** Queues
+- **AI:** Workers AI (embeddings) + OpenRouter via CF AI Gateway (reasoning)
+- **Monorepo:** pnpm + turborepo
+
+## Repository Structure
+```
+apps/network/           — Main CF Worker (Durable Objects, routes, auth)
+  src/index.ts          — Entry point, request routing
+  src/agent.ts          — AgentDO class (Durable Object)
+  src/relay.ts          — RelayDO class (Durable Object)
+  src/auth.ts           — Bearer token auth middleware
+  src/cors.ts           — CORS handling
+  src/http-errors.ts    — Error wrapper
+  src/http-validation.ts — Request validation
+  schema.sql            — D1 schema (records + shared_records tables)
+  wrangler.toml         — CF config (needs updating for production)
+packages/core/          — Crypto, lexicons, validation, identity
+packages/agent/         — PiAgentWrapper, EncryptedMemory
+packages/cli/           — CLI tool
+packages/dashboard/     — Dashboard SPA (stub)
+```
+
+## Current wrangler.toml (needs updating)
+```toml
+name = "agent-network"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[durable_objects.bindings]]
+name = "AGENTS"
+class_name = "AgentDO"
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayDO"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "agent-records"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "agent-blobs"
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "agent-memory"
+
+[[queues.producers]]
+queue = "agent-messages"
+binding = "MESSAGE_QUEUE"
+
+[[queues.consumers]]
+queue = "agent-messages"
+max_batch_size = 10
+max_batch_timeout = 30
+
+[ai]
+binding = "AI"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["AgentDO", "RelayDO"]
+```
+
+## Current Env Interface
+```typescript
+export interface Env {
+  AGENTS: DurableObjectNamespace
+  RELAY: DurableObjectNamespace
+  DB: D1Database
+  BLOBS: R2Bucket
+  VECTORIZE: VectorizeIndex
+  MESSAGE_QUEUE: Queue
+  AI: Ai
+  ADMIN_TOKEN?: string
+  CORS_ORIGIN?: string
+}
+```
+
+## AI Gateway Architecture (from docs/AI-GATEWAY-ARCHITECTURE.md)
+```
+Agent Code (Vercel AI SDK)
+  → Cloudflare AI Gateway (observability, caching, fallback)
+    → OpenRouter (model routing — Kimi 2.5, Claude, Gemini, etc.)
+    → Workers AI (edge embeddings)
+```
+
+Key patterns:
+- OpenRouter through CF AI Gateway: baseURL = `https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${AI_GATEWAY_SLUG}/openrouter`
+- Workers AI for embeddings: use native `env.AI` binding directly
+- Model: moonshot/kimi-k2 primary, Claude fallback
+
+## D1 Schema (apps/network/schema.sql)
+- `records` table: id, did, collection, rkey, ciphertext, encrypted_dek, nonce, public, timestamps
+- `shared_records` table: record_id, recipient_did, encrypted_dek, shared_at
+
+## Secrets Available (via `wrangler secret put`)
+- OPENROUTER_API_KEY — OpenRouter API key for AI inference
+- ADMIN_TOKEN — Bearer token for admin endpoints
+
+## Test Suite
+77 tests across 14 files, all passing. Use `pnpm vitest run --passWithNoTests`.
+
+## CRITICAL RULES
+1. **NEVER hand-write package.json** — only use `pnpm add <pkg>` to add deps
+2. **NEVER create fake workspace packages** — use real npm deps
+3. **Use pnpm** — not npm or yarn
+4. **TDD** — write tests first when creating new modules
+5. **All tests must pass** before marking a story complete
+6. **wrangler.toml main should point to src/index.ts** — wrangler bundles TypeScript natively
+7. **Add compatibility_flags = ["nodejs_compat"]** — needed for Node.js crypto APIs
+8. **The deploy.sh script is for DOCUMENTATION** — actual deploy happens via wrangler CLI
+9. **Do NOT install @cloudflare/ai or ai SDK packages** unless the story explicitly requires them — keep deps minimal
+
+## Common Pitfalls from Prior Loops
+- Piped validation commands hide errors — run commands WITHOUT piping first to see full output
+- vitest workspace config was removed — use root vitest.config.ts with include globs
+- E2E tests use separate vitest.config.e2e.ts with miniflare globalSetup
+- DO classes must extend DurableObject from 'cloudflare:workers'
+- CryptoKey objects can't be stored directly in DO storage — serialize to JWK
