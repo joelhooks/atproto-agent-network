@@ -41,3 +41,10 @@ binding = "MESSAGE_QUEUE"
 
 [ai]
 binding = "AI"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true

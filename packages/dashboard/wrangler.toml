@@ -5,3 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 
 [site]
 bucket = "./dist"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
