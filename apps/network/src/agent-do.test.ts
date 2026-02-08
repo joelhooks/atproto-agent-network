@@ -708,6 +708,73 @@ describe('AgentDO', () => {
     expect(db.records.size).toBe(0)
   })
 
+  it('creates, patches (merge), and persists agent config in DO storage', async () => {
+    const { state, storage } = createState('agent-config')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent1 = new AgentDO(state as never, env as never)
+
+    const get1 = await agent1.fetch(new Request('https://example/agents/alice/config'))
+    expect(get1.status).toBe(200)
+    const config1 = (await get1.json()) as Record<string, unknown>
+
+    expect(config1).toMatchObject({
+      name: 'alice',
+      model: 'moonshotai/kimi-k2.5',
+      fastModel: 'google/gemini-2.0-flash-001',
+      loopIntervalMs: 60000,
+      goals: [],
+      enabledTools: [],
+    })
+    expect(typeof config1.personality).toBe('string')
+    expect(typeof config1.specialty).toBe('string')
+
+    const patch1 = await agent1.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          specialty: 'ops',
+          enabledTools: ['remember'],
+          loopIntervalMs: 120000,
+        }),
+      })
+    )
+    expect(patch1.status).toBe(200)
+    const config2 = (await patch1.json()) as Record<string, unknown>
+    expect(config2).toMatchObject({
+      name: 'alice',
+      specialty: 'ops',
+      enabledTools: ['remember'],
+      loopIntervalMs: 120000,
+    })
+
+    // Merge semantics: unspecified fields remain intact.
+    expect(config2.model).toBe(config1.model)
+    expect(config2.fastModel).toBe(config1.fastModel)
+    expect(config2.personality).toBe(config1.personality)
+
+    const stored = await storage.get<Record<string, unknown>>('config')
+    expect(stored).toMatchObject({
+      name: 'alice',
+      specialty: 'ops',
+      enabledTools: ['remember'],
+      loopIntervalMs: 120000,
+    })
+
+    // Persistence: new DO instance should reload config from storage.
+    const agent2 = new AgentDO(state as never, env as never)
+    const get2 = await agent2.fetch(new Request('https://example/agents/alice/config'))
+    expect(get2.status).toBe(200)
+    const config3 = (await get2.json()) as Record<string, unknown>
+    expect(config3).toEqual(config2)
+  })
+
   it('handles prompt messages over the agent websocket', async () => {
     const { state } = createState('agent-ws')
     const prompt = vi.fn().mockResolvedValue({ content: 'ok' })

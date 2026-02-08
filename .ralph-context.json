@@ -237,6 +237,13 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+    },
+    {
+      "id": "story-mlde1tos",
+      "title": "Agent config schema + DO storage",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
     }
   ],
   "failures": [
@@ -327,6 +334,27 @@
       "storyTitle": "Install Pi deps + replace AI SDK wrapper",
       "category": "build_error",
       "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 4b3d7aa0d2a81daf\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde1tos",
+      "storyTitle": "Agent config schema + DO storage",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde1mhv",
+      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
+      "category": "test_failure",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde1mhv",
+      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
       "toolNames": []
     }
   ]

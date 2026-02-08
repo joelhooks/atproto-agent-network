@@ -24,7 +24,7 @@ import {
 } from '../../../packages/core/src/crypto'
 import { createDid } from '../../../packages/core/src/identity'
 import { validateLexiconRecord } from '../../../packages/core/src/validation'
-import type { AgentIdentity } from '../../../packages/core/src/types'
+import type { AgentConfig, AgentIdentity } from '../../../packages/core/src/types'
 
 import { withErrorHandling } from './http-errors'
 
@@ -52,6 +52,19 @@ interface StoredAgentIdentityV1 {
   rotatedAt?: number
 }
 
+const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
+const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
+const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
+const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
+
+function extractAgentNameFromPath(pathname: string): string | undefined {
+  const parts = pathname.split('/').filter(Boolean)
+  if (parts[0] === 'agents' && parts[1]) {
+    return parts[1]
+  }
+  return undefined
+}
+
 export class AgentDO extends DurableObject {
   private readonly did: string
   private readonly agentEnv: AgentEnv
@@ -61,6 +74,7 @@ export class AgentDO extends DurableObject {
   private identity: AgentIdentity | null = null
   private memory: EncryptedMemory | null = null
   private agent: PiAgentWrapper | null = null
+  private config: AgentConfig | null = null
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
@@ -71,11 +85,12 @@ export class AgentDO extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     return withErrorHandling(
       async () => {
-        if (!this.initialized) {
-          await this.initialize()
-        }
-
         const url = new URL(request.url)
+        const agentName = extractAgentNameFromPath(url.pathname)
+
+        if (!this.initialized) {
+          await this.initialize(agentName)
+        }
 
         // WebSocket for real-time communication
         if (request.headers.get('Upgrade') === 'websocket') {
@@ -116,6 +131,11 @@ export class AgentDO extends DurableObject {
               () => this.handleInbox(request),
               { route: 'AgentDO.inbox', request }
             )
+          case 'config':
+            return withErrorHandling(
+              () => this.handleConfig(request),
+              { route: 'AgentDO.config', request }
+            )
           default:
             return new Response('Not found', { status: 404 })
         }
@@ -124,7 +144,7 @@ export class AgentDO extends DurableObject {
     )
   }
   
-  private async initialize(): Promise<void> {
+  private async initialize(agentName?: string): Promise<void> {
     if (this.initialized) return
     if (this.initializing) {
       await this.initializing
@@ -166,11 +186,10 @@ export class AgentDO extends DurableObject {
         this.identity
       )
 
+      const config = await this.loadOrCreateConfig(agentName)
       const tools = this.buildTools()
-      const systemPrompt =
-        this.agentEnv.PI_SYSTEM_PROMPT ??
-        'You are a Pi agent running on the AT Protocol Agent Network.'
-      const model = this.agentEnv.PI_AGENT_MODEL ?? this.agentEnv.AI ?? { provider: 'unknown' }
+      const systemPrompt = config.personality
+      const model = config.model
 
       // Use OpenRouter via AI Gateway as default agent factory
       const agentFactory = this.agentEnv.PI_AGENT_FACTORY ??
@@ -195,6 +214,98 @@ export class AgentDO extends DurableObject {
     })()
 
     await this.initializing
+  }
+
+  private createDefaultConfig(name: string): AgentConfig {
+    return {
+      name,
+      personality: this.agentEnv.PI_SYSTEM_PROMPT ?? DEFAULT_AGENT_SYSTEM_PROMPT,
+      specialty: '',
+      model: DEFAULT_AGENT_MODEL,
+      fastModel: DEFAULT_AGENT_FAST_MODEL,
+      loopIntervalMs: DEFAULT_AGENT_LOOP_INTERVAL_MS,
+      goals: [],
+      enabledTools: [],
+    }
+  }
+
+  private async loadOrCreateConfig(agentName?: string): Promise<AgentConfig> {
+    if (this.config) {
+      if (agentName && this.config.name !== agentName) {
+        this.config = { ...this.config, name: agentName }
+        await this.ctx.storage.put('config', this.config)
+      }
+      return this.config
+    }
+
+    const stored = await this.ctx.storage.get<AgentConfig>('config')
+    if (stored) {
+      this.config = stored
+      if (agentName && stored.name !== agentName) {
+        this.config = { ...stored, name: agentName }
+        await this.ctx.storage.put('config', this.config)
+      }
+      return this.config
+    }
+
+    const created = this.createDefaultConfig(agentName ?? this.did)
+    this.config = created
+    await this.ctx.storage.put('config', created)
+    return created
+  }
+
+  private async handleConfig(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    const agentName = extractAgentNameFromPath(url.pathname)
+    const config = await this.loadOrCreateConfig(agentName)
+
+    if (request.method === 'GET') {
+      return Response.json(config)
+    }
+
+    if (request.method !== 'PATCH') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const patch = payload as Record<string, unknown>
+    const next: AgentConfig = { ...config }
+
+    if (typeof patch.personality === 'string') {
+      next.personality = patch.personality
+    }
+    if (typeof patch.specialty === 'string') {
+      next.specialty = patch.specialty
+    }
+    if (typeof patch.model === 'string') {
+      next.model = patch.model
+    }
+    if (typeof patch.fastModel === 'string') {
+      next.fastModel = patch.fastModel
+    }
+    if (typeof patch.loopIntervalMs === 'number' && Number.isFinite(patch.loopIntervalMs)) {
+      next.loopIntervalMs = patch.loopIntervalMs
+    }
+    if (Array.isArray(patch.goals)) {
+      next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']
+    }
+    if (Array.isArray(patch.enabledTools)) {
+      next.enabledTools = patch.enabledTools.filter((tool): tool is string => typeof tool === 'string')
+    }
+
+    // Name is derived from the DO binding (via /agents/:name/*) and should remain stable.
+    if (agentName) {
+      next.name = agentName
+    }
+
+    this.config = next
+    await this.ctx.storage.put('config', next)
+
+    return Response.json(next)
   }
 
   private buildTools(): PiAgentTool[] {

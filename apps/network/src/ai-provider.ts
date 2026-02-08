@@ -1,4 +1,4 @@
-import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { complete, getModel, type Context, type Model, type ProviderStreamOptions } from '@mariozechner/pi-ai'
 
 export interface OpenRouterViaAiGatewayEnv {
   /**
@@ -46,16 +46,26 @@ export function getOpenRouterViaAiGatewayBaseUrl(
   return `https://gateway.ai.cloudflare.com/v1/${accountId}/${slug}/openrouter`
 }
 
-/**
- * Creates an OpenRouter provider configured to route through Cloudflare AI Gateway.
- */
-export function createOpenRouterViaAiGateway(
-  env: Pick<OpenRouterViaAiGatewayEnv, 'CF_ACCOUNT_ID' | 'AI_GATEWAY_SLUG' | 'OPENROUTER_API_KEY'>
-) {
-  const apiKey = requireNonEmptyString('OPENROUTER_API_KEY', env.OPENROUTER_API_KEY)
-  const baseURL = getOpenRouterViaAiGatewayBaseUrl(env)
+function createFallbackOpenRouterModel(modelId: string): Model<'openai-completions'> {
+  return {
+    id: modelId,
+    name: modelId,
+    api: 'openai-completions',
+    provider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 4096,
+  }
+}
 
-  return createOpenRouter({ apiKey, baseURL })
+function getBaseOpenRouterModel(modelId: string): Model<any> {
+  // pi-ai maintains a generated model registry; fall back to a minimal model
+  // definition so users can still pass new OpenRouter model IDs.
+  const model = getModel('openrouter', modelId as never) as unknown as Model<any> | undefined
+  return model ?? createFallbackOpenRouterModel(modelId)
 }
 
 /**
@@ -65,7 +75,28 @@ export function getOpenRouterModel(
   env: OpenRouterViaAiGatewayEnv,
   modelId: string = env.OPENROUTER_MODEL_DEFAULT ?? DEFAULT_OPENROUTER_MODEL
 ) {
-  const openrouter = createOpenRouterViaAiGateway(env)
-  return openrouter(modelId)
+  // Validate required secret early for consistent error messages and tests.
+  requireNonEmptyString('OPENROUTER_API_KEY', env.OPENROUTER_API_KEY)
+
+  const baseUrl = getOpenRouterViaAiGatewayBaseUrl(env)
+  const baseModel = getBaseOpenRouterModel(modelId)
+
+  return {
+    ...baseModel,
+    baseUrl,
+  }
 }
 
+export async function completeWithOpenRouter(
+  env: OpenRouterViaAiGatewayEnv,
+  context: Context,
+  options?: ProviderStreamOptions & { modelId?: string }
+) {
+  const modelId = options?.modelId
+  const model = getOpenRouterModel(env, modelId)
+
+  return complete(model, context, {
+    ...options,
+    apiKey: env.OPENROUTER_API_KEY,
+  })
+}

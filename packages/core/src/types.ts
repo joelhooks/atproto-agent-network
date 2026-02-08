@@ -10,6 +10,34 @@ export interface AgentIdentity {
   rotatedAt?: number
 }
 
+export type AgentGoalStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'blocked'
+  | 'completed'
+  | 'cancelled'
+
+export interface AgentGoal {
+  id: string
+  description: string
+  priority: number
+  status: AgentGoalStatus
+  progress: number
+  createdAt: number
+  completedAt?: number
+}
+
+export interface AgentConfig {
+  name: string
+  personality: string // System prompt
+  specialty: string
+  model: string
+  fastModel: string
+  loopIntervalMs: number
+  goals: AgentGoal[]
+  enabledTools: string[]
+}
+
 export interface EncryptedRecord {
   id: string
   collection: string

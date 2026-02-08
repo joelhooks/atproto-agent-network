@@ -95,3 +95,52 @@ Codex:
 Completed: Install Pi deps + replace AI SDK wrapper
 Files: none
 Summary: Next: removing `ai` and `@openrouter/ai-sdk-provider` from `@atproto-agent/network`, then rewriting `apps/network/src/ai-provider.ts` and `apps/network/src/agent-factory.ts` to use Pi’s `getModel` + `complete`.
+
+---
+[2026-02-08T07:27:59.173Z]
+Failed: Agent config schema + DO storage [build_error]
+Validation: 
+> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network
+• Running typecheck in 5 packages
+• Remote caching disabled
+@atp
+Codex: 
+
+---
+[2026-02-08T07:38:26.712Z]
+Failed: Install Pi deps + replace AI SDK wrapper [test_failure]
+Validation: 
+> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network
+• Running typecheck in 5 packages
+• Remote caching disabled
+@atp
+Codex: 
+
+---
+[2026-02-08T07:48:51.754Z]
+Failed: Install Pi deps + replace AI SDK wrapper [build_error]
+Validation: 
+> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network
+• Running typecheck in 5 packages
+• Remote caching disabled
+@atp
+Codex: 
+
+---
+[2026-02-08T07:54:40.523Z]
+Completed: Install Pi deps + replace AI SDK wrapper
+Files: none
+Summary: Completed Pi swap for the network AI wrapper/factory.
+
+- Pi deps are in place: `apps/network/package.json` uses `@mariozechner/pi-ai@0.52.8`; `packages/agent/package.json` uses `@mariozechner/pi-ai@0.52.8` + `@mariozechner/pi-agent-core@0.52.8`.
+- AI SDK is gone from runtime TS: `rg "from 'ai'|@openrouter/ai-sdk-provider" --glob '*.ts'` returns no matches.
+- `apps/network/src/ai-provider.ts` route

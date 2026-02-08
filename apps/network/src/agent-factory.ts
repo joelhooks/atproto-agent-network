@@ -1,8 +1,8 @@
 /**
  * Custom agent factory that uses OpenRouter via CF AI Gateway
- * instead of the missing @mariozechner/pi-agent-core dependency.
+ * using Pi's model + completion API.
  */
-import { generateText } from 'ai'
+import { complete, type Context } from '@mariozechner/pi-ai'
 import type { PiAgentFactory, PiAgentInit, PiAgentLike } from '@atproto-agent/agent'
 import { getOpenRouterModel, type OpenRouterViaAiGatewayEnv } from './ai-provider'
 
@@ -23,16 +23,24 @@ export function createOpenRouterAgentFactory(
         const model = getOpenRouterModel(env, modelId)
         const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 1024
 
-        const result = await generateText({
-          model,
-          system: systemPrompt,
-          prompt: input,
-          maxOutputTokens: maxTokens,
+        const context: Context = {
+          systemPrompt,
+          messages: [{ role: 'user', content: input, timestamp: Date.now() }],
+        }
+
+        const result = await complete(model, context, {
+          apiKey: env.OPENROUTER_API_KEY,
+          maxTokens,
         })
 
+        const text = result.content
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('')
+
         return {
-          text: result.text,
-          model: result.response?.modelId ?? modelId ?? 'unknown',
+          text,
+          model: result.model ?? modelId ?? 'unknown',
           usage: result.usage,
         }
       },
