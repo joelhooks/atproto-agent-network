@@ -66,9 +66,9 @@
     {
       "id": "install-vitest",
       "title": "Install Vitest and create root config",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [],
-      "learnings": "[build_error] \n> atproto-agent-network@ vitest /home/joel/Code/joelhooks/atproto-agent-network\n> node ./scripts/vitest.mjs \"run\" \"--passWithNoTests\"\n\n\n RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |@atproto-agent/agent| src/memory.test.ts (7 tests) 112ms\n ✓ |@atproto-agent/network| src/index.te"
+      "learnings": "Vitest is installed at the workspace root and a root multi-project config is in place; validation passes.\n\n**Changes (and why)**\n- `package.json`: added `@vitest/coverage-v8` dev dependency (coverage provider for root config).\n- `pnpm-lock.yaml`: lockfile updated for the new dev dependency.\n- `vitest.config.ts`: switched to `test.projects` (workspace-style multi-project runner).\n- `vitest.workspace.ts`: removed (deprecated in Vitest v3+ in favor of `test.projects`).\n- `packages/cli/vitest.config"
     }
   ],
   "failures": [
