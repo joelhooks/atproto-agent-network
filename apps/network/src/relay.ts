@@ -13,6 +13,10 @@ import { DurableObject } from 'cloudflare:workers'
 
 import { withErrorHandling } from './http-errors'
 
+type RelayEnv = {
+  AGENTS: DurableObjectNamespace
+}
+
 interface Subscription {
   collections: string[]
   dids: string[]
@@ -29,7 +33,13 @@ interface AgentRegistration {
 }
 
 export class RelayDO extends DurableObject {
-  
+  private readonly relayEnv: RelayEnv
+
+  constructor(ctx: DurableObjectState, env: RelayEnv) {
+    super(ctx, env)
+    this.relayEnv = env
+  }
+
   async fetch(request: Request): Promise<Response> {
     return withErrorHandling(
       async () => {
@@ -49,6 +59,14 @@ export class RelayDO extends DurableObject {
           return withErrorHandling(
             () => this.handleEmit(request),
             { route: 'RelayDO.emit', request }
+          )
+        }
+
+        // Deliver message (from agent tool) to another agent via the relay.
+        if (path === '/message' && request.method === 'POST') {
+          return withErrorHandling(
+            () => this.handleMessage(request),
+            { route: 'RelayDO.message', request }
           )
         }
 
@@ -82,7 +100,83 @@ export class RelayDO extends DurableObject {
       { route: 'RelayDO.fetch', request }
     )
   }
-  
+
+  private async handleMessage(request: Request): Promise<Response> {
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const senderDid =
+      'senderDid' in payload && typeof (payload as { senderDid?: unknown }).senderDid === 'string'
+        ? (payload as { senderDid: string }).senderDid
+        : null
+    const recipientDid =
+      'recipientDid' in payload &&
+      typeof (payload as { recipientDid?: unknown }).recipientDid === 'string'
+        ? (payload as { recipientDid: string }).recipientDid
+        : null
+    const content =
+      'content' in payload && (payload as { content?: unknown }).content && typeof (payload as { content: unknown }).content === 'object'
+        ? (payload as { content: Record<string, unknown> }).content
+        : null
+
+    if (!senderDid || !recipientDid || !content) {
+      return Response.json(
+        { error: 'senderDid, recipientDid, and content are required' },
+        { status: 400 }
+      )
+    }
+
+    const record = {
+      $type: 'agent.comms.message',
+      sender: senderDid,
+      recipient: recipientDid,
+      content,
+      createdAt: new Date().toISOString(),
+    }
+
+    const agentName = recipientDid.startsWith('did:cf:')
+      ? recipientDid.slice('did:cf:'.length)
+      : recipientDid
+
+    const agents = this.relayEnv.AGENTS
+    const agentId = agents.idFromName(agentName)
+    const stub = agents.get(agentId)
+
+    const deliver = await stub.fetch(
+      new Request('https://agent/inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+      })
+    )
+
+    if (!deliver.ok) {
+      const text = await deliver.text().catch(() => '')
+      return Response.json(
+        { error: 'Delivery failed', status: deliver.status, body: text },
+        { status: 502 }
+      )
+    }
+
+    // Fanout to firehose subscribers (same matching logic as /emit).
+    const event = {
+      event_type: 'agent.comms.message',
+      did: senderDid,
+      agent_did: senderDid,
+      record,
+    }
+    for (const ws of this.ctx.getWebSockets()) {
+      const sub = ws.deserializeAttachment() as Subscription
+      if (this.matchesSubscription(event, sub)) {
+        ws.send(JSON.stringify(event))
+      }
+    }
+
+    return Response.json({ ok: true })
+  }
+
   private async handleFirehoseSubscription(request: Request): Promise<Response> {
     const url = new URL(request.url)
     // Support both our simplified query params and Jetstream-style naming.

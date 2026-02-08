@@ -31,10 +31,12 @@ import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../..
 import { withErrorHandling } from './http-errors'
 
 interface AgentEnv {
+  AGENTS?: DurableObjectNamespace
   DB: D1Database
   BLOBS: R2Bucket
   RELAY?: DurableObjectNamespace
-  AI?: unknown
+  VECTORIZE?: VectorizeIndex
+  AI?: Ai
   PI_AGENT_FACTORY?: PiAgentFactory
   PI_AGENT_MODEL?: unknown
   PI_SYSTEM_PROMPT?: string
@@ -690,8 +692,10 @@ export class AgentDO extends DurableObject {
 
       const stepStart = Date.now()
       try {
+        // Think() results don't include toolCallId. Generate a stable-ish id per step for tracing.
+        const toolCallId = `tc_${generateTid()}`
         const result = await promiseWithTimeout(
-          Promise.resolve(tool.execute(call.arguments)),
+          Promise.resolve(tool.execute(toolCallId, call.arguments ?? {})),
           remaining,
           `Tool timed out: ${name}`
         )
@@ -913,10 +917,69 @@ export class AgentDO extends DurableObject {
     }
 
     const memory = this.memory
+    const did = this.did
+    const env = this.agentEnv
+    const broadcastLoopEvent = this.broadcastLoopEvent.bind(this)
+
+    const toTextContent = (text: string) => [{ type: 'text', text }] as Array<{ type: 'text'; text: string }>
+
+    const parseArgs = <T extends Record<string, unknown> = Record<string, unknown>>(
+      toolCallIdOrParams: unknown,
+      maybeParams?: unknown
+    ): { toolCallId: string; params: T } => {
+      if (typeof toolCallIdOrParams === 'string') {
+        const params = (maybeParams && typeof maybeParams === 'object' ? maybeParams : {}) as T
+        return { toolCallId: toolCallIdOrParams, params }
+      }
+      const params = (toolCallIdOrParams && typeof toolCallIdOrParams === 'object' ? toolCallIdOrParams : {}) as T
+      return { toolCallId: `tc_${generateTid()}`, params }
+    }
+
+    const extractSearchableText = (record: EncryptedMemoryRecord): string => {
+      const parts: string[] = []
+      const summary = (record as Record<string, unknown>).summary
+      const text = (record as Record<string, unknown>).text
+      if (typeof summary === 'string' && summary.trim().length > 0) parts.push(summary)
+      if (typeof text === 'string' && text.trim().length > 0) parts.push(text)
+      // Always include a JSON fallback so arbitrary records are searchable.
+      parts.push(JSON.stringify(record))
+      return parts.join('\n')
+    }
+
+    const embedText = async (text: string): Promise<number[] | null> => {
+      if (!env.AI || typeof env.AI.run !== 'function') return null
+      try {
+        // Default to a common Workers AI embedding model.
+        const result = (await env.AI.run('@cf/baai/bge-base-en-v1.5', { text: [text] })) as unknown
+        const data = (result as { data?: unknown })?.data
+        const first = Array.isArray(data) ? data[0] : null
+        return Array.isArray(first) ? (first as number[]) : null
+      } catch {
+        return null
+      }
+    }
+
+    const vectorizeUpsert = async (id: string, record: EncryptedMemoryRecord): Promise<void> => {
+      if (!env.VECTORIZE || typeof env.VECTORIZE.upsert !== 'function') return
+      const embedding = await embedText(extractSearchableText(record))
+      if (!embedding) return
+      try {
+        await env.VECTORIZE.upsert([
+          {
+            id,
+            values: embedding,
+            metadata: { did, collection: record.$type },
+          },
+        ])
+      } catch {
+        // best-effort
+      }
+    }
 
     return [
       {
         name: 'remember',
+        label: 'Remember',
         description: 'Store an encrypted memory record.',
         parameters: {
           type: 'object',
@@ -925,12 +988,9 @@ export class AgentDO extends DurableObject {
           },
           required: ['record'],
         },
-        execute: async (...args: unknown[]) => {
-          const params = args[0]
-          const record =
-            params && typeof params === 'object' && 'record' in params
-              ? (params as { record?: unknown }).record
-              : params
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ record?: unknown }>(toolCallIdOrParams, maybeParams)
+          const record = params && typeof params === 'object' && 'record' in params ? params.record : null
           if (!record || typeof record !== 'object') {
             throw new Error('remember requires a record object')
           }
@@ -942,30 +1002,294 @@ export class AgentDO extends DurableObject {
           }
 
           const id = await memory.store(validated.value)
-          return { id }
+          await vectorizeUpsert(id, validated.value)
+          return { content: toTextContent(`Stored memory ${id}`), details: { id } }
         },
       },
       {
         name: 'recall',
-        description: 'Retrieve an encrypted memory record by id.',
+        label: 'Recall',
+        description: 'Recall memories by semantic search (Vectorize) or fallback string search.',
         parameters: {
           type: 'object',
           properties: {
-            id: { type: 'string', description: 'Record id to retrieve.' },
+            query: { type: 'string', description: 'Search query.' },
+            limit: { type: 'number', description: 'Max results (default 5).' },
           },
-          required: ['id'],
+          required: ['query'],
         },
-        execute: async (...args: unknown[]) => {
-          const params = args[0]
-          const id =
-            params && typeof params === 'object' && 'id' in params
-              ? (params as { id?: unknown }).id
-              : null
-          if (!id || typeof id !== 'string') {
-            throw new Error('recall requires an id')
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ query?: unknown; limit?: unknown }>(toolCallIdOrParams, maybeParams)
+          const query = typeof params.query === 'string' ? params.query.trim() : ''
+          const limit = typeof params.limit === 'number' && Number.isFinite(params.limit) ? params.limit : 5
+          if (!query) throw new Error('recall requires a query string')
+
+          const results: Array<{ id: string; record: unknown; score?: number; metadata?: unknown }> = []
+
+          if (env.VECTORIZE && typeof env.VECTORIZE.query === 'function') {
+            const embedding = await embedText(query)
+            if (embedding) {
+              try {
+                const response = (await env.VECTORIZE.query(embedding, {
+                  topK: limit,
+                  filter: { did },
+                  returnMetadata: true,
+                })) as unknown
+                const matches = Array.isArray((response as { matches?: unknown }).matches)
+                  ? ((response as { matches: unknown[] }).matches as Array<any>)
+                  : []
+                for (const match of matches) {
+                  const id = typeof match?.id === 'string' ? match.id : null
+                  if (!id) continue
+                  const record = await memory.retrieve(id)
+                  if (!record) continue
+                  results.push({ id, record, score: match?.score, metadata: match?.metadata })
+                }
+              } catch {
+                // fall through to fallback
+              }
+            }
           }
-          const record = await memory.retrieve(id)
-          return { record }
+
+          if (results.length === 0) {
+            // Fallback: list + filter over decrypted records.
+            const entries = await memory.list({ limit: Math.max(50, limit) })
+            const needle = query.toLowerCase()
+            for (const entry of entries) {
+              const haystack = extractSearchableText(entry.record).toLowerCase()
+              if (haystack.includes(needle)) {
+                results.push({ id: entry.id, record: entry.record })
+                if (results.length >= limit) break
+              }
+            }
+          }
+
+          const summary = results.length
+            ? results.map((r) => `- ${r.id}`).join('\n')
+            : 'No matches.'
+          return { content: toTextContent(summary), details: { results } }
+        },
+      },
+      {
+        name: 'message',
+        label: 'Message',
+        description: 'Send an agent.comms.message to another agent.',
+        parameters: {
+          type: 'object',
+          properties: {
+            recipientDid: { type: 'string', description: 'Recipient agent DID (did:cf:...).'},
+            content: { type: 'object', description: 'Message content payload.' },
+          },
+          required: ['recipientDid', 'content'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ recipientDid?: unknown; content?: unknown }>(toolCallIdOrParams, maybeParams)
+          const recipientDid = typeof params.recipientDid === 'string' ? params.recipientDid : null
+          if (!recipientDid) throw new Error('message requires recipientDid')
+          if (!params.content || typeof params.content !== 'object') throw new Error('message requires content')
+
+          // Preferred path: deliver via RelayDO so the network can fanout events consistently.
+          if (env.RELAY && typeof env.RELAY.idFromName === 'function' && typeof env.RELAY.get === 'function') {
+            const relayId = env.RELAY.idFromName('main')
+            const relay = env.RELAY.get(relayId)
+            const response = await relay.fetch(
+              new Request('https://relay/relay/message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  senderDid: did,
+                  recipientDid,
+                  content: params.content,
+                }),
+              })
+            )
+            if (!response.ok) {
+              const text = await response.text().catch(() => '')
+              throw new Error(`Relay delivery failed (${response.status}): ${text}`)
+            }
+          } else {
+            // Fallback: direct agent-to-agent delivery if relay is unavailable.
+            const record = {
+              $type: 'agent.comms.message',
+              sender: did,
+              recipient: recipientDid,
+              content: params.content,
+              createdAt: new Date().toISOString(),
+            }
+
+            const agents = env.AGENTS
+            if (!agents || typeof agents.idFromName !== 'function' || typeof agents.get !== 'function') {
+              throw new Error('RELAY and AGENTS bindings unavailable')
+            }
+
+            const target = recipientDid.startsWith('did:cf:') ? recipientDid.slice('did:cf:'.length) : recipientDid
+            const agentId = agents.idFromName(target)
+            const stub = agents.get(agentId)
+
+            await stub.fetch(
+              new Request('https://agent/inbox', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(record),
+              })
+            )
+          }
+
+          return {
+            content: toTextContent(`Sent message to ${recipientDid}`),
+            details: { recipientDid },
+          }
+        },
+      },
+      {
+        name: 'search',
+        label: 'Search',
+        description: 'Semantic search across the network (Vectorize metadata-only).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query.' },
+            limit: { type: 'number', description: 'Max results (default 5).' },
+          },
+          required: ['query'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ query?: unknown; limit?: unknown }>(toolCallIdOrParams, maybeParams)
+          const query = typeof params.query === 'string' ? params.query.trim() : ''
+          const limit = typeof params.limit === 'number' && Number.isFinite(params.limit) ? params.limit : 5
+          if (!query) throw new Error('search requires a query string')
+          if (!env.VECTORIZE || typeof env.VECTORIZE.query !== 'function') {
+            return { content: toTextContent('Vectorize unavailable.'), details: { matches: [] } }
+          }
+          const embedding = await embedText(query)
+          if (!embedding) return { content: toTextContent('Embedding unavailable.'), details: { matches: [] } }
+
+          const response = (await env.VECTORIZE.query(embedding, {
+            topK: limit,
+            returnMetadata: true,
+          })) as unknown
+
+          const matchesRaw = Array.isArray((response as { matches?: unknown }).matches)
+            ? ((response as { matches: unknown[] }).matches as Array<any>)
+            : []
+          const matches = matchesRaw
+            .map((m) => ({
+              id: typeof m?.id === 'string' ? m.id : '',
+              score: typeof m?.score === 'number' ? m.score : null,
+              did: typeof m?.metadata?.did === 'string' ? m.metadata.did : null,
+              collection: typeof m?.metadata?.collection === 'string' ? m.metadata.collection : null,
+              metadata: m?.metadata ?? null,
+            }))
+            .filter((m) => m.id.length > 0)
+
+          const lines = matches.length ? matches.map((m) => `- ${m.id}`).join('\n') : 'No matches.'
+          return { content: toTextContent(lines), details: { matches } }
+        },
+      },
+      {
+        name: 'set_goal',
+        label: 'Set Goal',
+        description: 'Add/update/complete goals in the agent config.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: ['add', 'update', 'complete'] },
+            id: { type: 'string', description: 'Goal id (for update/complete).' },
+            goal: { type: 'object', description: 'Goal payload (for add/update).' },
+          },
+          required: ['action'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ action?: unknown; id?: unknown; goal?: unknown }>(toolCallIdOrParams, maybeParams)
+          const action = typeof params.action === 'string' ? params.action : null
+          if (!action) throw new Error('set_goal requires action')
+          const config = await this.loadOrCreateConfig()
+          const goals = Array.isArray(config.goals) ? structuredClone(config.goals) : []
+
+          const now = Date.now()
+          let updated: AgentGoal
+
+          if (action === 'add') {
+            const goalInput = params.goal && typeof params.goal === 'object' ? (params.goal as Record<string, unknown>) : null
+            const description = typeof goalInput?.description === 'string' ? goalInput.description : null
+            if (!description) throw new Error('set_goal add requires goal.description')
+            const priority = typeof goalInput?.priority === 'number' && Number.isFinite(goalInput.priority) ? goalInput.priority : 0
+
+            updated = {
+              id: `goal_${generateTid()}`,
+              description,
+              priority,
+              status: 'pending',
+              progress: 0,
+              createdAt: now,
+            }
+            goals.push(updated)
+          } else if (action === 'complete') {
+            const id = typeof params.id === 'string' ? params.id : null
+            if (!id) throw new Error('set_goal complete requires id')
+            const idx = goals.findIndex((g) => g && typeof g === 'object' && (g as any).id === id)
+            if (idx === -1) throw new Error('goal not found')
+            const current = goals[idx] as AgentGoal
+            updated = { ...current, status: 'completed', completedAt: now }
+            goals[idx] = updated
+          } else if (action === 'update') {
+            const id = typeof params.id === 'string' ? params.id : null
+            if (!id) throw new Error('set_goal update requires id')
+            const idx = goals.findIndex((g) => g && typeof g === 'object' && (g as any).id === id)
+            if (idx === -1) throw new Error('goal not found')
+            const current = goals[idx] as AgentGoal
+            const goalPatch = params.goal && typeof params.goal === 'object' ? (params.goal as Record<string, unknown>) : {}
+            updated = {
+              ...current,
+              description: typeof goalPatch.description === 'string' ? goalPatch.description : current.description,
+              priority:
+                typeof goalPatch.priority === 'number' && Number.isFinite(goalPatch.priority)
+                  ? goalPatch.priority
+                  : current.priority,
+              status: typeof goalPatch.status === 'string' ? (goalPatch.status as any) : current.status,
+              progress:
+                typeof goalPatch.progress === 'number' && Number.isFinite(goalPatch.progress)
+                  ? goalPatch.progress
+                  : current.progress,
+            }
+            goals[idx] = updated
+          } else {
+            throw new Error('set_goal action must be add, update, or complete')
+          }
+
+          const next: AgentConfig = { ...config, goals }
+          this.config = next
+          await this.ctx.storage.put('config', next)
+
+          return { content: toTextContent(`Updated goal ${updated?.id ?? ''}`.trim()), details: { goal: updated } }
+        },
+      },
+      {
+        name: 'think_aloud',
+        label: 'Think Aloud',
+        description: 'Broadcast UI-only reasoning to connected dashboards (not added to LLM context).',
+        parameters: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', description: 'UI-only reasoning text.' },
+          },
+          required: ['message'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ message?: unknown }>(toolCallIdOrParams, maybeParams)
+          const message = typeof params.message === 'string' ? params.message : ''
+          if (!message) throw new Error('think_aloud requires message')
+
+          const trace_id = createTraceId()
+          const span_id = createSpanId()
+          await broadcastLoopEvent({
+            event_type: 'agent.think_aloud',
+            trace_id,
+            span_id,
+            context: { message },
+          })
+
+          return { content: [], details: { message } }
         },
       },
     ]

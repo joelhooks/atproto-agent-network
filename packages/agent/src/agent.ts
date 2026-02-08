@@ -15,9 +15,17 @@ export type PiAgentTransformContext = (
 
 export interface PiAgentTool {
   name: string
+  label?: string
   description?: string
   parameters?: unknown
-  execute?: (...args: unknown[]) => unknown | Promise<unknown>
+  // Pi agent-core compatible execute signature:
+  // execute(toolCallId, params, signal?, onUpdate?)
+  execute?: (
+    toolCallId: string,
+    params: unknown,
+    signal?: AbortSignal,
+    onUpdate?: (partial: unknown) => void
+  ) => unknown | Promise<unknown>
 }
 
 export interface PiAgentInit {

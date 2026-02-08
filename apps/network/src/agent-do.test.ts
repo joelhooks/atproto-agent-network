@@ -157,13 +157,18 @@ function assertDurableObjectSerializable(value: unknown): void {
 
 function createState(id = 'agent-123') {
   const storage = new FakeStorage()
+  const websockets: WebSocket[] = []
+  const acceptWebSocket = vi.fn((ws: WebSocket) => {
+    websockets.push(ws)
+  })
   const state = {
     id: { toString: () => id },
     storage,
-    acceptWebSocket: vi.fn(),
+    acceptWebSocket,
+    getWebSockets: () => websockets,
   }
 
-  return { state, storage }
+  return { state, storage, websockets, acceptWebSocket }
 }
 
 function createEnv(overrides: Record<string, unknown> = {}) {
@@ -307,7 +312,9 @@ describe('AgentDO', () => {
 
     expect(prompt).toHaveBeenCalledWith('hello', { temperature: 0 })
     expect(body).toEqual({ content: 'ok' })
-    expect(toolNames).toEqual(expect.arrayContaining(['remember', 'recall']))
+    expect(toolNames).toEqual(
+      expect.arrayContaining(['remember', 'recall', 'message', 'search', 'set_goal', 'think_aloud'])
+    )
   })
 
   it('stores encrypted memory and retrieves decrypted records', async () => {
@@ -495,7 +502,14 @@ describe('AgentDO', () => {
     const { state } = createState('agent-remember-invalid')
     const prompt = vi.fn().mockResolvedValue({ ok: true })
     let initConfig:
-      | { initialState?: { tools?: Array<{ name: string; execute?: (params: unknown) => unknown }> } }
+      | {
+          initialState?: {
+            tools?: Array<{
+              name: string
+              execute?: (toolCallId: string, params: unknown) => unknown
+            }>
+          }
+        }
       | undefined
 
     const agentFactory = vi.fn().mockImplementation(async (init) => {
@@ -528,7 +542,7 @@ describe('AgentDO', () => {
       createdAt: new Date().toISOString(),
     }
 
-    await expect(rememberTool!.execute!({ record: invalidRecord })).rejects.toThrow()
+    await expect(rememberTool!.execute!('tc-1', { record: invalidRecord })).rejects.toThrow()
     expect(db.records.size).toBe(0)
   })
 
@@ -536,7 +550,14 @@ describe('AgentDO', () => {
     const { state } = createState('agent-remember-defaults')
     const prompt = vi.fn().mockResolvedValue({ ok: true })
     let initConfig:
-      | { initialState?: { tools?: Array<{ name: string; execute?: (params: unknown) => unknown }> } }
+      | {
+          initialState?: {
+            tools?: Array<{
+              name: string
+              execute?: (toolCallId: string, params: unknown) => unknown
+            }>
+          }
+        }
       | undefined
 
     const agentFactory = vi.fn().mockImplementation(async (init) => {
@@ -572,15 +593,262 @@ describe('AgentDO', () => {
       createdAt: new Date().toISOString(),
     }
 
-    const result = (await rememberTool!.execute!({ record: messageRecord })) as { id: string }
-    expect(result.id).toContain('did:cf:agent-remember-defaults/agent.comms.message/')
+    const result = (await rememberTool!.execute!('tc-2', { record: messageRecord })) as {
+      content: Array<{ type: 'text'; text: string }>
+      details: { id: string }
+    }
+    expect(result.details.id).toContain('did:cf:agent-remember-defaults/agent.comms.message/')
+    expect(result.content[0]?.text).toContain('Stored memory')
 
     const loadResponse = await agent.fetch(
-      new Request(`https://example/memory?id=${encodeURIComponent(result.id)}`)
+      new Request(`https://example/memory?id=${encodeURIComponent(result.details.id)}`)
     )
     const loaded = (await loadResponse.json()) as { record: Record<string, unknown> }
 
     expect(loaded.record.priority).toBe(3)
+  })
+
+  it('recalls memories via semantic search when Vectorize is available, otherwise falls back to list+filter', async () => {
+    const aiRun = vi.fn().mockResolvedValue({ data: [[0.1, 0.2, 0.3]] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state } = createState('agent-recall')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')!
+    const recall = tools.find((t) => t.name === 'recall')!
+
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'alpha',
+      text: 'hello world',
+      createdAt: new Date().toISOString(),
+    }
+
+    const stored = await remember.execute('tc-rem-1', { record })
+    expect(stored.details.id).toContain('did:cf:agent-recall/agent.memory.note/')
+
+    // Vectorize store is best-effort: if present, remember should attempt to upsert.
+    expect(vectorizeUpsert).toHaveBeenCalled()
+
+    // Force vectorize recall path by returning a match for the stored id.
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: stored.details.id,
+          score: 0.9,
+          metadata: { did: 'did:cf:agent-recall', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    const semantic = await recall.execute('tc-rec-1', { query: 'hello', limit: 5 })
+    expect(vectorizeQuery).toHaveBeenCalled()
+    expect(semantic.details.results[0]).toMatchObject({
+      id: stored.details.id,
+      record: { summary: 'alpha' },
+    })
+
+    // Remove vectorize bindings and verify fallback returns the record.
+    delete (env as any).VECTORIZE
+    delete (env as any).AI
+
+    const fallback = await recall.execute('tc-rec-2', { query: 'hello', limit: 5 })
+    expect(fallback.details.results[0]).toMatchObject({
+      id: stored.details.id,
+      record: { summary: 'alpha' },
+    })
+  })
+
+  it('searches across the network via Vectorize (metadata-only)', async () => {
+    const aiRun = vi.fn().mockResolvedValue({ data: [[0.1, 0.2, 0.3]] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({
+      matches: [
+        {
+          id: 'did:cf:agent-other/agent.memory.note/3jui7-test',
+          score: 0.88,
+          metadata: { did: 'did:cf:agent-other', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    const { state } = createState('agent-search')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const search = tools.find((t) => t.name === 'search')
+    expect(search).toBeTruthy()
+
+    const result = await search!.execute('tc-search-1', { query: 'note', limit: 3 })
+    expect(result.details.matches).toHaveLength(1)
+    expect(result.details.matches[0]).toMatchObject({
+      did: 'did:cf:agent-other',
+      collection: 'agent.memory.note',
+    })
+    expect(result.content[0]?.text).toContain('did:cf:agent-other/agent.memory.note/3jui7-test')
+  })
+
+  it('delivers messages to another agent via the message tool (and emits to relay when available)', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env: baseEnv } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const { RelayDO } = await import('./relay')
+
+    const senderState = createState('agent-sender').state
+    const receiverState = createState('agent-receiver').state
+    const relayState = createState('relay-main').state
+
+    const senderEnv = { ...baseEnv } as any
+    const receiverEnv = { ...baseEnv } as any
+
+    const sender = new AgentDO(senderState as never, senderEnv as never)
+    const receiver = new AgentDO(receiverState as never, receiverEnv as never)
+
+    const agentsById = new Map<string, any>([
+      ['agent-sender', sender],
+      ['agent-receiver', receiver],
+    ])
+
+    const agentsNamespace = {
+      idFromString: (id: string) => id,
+      idFromName: (name: string) => name,
+      get: (id: string) => ({
+        fetch: (req: Request) => agentsById.get(id)!.fetch(req),
+      }),
+    }
+
+    const relayEnv = { ...baseEnv, AGENTS: agentsNamespace } as any
+    const relay = new RelayDO(relayState as never, relayEnv as never)
+
+    const relayFetch = vi.fn((req: Request) => relay.fetch(req))
+    const relayNamespace = {
+      idFromName: vi.fn().mockReturnValue('relay-main'),
+      get: vi.fn().mockReturnValue({ fetch: relayFetch }),
+    }
+
+    senderEnv.RELAY = relayNamespace
+    receiverEnv.RELAY = relayNamespace
+
+    // Force init (so tools are built and identity is present).
+    await sender.fetch(new Request('https://example/identity'))
+    await receiver.fetch(new Request('https://example/identity'))
+
+    const tools = (sender as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const messageTool = tools.find((t) => t.name === 'message')
+    expect(messageTool).toBeTruthy()
+
+    const sent = await messageTool!.execute('tc-msg-1', {
+      recipientDid: 'did:cf:agent-receiver',
+      content: { kind: 'text', text: 'hello from sender' },
+    })
+
+    expect(sent.details).toMatchObject({ recipientDid: 'did:cf:agent-receiver' })
+
+    const listInbox = await receiver.fetch(new Request('https://example/inbox?limit=10'))
+    expect(listInbox.status).toBe(200)
+    const inboxBody = (await listInbox.json()) as { entries: Array<{ record: any }> }
+    expect(inboxBody.entries[0]?.record).toMatchObject({
+      $type: 'agent.comms.message',
+      sender: 'did:cf:agent-sender',
+      recipient: 'did:cf:agent-receiver',
+      content: { kind: 'text', text: 'hello from sender' },
+    })
+
+    // Message delivery should go through RelayDO when RELAY is configured.
+    expect(relayFetch).toHaveBeenCalled()
+    expect(relayFetch.mock.calls.some(([req]) => new URL(req.url).pathname.endsWith('/relay/message'))).toBe(true)
+  })
+
+  it('updates agent goals via the set_goal tool', async () => {
+    const { state, storage } = createState('agent-set-goal')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const setGoal = tools.find((t) => t.name === 'set_goal')
+    expect(setGoal).toBeTruthy()
+
+    const added = await setGoal!.execute('tc-goal-1', {
+      action: 'add',
+      goal: { description: 'ship tools', priority: 1 },
+    })
+
+    expect(added.details.goal.description).toBe('ship tools')
+
+    const config = await storage.get<any>('config')
+    expect(config.goals).toHaveLength(1)
+    expect(config.goals[0]).toMatchObject({ description: 'ship tools', status: 'pending' })
+
+    const completed = await setGoal!.execute('tc-goal-2', {
+      action: 'complete',
+      id: config.goals[0].id,
+    })
+    expect(completed.details.goal.status).toBe('completed')
+
+    const config2 = await storage.get<any>('config')
+    expect(config2.goals[0].status).toBe('completed')
+  })
+
+  it('broadcasts think_aloud to websocket clients but returns no LLM-facing content', async () => {
+    const { state, acceptWebSocket } = createState('agent-think-aloud')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const ws = { readyState: 1, send: vi.fn(), close: vi.fn() } as any as WebSocket
+    acceptWebSocket(ws)
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const thinkAloud = tools.find((t) => t.name === 'think_aloud')
+    expect(thinkAloud).toBeTruthy()
+
+    const result = await thinkAloud!.execute('tc-ta-1', { message: 'UI-only reasoning' })
+    expect(result.content).toEqual([])
+    expect(result.details).toMatchObject({ message: 'UI-only reasoning' })
+
+    expect((ws as any).send).toHaveBeenCalledTimes(1)
+    const payload = JSON.parse((ws as any).send.mock.calls[0][0]) as any
+    expect(payload.event_type).toBe('agent.think_aloud')
+    expect(payload.context).toMatchObject({ message: 'UI-only reasoning' })
   })
 
   it('shares encrypted records between agents via /share and /shared', async () => {
@@ -1447,7 +1715,7 @@ describe('AgentDO', () => {
     try {
       const promptFn = vi.fn().mockResolvedValue({
         content: 'Try a slow recall',
-        toolCalls: [{ name: 'recall', arguments: { id: 'missing' } }],
+        toolCalls: [{ name: 'recall', arguments: { query: 'missing' } }],
       })
       const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
       const { state, storage } = createState('agent-act-timeout')
@@ -1461,7 +1729,10 @@ describe('AgentDO', () => {
 
       // Force initialization so we can override the recall tool.
       await agent.fetch(new Request('https://example/identity'))
-      const tools = (agent as any).tools as Array<{ name: string; execute?: (args: unknown) => unknown }>
+      const tools = (agent as any).tools as Array<{
+        name: string
+        execute?: (toolCallId: string, params: unknown) => unknown
+      }>
       const recall = tools.find((t) => t.name === 'recall')
       expect(recall).toBeTruthy()
 

@@ -305,16 +305,16 @@
         "progress.txt"
       ],
       "learnings": "[test_failure] • turbo 2.8.3\n\n⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]\nError: Transform failed with 1 error:\n/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected \")\" but found end "
+    },
+    {
+      "id": "story-mlde2jqb",
+      "title": "Pi tool definitions",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2057",
       "storyTitle": "Pi session persistence in DO storage",
@@ -475,6 +475,18 @@
         "sed -n",
         "/usr/bin/zsh -lc",
         "rg -n"
+      ]
+    },
+    {
+      "storyId": "story-mlde2jqb",
+      "storyTitle": "Pi tool definitions",
+      "category": "timeout",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "swarm memory"
       ]
     }
   ]

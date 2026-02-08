@@ -487,3 +487,20 @@ Codex: Starting story 4d. First I’m going to (1) run the required `swarm memor
 Completed: 4d: WebSocket broadcast of loop events
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/network.ws.live.test.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts
 Summary: Implemented story-4d verification path and fixed the prior broken test state by removing the unit-level WS broadcast tests that depended on `WebSocketPair` (which is unavailable in local Vitest), relying on the required real-worker live integration test instead. Deployed `apps/network` to production and verified WS loop lifecycle broadcasts (`loop.observe`, `loop.think`, `loop.reflect`) over a real WebSocket with O11Y fields, plus stale disconnect tolerance. Local validation (`pnpm typecheck && pnpm test`) also passes.
+
+---
+[2026-02-08T20:17:10.333Z]
+Failed: Pi tool definitions [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: Starting story #55: gather context from skills, Pi tool type definitions, and current AgentDO implementation before writing RED tests to avoid repeating prior type/test failures.
+
+---
+[2026-02-08T20:26:26.147Z]
+Completed: Pi tool definitions
+Files: apps/network/src/agent-do.test.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/relay.test.ts, apps/network/src/relay.ts, packages/agent/src/agent.ts
+Summary: Implemented RELAY-based delivery for the Pi `message` tool and added Relay-side routing to deliver `agent.comms.message` records to recipient AgentDO `/inbox`. Updated tests accordingly. `pnpm typecheck && pnpm test` now pass.

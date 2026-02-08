@@ -64,11 +64,16 @@ function createSocket(sub: { collections: string[]; dids: string[] }) {
   } as unknown as WebSocket
 }
 
+const dummyAgents = {
+  idFromName: (name: string) => name,
+  get: (_id: string) => ({ fetch: vi.fn() }),
+}
+
 describe('RelayDO', () => {
   it('registers agents and serves their public keys', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const did = 'did:cf:test-agent'
     const encryption = await exportPublicKey((await generateX25519Keypair()).publicKey)
@@ -113,7 +118,7 @@ describe('RelayDO', () => {
   it('returns 404 for unknown public keys', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const response = await relay.fetch(
       new Request('https://example.com/relay/keys/did%3Acf%3Amissing')
@@ -133,7 +138,7 @@ describe('RelayDO', () => {
     })
 
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const did = 'did:cf:test-agent'
     const encryption = await exportPublicKey((await generateX25519Keypair()).publicKey)
@@ -165,7 +170,7 @@ describe('RelayDO', () => {
   it('filters emitted events by collection (exact + wildcard prefix)', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const all = createSocket({ collections: ['*'], dids: ['*'] })
     const commsExact = createSocket({ collections: ['agent.comms.message'], dids: ['*'] })
@@ -201,7 +206,7 @@ describe('RelayDO', () => {
   it('filters emitted events by did (and can combine did + collection filters)', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const all = createSocket({ collections: ['*'], dids: ['*'] })
     const alice = createSocket({ collections: ['*'], dids: ['did:cf:alice'] })
@@ -237,7 +242,7 @@ describe('RelayDO', () => {
   it('filters commit-style events by repo did and op collection paths', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const aliceComms = createSocket({ collections: ['agent.comms.*'], dids: ['did:cf:alice'] })
     const bobComms = createSocket({ collections: ['agent.comms.*'], dids: ['did:cf:bob'] })
@@ -272,7 +277,7 @@ describe('RelayDO', () => {
   it('updates websocket subscription filters via message', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')
-    const relay = new RelayDO(state as never, {} as never)
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
 
     const ws = createSocket({ collections: ['*'], dids: ['*'] })
 
