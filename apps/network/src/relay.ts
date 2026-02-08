@@ -16,6 +16,16 @@ interface Subscription {
   dids: string[]
 }
 
+interface AgentRegistration {
+  did: string
+  publicKeys: {
+    encryption: string
+    signing: string
+  }
+  metadata?: Record<string, unknown>
+  registeredAt: string
+}
+
 export class RelayDO extends DurableObject {
   
   async fetch(request: Request): Promise<Response> {
@@ -34,12 +44,12 @@ export class RelayDO extends DurableObject {
     
     // Agent registry
     if (path === '/agents') {
-      return this.listAgents()
+      return this.handleAgents(request)
     }
     
     // Public key lookup
     if (path.startsWith('/keys/')) {
-      const did = path.replace('/keys/', '')
+      const did = decodeURIComponent(path.replace('/keys/', ''))
       return this.getPublicKey(did)
     }
     
@@ -89,20 +99,86 @@ export class RelayDO extends DurableObject {
     return false
   }
   
-  private async listAgents(): Promise<Response> {
-    // TODO: Return registered agents
-    return Response.json({
-      agents: [],
-      status: 'not-yet-implemented'
-    })
+  private async handleAgents(request: Request): Promise<Response> {
+    if (request.method === 'POST') {
+      const payload = await request.json().catch(() => null)
+      if (!payload || typeof payload !== 'object') {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+      }
+
+      const did =
+        'did' in payload && typeof (payload as { did?: unknown }).did === 'string'
+          ? (payload as { did: string }).did
+          : null
+      const publicKeys =
+        'publicKeys' in payload && typeof (payload as { publicKeys?: unknown }).publicKeys === 'object'
+          ? (payload as { publicKeys: unknown }).publicKeys
+          : null
+
+      const encryption =
+        publicKeys &&
+        typeof (publicKeys as { encryption?: unknown }).encryption === 'string'
+          ? (publicKeys as { encryption: string }).encryption
+          : null
+      const signing =
+        publicKeys &&
+        typeof (publicKeys as { signing?: unknown }).signing === 'string'
+          ? (publicKeys as { signing: string }).signing
+          : null
+
+      if (!did || !encryption || !signing) {
+        return Response.json(
+          { error: 'did and publicKeys.encryption/signing are required' },
+          { status: 400 }
+        )
+      }
+
+      const metadata =
+        'metadata' in payload && payload.metadata && typeof payload.metadata === 'object'
+          ? (payload as { metadata: Record<string, unknown> }).metadata
+          : undefined
+
+      const registration: AgentRegistration = {
+        did,
+        publicKeys: { encryption, signing },
+        metadata,
+        registeredAt: new Date().toISOString(),
+      }
+
+      await this.ctx.storage.put(this.agentKey(did), registration)
+      return Response.json({ ok: true, did })
+    }
+
+    if (request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    return this.listAgents()
   }
   
   private async getPublicKey(did: string): Promise<Response> {
-    // TODO: Return public key for DID
+    const agent = await this.ctx.storage.get<AgentRegistration>(this.agentKey(did))
+    if (!agent) {
+      return Response.json({ error: 'Not found' }, { status: 404 })
+    }
+
     return Response.json({
-      did,
-      status: 'not-yet-implemented'
+      did: agent.did,
+      publicKeys: agent.publicKeys,
     })
+  }
+
+  private async listAgents(): Promise<Response> {
+    const entries = await this.ctx.storage.list<AgentRegistration>({ prefix: 'agent:' })
+    const agents = Array.from(entries.values()).sort((a, b) =>
+      b.registeredAt.localeCompare(a.registeredAt)
+    )
+
+    return Response.json({ agents })
+  }
+
+  private agentKey(did: string): string {
+    return `agent:${did}`
   }
   
   private async listPeers(): Promise<Response> {

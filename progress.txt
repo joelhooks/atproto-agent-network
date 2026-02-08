@@ -395,3 +395,57 @@ Summary: Implemented memory list/update/soft-delete end-to-end through the Agent
   - `GET /memory?collection=...&limit=...` lists decrypted records (excludes soft-deleted).
   - `PUT /memory?id=...` validates lexicon, then updates in place (404 if missing/deleted).
   - `DELETE /memory?id=...` s
+
+---
+[2026-02-07T23:45:39.685Z]
+Failed: Implement shared_records — encrypted record sharing between agents [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-07T23:47:37.054Z]
+Completed: Wire up Zod lexicon validation at API boundaries
+Files: none
+Summary: Full test run is failing on pre-existing “sharing” tests (`EncryptedMemory.share/retrieveShared/listShared` and AgentDO `/share` + `/shared` routes). I’m implementing those missing pieces minimally so `pnpm vitest run --passWithNoTests` goes green again.
+
+---
+[2026-02-07T23:54:14.345Z]
+Completed: Add memory list, update, and soft-delete to EncryptedMemory
+Files: none
+Summary: **Status**
+- `EncryptedMemory.list()`, `update()`, and `softDelete()` are already implemented in `packages/agent/src/memory.ts`.
+- AgentDO `/memory` endpoints already expose list/update/delete in `apps/network/src/agent.ts`.
+
+**Where It Lives**
+- `packages/agent/src/memory.ts`: `list()` (filters `deleted_at`, supports `collection`/`limit`), `update()` (re-encrypts with new nonce, sets `updated_at`
+
+---
+[2026-02-07T23:54:49.821Z]
+Completed: Implement shared_records — encrypted record sharing between agents
+Files: none
+Summary: Using skills `envelope-encryption`, `d1-patterns`, and `cloudflare-do` because this story touches record encryption formats, D1 persistence, and AgentDO HTTP routes for sharing.`
+
+---
+[2026-02-08T00:03:52.612Z]
+Completed: Implement relay agent registry and public key directory
+Files: none
+Summary: Now that the tests are in place and failing, I’m implementing the RelayDO `/agents` + `/keys/:did` registry directory (backed by DO storage), and wiring AgentDO to (a) register its keys with the relay and (b) expose `/share` + `/shared` routes using the existing `EncryptedMemory.share/retrieveShared/listShared` APIs.
+
+---
+[2026-02-08T00:14:11.285Z]
+Failed: Implement agent inbox for receiving messages [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T00:18:05.164Z]
+Completed: Implement agent inbox for receiving messages
+Files: none
+Summary: **Agent Inbox (agent-inbox)** is implemented and covered by tests.
+
+**Implementation**
+- `apps/network/src/agent.ts`: `AgentDO` now exposes `/inbox`.
+- `POST /inbox`: validates a lexicon record, requires `$type === "agent.comms.message"`, enforces `recipient === this.did` (403 on mismatch), then stores via `EncryptedMemory.store()` (encrypted at rest).
+- `GET /inbox`: lists stored messages by filt

@@ -28,6 +28,7 @@ import type { AgentIdentity } from '../../../packages/core/src/types'
 interface AgentEnv {
   DB: D1Database
   BLOBS: R2Bucket
+  RELAY?: DurableObjectNamespace
   AI?: unknown
   PI_AGENT_FACTORY?: PiAgentFactory
   PI_AGENT_MODEL?: unknown
@@ -48,6 +49,7 @@ export class AgentDO extends DurableObject {
   private readonly env: AgentEnv
   private initialized = false
   private initializing: Promise<void> | null = null
+  private registeredWithRelay = false
   private identity: AgentIdentity | null = null
   private memory: EncryptedMemory | null = null
   private agent: PiAgentWrapper | null = null
@@ -77,6 +79,10 @@ export class AgentDO extends DurableObject {
         return this.handlePrompt(request)
       case 'memory':
         return this.handleMemory(request)
+      case 'share':
+        return this.handleShare(request)
+      case 'shared':
+        return this.handleShared(request)
       case 'inbox':
         return this.handleInbox(request)
       default:
@@ -220,6 +226,8 @@ export class AgentDO extends DurableObject {
     const encryption = await exportPublicKey(this.identity.encryptionKey.publicKey)
     const signing = await exportPublicKey(this.identity.signingKey.publicKey)
 
+    await this.registerWithRelay({ encryption, signing })
+
     return Response.json({
       did: this.identity.did,
       createdAt: this.identity.createdAt,
@@ -228,6 +236,28 @@ export class AgentDO extends DurableObject {
         signing,
       },
     })
+  }
+
+  private async registerWithRelay(publicKeys: { encryption: string; signing: string }): Promise<void> {
+    if (this.registeredWithRelay) return
+    const relayNamespace = this.env.RELAY
+    if (!relayNamespace) return
+
+    const relayId = relayNamespace.idFromName('main')
+    const relay = relayNamespace.get(relayId)
+
+    await relay.fetch(
+      new Request('https://relay/relay/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          did: this.did,
+          publicKeys,
+        }),
+      })
+    )
+
+    this.registeredWithRelay = true
   }
   
   private async handlePrompt(request: Request): Promise<Response> {
@@ -336,12 +366,124 @@ export class AgentDO extends DurableObject {
 
     return new Response('Method not allowed', { status: 405 })
   }
+
+  private async handleShare(request: Request): Promise<Response> {
+    if (!this.memory) {
+      return Response.json({ error: 'Memory unavailable' }, { status: 500 })
+    }
+
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload !== 'object') {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const id =
+      'id' in payload && typeof (payload as { id?: unknown }).id === 'string'
+        ? (payload as { id: string }).id
+        : null
+    const recipientDid =
+      'recipientDid' in payload && typeof (payload as { recipientDid?: unknown }).recipientDid === 'string'
+        ? (payload as { recipientDid: string }).recipientDid
+        : null
+    const recipientPublicKey =
+      'recipientPublicKey' in payload &&
+      typeof (payload as { recipientPublicKey?: unknown }).recipientPublicKey === 'string'
+        ? (payload as { recipientPublicKey: string }).recipientPublicKey
+        : null
+
+    if (!id || !recipientDid || !recipientPublicKey) {
+      return Response.json(
+        { error: 'id, recipientDid, and recipientPublicKey are required' },
+        { status: 400 }
+      )
+    }
+
+    try {
+      const ok = await this.memory.share(id, recipientDid, recipientPublicKey)
+      if (!ok) {
+        return Response.json({ error: 'Not found' }, { status: 404 })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return Response.json({ error: message }, { status: 400 })
+    }
+
+    return Response.json({ ok: true })
+  }
+
+  private async handleShared(request: Request): Promise<Response> {
+    if (!this.memory) {
+      return Response.json({ error: 'Memory unavailable' }, { status: 500 })
+    }
+
+    if (request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+
+    if (id) {
+      const record = await this.memory.retrieveShared(id)
+      if (!record) {
+        return Response.json({ error: 'Not found' }, { status: 404 })
+      }
+      return Response.json({ id, record })
+    }
+
+    const collection = url.searchParams.get('collection') ?? undefined
+    const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
+    const entries = await this.memory.listShared({ collection, limit })
+    return Response.json({ entries })
+  }
   
   private async handleInbox(request: Request): Promise<Response> {
-    // TODO: Receive messages from other agents
-    return Response.json({
-      error: 'Not yet implemented'
-    }, { status: 501 })
+    if (!this.memory) {
+      return Response.json({ error: 'Memory unavailable' }, { status: 500 })
+    }
+
+    const url = new URL(request.url)
+
+    if (request.method === 'POST') {
+      const record = await request.json().catch(() => null)
+      if (!record || typeof record !== 'object') {
+        return Response.json({ error: 'record is required' }, { status: 400 })
+      }
+
+      const validated = validateLexiconRecord(record)
+      if (!validated.ok) {
+        return Response.json(
+          { error: validated.error, issues: validated.issues },
+          { status: 400 }
+        )
+      }
+
+      if (validated.value.$type !== 'agent.comms.message') {
+        return Response.json(
+          { error: 'Inbox only accepts agent.comms.message records' },
+          { status: 400 }
+        )
+      }
+
+      if (validated.value.recipient !== this.did) {
+        return Response.json({ error: 'Recipient mismatch' }, { status: 403 })
+      }
+
+      const id = await this.memory.store(validated.value)
+      return Response.json({ id })
+    }
+
+    if (request.method === 'GET') {
+      const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
+      const entries = await this.memory.list({ collection: 'agent.comms.message', limit })
+      return Response.json({ entries })
+    }
+
+    return new Response('Method not allowed', { status: 405 })
   }
   
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {

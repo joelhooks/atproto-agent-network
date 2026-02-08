@@ -6,9 +6,9 @@ import type { AgentIdentity } from '../../core/src/types'
 
 import { EncryptedMemory } from './memory'
 
-async function createIdentity(): Promise<AgentIdentity> {
+async function createIdentity(did = 'did:cf:agent-test'): Promise<AgentIdentity> {
   return {
-    did: 'did:cf:agent-test',
+    did,
     signingKey: await generateEd25519Keypair(),
     encryptionKey: await generateX25519Keypair(),
     createdAt: Date.now(),
@@ -137,5 +137,61 @@ describe('EncryptedMemory', () => {
 
     await expect(memory.softDelete(id)).resolves.toBe(false)
     await expect(memory.update(id, record)).resolves.toBe(false)
+  })
+
+  it('shares a record by re-encrypting the DEK for the recipient (shared_records)', async () => {
+    const alice = await createIdentity('did:cf:alice')
+    const bob = await createIdentity('did:cf:bob')
+    const intruder = await createIdentity('did:cf:intruder')
+    const db = new D1MockDatabase()
+
+    const aliceMemory = new EncryptedMemory(db, null, alice)
+    const bobMemory = new EncryptedMemory(db, null, bob)
+    const intruderMemory = new EncryptedMemory(db, null, intruder)
+
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'Shared note',
+      text: 'only bob should read this',
+      createdAt: new Date().toISOString(),
+    }
+
+    const id = await aliceMemory.store(record)
+
+    await expect(bobMemory.retrieve(id)).resolves.toBeNull()
+    await expect(bobMemory.retrieveShared(id)).resolves.toBeNull()
+
+    await expect(aliceMemory.share(id, bob.did, bob.encryptionKey.publicKey)).resolves.toBe(true)
+
+    // Idempotent share (unique(record_id, recipient_did))
+    await expect(aliceMemory.share(id, bob.did, bob.encryptionKey.publicKey)).resolves.toBe(true)
+    expect(db.sharedRecords.size).toBe(1)
+
+    await expect(intruderMemory.retrieveShared(id)).resolves.toBeNull()
+    await expect(bobMemory.retrieveShared(id)).resolves.toEqual(record)
+    await expect(bobMemory.listShared()).resolves.toEqual([{ id, record }])
+  })
+
+  it('keeps shared access working after the owner updates a record', async () => {
+    const alice = await createIdentity('did:cf:alice-update')
+    const bob = await createIdentity('did:cf:bob-update')
+    const db = new D1MockDatabase()
+
+    const aliceMemory = new EncryptedMemory(db, null, alice)
+    const bobMemory = new EncryptedMemory(db, null, bob)
+
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'Shared note',
+      text: 'v1',
+      createdAt: new Date().toISOString(),
+    }
+
+    const id = await aliceMemory.store(record)
+    await expect(aliceMemory.share(id, bob.did, bob.encryptionKey.publicKey)).resolves.toBe(true)
+
+    const updated = { ...record, text: 'v2' }
+    await expect(aliceMemory.update(id, updated)).resolves.toBe(true)
+    await expect(bobMemory.retrieveShared(id)).resolves.toEqual(updated)
   })
 })

@@ -169,6 +169,44 @@ describe('AgentDO', () => {
     })
   })
 
+  it('registers with the relay public key directory', async () => {
+    const { state } = createState('agent-register')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const relayFetch = vi.fn()
+    let relayBody: unknown = null
+
+    relayFetch.mockImplementation(async (req: Request) => {
+      relayBody = await req.json()
+      return Response.json({ ok: true })
+    })
+
+    const relayNamespace = {
+      idFromName: vi.fn().mockReturnValue('relay-main'),
+      get: vi.fn().mockReturnValue({ fetch: relayFetch }),
+    }
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      RELAY: relayNamespace,
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(new Request('https://example/identity'))
+    const body = await response.json()
+
+    expect(relayFetch).toHaveBeenCalledTimes(1)
+    expect(relayBody).toMatchObject({
+      did: body.did,
+      publicKeys: {
+        encryption: expect.stringMatching(/^z/),
+        signing: expect.stringMatching(/^z/),
+      },
+    })
+  })
+
   it('reloads the identity from storage', async () => {
     const { state } = createState('agent-reload')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
@@ -494,5 +532,192 @@ describe('AgentDO', () => {
     const loaded = (await loadResponse.json()) as { record: Record<string, unknown> }
 
     expect(loaded.record.priority).toBe(3)
+  })
+
+  it('shares encrypted records between agents via /share and /shared', async () => {
+    const aliceState = createState('agent-alice-share').state
+    const bobState = createState('agent-bob-share').state
+    const intruderState = createState('agent-intruder-share').state
+
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const alice = new AgentDO(aliceState as never, env as never)
+    const bob = new AgentDO(bobState as never, env as never)
+    const intruder = new AgentDO(intruderState as never, env as never)
+
+    const bobIdentityResponse = await bob.fetch(new Request('https://example/identity'))
+    expect(bobIdentityResponse.status).toBe(200)
+    const bobIdentity = (await bobIdentityResponse.json()) as {
+      did: string
+      publicKeys: { encryption: string }
+    }
+
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'Shared via HTTP',
+      text: 'hello bob',
+      createdAt: new Date().toISOString(),
+    }
+
+    const storeResponse = await alice.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }))
+    expect(storeResponse.status).toBe(200)
+    const { id } = (await storeResponse.json()) as { id: string }
+
+    expect(db.records.has(id)).toBe(true)
+
+    // Not shared yet
+    const loadSharedBefore = await bob.fetch(
+      new Request(`https://example/shared?id=${encodeURIComponent(id)}`)
+    )
+    expect(loadSharedBefore.status).toBe(404)
+
+    // Share from Alice -> Bob
+    const shareResponse = await alice.fetch(new Request('https://example/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        recipientDid: bobIdentity.did,
+        recipientPublicKey: bobIdentity.publicKeys.encryption,
+      }),
+    }))
+
+    expect(shareResponse.status).toBe(200)
+
+    // Intruder can't fetch
+    const intruderResponse = await intruder.fetch(
+      new Request(`https://example/shared?id=${encodeURIComponent(id)}`)
+    )
+    expect(intruderResponse.status).toBe(404)
+
+    // Bob can fetch the shared record
+    const loadShared = await bob.fetch(
+      new Request(`https://example/shared?id=${encodeURIComponent(id)}`)
+    )
+    expect(loadShared.status).toBe(200)
+    await expect(loadShared.json()).resolves.toEqual({ id, record })
+
+    // And list it
+    const listShared = await bob.fetch(new Request('https://example/shared'))
+    expect(listShared.status).toBe(200)
+    const listBody = (await listShared.json()) as { entries: Array<{ id: string; record: unknown }> }
+    expect(listBody.entries).toEqual([{ id, record }])
+  })
+
+  it('receives comms messages via /inbox and stores them encrypted', async () => {
+    const { state } = createState('agent-inbox')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:agent-inbox',
+      content: { kind: 'text', text: 'hello inbox' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const postResponse = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+    expect(postResponse.status).toBe(200)
+
+    const { id } = (await postResponse.json()) as { id: string }
+    expect(id).toContain('did:cf:agent-inbox/agent.comms.message/')
+
+    const storedRecord = { ...message, priority: 3 }
+    const row = db.records.get(id)
+    expect(row?.encrypted_dek).toBeInstanceOf(Uint8Array)
+    expect(row?.public).toBe(0)
+
+    const plaintext = new TextEncoder().encode(JSON.stringify(storedRecord))
+    expect(row?.ciphertext).not.toEqual(plaintext)
+
+    const listResponse = await agent.fetch(new Request('https://example/inbox'))
+    expect(listResponse.status).toBe(200)
+    await expect(listResponse.json()).resolves.toEqual({
+      entries: [{ id, record: storedRecord }],
+    })
+  })
+
+  it('rejects /inbox messages that target a different recipient DID', async () => {
+    const { state } = createState('agent-inbox-mismatch')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:someone-else',
+      content: { kind: 'text', text: 'wrong recipient' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const response = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Recipient mismatch',
+    })
+    expect(db.records.size).toBe(0)
+  })
+
+  it('validates lexicon records posted to /inbox', async () => {
+    const { state } = createState('agent-inbox-invalid')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const invalidRecord = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:agent-inbox-invalid',
+      createdAt: new Date().toISOString(),
+    }
+
+    const response = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(invalidRecord),
+    }))
+
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error?: string; issues?: unknown }
+    expect(body.error).toBe('Invalid record')
+    expect(Array.isArray(body.issues)).toBe(true)
+    expect((body.issues as unknown[]).length).toBeGreaterThan(0)
+    expect(db.records.size).toBe(0)
   })
 })

@@ -30,6 +30,11 @@ export interface EncryptedMemoryListOptions {
   limit?: number
 }
 
+export interface EncryptedMemorySharedListOptions {
+  collection?: string
+  limit?: number
+}
+
 export interface EncryptedMemoryListEntry<T = EncryptedMemoryRecord> {
   id: string
   record: T
@@ -47,6 +52,14 @@ interface RecordsRow {
   created_at: string
   updated_at?: string | null
   deleted_at?: string | null
+}
+
+interface SharedRecordsRow {
+  id: number
+  record_id: string
+  recipient_did: string
+  encrypted_dek: Uint8Array | ArrayBuffer | ArrayBufferView
+  shared_at: string
 }
 
 function toUint8Array(value: Uint8Array | ArrayBuffer | ArrayBufferView, label: string): Uint8Array {
@@ -181,10 +194,13 @@ export class EncryptedMemory {
       return true
     }
 
-    const dek = await generateDek()
+    const encryptedDek = toUint8Array(row.encrypted_dek, 'encrypted_dek')
+    const dek = await decryptDekWithPrivateKey(
+      encryptedDek,
+      this.identity.encryptionKey.privateKey
+    )
     const plaintext = new TextEncoder().encode(JSON.stringify(record))
     const ciphertext = await encryptWithDek(plaintext, dek, nonce)
-    const encryptedDek = await encryptDekForPublicKey(dek, this.identity.encryptionKey.publicKey)
 
     await this.db
       .prepare(
@@ -192,10 +208,127 @@ export class EncryptedMemory {
          SET ciphertext = ?, encrypted_dek = ?, nonce = ?, public = ?, updated_at = ?
          WHERE id = ? AND did = ?`
       )
+      // Preserve DEK so existing shared_records entries stay valid across updates.
       .bind(ciphertext, encryptedDek, nonce, 0, updatedAt, id, this.identity.did)
       .run()
 
     return true
+  }
+
+  async share(
+    id: string,
+    recipientDid: string,
+    recipientPublicKey: CryptoKey | string
+  ): Promise<boolean> {
+    if (!id) {
+      throw new Error('EncryptedMemory.share requires an id')
+    }
+    if (typeof recipientDid !== 'string' || recipientDid.length === 0) {
+      throw new Error('EncryptedMemory.share requires a recipient DID')
+    }
+    if (recipientDid === this.identity.did) {
+      throw new Error('EncryptedMemory.share recipient DID must be different from the sender')
+    }
+
+    const row = await this.db
+      .prepare('SELECT * FROM records WHERE id = ? AND did = ?')
+      .bind(id, this.identity.did)
+      .first<RecordsRow>()
+
+    if (!row) return false
+    if (row.deleted_at) return false
+
+    const isPublic = row.public === true || Number(row.public) === 1 || row.encrypted_dek === null
+    if (isPublic) {
+      throw new Error('EncryptedMemory.share cannot share public records')
+    }
+
+    const encryptedDek = toUint8Array(row.encrypted_dek, 'encrypted_dek')
+    const dek = await decryptDekWithPrivateKey(
+      encryptedDek,
+      this.identity.encryptionKey.privateKey
+    )
+
+    const recipientKey = await resolveX25519PublicKey(recipientPublicKey)
+    const sharedDek = await encryptDekForPublicKey(dek, recipientKey)
+    const sharedAt = new Date().toISOString()
+
+    await this.db
+      .prepare(
+        `INSERT OR REPLACE INTO shared_records (record_id, recipient_did, encrypted_dek, shared_at)
+         VALUES (?, ?, ?, ?)`
+      )
+      .bind(id, recipientDid, sharedDek, sharedAt)
+      .run()
+
+    return true
+  }
+
+  async retrieveShared<T = EncryptedMemoryRecord>(id: string): Promise<T | null> {
+    const shared = await this.db
+      .prepare('SELECT * FROM shared_records WHERE record_id = ? AND recipient_did = ?')
+      .bind(id, this.identity.did)
+      .first<SharedRecordsRow>()
+
+    if (!shared) return null
+
+    const row = await this.db
+      .prepare('SELECT * FROM records WHERE id = ?')
+      .bind(id)
+      .first<RecordsRow>()
+
+    if (!row) return null
+    if (row.deleted_at) return null
+
+    const ciphertext = toUint8Array(row.ciphertext, 'ciphertext')
+    const nonce = toUint8Array(row.nonce, 'nonce')
+    const isPublic = row.public === true || Number(row.public) === 1 || row.encrypted_dek === null
+
+    if (isPublic) {
+      const decoded = new TextDecoder().decode(ciphertext)
+      return JSON.parse(decoded) as T
+    }
+
+    const sharedDek = toUint8Array(shared.encrypted_dek, 'encrypted_dek')
+    const dek = await decryptDekWithPrivateKey(
+      sharedDek,
+      this.identity.encryptionKey.privateKey
+    )
+    const plaintext = await decryptWithDek(ciphertext, dek, nonce)
+    const decoded = new TextDecoder().decode(plaintext)
+    return JSON.parse(decoded) as T
+  }
+
+  async listShared<T = EncryptedMemoryRecord>(
+    options: EncryptedMemorySharedListOptions = {}
+  ): Promise<Array<EncryptedMemoryListEntry<T>>> {
+    const limit = normalizeLimit(options.limit)
+    const rows = await this.db
+      .prepare('SELECT * FROM shared_records WHERE recipient_did = ?')
+      .bind(this.identity.did)
+      .all<SharedRecordsRow>()
+
+    const visible = rows.results
+      .slice()
+      .sort((a, b) => b.shared_at.localeCompare(a.shared_at))
+      .slice(0, limit)
+
+    const entries: Array<EncryptedMemoryListEntry<T>> = []
+    for (const share of visible) {
+      const recordRow = await this.db
+        .prepare('SELECT * FROM records WHERE id = ?')
+        .bind(share.record_id)
+        .first<RecordsRow>()
+
+      if (!recordRow) continue
+      if (recordRow.deleted_at) continue
+      if (options.collection && recordRow.collection !== options.collection) continue
+
+      const record = await this.decodeSharedRow<T>(recordRow, share)
+      entries.push({ id: share.record_id, record })
+    }
+
+    return entries
   }
 
   async softDelete(id: string): Promise<boolean> {
@@ -255,10 +388,96 @@ export class EncryptedMemory {
     const decoded = new TextDecoder().decode(plaintext)
     return JSON.parse(decoded) as T
   }
+
+  private async decodeSharedRow<T>(row: RecordsRow, shared: SharedRecordsRow): Promise<T> {
+    const ciphertext = toUint8Array(row.ciphertext, 'ciphertext')
+    const nonce = toUint8Array(row.nonce, 'nonce')
+    const isPublic = row.public === true || Number(row.public) === 1 || row.encrypted_dek === null
+
+    if (isPublic) {
+      const decoded = new TextDecoder().decode(ciphertext)
+      return JSON.parse(decoded) as T
+    }
+
+    const encryptedDek = toUint8Array(shared.encrypted_dek, 'encrypted_dek')
+    const dek = await decryptDekWithPrivateKey(
+      encryptedDek,
+      this.identity.encryptionKey.privateKey
+    )
+    const plaintext = await decryptWithDek(ciphertext, dek, nonce)
+    const decoded = new TextDecoder().decode(plaintext)
+    return JSON.parse(decoded) as T
+  }
 }
 
 function normalizeLimit(limit: unknown): number {
   const parsed = typeof limit === 'number' ? limit : Number(limit)
   if (!Number.isFinite(parsed) || parsed <= 0) return 50
   return Math.min(Math.floor(parsed), 200)
+}
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+const BASE58_LOOKUP = new Map(BASE58_ALPHABET.split('').map((char, index) => [char, index]))
+
+function decodeBase58btc(multibase: string): Uint8Array {
+  if (typeof multibase !== 'string' || !multibase.startsWith('z')) {
+    throw new Error(`Expected base58btc multibase string, received: ${String(multibase)}`)
+  }
+
+  const encoded = multibase.slice(1)
+  let value = 0n
+
+  for (const char of encoded) {
+    const digit = BASE58_LOOKUP.get(char)
+    if (digit === undefined) {
+      throw new Error(`Invalid base58 character: ${char}`)
+    }
+    value = value * 58n + BigInt(digit)
+  }
+
+  const bytes: number[] = []
+  while (value > 0n) {
+    bytes.push(Number(value % 256n))
+    value /= 256n
+  }
+  bytes.reverse()
+
+  let leadingZeros = 0
+  for (const char of encoded) {
+    if (char !== '1') break
+    leadingZeros += 1
+  }
+
+  const result = new Uint8Array(leadingZeros + bytes.length)
+  result.set(bytes, leadingZeros)
+  return result
+}
+
+function isCryptoKey(value: unknown): value is CryptoKey {
+  if (typeof CryptoKey !== 'function') return false
+  return value instanceof CryptoKey
+}
+
+async function resolveX25519PublicKey(value: CryptoKey | string): Promise<CryptoKey> {
+  if (isCryptoKey(value)) {
+    if (value.type !== 'public' || value.algorithm.name !== 'X25519') {
+      throw new Error('recipientPublicKey must be an X25519 public key')
+    }
+    return value
+  }
+
+  const decoded = decodeBase58btc(value)
+  // multicodec prefix for X25519 public keys: 0xec 0x01
+  if (decoded.length !== 34 || decoded[0] !== 0xec || decoded[1] !== 0x01) {
+    throw new Error('recipientPublicKey must be a multicodec X25519 public key')
+  }
+
+  const raw = decoded.slice(2)
+  return crypto.subtle.importKey(
+    'raw',
+    raw,
+    { name: 'X25519' },
+    true,
+    []
+  )
 }

@@ -339,7 +339,7 @@
       "id": "lexicon-validation",
       "title": "Wire up Zod lexicon validation at API boundaries",
       "issue": 36,
-      "priority": 40,
+      "priority": 38,
       "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
       "files": [
         "packages/core/src/lexicons.ts",
@@ -350,13 +350,14 @@
       "estimatedMinutes": 20,
       "sprint": "hardening",
       "dependsOn": [],
-      "passes": true
+      "passes": true,
+      "description": "Wire up Zod lexicon validation at API boundaries. The existing test file was added but NO implementation code was shipped. You MUST:\\n1. Import the Zod schemas from packages/core/src/lexicons.ts\\n2. Add validation middleware or helper that validates request bodies against schemas\\n3. Wire validation into the route handlers in packages/network/src/index.ts\\n4. Ensure invalid payloads return 400 with descriptive error messages\\n5. Write tests that verify both valid and invalid payloads\\n\\nDo NOT just add tests — the implementation code is the primary deliverable."
     },
     {
       "id": "memory-list-update-delete",
       "title": "Add memory list, update, and soft-delete to EncryptedMemory",
       "issue": 37,
-      "priority": 41,
+      "priority": 39,
       "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
       "files": [
         "packages/agent/src/memory.ts",
@@ -368,7 +369,8 @@
       "estimatedMinutes": 30,
       "sprint": "hardening",
       "dependsOn": [],
-      "passes": true
+      "passes": true,
+      "description": "Add memory list, update, and soft-delete to EncryptedMemory class. The current class only has write() and read(). You MUST:\\n1. Add list() method — returns all memory record IDs/metadata for an agent (query D1)\\n2. Add update() method — re-encrypts and overwrites an existing record by ID\\n3. Add softDelete() method — marks a record as deleted (adds deleted_at timestamp) without removing data\\n4. Add tests for all three methods using the D1 mock from test-utils\\n5. Update the AgentDO route handlers to expose list/update/delete via API endpoints\\n\\nFiles to modify:\\n- packages/agent/src/encrypted-memory.ts (add methods)\\n- packages/agent/src/encrypted-memory.test.ts (add tests)\\n- packages/network/src/index.ts (add route handlers)"
     },
     {
       "id": "shared-records",
@@ -386,7 +388,8 @@
       "sprint": "hardening",
       "dependsOn": [
         "memory-list-update-delete"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "relay-agent-registry",
@@ -402,7 +405,8 @@
       ],
       "estimatedMinutes": 25,
       "sprint": "hardening",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "agent-inbox",
@@ -419,7 +423,8 @@
       "sprint": "hardening",
       "dependsOn": [
         "lexicon-validation"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "error-handling",
@@ -669,7 +674,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-07T23:01:41.082Z",
-    "totalIterations": 23
+    "lastIteration": "2026-02-08T00:18:05.164Z",
+    "totalIterations": 28
   }
 }

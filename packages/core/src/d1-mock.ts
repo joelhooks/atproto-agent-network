@@ -12,8 +12,21 @@ export interface RecordRow {
   deleted_at?: string | null
 }
 
+export interface SharedRecordRow {
+  id: number
+  record_id: string
+  recipient_did: string
+  encrypted_dek: Uint8Array
+  shared_at: string
+}
+
 interface Condition {
   column: keyof RecordRow
+  value: unknown
+}
+
+interface SharedCondition {
+  column: keyof SharedRecordRow
   value: unknown
 }
 
@@ -48,6 +61,8 @@ export class D1MockStatement {
 
 export class D1MockDatabase {
   readonly records = new Map<string, RecordRow>()
+  readonly sharedRecords = new Map<string, SharedRecordRow>()
+  private sharedAutoIncrement = 0
 
   prepare(sql: string): D1MockStatement {
     return new D1MockStatement(this, sql)
@@ -85,6 +100,22 @@ export class D1MockDatabase {
       return
     }
 
+    if (normalized.includes('into shared_records')) {
+      const [recordId, recipientDid, encryptedDek, sharedAt] = params
+      const key = `${recordId as string}::${recipientDid as string}`
+      const existing = this.sharedRecords.get(key)
+      const id = existing?.id ?? (this.sharedAutoIncrement += 1)
+
+      this.sharedRecords.set(key, {
+        id,
+        record_id: recordId as string,
+        recipient_did: recipientDid as string,
+        encrypted_dek: asBytes(encryptedDek, 'encrypted_dek'),
+        shared_at: sharedAt as string,
+      })
+      return
+    }
+
     if (normalized.startsWith('update records set')) {
       this.applyUpdate(normalized, params)
       return
@@ -106,6 +137,11 @@ export class D1MockDatabase {
       return { results: rows as T[] }
     }
 
+    if (normalized.startsWith('select') && normalized.includes('from shared_records')) {
+      const rows = this.filterSharedRecords(normalized, params)
+      return { results: rows as T[] }
+    }
+
     throw new Error(`Unsupported SQL in D1MockDatabase.all: ${normalized}`)
   }
 
@@ -118,6 +154,18 @@ export class D1MockDatabase {
     const conditions = parseConditions(whereClause, params)
     return Array.from(this.records.values()).filter((row) =>
       conditions.every((condition) => matchCondition(row, condition))
+    )
+  }
+
+  private filterSharedRecords(normalized: string, params: unknown[]): SharedRecordRow[] {
+    const whereClause = extractWhereClause(normalized)
+    if (!whereClause) {
+      return Array.from(this.sharedRecords.values())
+    }
+
+    const conditions = parseSharedConditions(whereClause, params)
+    return Array.from(this.sharedRecords.values()).filter((row) =>
+      conditions.every((condition) => matchSharedCondition(row, condition))
     )
   }
 
@@ -227,6 +275,31 @@ function matchCondition(row: RecordRow, condition: Condition): boolean {
     const expected = typeof value === 'boolean' ? (value ? 1 : 0) : Number(value)
     return row.public === expected
   }
+  return row[column] === value
+}
+
+function parseSharedConditions(clause: string, params: unknown[]): SharedCondition[] {
+  const parts = clause.split(' and ').map((part) => part.trim())
+  const conditions: SharedCondition[] = []
+  let index = 0
+
+  for (const part of parts) {
+    if (!part) continue
+    const match = part.match(/^(\w+)\s*=\s*\?$/)
+    if (!match) {
+      throw new Error(`Unsupported where clause: ${part}`)
+    }
+    const column = match[1] as keyof SharedRecordRow
+    const value = params[index]
+    conditions.push({ column, value })
+    index += 1
+  }
+
+  return conditions
+}
+
+function matchSharedCondition(row: SharedRecordRow, condition: SharedCondition): boolean {
+  const { column, value } = condition
   return row[column] === value
 }
 

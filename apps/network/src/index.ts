@@ -6,6 +6,10 @@
 
 import { DurableObject } from 'cloudflare:workers'
 
+import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
+
+import { validateRequestJson } from './http-validation'
+
 export interface Env {
   AGENTS: DurableObjectNamespace
   RELAY: DurableObjectNamespace
@@ -19,42 +23,61 @@ export interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    const normalizedPathname = url.pathname.replace(/\/+$/, '')
     
     // Dashboard
-    if (url.pathname === '/dashboard' || url.pathname.startsWith('/dashboard/')) {
+    if (normalizedPathname === '/dashboard' || normalizedPathname.startsWith('/dashboard/')) {
       // TODO: Serve dashboard SPA
       return new Response('Dashboard not yet implemented', { status: 501 })
     }
     
     // Relay (firehose, subscriptions)
-    if (url.pathname.startsWith('/relay/')) {
+    if (normalizedPathname.startsWith('/relay/')) {
       const relayId = env.RELAY.idFromName('main')
       const relay = env.RELAY.get(relayId)
       return relay.fetch(request)
     }
     
     // Agent operations
-    if (url.pathname.startsWith('/agents/')) {
-      const parts = url.pathname.split('/')
+    if (normalizedPathname.startsWith('/agents/')) {
+      const parts = normalizedPathname.split('/')
       const agentName = parts[2]
       
       if (!agentName) {
         return new Response('Agent name required', { status: 400 })
       }
+
+      const leaf = parts.at(-1)
+      let forwardedRequest = request
+
+      // Validate lexicon record request bodies at the Worker boundary so we can
+      // return descriptive 400s and forward parsed defaults.
+      if ((request.method === 'POST' || request.method === 'PUT') && leaf === 'memory') {
+        const validated = await validateRequestJson(request, LexiconRecordSchema)
+        if (!validated.ok) {
+          return validated.response
+        }
+
+        forwardedRequest = new Request(request.url, {
+          method: request.method,
+          headers: request.headers,
+          body: JSON.stringify(validated.data),
+        })
+      }
       
       const agentId = env.AGENTS.idFromName(agentName)
       const agent = env.AGENTS.get(agentId)
-      return agent.fetch(request)
+      return agent.fetch(forwardedRequest)
     }
     
     // Admin
-    if (url.pathname.startsWith('/admin/')) {
+    if (normalizedPathname.startsWith('/admin/')) {
       // TODO: Admin routes
       return new Response('Admin not yet implemented', { status: 501 })
     }
     
     // Well-known (federation discovery)
-    if (url.pathname === '/.well-known/agent-network.json') {
+    if (normalizedPathname === '/.well-known/agent-network.json') {
       // TODO: Return network identity for federation
       return new Response(JSON.stringify({
         version: '0.0.1',
