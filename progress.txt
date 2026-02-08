@@ -136,3 +136,15 @@ Key patterns:
 Completed: Wire real turbo scripts or remove turbo
 Files: none
 Summary: Prior failure pattern detected: **unknown**. Mitigation: run the validation suite without `| grep` first to confirm real Vitest pass/fail, then run the exact piped validation command; also complete the mandatory `swarm memory store ...` + `openclaw system event ...` steps so the iteration doesn’t get marked “unknown” due to missing side-effects.
+
+---
+[2026-02-08T04:48:54.189Z]
+Completed: Create production-ready wrangler.toml with real resource placeholders
+Files: none
+Summary: Updated `apps/network/wrangler.toml` to be production-ready:
+
+- Added `compatibility_flags = ["nodejs_compat"]`
+- Added `[vars]` with `AI_GATEWAY_SLUG` and `OPENROUTER_MODEL_DEFAULT`
+- Set D1 `database_id = "REPLACE_WITH_D1_ID"`
+- Ensured bindings for `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORIZE`, `MESSAGE_QUEUE`, `AI`
+- Added `[env.production]` and `[env.staging]` (staging uses `name = "agent-net

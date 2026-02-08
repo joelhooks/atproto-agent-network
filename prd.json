@@ -1,72 +1,125 @@
 {
   "name": "atproto-agent-network-infra",
-  "description": "Deploy atproto-agent-network to Cloudflare Workers",
+  "description": "Deploy atproto-agent-network to Cloudflare Workers with D1, R2, Vectorize, Queues, Durable Objects, and AI Gateway",
   "version": "0.2.0",
   "repository": "https://github.com/joelhooks/atproto-agent-network",
+  "stack": {
+    "packageManager": "pnpm",
+    "testRunner": "vitest",
+    "buildTool": "tsup",
+    "monorepo": "turborepo",
+    "runtime": "cloudflare-workers",
+    "deploy": "wrangler"
+  },
   "stories": [
     {
       "id": "wrangler-toml-production",
       "title": "Create production-ready wrangler.toml with real resource placeholders",
+      "description": "Update apps/network/wrangler.toml to be production-ready. Add [vars] section for AI_GATEWAY_SLUG, OPENROUTER_MODEL_DEFAULT. Add compatibility_flags for nodejs_compat. Ensure all bindings (AGENTS DO, RELAY DO, DB D1, BLOBS R2, VECTORIZE, MESSAGE_QUEUE, AI) are correct. Add [env.production] and [env.staging] sections. The database_id should use a placeholder 'REPLACE_WITH_D1_ID' that will be filled after creation. Add migrations section for DO classes.",
       "priority": 1,
       "validationCommand": "grep -q 'nodejs_compat' apps/network/wrangler.toml && grep -q 'AI_GATEWAY_SLUG' apps/network/wrangler.toml && grep -q 'env.production' apps/network/wrangler.toml && echo PASS",
-      "files": ["apps/network/wrangler.toml"],
+      "files": [
+        "apps/network/wrangler.toml"
+      ],
+      "estimatedMinutes": 10,
       "passes": true
     },
     {
       "id": "cf-deploy-script",
       "title": "Create deploy.sh script for Cloudflare resource provisioning",
+      "description": "Create scripts/deploy.sh that provisions all CF resources in order: 1) Create D1 database 'agent-records' via wrangler d1 create, 2) Apply schema.sql via wrangler d1 execute, 3) Create R2 bucket 'agent-blobs', 4) Create Vectorize index 'agent-memory' (dimensions=1024 for bge-large), 5) Create Queue 'agent-messages', 6) Set secrets via wrangler secret put (OPENROUTER_API_KEY, ADMIN_TOKEN). Script should be idempotent (check if resource exists before creating). Output the D1 database ID for wrangler.toml. Use 'set -euo pipefail'. Each step should echo what it's doing.",
       "priority": 2,
-      "validationCommand": "test -x scripts/deploy.sh && grep -q 'd1 create' scripts/deploy.sh && grep -q 'r2 bucket create' scripts/deploy.sh && echo PASS",
-      "files": ["scripts/deploy.sh"],
-      "passes": false
+      "validationCommand": "test -x scripts/deploy.sh && grep -q 'd1 create' scripts/deploy.sh && grep -q 'r2 bucket create' scripts/deploy.sh && grep -q 'vectorize create' scripts/deploy.sh && echo PASS",
+      "files": [
+        "scripts/deploy.sh"
+      ],
+      "estimatedMinutes": 15
     },
     {
       "id": "ai-gateway-provider",
       "title": "Implement AI Gateway + OpenRouter provider module",
+      "description": "Create apps/network/src/ai-provider.ts that implements the AI gateway routing described in docs/AI-GATEWAY-ARCHITECTURE.md. Use the Vercel AI SDK pattern: createOpenRouter with baseURL pointing through CF AI Gateway. Export functions: createAgentModel(env) for reasoning (routes through gateway → OpenRouter), createEmbedding(env, text) for embeddings (uses Workers AI binding directly). Add Env types for OPENROUTER_API_KEY, CF_ACCOUNT_ID, AI_GATEWAY_SLUG. Write tests in ai-provider.test.ts that mock the env and verify correct URL construction and provider creation.",
       "priority": 3,
       "validationCommand": "pnpm vitest run apps/network/src/ai-provider.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": ["apps/network/src/ai-provider.ts", "apps/network/src/ai-provider.test.ts"],
-      "passes": false
+      "files": [
+        "apps/network/src/ai-provider.ts",
+        "apps/network/src/ai-provider.test.ts"
+      ],
+      "estimatedMinutes": 20,
+      "dependsOn": [
+        "wrangler-toml-production"
+      ]
     },
     {
       "id": "env-type-updates",
       "title": "Update Env interface with all production bindings and secrets",
+      "description": "Update the Env interface in apps/network/src/index.ts to include all production bindings: OPENROUTER_API_KEY (secret), CF_ACCOUNT_ID (var), AI_GATEWAY_SLUG (var), OPENROUTER_MODEL_DEFAULT (var), ENVIRONMENT (var: 'production' | 'staging' | 'development'). Also export the Env type so other modules can import it. Make sure all existing test mocks in *.test.ts files are updated to include the new optional fields (they can be undefined in tests).",
       "priority": 4,
       "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": ["apps/network/src/index.ts"],
-      "passes": false
+      "files": [
+        "apps/network/src/index.ts",
+        "apps/network/src/ai-provider.ts"
+      ],
+      "estimatedMinutes": 10,
+      "dependsOn": [
+        "ai-gateway-provider"
+      ]
     },
     {
       "id": "health-endpoint",
       "title": "Add /health endpoint with binding checks",
+      "description": "Add a GET /health endpoint to apps/network/src/index.ts that returns JSON with: { status: 'ok', version: '0.2.0', environment: env.ENVIRONMENT, bindings: { db: boolean, r2: boolean, vectorize: boolean, queue: boolean, ai: boolean, agents_do: boolean, relay_do: boolean } }. Each binding check should be true/false based on whether the binding exists in env. This endpoint should NOT require auth (skip the auth middleware for /health). Write a test for it.",
       "priority": 5,
       "validationCommand": "pnpm vitest run apps/network/src/index.test.ts 2>&1 | grep -qE 'passed' && echo PASS",
-      "files": ["apps/network/src/index.ts", "apps/network/src/index.test.ts"],
-      "passes": false
+      "files": [
+        "apps/network/src/index.ts",
+        "apps/network/src/index.test.ts"
+      ],
+      "estimatedMinutes": 10
     },
     {
       "id": "wrangler-build-check",
       "title": "Verify wrangler build succeeds locally",
+      "description": "Run 'npx wrangler deploy --dry-run --outdir dist' in apps/network/ to verify the worker builds and bundles correctly. Fix any import issues (the worker uses cloudflare:workers imports). If there are build errors, fix them. Add a 'build:check' script to apps/network/package.json that runs the dry-run deploy. The key issue will likely be that tsup builds ESM but wrangler needs its own bundling — make sure wrangler.toml points to the TS source (src/index.ts) not dist.",
       "priority": 6,
       "validationCommand": "cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS",
-      "files": ["apps/network/package.json", "apps/network/wrangler.toml"],
-      "passes": false
+      "files": [
+        "apps/network/package.json",
+        "apps/network/wrangler.toml",
+        "apps/network/src/index.ts"
+      ],
+      "estimatedMinutes": 20,
+      "dependsOn": [
+        "wrangler-toml-production",
+        "env-type-updates"
+      ]
     },
     {
       "id": "github-actions-deploy",
       "title": "Create GitHub Actions deploy workflow",
+      "description": "Create .github/workflows/deploy.yml that: 1) Triggers on push to main, 2) Installs pnpm + deps, 3) Runs full test suite (pnpm vitest run --passWithNoTests), 4) Runs typecheck (pnpm turbo typecheck), 5) Deploys to CF Workers using wrangler-action (cloudflare/wrangler-action@v3). Use secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID. Only deploy if tests+typecheck pass. Add a 'deploy-staging' job that deploys to staging env on PR.",
       "priority": 7,
-      "validationCommand": "test -f .github/workflows/deploy.yml && grep -q 'wrangler-action' .github/workflows/deploy.yml && echo PASS",
-      "files": [".github/workflows/deploy.yml"],
-      "passes": false
+      "validationCommand": "test -f .github/workflows/deploy.yml && grep -q 'wrangler-action' .github/workflows/deploy.yml && grep -q 'CLOUDFLARE_API_TOKEN' .github/workflows/deploy.yml && echo PASS",
+      "files": [
+        ".github/workflows/deploy.yml"
+      ],
+      "estimatedMinutes": 15
     },
     {
       "id": "smoke-test-script",
       "title": "Create post-deploy smoke test script",
+      "description": "Create scripts/smoke-test.sh that accepts a base URL argument (default: the production worker URL) and runs: 1) GET /health — verify 200 + JSON status ok, 2) POST /agents — verify 401 without auth token, 3) GET /relay/ — verify relay endpoint responds. Use curl with -sf flags. Exit 1 on any failure. Echo results. This is for post-deploy validation.",
       "priority": 8,
-      "validationCommand": "test -x scripts/smoke-test.sh && grep -q '/health' scripts/smoke-test.sh && echo PASS",
-      "files": ["scripts/smoke-test.sh"],
-      "passes": false
+      "validationCommand": "test -x scripts/smoke-test.sh && grep -q '/health' scripts/smoke-test.sh && grep -q 'curl' scripts/smoke-test.sh && echo PASS",
+      "files": [
+        "scripts/smoke-test.sh"
+      ],
+      "estimatedMinutes": 10
     }
-  ]
+  ],
+  "metadata": {
+    "createdAt": "2026-02-08T04:48:54.189Z",
+    "lastIteration": "2026-02-08T04:48:54.189Z",
+    "totalIterations": 1
+  }
 }

@@ -1,9 +1,13 @@
-# Agent Network - Cloudflare Workers Configuration
-# Copy to wrangler.toml and fill in resource IDs
-
 name = "agent-network"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Cloudflare AI Gateway slug (Dashboard -> AI -> AI Gateway)
+AI_GATEWAY_SLUG = "atproto-agent-network"
+# Default OpenRouter reasoning model
+OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
 
 # Durable Objects
 [[durable_objects.bindings]]
@@ -18,7 +22,7 @@ class_name = "RelayDO"
 [[d1_databases]]
 binding = "DB"
 database_name = "agent-records"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "REPLACE_WITH_D1_ID"
 
 # Blob storage
 [[r2_buckets]]
@@ -48,3 +52,17 @@ binding = "AI"
 [[migrations]]
 tag = "v1"
 new_classes = ["AgentDO", "RelayDO"]
+
+[env.production]
+name = "agent-network"
+
+[env.production.vars]
+AI_GATEWAY_SLUG = "atproto-agent-network"
+OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
+
+[env.staging]
+name = "agent-network-staging"
+
+[env.staging.vars]
+AI_GATEWAY_SLUG = "atproto-agent-network"
+OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
