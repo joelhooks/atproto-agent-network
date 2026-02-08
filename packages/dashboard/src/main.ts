@@ -39,7 +39,7 @@ type AgentCardState = {
 const API_BASE =
   window.location.hostname === 'localhost'
     ? 'http://localhost:8787'
-    : 'https://agent-network-production.joelhooks.workers.dev'
+    : 'https://agent-network.joelhooks.workers.dev'
 
 const WS_BASE = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://')
 
