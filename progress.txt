@@ -131,3 +131,15 @@ Summary: Validation passes already: `pnpm turbo test --filter=@atproto-agent/cor
 - **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `"test": "vitest run"`, so Turbo can run tests for `@atproto-agent/core`.
 - **Tests added/modified:** None.
 - **What I learned:** `pnpm 
+
+---
+[2026-02-08T02:09:10.314Z]
+Completed: Create test utilities and fixtures
+Files: none
+Summary: Validation already passes for this story.
+
+- `packages/core/src/test-utils.ts` already contains deterministic fixture helpers/factories (seedable `createTidFixture()`, `resetFixtureState()`, DID/record-id builders, byte fixtures, and core + lexicon type fixtures).
+- `packages/core/src/test-utils.test.ts` already covers these (7 tests).
+
+**Validation**
+- `pnpm vitest run packages/core/src/test-util

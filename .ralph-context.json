@@ -76,6 +76,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "- `packages/core/src/identity.test.ts` already exists (covers `createDid`/`parseDid`, federated DID parsing, and `generateTid`), and the repo already has commit `751d108 ralph: Create first unit test for identity.ts`.\n- Validation: `pnpm vitest run packages/core/src/identity.test.ts` (passes: 4/4).\n\n**Files modified (and why)**\n- None for this story.\n\n**Tests added/modified**\n- None; existing `packages/core/src/identity.test.ts` was used.\n\n**What I learned**\n- Vitest here runs in Node with globa"
+    },
+    {
+      "id": "turbo-test-task",
+      "title": "Add turbo task for test",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Validation passes already: `pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS` prints `PASS`.\n\n- **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `\"test\": \"vitest run\"`, so Turbo can run tests for `@atproto-agent/core`.\n- **Tests added/modified:** None.\n- **What I learned:** `pnpm turbo test --filter=@atproto-agent/core` runs the filtered package’s `test` script and Vitest’s stan"
     }
   ],
   "failures": [
