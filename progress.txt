@@ -175,3 +175,11 @@ Summary: Prior failure pattern detected: `unknown`. Mitigation: ran `pnpm vitest
 
 **Changes**
 - Updated `apps/network/src/index.ts` to make `Env` include all production bindings + vars/secrets (and made 
+
+---
+[2026-02-08T05:30:24.385Z]
+Completed: Add /health endpoint with binding checks
+Files: none
+Summary: Prior failure pattern detected: `unknown` / `build_error`. Mitigation: ran `pnpm vitest run apps/network/src/index.test.ts` *without* piping first to see real failures, then ran the exact piped validation command.
+
+- Added unauthenticated `GET /health` that checks required bindings/vars and returns `200` with `{ status: "ok", missing: [], uptimeMs }` or `500` with `{ status: "error", missing: [...

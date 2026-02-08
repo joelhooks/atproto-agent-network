@@ -13,6 +13,8 @@ import { applyCorsHeaders, corsPreflightResponse } from './cors'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
+const WORKER_STARTED_AT = Date.now()
+
 export interface Env {
   AGENTS: DurableObjectNamespace
   RELAY: DurableObjectNamespace
@@ -33,6 +35,35 @@ export interface Env {
   CORS_ORIGIN?: string
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function hasMethod(value: unknown, method: string): boolean {
+  return typeof (value as Record<string, unknown> | null | undefined)?.[method] === 'function'
+}
+
+function listMissingBindings(env: Partial<Env>): string[] {
+  const missing: string[] = []
+
+  if (!hasMethod(env.AGENTS, 'idFromName') || !hasMethod(env.AGENTS, 'get')) missing.push('AGENTS')
+  if (!hasMethod(env.RELAY, 'idFromName') || !hasMethod(env.RELAY, 'get')) missing.push('RELAY')
+  if (!hasMethod(env.DB, 'prepare')) missing.push('DB')
+  if (!hasMethod(env.BLOBS, 'get') || !hasMethod(env.BLOBS, 'put')) missing.push('BLOBS')
+  if (!hasMethod(env.VECTORIZE, 'query')) missing.push('VECTORIZE')
+  if (!hasMethod(env.MESSAGE_QUEUE, 'send')) missing.push('MESSAGE_QUEUE')
+  if (!hasMethod(env.AI, 'run')) missing.push('AI')
+
+  if (!isNonEmptyString(env.CF_ACCOUNT_ID)) missing.push('CF_ACCOUNT_ID')
+  if (!isNonEmptyString(env.AI_GATEWAY_SLUG)) missing.push('AI_GATEWAY_SLUG')
+  if (!isNonEmptyString(env.OPENROUTER_API_KEY)) missing.push('OPENROUTER_API_KEY')
+  if (!isNonEmptyString(env.OPENROUTER_MODEL_DEFAULT)) missing.push('OPENROUTER_MODEL_DEFAULT')
+
+  if (!isNonEmptyString(env.ADMIN_TOKEN)) missing.push('ADMIN_TOKEN')
+
+  return missing
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -43,6 +74,28 @@ export default {
       async () => {
         const url = new URL(request.url)
         const normalizedPathname = url.pathname.replace(/\/+$/, '')
+
+        if (normalizedPathname === '/health') {
+          return withErrorHandling(
+            () => {
+              const missing = listMissingBindings(env)
+              const uptimeMs = Math.max(0, Date.now() - WORKER_STARTED_AT)
+
+              if (missing.length) {
+                return Response.json(
+                  { status: 'error', missing, uptimeMs },
+                  { status: 500, headers: { 'Cache-Control': 'no-store' } }
+                )
+              }
+
+              return Response.json(
+                { status: 'ok', missing: [], uptimeMs },
+                { headers: { 'Cache-Control': 'no-store' } }
+              )
+            },
+            { route: 'network.health', request }
+          )
+        }
 
         const auth = requireAdminBearerAuth(request, env)
         if (auth) return auth

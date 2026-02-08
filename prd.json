@@ -54,7 +54,7 @@
         "apps/network/src/index.ts",
         "apps/network/src/index.test.ts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "wrangler-build-check",
@@ -90,7 +90,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T04:57:17.775Z",
-    "lastIteration": "2026-02-08T05:23:18.489Z",
-    "totalIterations": 3
+    "lastIteration": "2026-02-08T05:30:24.384Z",
+    "totalIterations": 4
   }
 }

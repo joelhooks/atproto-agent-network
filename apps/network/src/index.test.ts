@@ -18,6 +18,28 @@ function createAgentNamespace(agentFetch: (req: Request) => Promise<Response>) {
 
 const ADMIN_TOKEN = 'test-admin-token'
 
+function createHealthEnv(overrides: Record<string, unknown> = {}) {
+  const agentFetch = vi.fn(async () => new Response('ok'))
+
+  return {
+    AGENTS: createAgentNamespace(agentFetch),
+    RELAY: createAgentNamespace(agentFetch),
+    DB: { prepare: vi.fn() },
+    BLOBS: { get: vi.fn(), put: vi.fn() },
+    VECTORIZE: { query: vi.fn() },
+    MESSAGE_QUEUE: { send: vi.fn() },
+    AI: { run: vi.fn() },
+
+    CF_ACCOUNT_ID: '00000000000000000000000000000000',
+    AI_GATEWAY_SLUG: 'test-gateway',
+    OPENROUTER_API_KEY: 'test-openrouter-key',
+    OPENROUTER_MODEL_DEFAULT: 'openrouter/test',
+
+    ADMIN_TOKEN,
+    ...overrides,
+  } as never
+}
+
 describe('network worker lexicon validation', () => {
   it('rejects requests without a bearer token before routing', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
@@ -252,5 +274,37 @@ describe('network worker CORS', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://dashboard.example')
+  })
+})
+
+describe('network worker health endpoint', () => {
+  it('responds 200 without requiring auth when bindings are present', async () => {
+    const env = createHealthEnv()
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(new Request('https://example.com/health'), env)
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'ok',
+      missing: [],
+    })
+  })
+
+  it('returns 500 and lists missing bindings when misconfigured', async () => {
+    const env = {} as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(new Request('https://example.com/health'), env)
+
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body).toMatchObject({
+      status: 'error',
+      missing: expect.any(Array),
+    })
+    expect(body.missing).toEqual(expect.arrayContaining(['AGENTS', 'ADMIN_TOKEN']))
   })
 })
