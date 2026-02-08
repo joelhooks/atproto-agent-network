@@ -48,6 +48,20 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Files Modified (and why)**\n- `apps/network/src/agent.ts`: implemented `AgentDO.webSocketMessage()` to handle `{\"type\":\"prompt\",\"id\",\"prompt\",\"options\"}` (plus raw-text prompts) and reply with `{\"type\":\"prompt.result\",\"id\",\"result\"}`; added basic hibernation metadata in `handleWebSocket()` and `webSocketError()` logging.\n- `apps/network/src/relay.ts`: implemented `RelayDO.webSocketMessage()` to accept `{\"type\":\"subscribe\",\"collections\",\"dids\"}` updates, persist them via `ws.serializeAttachment("
+    },
+    {
+      "id": "auth-middleware",
+      "title": "Add auth middleware (bearer token) to all endpoints",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Implemented a shared bearer-token gate for the Worker so **every public endpoint** is protected.\n\n**Files modified (and why)**\n- `apps/network/src/auth.ts`: added `requireAdminBearerAuth()` that enforces `Authorization: Bearer <token>` against `env.ADMIN_TOKEN` (fails closed with `500` if not configured).\n- `apps/network/src/index.ts`: added the auth middleware at the top of `fetch()` so it runs before routing or JSON body parsing.\n- `apps/network/src/auth.test.ts`: new unit tests for the auth h"
+    },
+    {
+      "id": "consolidate-mocks-cors",
+      "title": "Consolidate D1 mock and add CORS headers",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
     }
   ],
   "failures": [
@@ -68,6 +82,11 @@
     },
     {
       "storyId": "agent-inbox",
+      "category": "unknown",
+      "error": "PASS\n"
+    },
+    {
+      "storyId": "consolidate-mocks-cors",
       "category": "unknown",
       "error": "PASS\n"
     }

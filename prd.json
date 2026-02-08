@@ -505,7 +505,8 @@
       ],
       "estimatedMinutes": 15,
       "sprint": "hardening",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "fix-key-serialization",
@@ -678,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T01:00:59.927Z",
-    "totalIterations": 32
+    "lastIteration": "2026-02-08T01:17:49.241Z",
+    "totalIterations": 33
   }
 }

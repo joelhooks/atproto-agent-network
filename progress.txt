@@ -484,3 +484,22 @@ Summary: Implemented a shared bearer-token gate for the Worker so **every public
 **Files modified (and why)**
 - `apps/network/src/auth.ts`: added `requireAdminBearerAuth()` that enforces `Authorization: Bearer <token>` against `env.ADMIN_TOKEN` (fails closed with `500` if not configured).
 - `apps/network/src/index.ts`: added the auth middleware at the top of `fetch()` so it runs b
+
+---
+[2026-02-08T01:11:08.573Z]
+Failed: Consolidate D1 mock and add CORS headers [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T01:17:49.242Z]
+Completed: Consolidate D1 mock and add CORS headers
+Files: none
+Summary: PR `#49` is up.
+
+**Files Modified (and why)**
+- `apps/network/src/agent-do.test.ts`: removed the local duplicate record row shape so tests rely on the shared `D1MockDatabase`.
+- `apps/network/src/index.test.ts`: added CORS coverage (OPTIONS preflight, auth errors include CORS, configured origin).
+- `apps/network/src/cors.ts`: new CORS helpers (preflight + apply headers; `CORS_ORIGIN` config).
+- `a
