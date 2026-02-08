@@ -54,8 +54,12 @@ function createState() {
 }
 
 function createSocket(sub: { collections: string[]; dids: string[] }) {
+  let attachment = sub
   return {
-    deserializeAttachment: () => sub,
+    deserializeAttachment: () => attachment,
+    serializeAttachment: (next: unknown) => {
+      attachment = next as { collections: string[]; dids: string[] }
+    },
     send: vi.fn(),
   } as unknown as WebSocket
 }
@@ -263,5 +267,34 @@ describe('RelayDO', () => {
     expect(response.status).toBe(200)
     expect((aliceComms as any).send).toHaveBeenCalledWith(JSON.stringify(commitEvent))
     expect((bobComms as any).send).not.toHaveBeenCalled()
+  })
+
+  it('updates websocket subscription filters via message', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, {} as never)
+
+    const ws = createSocket({ collections: ['*'], dids: ['*'] })
+
+    await relay.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'subscribe',
+        collections: ['agent.comms.*'],
+        dids: ['did:cf:alice'],
+      })
+    )
+
+    expect(ws.deserializeAttachment()).toEqual({
+      collections: ['agent.comms.*'],
+      dids: ['did:cf:alice'],
+    })
+    expect((ws as any).send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'subscribed',
+        collections: ['agent.comms.*'],
+        dids: ['did:cf:alice'],
+      })
+    )
   })
 })

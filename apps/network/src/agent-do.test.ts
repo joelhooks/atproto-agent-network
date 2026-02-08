@@ -721,6 +721,36 @@ describe('AgentDO', () => {
     expect(db.records.size).toBe(0)
   })
 
+  it('handles prompt messages over the agent websocket', async () => {
+    const { state } = createState('agent-ws')
+    const prompt = vi.fn().mockResolvedValue({ content: 'ok' })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt })
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const ws = {
+      send: vi.fn(),
+      serializeAttachment: vi.fn(),
+      deserializeAttachment: vi.fn().mockReturnValue({}),
+    } as unknown as WebSocket
+
+    await agent.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'prompt', id: 'req-1', prompt: 'hello', options: { temperature: 0 } })
+    )
+
+    expect(prompt).toHaveBeenCalledWith('hello', { temperature: 0 })
+    expect((ws as any).send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'prompt.result', id: 'req-1', result: { content: 'ok' } })
+    )
+  })
+
   it('returns 500 JSON when a route handler throws', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { state } = createState('agent-route-error')

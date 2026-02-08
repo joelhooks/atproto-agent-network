@@ -237,6 +237,8 @@ export class AgentDO extends DurableObject {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
     
+    // Persist basic connection metadata through hibernation.
+    server.serializeAttachment({ connectedAt: Date.now() })
     this.ctx.acceptWebSocket(server)
     
     return new Response(null, { status: 101, webSocket: client })
@@ -514,11 +516,86 @@ export class AgentDO extends DurableObject {
     return new Response('Method not allowed', { status: 405 })
   }
   
-  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
-    // TODO: Handle incoming WebSocket messages
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    try {
+      if (!this.initialized) {
+        await this.initialize()
+      }
+
+      if (!this.agent) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Agent unavailable' }))
+        return
+      }
+
+      const text =
+        typeof message === 'string'
+          ? message
+          : new TextDecoder().decode(new Uint8Array(message))
+      const trimmed = text.trim()
+
+      const parsed = (() => {
+        if (!trimmed) return null
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            return JSON.parse(trimmed) as unknown
+          } catch {
+            return null
+          }
+        }
+        return null
+      })()
+
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const payload = parsed as Record<string, unknown>
+        const type = typeof payload.type === 'string' ? payload.type : ''
+
+        if (type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }))
+          return
+        }
+
+        const prompt = typeof payload.prompt === 'string' ? payload.prompt : null
+        const options =
+          payload.options && typeof payload.options === 'object' && !Array.isArray(payload.options)
+            ? (payload.options as Record<string, unknown>)
+            : undefined
+        const id = typeof payload.id === 'string' ? payload.id : undefined
+
+        if (!prompt) {
+          ws.send(JSON.stringify({ type: 'error', error: 'prompt is required' }))
+          return
+        }
+
+        const result = await this.agent.prompt(prompt, options)
+        ws.send(JSON.stringify({ type: 'prompt.result', id, result }))
+        return
+      }
+
+      // Default behavior: treat raw text as a prompt.
+      if (!trimmed) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Empty message' }))
+        return
+      }
+
+      const result = await this.agent.prompt(trimmed)
+      ws.send(JSON.stringify({ type: 'prompt.result', result }))
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO websocket message error', { did: this.did, error: messageText })
+      try {
+        ws.send(JSON.stringify({ type: 'error', error: messageText }))
+      } catch {
+        // Ignore send errors on closed sockets.
+      }
+    }
   }
   
   webSocketClose(ws: WebSocket, code: number, reason: string): void {
     // TODO: Cleanup
+  }
+
+  webSocketError(ws: WebSocket, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('AgentDO websocket error', { did: this.did, error: message })
   }
 }

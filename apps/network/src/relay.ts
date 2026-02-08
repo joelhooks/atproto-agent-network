@@ -335,10 +335,63 @@ export class RelayDO extends DurableObject {
   }
   
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
-    // Handle subscription updates
+    try {
+      const text =
+        typeof message === 'string'
+          ? message
+          : new TextDecoder().decode(new Uint8Array(message))
+      const trimmed = text.trim()
+      if (!trimmed) return
+
+      let payload: unknown
+      try {
+        payload = JSON.parse(trimmed) as unknown
+      } catch {
+        ws.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }))
+        return
+      }
+
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Invalid message' }))
+        return
+      }
+
+      const data = payload as Record<string, unknown>
+      const type = typeof data.type === 'string' ? data.type : ''
+
+      if (type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }))
+        return
+      }
+
+      // Allow clients to update filters after connecting.
+      if (type && type !== 'subscribe' && type !== 'filters' && type !== 'update') {
+        ws.send(JSON.stringify({ type: 'error', error: 'Unsupported message type' }))
+        return
+      }
+
+      const collections = this.normalizeFilterList(data.collections)
+      const dids = this.normalizeFilterList(data.dids)
+
+      ws.serializeAttachment({ collections, dids } satisfies Subscription)
+      ws.send(JSON.stringify({ type: 'subscribed', collections, dids }))
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error)
+      console.error('RelayDO websocket message error', { error: messageText })
+      try {
+        ws.send(JSON.stringify({ type: 'error', error: messageText }))
+      } catch {
+        // Ignore send errors on closed sockets.
+      }
+    }
   }
   
   webSocketClose(ws: WebSocket, code: number, reason: string): void {
     // Cleanup subscription
+  }
+
+  webSocketError(ws: WebSocket, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('RelayDO websocket error', { error: message })
   }
 }

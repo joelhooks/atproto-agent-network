@@ -472,7 +472,8 @@
       "sprint": "hardening",
       "dependsOn": [
         "relay-subscription-filtering"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "auth-middleware",
@@ -676,7 +677,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T00:43:41.947Z",
-    "totalIterations": 30
+    "lastIteration": "2026-02-08T00:53:24.750Z",
+    "totalIterations": 31
   }
 }

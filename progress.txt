@@ -466,3 +466,11 @@ Files: none
 Summary: **Files Modified (and why)**
 - `apps/network/src/relay.ts`: implemented `RelayDO` firehose fanout filtering by `collections` and `dids` (supports `*` + simple glob patterns like `agent.comms.*`; extracts DID from `did|repo|agent_did|agentDid` and collections from `collection|record.$type|ops[].path`). Also accepts Jetstream-style query params `wantedCollections`/`wantedDids`.
 - `apps/network/src/r
+
+---
+[2026-02-08T00:53:24.750Z]
+Completed: Implement WebSocket message handlers for AgentDO and RelayDO
+Files: none
+Summary: **Files Modified (and why)**
+- `apps/network/src/agent.ts`: implemented `AgentDO.webSocketMessage()` to handle `{"type":"prompt","id","prompt","options"}` (plus raw-text prompts) and reply with `{"type":"prompt.result","id","result"}`; added basic hibernation metadata in `handleWebSocket()` and `webSocketError()` logging.
+- `apps/network/src/relay.ts`: implemented `RelayDO.webSocketMessage()` to a
