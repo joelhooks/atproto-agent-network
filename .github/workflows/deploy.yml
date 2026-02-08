@@ -43,6 +43,9 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Typecheck
+        run: pnpm turbo typecheck
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
@@ -50,3 +53,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/network
           command: deploy --env ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
+
+      - name: Smoke test
+        run: ./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev
+        timeout-minutes: 2
