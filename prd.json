@@ -178,7 +178,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": true
     },
     {
       "id": "export-public-key",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T02:41:33.528Z",
-    "totalIterations": 42
+    "lastIteration": "2026-02-08T02:44:26.807Z",
+    "totalIterations": 43
   }
 }

@@ -197,3 +197,19 @@ Summary: `generateX25519Keypair` is already implemented and the story’s valida
 - **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)
 - **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)
 - **What I le
+
+---
+[2026-02-08T02:44:26.808Z]
+Completed: Implement generateEd25519Keypair
+Files: none
+Summary: **Implemented**
+- `generateEd25519Keypair` was already implemented in `packages/core/src/crypto.ts` using WebCrypto (`crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign','verify'])`).
+
+**Files modified (and why)**
+- None (implementation already present).
+
+**Tests added/modified**
+- None (existing coverage already in `packages/core/src/crypto.test.ts`).
+
+**Validation**
+- `pnpm vitest run p
