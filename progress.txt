@@ -429,3 +429,9 @@ Summary: Implemented Story 4b observe phase in AgentDO. Added public `observe()`
 Completed: 4c: Think/Act/Reflect — Pi loop cycle
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
 Summary: Starting story 4c. First step is to load the Pi agent skill + current AgentDO/agent wrapper code, plus Pi upstream API references, then write failing tests in apps/network/src/agent-do.test.ts for think/act/reflect before implementing.
+
+---
+[2026-02-08T18:45:10.384Z]
+Completed: 4d: WebSocket broadcast of loop events
+Files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
+Summary: Starting story 4d (WS broadcast of loop events). Next: inspect `docs/O11Y.md`, the existing AgentDO loop code, and the `cloudflare-do` + `zap-cli` skills, then write failing tests in `apps/network/src/agent-do.test.ts` before implementing broadcasting in `apps/network/src/agent.ts`.

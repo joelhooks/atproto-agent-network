@@ -96,7 +96,7 @@
       "title": "4d: WebSocket broadcast of loop events",
       "description": "GitHub Issue #63. Depends on #62. Broadcast loop lifecycle events (loop.started, loop.observe, loop.think, loop.act, loop.reflect, loop.sleep, loop.error) to connected WS clients via ctx.getWebSockets(). Events match docs/O11Y.md schema (trace_id, span_id, agent_did). Handle stale connections gracefully. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (WebSocket hibernation), .agents/skills/zap-cli (O11Y events).\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Loop events broadcast to connected clients",
         "Events match O11Y schema",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 7,
-    "lastIteration": "2026-02-08T18:44:03.236Z"
+    "totalIterations": 8,
+    "lastIteration": "2026-02-08T18:45:10.384Z"
   },
   "totalStories": 11
 }
