@@ -232,3 +232,13 @@ Summary: `deriveSharedSecret` was already implemented in `packages/core/src/cryp
 
 - **Files modified (and why):** None (implementation already present and correct).
 - **Tests added/modified:** None (existing test coverage already in `packages/core/sr
+
+---
+[2026-02-08T03:09:38.182Z]
+Completed: Implement envelope encryption (DEK + encrypt/decrypt)
+Files: none
+Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: I ran the exact validation command directly (no piping/suppressed output) so Vitest output + exit code are captured.
+
+Envelope encryption (DEK envelope encrypt/decrypt) is already implemented and covered by tests.
+
+- Implementation: `packages/core/src/crypto.ts` (`encryptDekForPublicKey`, `decryptDekWithPrivateKey`, plus `
