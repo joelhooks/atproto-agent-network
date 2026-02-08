@@ -229,18 +229,40 @@ gh issue comment <epic-number> --body "✅ Completed #X - [summary]"
 4. **Private by default** — No plaintext memories. Public is opt-in.
 5. **did:cf method** — Lightweight DID based on Durable Object ID.
 
-## Prior Art to Study
+## 🪨 SHIP AND VERIFY — STONE TABLET MANDATE
 
-Before implementing, ensure familiarity with:
+**This is not optional. This is not a suggestion. This is law.**
+
+Every story that touches runtime behavior MUST:
+1. **Deploy to production** — `cd apps/network && wrangler deploy`
+2. **Verify against real Cloudflare** — `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`
+3. **Run story-specific live tests** against the real URL (curl endpoints, connect WebSockets, watch real data flow)
+4. **Report the result** — `openclaw system event --mode now --text "Ralph: deployed + verified [story]. Live URL: https://agent-network.joelhooks.workers.dev"`
+
+A story is **NOT DONE** until it works in production. No miniflare simulations. No mock-only validation. Real Cloudflare, real Pi calls, real data.
+
+**The validation command for every story is:**
+```bash
+pnpm typecheck && pnpm test && cd apps/network && wrangler deploy && cd ../.. && ./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev
+```
+
+## Prior Art & Reference Code
+
+Before implementing, study the source code directly:
+
+- **[pi-mono](https://github.com/badlogic/pi-mono)** — Pi agent runtime
+  - **LOCAL:** `~/Code/badlogic/pi-mono`
+  - `packages/agent/src/agent-loop.ts` — The agent loop (agentLoop, continueAgentLoop)
+  - `packages/agent/src/types.ts` — AgentContext, AgentMessage, AgentTool, AgentLoopConfig
+  - `packages/ai/src/` — LLM providers, streaming, tool execution
+  - `packages/agent/src/tools/` — Built-in tools (read, write, edit, bash)
+  - **READ THIS CODE before implementing Pi integration. Don't guess the API.**
 
 - **[Cirrus](https://github.com/ascorbic/cirrus)** — Production PDS on Cloudflare
-- **[pi-mono](https://github.com/badlogic/pi-mono)** — Pi agent runtime
-- **[moltworker](https://github.com/cloudflare/moltworker)** — OpenClaw on Cloudflare
+  - **LOCAL:** `~/Code/ascorbic/cirrus`
 
-Local clones exist at:
-- `~/Code/ascorbic/cirrus`
-- `~/Code/badlogic/pi-mono`
-- `~/Code/cloudflare/moltworker`
+- **[moltworker](https://github.com/cloudflare/moltworker)** — OpenClaw on Cloudflare
+  - **LOCAL:** `~/Code/cloudflare/moltworker`
 
 ## Testing Strategy
 
@@ -316,13 +338,18 @@ wrangler tail                   # View logs
 - ❌ Build custom agent loop (use Pi)
 - ❌ **Hand-write package.json dependencies** — NEVER manually edit dependency versions or create stub packages
 - ❌ Create fake workspace packages to satisfy imports
+- ❌ **Call a story "done" without deploying to prod** — see SHIP AND VERIFY mandate above
+- ❌ **Guess the Pi API** — read `~/Code/badlogic/pi-mono/packages/agent/src/` first
+- ❌ **Use miniflare for validation** — deploy to real Cloudflare
 
 ## Do This
 
 - ✅ Encrypt everything by default
 - ✅ Test security assumptions explicitly
-- ✅ Study prior art before implementing
+- ✅ Study prior art before implementing — **especially `~/Code/badlogic/pi-mono`**
 - ✅ Store learnings in hivemind
 - ✅ Commit frequently
 - ✅ Ping Oracle at gates
 - ✅ **ALWAYS install packages from CLI**: `pnpm add <pkg>` or `pnpm add -D <pkg>` — never hand-write versions in package.json
+- ✅ **Deploy and verify every story against real prod** — `wrangler deploy && ./scripts/smoke-test.sh`
+- ✅ **Report deploys via openclaw system event** — so the human sees real messages flowing
