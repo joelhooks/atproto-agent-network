@@ -132,6 +132,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "`deriveSharedSecret` was already implemented in `packages/core/src/crypto.ts` (uses `crypto.subtle.deriveBits({ name: 'X25519', public }, private, 256)` and returns a 32-byte `Uint8Array`), and the story validation already passes.\n\n- **Files modified (and why):** None (implementation already present and correct).\n- **Tests added/modified:** None (existing test coverage already in `packages/core/src/crypto.test.ts`).\n- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'deriveSh"
+    },
+    {
+      "id": "envelope-encryption",
+      "title": "Implement envelope encryption (DEK + encrypt/decrypt)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`packages/core/src/crypto.ts` implements a v1 DEK envelope as `[version|salt(16)|nonce(12)|ephemeralX25519PublicKey(32)|ciphertext]`, using X25519 shared secret -> HKDF(SHA-256, info `atproto-agent-network:dek`) -> AES-GCM to encrypt the 32-byte DEK.\n`encryptDekForPublicKey`/`decryptDekWithPrivateKey` require X25519 keys; the envelope parser rejects wrong versions/lengths, and decrypting with the wrong private key correctly throws."
     }
   ],
   "failures": [

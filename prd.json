@@ -247,7 +247,7 @@
         "envelope-encryption"
       ],
       "sprint": "storage",
-      "passes": false
+      "passes": true
     },
     {
       "id": "pi-agent-wrapper",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T03:09:38.181Z",
-    "totalIterations": 46
+    "lastIteration": "2026-02-08T03:12:52.692Z",
+    "totalIterations": 47
   }
 }

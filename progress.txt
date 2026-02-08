@@ -242,3 +242,11 @@ Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigat
 Envelope encryption (DEK envelope encrypt/decrypt) is already implemented and covered by tests.
 
 - Implementation: `packages/core/src/crypto.ts` (`encryptDekForPublicKey`, `decryptDekWithPrivateKey`, plus `
+
+---
+[2026-02-08T03:12:52.692Z]
+Completed: Create D1 schema for encrypted records
+Files: none
+Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: ran the exact validation command directly (no piping) and polled the running process to capture full Vitest output + exit code.
+
+`apps/network/schema.sql` already exists and matches the encrypted-records requirements (`records`, `shared_records`, and the lookup indexes). `apps/network/src/schema.test.ts` already asserts th
