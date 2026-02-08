@@ -181,6 +181,13 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] PASS\n"
+    },
+    {
+      "id": "fix-key-serialization",
+      "title": "Fix CryptoKeyPair serialization in DO storage",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "Re-running the full root Vitest suite now that `apps/network/vitest.config.ts` excludes `*.e2e.test.ts` (those require the separate `vitest.config.e2e.ts` globalSetup)."
     }
   ],
   "failures": [

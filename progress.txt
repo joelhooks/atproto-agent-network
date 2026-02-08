@@ -353,3 +353,11 @@ Codex:
 Completed: Fix CryptoKeyPair serialization in DO storage
 Files: none
 Summary: Re-running the full root Vitest suite now that `apps/network/vitest.config.ts` excludes `*.e2e.test.ts` (those require the separate `vitest.config.e2e.ts` globalSetup).
+
+---
+[2026-02-08T04:13:28.962Z]
+Completed: Fix lockfile sync and install miniflare
+Files: none
+Summary: Prior failure pattern detected: **unknown/build_error** (piped validation hides Vitest output). Mitigation: ran `pnpm vitest run --passWithNoTests` **without piping** first to capture full output/exit code, then ran the exact validation command.
+
+- `package.json` already has `miniflare` in `devDependencies`, and `pnpm-lock.yaml` is already in sync (`pnpm install` reports “Lockfile is up to date”).

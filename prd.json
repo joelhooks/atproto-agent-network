@@ -539,7 +539,7 @@
       "estimatedMinutes": 10,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "fix-turbo-stubs",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T04:09:33.958Z",
-    "totalIterations": 52
+    "lastIteration": "2026-02-08T04:13:28.962Z",
+    "totalIterations": 53
   }
 }
