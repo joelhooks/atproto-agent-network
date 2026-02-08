@@ -51,7 +51,7 @@
     {
       "id": "story-4a-alarm-chain",
       "title": "4a: Bare alarm chain + start/stop API",
-      "description": "GitHub Issue #60. The alarm skeleton \u2014 no Pi, no inbox. Just the chain that keeps ticking. Implement alarm() handler in AgentDO that logs, increments counter, and schedules next alarm via ctx.storage.setAlarm(). Add startLoop()/stopLoop() methods. HTTP routes: POST /agents/:name/loop/start, POST /agents/:name/loop/stop, GET /agents/:name/loop/status. Safety: check loopRunning flag, reject loopIntervalMs < 5000, errors must not break chain. Files: apps/network/src/agent.ts, apps/network/src/index.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (alarm patterns).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
+      "description": "GitHub Issue #60. The alarm skeleton \u2014 no Pi, no inbox. Just the chain that keeps ticking. Implement alarm() handler in AgentDO that logs, increments counter, and schedules next alarm via ctx.storage.setAlarm(). Add startLoop()/stopLoop() methods. HTTP routes: POST /agents/:name/loop/start, POST /agents/:name/loop/stop, GET /agents/:name/loop/status. Safety: check loopRunning flag, reject loopIntervalMs < 5000, errors must not break chain. Files: apps/network/src/agent.ts, apps/network/src/index.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (alarm patterns).\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 4,
       "passes": false,
       "acceptanceCriteria": [
@@ -60,12 +60,12 @@
         "Error in alarm does not break chain",
         "Tests pass"
       ],
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test && echo VALIDATION_PASSED"
     },
     {
       "id": "story-4b-observe",
       "title": "4b: Observe phase \u2014 inbox + event collection",
-      "description": "GitHub Issue #61. Depends on #60. Implement observe() method that queries memory.list({collection: \"agent.comms.message\"}) for unread inbox messages, decrypts them, marks as processed, and collects events since last alarm. Returns structured Observations object. Wire into alarm() handler. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/envelope-encryption, .agents/skills/d1-patterns.\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works. Pi reference code: ~/Code/badlogic/pi-mono/packages/agent/src/ (agent-loop.ts, types.ts, tools/).",
+      "description": "GitHub Issue #61. Depends on #60. Implement observe() method that queries memory.list({collection: \"agent.comms.message\"}) for unread inbox messages, decrypts them, marks as processed, and collects events since last alarm. Returns structured Observations object. Wire into alarm() handler. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/envelope-encryption, .agents/skills/d1-patterns.\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 5,
       "passes": false,
       "acceptanceCriteria": [
@@ -74,12 +74,12 @@
         "Empty inbox handled gracefully",
         "Tests pass"
       ],
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test && echo VALIDATION_PASSED"
     },
     {
       "id": "story-4c-think-act-reflect",
       "title": "4c: Think/Act/Reflect \u2014 Pi loop cycle",
-      "description": "GitHub Issue #62. Depends on #60, #61. The brain: think() builds prompt from observations+goals+memories, calls Pi complete() with session context. act() executes tool calls (max 5 steps, 30s timeout). reflect() saves session, updates goals. Wire observe->think->act->reflect into alarm(). Files: apps/network/src/agent.ts, packages/agent/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/pi-agent (complete(), tools, session).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works. Pi reference code: ~/Code/badlogic/pi-mono/packages/agent/src/ (agent-loop.ts, types.ts, tools/).",
+      "description": "GitHub Issue #62. Depends on #60, #61. The brain: think() builds prompt from observations+goals+memories, calls Pi complete() with session context. act() executes tool calls (max 5 steps, 30s timeout). reflect() saves session, updates goals. Wire observe->think->act->reflect into alarm(). Files: apps/network/src/agent.ts, packages/agent/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/pi-agent (complete(), tools, session).\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 6,
       "passes": false,
       "acceptanceCriteria": [
@@ -89,12 +89,12 @@
         "Goals updated when Pi decides",
         "Tests pass"
       ],
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test && echo VALIDATION_PASSED"
     },
     {
       "id": "story-4d-ws-broadcast",
       "title": "4d: WebSocket broadcast of loop events",
-      "description": "GitHub Issue #63. Depends on #62. Broadcast loop lifecycle events (loop.started, loop.observe, loop.think, loop.act, loop.reflect, loop.sleep, loop.error) to connected WS clients via ctx.getWebSockets(). Events match docs/O11Y.md schema (trace_id, span_id, agent_did). Handle stale connections gracefully. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (WebSocket hibernation), .agents/skills/zap-cli (O11Y events).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
+      "description": "GitHub Issue #63. Depends on #62. Broadcast loop lifecycle events (loop.started, loop.observe, loop.think, loop.act, loop.reflect, loop.sleep, loop.error) to connected WS clients via ctx.getWebSockets(). Events match docs/O11Y.md schema (trace_id, span_id, agent_did). Handle stale connections gracefully. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (WebSocket hibernation), .agents/skills/zap-cli (O11Y events).\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 7,
       "passes": false,
       "acceptanceCriteria": [
@@ -103,7 +103,7 @@
         "Dead connections handled gracefully",
         "Tests pass"
       ],
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test && echo VALIDATION_PASSED"
     },
     {
       "id": "story-mlde2jqb",

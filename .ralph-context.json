@@ -258,68 +258,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+    },
+    {
+      "id": "story-4a-alarm-chain",
+      "title": "4a: Bare alarm chain + start/stop API",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
     }
   ],
   "failures": [
-    {
-      "storyId": "pre-commit-hooks",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "pre-commit-hooks",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "e2e-test-harness",
-      "storyTitle": "Setup E2E test harness (miniflare)",
-      "category": "build_error",
-      "error": "Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "toolNames": []
-    },
-    {
-      "storyId": "e2e-test-harness",
-      "storyTitle": "Setup E2E test harness (miniflare)",
-      "category": "build_error",
-      "error": "Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
-      "toolNames": []
-    },
-    {
-      "storyId": "e2e-test-harness",
-      "storyTitle": "Setup E2E test harness (miniflare)",
-      "category": "unknown",
-      "error": "PASS\n",
-      "toolNames": []
-    },
-    {
-      "storyId": "fix-turbo-stubs",
-      "storyTitle": "Wire real turbo scripts or remove turbo",
-      "category": "unknown",
-      "error": "PASS\n",
-      "toolNames": []
-    },
-    {
-      "storyId": "fix-turbo-stubs",
-      "storyTitle": "Wire real turbo scripts or remove turbo",
-      "category": "unknown",
-      "error": "PASS\n",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde1mhv",
-      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 77d357dce4ecfede\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlde1mhv",
-      "storyTitle": "Install Pi deps + replace AI SDK wrapper",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 4b3d7aa0d2a81daf\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde1tos",
       "storyTitle": "Agent config schema + DO storage",
@@ -401,6 +349,69 @@
         "sed -n",
         "node -e"
       ]
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-4a-alarm-chain",
+      "storyTitle": "4a: Bare alarm chain + start/stop API",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
     }
   ]
 }
