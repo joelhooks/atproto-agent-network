@@ -99,7 +99,13 @@ export default {
 
         // Public read-only access for agent identity + memory list (GET only)
         // Write operations (POST/PUT/DELETE) and other routes require admin auth
-        const isAgentReadRoute = normalizedPathname.startsWith('/agents/') && request.method === 'GET'
+        const isLoopStatusRoute =
+          request.method === 'GET' &&
+          /^\/agents\/[^/]+\/loop\/status$/.test(normalizedPathname)
+        const isAgentReadRoute =
+          normalizedPathname.startsWith('/agents/') &&
+          request.method === 'GET' &&
+          !isLoopStatusRoute
         
         if (!isAgentReadRoute) {
           const auth = requireAdminBearerAuth(request, env)

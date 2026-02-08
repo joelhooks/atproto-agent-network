@@ -1,6 +1,8 @@
 name = "agent-network"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
+# Needed for Node.js builtin module resolution under nodejs_compat.
+# See Wrangler error: "Could not resolve 'http' ... update your compatibility_date to 2024-09-23 or later."
+compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]

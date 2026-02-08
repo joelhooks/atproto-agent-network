@@ -74,6 +74,7 @@ interface StoredAgentSessionV1 {
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
+const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
 
 function extractAgentNameFromPath(pathname: string): string | undefined {
@@ -112,6 +113,31 @@ export class AgentDO extends DurableObject {
           await this.initialize(agentName)
         }
 
+        const parts = url.pathname.split('/').filter(Boolean)
+        const leaf = parts.at(-1)
+        const penultimate = parts.at(-2)
+
+        // ===== Story 4a: Bare alarm chain + start/stop API =====
+        // Support both:
+        // - /loop/start (used by unit tests)
+        // - /agents/:name/loop/start (worker forwards full path)
+        if (penultimate === 'loop' && leaf) {
+          if (leaf === 'start') {
+            if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            return Response.json(await this.startLoop())
+          }
+
+          if (leaf === 'stop') {
+            if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            return Response.json(await this.stopLoop())
+          }
+
+          if (leaf === 'status') {
+            if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+            return Response.json(await this.getLoopStatus())
+          }
+        }
+
         // WebSocket for real-time communication
         if (request.headers.get('Upgrade') === 'websocket') {
           return withErrorHandling(
@@ -120,7 +146,7 @@ export class AgentDO extends DurableObject {
           )
         }
 
-        switch (url.pathname.split('/').pop()) {
+        switch (leaf) {
           case 'identity':
             return withErrorHandling(
               () => this.getIdentity(),
@@ -162,6 +188,87 @@ export class AgentDO extends DurableObject {
       },
       { route: 'AgentDO.fetch', request }
     )
+  }
+
+  async startLoop(): Promise<{ loopRunning: boolean; loopCount: number; nextAlarm: number | null }> {
+    const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
+    if (!running) {
+      await this.ctx.storage.put('loopRunning', true)
+    }
+
+    const existingCount = await this.ctx.storage.get<number>('loopCount')
+    if (typeof existingCount !== 'number' || !Number.isFinite(existingCount)) {
+      await this.ctx.storage.put('loopCount', 0)
+    }
+
+    const existingAlarm = await this.ctx.storage.getAlarm()
+    if (existingAlarm === null) {
+      // Fire ASAP to kick off the chain.
+      await this.ctx.storage.setAlarm(Date.now())
+    }
+
+    return this.getLoopStatus()
+  }
+
+  async stopLoop(): Promise<{ loopRunning: boolean; loopCount: number; nextAlarm: number | null }> {
+    await this.ctx.storage.put('loopRunning', false)
+    await this.ctx.storage.deleteAlarm()
+    return this.getLoopStatus()
+  }
+
+  private async getLoopStatus(): Promise<{ loopRunning: boolean; loopCount: number; nextAlarm: number | null }> {
+    const loopRunning = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
+    const loopCountRaw = await this.ctx.storage.get<number>('loopCount')
+    const loopCount = typeof loopCountRaw === 'number' && Number.isFinite(loopCountRaw) ? loopCountRaw : 0
+    const nextAlarm = await this.ctx.storage.getAlarm()
+    return { loopRunning, loopCount, nextAlarm }
+  }
+
+  async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
+    const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
+    if (!running) {
+      console.log('AgentDO alarm fired while loop stopped', { did: this.did })
+      return
+    }
+
+    let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
+
+    try {
+      const storedConfig = await this.ctx.storage.get<AgentConfig>('config')
+      if (storedConfig && typeof storedConfig.loopIntervalMs === 'number' && Number.isFinite(storedConfig.loopIntervalMs)) {
+        intervalMs = storedConfig.loopIntervalMs
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO alarm failed to load config', { did: this.did, error: message })
+    }
+
+    intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
+
+    try {
+      const current = await this.ctx.storage.get<number>('loopCount')
+      const next = (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1
+      await this.ctx.storage.put('loopCount', next)
+
+      console.log('AgentDO alarm tick', {
+        did: this.did,
+        loopCount: next,
+        isRetry: alarmInfo?.isRetry ?? false,
+        retryCount: alarmInfo?.retryCount ?? 0,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO alarm tick error', { did: this.did, error: message })
+      // Continue: errors must not break the chain.
+    }
+
+    try {
+      await this.ctx.storage.setAlarm(Date.now() + intervalMs)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO alarm reschedule error', { did: this.did, error: message })
+      // Don't throw: keep retries under our control.
+    }
   }
   
   private async initialize(agentName?: string): Promise<void> {
@@ -310,7 +417,7 @@ export class AgentDO extends DurableObject {
       next.fastModel = patch.fastModel
     }
     if (typeof patch.loopIntervalMs === 'number' && Number.isFinite(patch.loopIntervalMs)) {
-      next.loopIntervalMs = patch.loopIntervalMs
+      next.loopIntervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, patch.loopIntervalMs)
     }
     if (Array.isArray(patch.goals)) {
       next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']
