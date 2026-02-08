@@ -12,6 +12,8 @@
   "dependencies": {
     "@atproto-agent/agent": "workspace:*",
     "@atproto-agent/core": "workspace:*",
+    "@openrouter/ai-sdk-provider": "^2.1.1",
+    "ai": "^6.0.77",
     "zod": "^4.3.6"
   },
   "devDependencies": {
