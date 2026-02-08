@@ -309,3 +309,13 @@ Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitig
 
 ## Learnings
 ### Tech
+
+---
+[2026-02-08T03:26:57.692Z]
+Completed: Wire up AgentDO with Pi agent and encrypted memory
+Files: none
+Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitigation: ran the exact validation command directly (no piping/suppressed output) and captured the full Vitest output + exit code.
+
+Validation: `pnpm vitest run apps/network/src/agent-do.test.ts` (pass: 15/15)
+
+No code changes needed for this story; `apps/network/src/agent.ts` already wires `AgentDO` to `PiAgentWrapper` + `Encrypt

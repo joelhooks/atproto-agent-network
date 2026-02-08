@@ -153,6 +153,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`packages/agent/src/agent.ts` implements a la\n`packages/agent/src/agent.ts` implements a la\n`initiali"
+    },
+    {
+      "id": "encrypted-memory",
+      "title": "Implement EncryptedMemory class in packages/agent",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`packages/agent/src/memory.ts` implements envelope-encrypted storage using `packages/core/src/crypto.ts` (`generateDek`/`generateNonce`, `encryptWithDek`/`decryptWithDek`, and `encryptDekForPublicKey`/`decryptDekWithPrivateKey`) and stores ciphertext + encrypted DEK in `records`, with sharing via `shared_records` by re-encrypting the DEK for the recipient. Updates intentionally reuse the existing encrypted DEK so existing shares keep decrypting after updates.\nIf you change the DEK on update, any existing `shared_records.encrypted_dek` becomes invalid; the current implementation avoids this by decrypting and reusing the original DEK during `update()`. Also, in this runner you need to poll long-running commands (like Vitest) to avoid the “no output captured” failure mode."
     }
   ],
   "failures": [
