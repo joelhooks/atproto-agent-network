@@ -166,3 +166,12 @@ Summary: Prior failure pattern detected: `unknown` + `build_error`. Mitigation: 
 Implemented the AI Gateway + OpenRouter provider module:
 
 - Added `apps/network/src/ai
+
+---
+[2026-02-08T05:23:18.489Z]
+Completed: Update Env interface with all production bindings and secrets
+Files: none
+Summary: Prior failure pattern detected: `unknown`. Mitigation: ran `pnpm vitest run --passWithNoTests` without piping while checking failures, then ran the exact piped validation command; also completed the mandatory `swarm memory store ...` + `openclaw system event ...` side-effects.
+
+**Changes**
+- Updated `apps/network/src/index.ts` to make `Env` include all production bindings + vars/secrets (and made 

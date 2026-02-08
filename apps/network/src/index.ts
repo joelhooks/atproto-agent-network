@@ -21,7 +21,15 @@ export interface Env {
   VECTORIZE: VectorizeIndex
   MESSAGE_QUEUE: Queue
   AI: Ai
-  ADMIN_TOKEN?: string
+
+  // AI Gateway + OpenRouter (production vars/secrets)
+  CF_ACCOUNT_ID: string
+  AI_GATEWAY_SLUG: string
+  OPENROUTER_API_KEY: string
+  OPENROUTER_MODEL_DEFAULT: string
+
+  // Auth + HTTP
+  ADMIN_TOKEN: string
   CORS_ORIGIN?: string
 }
 
