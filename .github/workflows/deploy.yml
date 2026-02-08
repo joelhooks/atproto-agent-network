@@ -52,6 +52,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/network
+          packageManager: pnpm
           command: deploy --env ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
 
       - name: Smoke test
