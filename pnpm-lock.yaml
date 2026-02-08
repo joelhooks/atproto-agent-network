@@ -83,6 +83,12 @@ importers:
 
   packages/dashboard:
     devDependencies:
+      '@cloudflare/kv-asset-handler':
+        specifier: ^0.4.2
+        version: 0.4.2
+      '@cloudflare/workers-types':
+        specifier: ^4.20260207.0
+        version: 4.20260207.0
       vite:
         specifier: ^7.3.1
         version: 7.3.1
