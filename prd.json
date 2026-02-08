@@ -144,7 +144,7 @@
       "title": "Dashboard: agent thoughts, goals, loop activity",
       "description": "GitHub Issue #57. Enhance highswarm.com dashboard (packages/dashboard/index.html) to show real agent activity. 1) Agent detail view: click agent card to expand and show current goals with status indicators, recent think_aloud output, memory count, loop status (last alarm time, next alarm, iteration count), model being used, personality snippet. 2) Live activity feed improvements: show tool calls with structured details (not just raw text), show goal updates, show inter-agent messages with sender/recipient, show think_aloud entries styled differently (italic/dimmed — internal thought). 3) Fetch agent config from GET /agents/{name}/config and display. 4) Show loop heartbeat indicator (pulsing when alarm is active). Keep the existing dark theme and monospace aesthetic. Mobile responsive.",
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm --filter dashboard build && pnpm typecheck",
       "acceptanceCriteria": [
         "Agent cards expand to show detail view",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 11,
-    "lastIteration": "2026-02-08T20:43:23.412Z"
+    "totalIterations": 12,
+    "lastIteration": "2026-02-08T21:11:10.221Z"
   },
   "totalStories": 11
 }

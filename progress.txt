@@ -541,3 +541,30 @@ Prior failure pattern detected: `timeout` / `build_error` / `test_failure`. Miti
 Also completed:
 - Stored hivemind learning via `swarm memory store ...`.
 - Reported completion via `openclaw system event ...`.
+
+---
+[2026-02-08T21:11:10.221Z]
+Completed: Dashboard: agent thoughts, goals, loop activity
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/schema.sql, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/schema.test.ts, packages/core/src/d1-mock.ts, prd.json, progress.txt, packages/dashboard/index.html
+Summary: Prior failure pattern detected: type_error/build_error. Mitigation: removed legacy inline dashboard script, wired the real TS entrypoint, and added a unit test to prevent regression. Dashboard now shows expandable agent cards with goals + loop heartbeat + config/personality, and the feed renders think_aloud/tool/message/goal/loop events with structured details.
+
+Changes:
+- Replaced legacy inline JS in `packages/dashboard/index.html` with a Vite module entry (`/src/main.ts`) and added the missing CSS for expanded agent details, goal status dots, heartbeat pulse, and feed styling.
+- Added the real dashboard implementation modules:
+  - `packages/dashboard/src/main.ts` (agent list + detail expansion + polling + WS normalization)
+  - `packages/dashboard/src/activity.ts` (event normalization + lexicon record summaries)
+  - `packages/dashboard/src/activity.test.ts` (activity utils tests)
+- Added `packages/dashboard/src/index-html.test.ts` to ensure `index.html` stays wired to `/src/main.ts` (guards against the legacy inline script returning).
+
+Validation:
+- `pnpm --filter dashboard build && pnpm typecheck` (passed)
+
+## Learnings
+### Technical Discovery
+`packages/dashboard/index.html` was still running a legacy inline implementation; the actual agent-detail/feed logic lives in `packages/dashboard/src/main.ts` + `packages/dashboard/src/activity.ts`. Without a `type="module"` entry in `index.html`, Vite can still “build” but the shipped dashboard won’t show real agent activity.
+### Gotcha for Next Iteration
+If `index.html` drifts back to inline JS, you’ll lose all the new agent detail/feed behavior while builds still succeed. Keep `packages/dashboard/src/index-html.test.ts` green to prevent silent regressions.
+### Files Context
+- `packages/dashboard/index.html`: DOM skeleton + dark monospace CSS + module entrypoint.
+- `packages/dashboard/src/main.ts`: rendering (expandable agent cards), `/agents/{name}/config` fetch, loop heartbeat, WS event ingestion.
+- `packages/dashboard/src/activity.ts`: normalizes WS events (think_aloud/tool/loop) and summarizes lexicon records (comms sender/recipient, etc.).

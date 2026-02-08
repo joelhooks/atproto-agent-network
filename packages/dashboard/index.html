@@ -142,6 +142,32 @@
     .agent-card:hover { border-color: var(--accent); }
     .agent-card.active { border-color: var(--accent); background: var(--accent-dim); }
 
+    .agent-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .heartbeat {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      box-shadow: 0 0 0 1px var(--border) inset;
+      flex-shrink: 0;
+    }
+
+    .heartbeat.on {
+      background: var(--green);
+      box-shadow: 0 0 0 1px #40e08055 inset, 0 0 14px #40e08033;
+      animation: heartbeat 1.2s ease-in-out infinite;
+    }
+
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.8); opacity: 0.55; }
+    }
+
     .agent-name {
       font-weight: 600;
       font-size: 0.85rem;
@@ -172,6 +198,74 @@
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
+
+    /* Agent detail */
+    .agent-detail { display: none; margin-top: 0.75rem; }
+    .agent-card.expanded .agent-detail { display: block; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .detail-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem;
+      min-width: 0;
+    }
+
+    .detail-wide { grid-column: 1 / -1; }
+
+    .detail-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 0.4rem;
+    }
+
+    .detail-empty { color: var(--text-dim); font-size: 0.7rem; }
+
+    .mono-box {
+      font-size: 0.7rem;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem;
+      white-space: pre-wrap;
+    }
+
+    .kv { display: grid; gap: 0.35rem; }
+    .kv-row { display: flex; justify-content: space-between; gap: 0.75rem; }
+    .kv-k { color: var(--text-dim); font-size: 0.65rem; }
+    .kv-v { color: var(--text); font-size: 0.65rem; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+
+    .goals { display: grid; gap: 0.3rem; }
+    .goal { display: grid; grid-template-columns: 10px 1fr auto; gap: 0.4rem; align-items: center; }
+    .goal-text { font-size: 0.7rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .goal-pct { font-size: 0.6rem; color: var(--text-dim); }
+
+    .goal-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      box-shadow: 0 0 0 1px #00000033 inset;
+    }
+    .goal-status.pending { background: #8888a055; }
+    .goal-status.in_progress { background: var(--accent); }
+    .goal-status.completed { background: var(--green); }
+    .goal-status.blocked { background: var(--red); }
+    .goal-status.cancelled { background: #8888a088; }
+
+    .thoughts { display: grid; gap: 0.35rem; }
+    .thought-line { font-size: 0.7rem; color: var(--text-dim); font-style: italic; line-height: 1.45; }
 
     /* Stats bar */
     .stats-bar {
@@ -234,6 +328,10 @@
     .event-icon.message { background: #40e08020; }
     .event-icon.identity { background: #f0c04020; }
     .event-icon.prompt { background: #a060e020; }
+    .event-icon.tool { background: #f0c04020; }
+    .event-icon.thought { background: #8888a020; }
+    .event-icon.loop { background: #4080e020; }
+    .event-icon.goal { background: #40e08020; }
     .event-icon.system { background: #e0404020; }
 
     .event-content { flex: 1; min-width: 0; }
@@ -253,6 +351,62 @@
       color: var(--text-dim);
       line-height: 1.4;
     }
+
+    .event-thought .event-body,
+    .event-body.thought-body {
+      font-style: italic;
+      color: #a0a0b8;
+    }
+
+    .inline-block {
+      margin-top: 0.35rem;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-2);
+    }
+
+    .inline-label {
+      font-size: 0.55rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 0.25rem;
+    }
+
+    .inline-kv { font-size: 0.7rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+
+    .chip {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.05rem 0.35rem;
+      border-radius: 999px;
+      font-size: 0.55rem;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid var(--border);
+    }
+
+    .event-details {
+      margin-top: 0.35rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+    }
+
+    .event-details summary { cursor: pointer; user-select: none; }
+    .event-details pre {
+      margin-top: 0.35rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.65rem;
+      color: var(--text);
+    }
+
+    .event-details.error { border-color: #e0406044; }
 
     .event-tags {
       display: flex;
@@ -341,6 +495,8 @@
         grid-template-columns: 1fr 1fr;
         gap: 0.5rem;
       }
+      .agent-card.expanded { grid-column: 1 / -1; }
+      .detail-grid { grid-template-columns: 1fr; }
       .feed {
         max-height: none;
         overflow-y: visible;
@@ -437,344 +593,6 @@
     </div>
   </div>
 
-  <script>
-    const API_BASE = window.location.hostname === 'localhost' 
-      ? 'http://localhost:8787'
-      : 'https://agent-network-production.joelhooks.workers.dev'
-
-    const WS_BASE = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://')
-
-    const state = {
-      agents: new Map(),
-      events: [],
-      stats: { memories: 0, messages: 0 },
-      connected: false,
-      networkBirthday: null, // earliest agent createdAt
-      ws: null,
-    }
-
-    // --- Rendering ---
-
-    function renderAgents() {
-      const el = document.getElementById('agentsList')
-      const agents = Array.from(state.agents.values())
-      document.getElementById('agentCount').textContent = agents.length
-      document.getElementById('agentBadge').textContent = agents.length
-
-      if (!agents.length) {
-        el.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Discovering agents...</div></div>'
-        return
-      }
-
-      el.innerHTML = agents.map(a => `
-        <div class="agent-card" data-name="${a.name}">
-          <div class="agent-name">${a.displayName || a.name}</div>
-          <div class="agent-did" title="${a.did}">${truncateDid(a.did)}</div>
-          <div class="agent-meta">
-            <span class="agent-tag">🧠 ${a.memories || 0} memories</span>
-            <span class="agent-tag">🔑 ${a.publicKeys ? Object.keys(a.publicKeys).length : 0} keys</span>
-            <span class="agent-tag">⏱ ${timeSince(a.createdAt)}</span>
-          </div>
-        </div>
-      `).join('')
-    }
-
-    function renderFeed() {
-      const el = document.getElementById('activityFeed')
-      document.getElementById('memoryCount').textContent = state.stats.memories
-      document.getElementById('messageCount').textContent = state.stats.messages
-
-      // Update network age from earliest agent
-      if (state.networkBirthday) {
-        updateNetworkAge()
-      }
-
-      if (!state.events.length) {
-        el.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Waiting for activity...</div></div>'
-        return
-      }
-
-      el.innerHTML = state.events.slice(0, 100).map(ev => {
-        const iconClass = ev.type.includes('memory') ? 'memory' 
-          : ev.type.includes('message') ? 'message'
-          : ev.type.includes('identity') ? 'identity'
-          : ev.type.includes('prompt') ? 'prompt'
-          : 'system'
-        const icon = iconClass === 'memory' ? '🧠' 
-          : iconClass === 'message' ? '💬'
-          : iconClass === 'identity' ? '🔑'
-          : iconClass === 'prompt' ? '🤖'
-          : '⚡'
-        
-        let body = `<div class="event-body">${escapeHtml(ev.summary)}</div>`
-        
-        // Show full memory text if available
-        if (ev.text) {
-          body += `<div class="memory-text">${escapeHtml(ev.text)}</div>`
-        }
-
-        // Show tags
-        if (ev.tags && ev.tags.length) {
-          body += `<div class="event-tags">${ev.tags.map(t => `<span class="event-tag">${escapeHtml(t)}</span>`).join('')}</div>`
-        }
-        
-        return `
-          <div class="event">
-            <div class="event-icon ${iconClass}">${icon}</div>
-            <div class="event-content">
-              <div class="event-header">
-                <span class="event-agent">${ev.agent}<span class="event-type">${ev.type}</span></span>
-                <span class="event-time">${formatTime(ev.timestamp)}</span>
-              </div>
-              ${body}
-            </div>
-          </div>
-        `
-      }).join('')
-    }
-
-    function updateStatus(status) {
-      const dot = document.getElementById('statusDot')
-      const text = document.getElementById('statusText')
-      dot.className = 'status-dot ' + status
-      text.textContent = status === 'online' ? 'connected' 
-        : status === 'connecting' ? 'connecting...' 
-        : 'offline'
-      state.connected = status === 'online'
-    }
-
-    function updateNetworkAge() {
-      const el = document.getElementById('uptimeDisplay')
-      if (!state.networkBirthday) { el.textContent = '—'; return }
-      const ms = Date.now() - state.networkBirthday
-      el.textContent = formatUptime(ms)
-    }
-
-    // --- WebSocket ---
-
-    function connectWebSocket(agentName) {
-      const token = localStorage.getItem('adminToken')
-      if (!token) return
-
-      try {
-        const wsUrl = `${WS_BASE}/agents/${agentName}/ws`
-        const ws = new WebSocket(wsUrl, ['bearer', token])
-        
-        ws.onopen = () => {
-          const indicator = document.getElementById('wsIndicator')
-          indicator.textContent = '⚡ live'
-          indicator.className = 'ws-indicator live'
-          document.getElementById('feedBadge').textContent = '⚡ live'
-        }
-        
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data)
-            if (data.type) {
-              addEvent({
-                type: data.type || 'ws.event',
-                agent: agentName,
-                summary: data.summary || data.text || JSON.stringify(data).slice(0, 200),
-                text: data.text,
-                tags: data.tags,
-                timestamp: data.createdAt || new Date().toISOString(),
-              })
-              renderFeed()
-            }
-          } catch {}
-        }
-        
-        ws.onclose = () => {
-          const indicator = document.getElementById('wsIndicator')
-          indicator.textContent = '◯ polling'
-          indicator.className = 'ws-indicator'
-          document.getElementById('feedBadge').textContent = 'polling'
-          // Reconnect after 5s
-          setTimeout(() => connectWebSocket(agentName), 5000)
-        }
-        
-        ws.onerror = () => ws.close()
-        
-        return ws
-      } catch {
-        return null
-      }
-    }
-
-    // --- Data fetching ---
-
-    async function fetchHealth() {
-      try {
-        const res = await fetch(`${API_BASE}/health`)
-        const data = await res.json()
-        if (data.status === 'ok') {
-          updateStatus('online')
-        } else {
-          updateStatus('connecting')
-        }
-      } catch {
-        updateStatus('offline')
-      }
-    }
-
-    async function fetchAgentData(name) {
-      try {
-        // Public read access — no auth needed for GET
-        const [identity, memories] = await Promise.all([
-          fetch(`${API_BASE}/agents/${name}/identity`).then(r => r.ok ? r.json() : null),
-          fetch(`${API_BASE}/agents/${name}/memory`).then(r => r.ok ? r.json() : { entries: [] }),
-        ])
-
-        if (!identity) return
-
-        const agent = {
-          name,
-          did: identity.did,
-          displayName: name.charAt(0).toUpperCase() + name.slice(1),
-          createdAt: identity.createdAt,
-          publicKeys: identity.publicKeys,
-          memories: memories.entries?.length || 0,
-        }
-
-        state.agents.set(name, agent)
-
-        // Track network birthday (earliest agent)
-        if (!state.networkBirthday || identity.createdAt < state.networkBirthday) {
-          state.networkBirthday = identity.createdAt
-        }
-
-        // Add identity event
-        addEvent({
-          type: 'identity.created',
-          agent: name,
-          summary: `Agent registered with DID ${truncateDid(identity.did)}`,
-          timestamp: new Date(identity.createdAt).toISOString(),
-        })
-
-        // Add memories to feed
-        if (memories.entries) {
-          state.stats.memories = 0
-          for (const [agentName, agentData] of state.agents) {
-            state.stats.memories += agentData.memories || 0
-          }
-
-          for (const entry of memories.entries) {
-            const record = entry.record
-            addEvent({
-              type: record.$type || 'agent.memory.note',
-              agent: name,
-              summary: record.summary || record.decision || 'Memory stored',
-              text: record.text || record.context || record.rationale,
-              tags: record.tags,
-              timestamp: record.createdAt || new Date().toISOString(),
-            })
-          }
-        }
-
-        renderAgents()
-        renderFeed()
-      } catch (e) {
-        console.warn(`Failed to fetch agent ${name}:`, e)
-      }
-    }
-
-    function addEvent(ev) {
-      // Dedupe by agent + type + timestamp
-      const key = `${ev.agent}:${ev.type}:${ev.timestamp}`
-      if (state.events.some(e => `${e.agent}:${e.type}:${e.timestamp}` === key)) return
-      
-      state.events.push(ev)
-      // Sort by timestamp descending
-      state.events.sort((a, b) => {
-        const ta = new Date(a.timestamp).getTime() || 0
-        const tb = new Date(b.timestamp).getTime() || 0
-        return tb - ta
-      })
-      state.events = state.events.slice(0, 200)
-    }
-
-    // --- Polling ---
-
-    const KNOWN_AGENTS = ['grimlock', 'scout']
-
-    async function poll() {
-      await fetchHealth()
-      for (const name of KNOWN_AGENTS) {
-        await fetchAgentData(name)
-      }
-    }
-
-    // --- Utils ---
-
-    function formatTime(iso) {
-      try {
-        const d = new Date(iso)
-        if (isNaN(d.getTime())) return iso
-        return d.toLocaleString('en-US', { 
-          month: 'short', day: 'numeric',
-          hour: '2-digit', minute: '2-digit', second: '2-digit'
-        })
-      } catch { return iso }
-    }
-
-    function formatUptime(ms) {
-      const s = Math.floor(ms / 1000)
-      if (s < 60) return `${s}s`
-      const m = Math.floor(s / 60)
-      if (m < 60) return `${m}m`
-      const h = Math.floor(m / 60)
-      if (h < 24) return `${h}h ${m % 60}m`
-      const d = Math.floor(h / 24)
-      return `${d}d ${h % 24}h`
-    }
-
-    function timeSince(epochMs) {
-      if (!epochMs) return 'unknown'
-      const s = Math.floor((Date.now() - epochMs) / 1000)
-      if (s < 60) return 'just now'
-      if (s < 3600) return `${Math.floor(s/60)}m ago`
-      if (s < 86400) return `${Math.floor(s/3600)}h ago`
-      return `${Math.floor(s/86400)}d ago`
-    }
-
-    function truncateDid(did) {
-      if (!did || did.length < 30) return did
-      return did.slice(0, 16) + '…' + did.slice(-8)
-    }
-
-    function escapeHtml(str) {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
-
-    // --- Admin token setup ---
-    
-    function checkToken() {
-      const params = new URLSearchParams(window.location.search)
-      const token = params.get('token')
-      if (token) {
-        localStorage.setItem('adminToken', token)
-        window.history.replaceState({}, '', window.location.pathname)
-      }
-    }
-
-    // --- Init ---
-
-    checkToken()
-    poll()
-    
-    // Try WebSocket for first agent
-    if (localStorage.getItem('adminToken')) {
-      connectWebSocket('grimlock')
-    }
-    
-    // Poll every 15s as fallback
-    setInterval(poll, 15000)
-    
-    // Update network age every second
-    setInterval(updateNetworkAge, 1000)
-  </script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
