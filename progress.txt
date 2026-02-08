@@ -186,3 +186,14 @@ Summary: **Implemented**
 
 **Validation**
 - `test -f .husky/pre-commit && echo PASS` => `PA
+
+---
+[2026-02-08T02:41:33.529Z]
+Completed: Implement generateX25519Keypair
+Files: none
+Summary: `generateX25519Keypair` is already implemented and the story’s validation passes.
+
+- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'` (pass)
+- **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)
+- **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)
+- **What I le
