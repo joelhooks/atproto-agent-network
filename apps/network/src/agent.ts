@@ -26,7 +26,7 @@ import {
 } from '../../../packages/core/src/crypto'
 import { createDid } from '../../../packages/core/src/identity'
 import { validateLexiconRecord } from '../../../packages/core/src/validation'
-import type { AgentConfig, AgentIdentity } from '../../../packages/core/src/types'
+import type { AgentConfig, AgentGoal, AgentIdentity } from '../../../packages/core/src/types'
 
 import { withErrorHandling } from './http-errors'
 
@@ -91,6 +91,31 @@ export interface Observations {
   events: ObservationEvent[]
 }
 
+interface ThinkToolCall {
+  name: string
+  arguments?: unknown
+  [key: string]: unknown
+}
+
+interface ThinkResult {
+  content?: string
+  toolCalls?: ThinkToolCall[]
+  goals?: AgentGoal[]
+  [key: string]: unknown
+}
+
+interface ActResult {
+  steps: Array<{
+    name: string
+    ok: boolean
+    result?: unknown
+    error?: string
+    durationMs?: number
+  }>
+  truncated: boolean
+  timedOut: boolean
+}
+
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
@@ -114,6 +139,7 @@ export class AgentDO extends DurableObject {
   private identity: AgentIdentity | null = null
   private memory: EncryptedMemory | null = null
   private agent: PiAgentWrapper | null = null
+  private tools: PiAgentTool[] = []
   private config: AgentConfig | null = null
   private session: StoredAgentSessionV1 | null = null
 
@@ -252,6 +278,9 @@ export class AgentDO extends DurableObject {
     }
 
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
+    let observations: Observations | null = null
+    let thought: ThinkResult | null = null
+    let acted: ActResult | null = null
 
     try {
       const storedConfig = await this.ctx.storage.get<AgentConfig>('config')
@@ -266,12 +295,40 @@ export class AgentDO extends DurableObject {
     intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
 
     try {
-      const observations = await this.observe()
+      observations = await this.observe()
       await this.ctx.storage.put('lastObservations', observations)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO observe failed', { did: this.did, error: message })
       // Continue: observation errors must not break the chain.
+    }
+
+    try {
+      if (observations) {
+        thought = await this.think(observations)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO think failed', { did: this.did, error: message })
+      // Continue: think errors must not break the chain.
+    }
+
+    try {
+      if (thought) {
+        acted = await this.act(thought)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO act failed', { did: this.did, error: message })
+      // Continue: action errors must not break the chain.
+    }
+
+    try {
+      await this.reflect({ observations, thought, acted })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO reflect failed', { did: this.did, error: message })
+      // Continue: reflect errors must not break the chain.
     }
 
     try {
@@ -359,6 +416,162 @@ export class AgentDO extends DurableObject {
       events,
     }
   }
+
+  private buildThinkPrompt(observations: Observations): string {
+    const goals = (this.config?.goals ?? [])
+      .filter((goal) => goal && typeof goal === 'object')
+      .map((goal) => ({
+        id: goal.id,
+        description: goal.description,
+        priority: goal.priority,
+        status: goal.status,
+        progress: goal.progress,
+      }))
+
+    return [
+      'You are running an autonomous think/act/reflect loop.',
+      '',
+      'Current goals:',
+      goals.length ? JSON.stringify(goals, null, 2) : '[]',
+      '',
+      'Observations:',
+      JSON.stringify(observations, null, 2),
+      '',
+      'Decide what to do next. If you need to use tools, include tool calls in your response.',
+      'If you want to update goals, include an updated `goals` array in your response.',
+    ].join('\n')
+  }
+
+  private normalizeThinkResult(result: unknown): ThinkResult {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      return { content: typeof result === 'string' ? result : undefined }
+    }
+
+    const record = result as Record<string, unknown>
+    const toolCallsRaw = (record.toolCalls ?? record.tool_calls) as unknown
+    const toolCalls = Array.isArray(toolCallsRaw)
+      ? toolCallsRaw
+          .filter((call): call is Record<string, unknown> => Boolean(call) && typeof call === 'object' && !Array.isArray(call))
+          .map((call) => ({
+            name: typeof call.name === 'string' ? call.name : '',
+            arguments: call.arguments ?? call.args ?? call.input,
+            ...call,
+          }))
+          .filter((call) => typeof call.name === 'string' && call.name.length > 0)
+      : undefined
+
+    const goalsRaw = record.goals
+    const goals = Array.isArray(goalsRaw)
+      ? goalsRaw.filter((goal): goal is AgentGoal => isAgentGoal(goal))
+      : undefined
+
+    return {
+      ...(record as ThinkResult),
+      toolCalls,
+      goals,
+    }
+  }
+
+  private async think(observations: Observations): Promise<ThinkResult> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+    if (!this.agent) {
+      throw new Error('Agent unavailable')
+    }
+
+    const prompt = this.buildThinkPrompt(observations)
+    const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
+    return this.normalizeThinkResult(result)
+  }
+
+  private async act(thought: ThinkResult): Promise<ActResult> {
+    const startedAt = Date.now()
+    const timeoutMs = 30_000
+    const maxSteps = 5
+    const deadline = startedAt + timeoutMs
+
+    const toolCalls = Array.isArray(thought.toolCalls) ? thought.toolCalls : []
+    const configuredAllowlist = this.config?.enabledTools ?? []
+    const allowlist = configuredAllowlist.length > 0 ? new Set(configuredAllowlist) : null
+
+    const steps: ActResult['steps'] = []
+    let truncated = false
+    let timedOut = false
+
+    const selected = toolCalls.slice(0, maxSteps)
+    truncated = toolCalls.length > selected.length
+
+    for (const call of selected) {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        timedOut = true
+        break
+      }
+
+      const name = call.name
+      if (allowlist && !allowlist.has(name)) {
+        steps.push({ name, ok: false, error: 'Tool not enabled' })
+        continue
+      }
+
+      const tool = this.tools.find((t) => t.name === name)
+      if (!tool || typeof tool.execute !== 'function') {
+        steps.push({ name, ok: false, error: 'Tool not found' })
+        continue
+      }
+
+      const stepStart = Date.now()
+      try {
+        const result = await promiseWithTimeout(
+          Promise.resolve(tool.execute(call.arguments)),
+          remaining,
+          `Tool timed out: ${name}`
+        )
+        steps.push({ name, ok: true, result, durationMs: Date.now() - stepStart })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.toLowerCase().includes('timed out')) {
+          timedOut = true
+        }
+        steps.push({ name, ok: false, error: message, durationMs: Date.now() - stepStart })
+      }
+    }
+
+    return { steps, truncated, timedOut }
+  }
+
+  private async reflect(input: {
+    observations: Observations | null
+    thought: ThinkResult | null
+    acted: ActResult | null
+  }): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    // Persist the session after each loop cycle.
+    await this.saveSession()
+
+    // Persist goal updates if the model produced an updated goal list.
+    if (this.config && input.thought?.goals && input.thought.goals.length > 0) {
+      this.config = { ...this.config, goals: structuredClone(input.thought.goals) }
+      await this.ctx.storage.put('config', this.config)
+    }
+
+    // Store a tiny summary for debugging (structured-cloneable).
+    await this.ctx.storage.put('lastReflection', {
+      at: Date.now(),
+      did: this.did,
+      acted: input.acted
+        ? {
+            steps: input.acted.steps.map((s) => ({ name: s.name, ok: s.ok })),
+            truncated: input.acted.truncated,
+            timedOut: input.acted.timedOut,
+          }
+        : null,
+    })
+  }
   
   private async initialize(agentName?: string): Promise<void> {
     if (this.initialized) return
@@ -405,6 +618,7 @@ export class AgentDO extends DurableObject {
       const config = await this.loadOrCreateConfig(agentName)
       this.session = await this.loadSession()
       const tools = this.buildTools()
+      this.tools = tools
       const systemPrompt = config.personality
       const model = config.model
 
@@ -1074,4 +1288,37 @@ function isSessionBranchPoint(value: unknown): value is StoredAgentSessionBranch
     typeof asRecord.createdAt === 'number' &&
     Number.isFinite(asRecord.createdAt)
   )
+}
+
+function isAgentGoal(value: unknown): value is AgentGoal {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const asRecord = value as Record<string, unknown>
+  return (
+    typeof asRecord.id === 'string' &&
+    typeof asRecord.description === 'string' &&
+    typeof asRecord.priority === 'number' &&
+    Number.isFinite(asRecord.priority) &&
+    typeof asRecord.status === 'string' &&
+    typeof asRecord.progress === 'number' &&
+    Number.isFinite(asRecord.progress) &&
+    typeof asRecord.createdAt === 'number' &&
+    Number.isFinite(asRecord.createdAt)
+  )
+}
+
+async function promiseWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message = 'Timed out'
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  const timer = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timer])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
 }

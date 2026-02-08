@@ -113,7 +113,26 @@ export class PiAgentWrapper {
 
   async prompt(input: string, options?: Record<string, unknown>): Promise<unknown> {
     const agent = await this.initialize()
-    return agent.prompt(input, options)
+    const result = await agent.prompt(input, options)
+
+    // In real Pi agent-core, messages are typically tracked in agent.state.messages.
+    // For lightweight test doubles (or custom factories) that don't expose state,
+    // maintain a best-effort transcript so DO session persistence still works.
+    const agentMessages = agent.state?.messages
+    if (Array.isArray(agentMessages)) {
+      this.messages = agentMessages
+      return result
+    }
+
+    const now = Date.now()
+    this.messages.push({ role: 'user', content: input, timestamp: now })
+
+    const assistantContent = extractAssistantContent(result)
+    if (assistantContent) {
+      this.messages.push({ role: 'assistant', content: assistantContent, timestamp: now })
+    }
+
+    return result
   }
 
   async promptStream(
@@ -152,6 +171,13 @@ export class PiAgentWrapper {
       this.agent.state.messages = messages
     }
   }
+}
+
+function extractAssistantContent(result: unknown): string | null {
+  if (typeof result === 'string') return result
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null
+  const content = (result as { content?: unknown }).content
+  return typeof content === 'string' && content.trim().length > 0 ? content : null
 }
 
 async function loadDefaultFactory(): Promise<PiAgentFactory> {
