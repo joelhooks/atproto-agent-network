@@ -45,6 +45,7 @@ interface AgentEnv {
   AI_GATEWAY_SLUG?: string
   OPENROUTER_API_KEY?: string
   OPENROUTER_MODEL_DEFAULT?: string
+  GRIMLOCK_GITHUB_TOKEN?: string
 }
 
 interface StoredAgentIdentityV1 {
@@ -1358,6 +1359,135 @@ export class AgentDO extends DurableObject {
           })
 
           return { content: [], details: { message } }
+        },
+      },
+      {
+        name: 'publish',
+        label: 'Publish to Garden',
+        description:
+          'Publish a post to the grimlock.ai digital garden. Creates or updates a markdown file ' +
+          'in the Astro content collection. Requires GRIMLOCK_GITHUB_TOKEN secret. ' +
+          'Posts auto-deploy via Vercel on push to main.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Post title.' },
+            slug: { type: 'string', description: 'URL slug (lowercase, hyphens, e.g. "first-network-report").' },
+            content: { type: 'string', description: 'Markdown body content (no frontmatter — it is generated).' },
+            description: { type: 'string', description: 'Short description for meta/SEO (1-2 sentences).' },
+            topics: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Topic tags (e.g. ["agents", "network", "cloudflare"]).',
+            },
+            growthStage: {
+              type: 'string',
+              enum: ['seedling', 'budding', 'evergreen'],
+              description: 'Growth stage: seedling (new idea), budding (developing), evergreen (mature).',
+            },
+          },
+          required: ['title', 'slug', 'content'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const githubToken = (env as any).GRIMLOCK_GITHUB_TOKEN
+          if (!githubToken || typeof githubToken !== 'string') {
+            throw new Error('GRIMLOCK_GITHUB_TOKEN secret not configured')
+          }
+
+          const { params } = parseArgs<{
+            title?: unknown; slug?: unknown; content?: unknown
+            description?: unknown; topics?: unknown; growthStage?: unknown
+          }>(toolCallIdOrParams, maybeParams)
+
+          const title = typeof params.title === 'string' ? params.title.trim() : ''
+          const slug = typeof params.slug === 'string'
+            ? params.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
+            : ''
+          const content = typeof params.content === 'string' ? params.content.trim() : ''
+          const description = typeof params.description === 'string' ? params.description.trim() : ''
+          const topics = Array.isArray(params.topics)
+            ? params.topics.filter((t): t is string => typeof t === 'string')
+            : []
+          const growthStage = typeof params.growthStage === 'string' ? params.growthStage : 'seedling'
+
+          if (!title) throw new Error('publish requires title')
+          if (!slug) throw new Error('publish requires slug')
+          if (!content) throw new Error('publish requires content')
+
+          const today = new Date().toISOString().slice(0, 10)
+          const agentName = this.config?.name ?? 'unknown-agent'
+
+          const frontmatter = [
+            '---',
+            `title: "${title.replace(/"/g, '\\"')}"`,
+            description ? `description: "${description.replace(/"/g, '\\"')}"` : '',
+            `growthStage: "${growthStage}"`,
+            topics.length ? `topics: ${JSON.stringify(topics)}` : '',
+            `planted: "${today}"`,
+            `updated: "${today}"`,
+            `author: "${agentName}"`,
+            'draft: false',
+            '---',
+          ].filter(Boolean).join('\n')
+
+          const fullContent = `${frontmatter}\n\n${content}\n`
+          const filePath = `src/content/garden/${slug}.md`
+          const encodedContent = btoa(unescape(encodeURIComponent(fullContent)))
+
+          // Check if file already exists (for updates)
+          const existingRes = await fetch(
+            `https://api.github.com/repos/skillrecordings/grimlock/contents/${filePath}`,
+            { headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github.v3+json' } }
+          )
+          const existingSha = existingRes.ok
+            ? ((await existingRes.json()) as any)?.sha
+            : undefined
+
+          const commitBody: Record<string, unknown> = {
+            message: `garden: ${existingSha ? 'update' : 'plant'} "${title}" [${agentName}]`,
+            content: encodedContent,
+            branch: 'main',
+          }
+          if (existingSha) commitBody.sha = existingSha
+
+          const res = await fetch(
+            `https://api.github.com/repos/skillrecordings/grimlock/contents/${filePath}`,
+            {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${githubToken}`,
+                Accept: 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(commitBody),
+            }
+          )
+
+          if (!res.ok) {
+            const errorText = await res.text().catch(() => '')
+            throw new Error(`GitHub API error ${res.status}: ${errorText.slice(0, 200)}`)
+          }
+
+          const result = (await res.json()) as any
+          const url = `https://grimlock.ai/garden/${slug}`
+
+          await broadcastLoopEvent({
+            event_type: 'agent.publish',
+            trace_id: createTraceId(),
+            span_id: createSpanId(),
+            context: { title, slug, url, growthStage, agentName },
+          })
+
+          return {
+            content: [{ type: 'text' as const, text: `Published "${title}" to ${url}` }],
+            details: {
+              url,
+              slug,
+              sha: result.content?.sha,
+              commit: result.commit?.sha,
+              action: existingSha ? 'updated' : 'created',
+            },
+          }
         },
       },
       {

@@ -55,6 +55,7 @@ export interface Env {
   AI_GATEWAY_SLUG: string
   OPENROUTER_API_KEY: string
   OPENROUTER_MODEL_DEFAULT: string
+  GRIMLOCK_GITHUB_TOKEN?: string
 
   // Auth + HTTP
   ADMIN_TOKEN: string
