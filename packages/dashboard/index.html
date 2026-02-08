@@ -154,6 +154,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      max-width: 100%;
     }
 
     .agent-meta {
@@ -468,7 +469,7 @@
       el.innerHTML = agents.map(a => `
         <div class="agent-card" data-name="${a.name}">
           <div class="agent-name">${a.displayName || a.name}</div>
-          <div class="agent-did">${a.did}</div>
+          <div class="agent-did" title="${a.did}">${truncateDid(a.did)}</div>
           <div class="agent-meta">
             <span class="agent-tag">🧠 ${a.memories || 0} memories</span>
             <span class="agent-tag">🔑 ${a.publicKeys ? Object.keys(a.publicKeys).length : 0} keys</span>
@@ -646,7 +647,7 @@
         addEvent({
           type: 'identity.created',
           agent: name,
-          summary: `Agent registered with DID ${identity.did.slice(0, 20)}...`,
+          summary: `Agent registered with DID ${truncateDid(identity.did)}`,
           timestamp: new Date(identity.createdAt).toISOString(),
         })
 
@@ -734,6 +735,11 @@
       if (s < 3600) return `${Math.floor(s/60)}m ago`
       if (s < 86400) return `${Math.floor(s/3600)}h ago`
       return `${Math.floor(s/86400)}d ago`
+    }
+
+    function truncateDid(did) {
+      if (!did || did.length < 30) return did
+      return did.slice(0, 16) + '…' + did.slice(-8)
     }
 
     function escapeHtml(str) {
