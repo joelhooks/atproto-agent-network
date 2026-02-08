@@ -558,7 +558,7 @@
       "estimatedMinutes": 15,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": false
+      "passes": true
     }
   ],
   "sprints": [
