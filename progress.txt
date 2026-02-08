@@ -223,3 +223,12 @@ Summary: `exportPublicKey` (multibase) is already implemented and the story vali
 - **Implementation:** `packages/core/src/crypto.ts` (`exportPublicKey`) exports `raw` public key bytes, prepends multicodec (`Ed25519 => 0xed01`, `X25519 => 0xec01`), and returns base58btc multibase (leading `z`).
 - **Files modified (and why):** None (function already present and correct).
 - **Tests added/modifi
+
+---
+[2026-02-08T02:47:05.626Z]
+Completed: Implement deriveSharedSecret
+Files: none
+Summary: `deriveSharedSecret` was already implemented in `packages/core/src/crypto.ts` (uses `crypto.subtle.deriveBits({ name: 'X25519', public }, private, 256)` and returns a 32-byte `Uint8Array`), and the story validation already passes.
+
+- **Files modified (and why):** None (implementation already present and correct).
+- **Tests added/modified:** None (existing test coverage already in `packages/core/sr

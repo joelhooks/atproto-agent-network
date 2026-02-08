@@ -212,7 +212,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": false
+      "passes": true
     },
     {
       "id": "envelope-encryption",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T02:45:38.463Z",
-    "totalIterations": 44
+    "lastIteration": "2026-02-08T02:47:05.626Z",
+    "totalIterations": 45
   }
 }

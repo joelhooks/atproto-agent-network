@@ -118,6 +118,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "**Implemented**\n- `generateEd25519Keypair` was already implemented in `packages/core/src/crypto.ts` using WebCrypto (`crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign','verify'])`).\n\n**Files modified (and why)**\n- None (implementation already present).\n\n**Tests added/modified**\n- None (existing coverage already in `packages/core/src/crypto.test.ts`).\n\n**Validation**\n- `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateEd25519Keypair'` (pass)\n\n**What I learned**\n- WebCrypto "
+    },
+    {
+      "id": "export-public-key",
+      "title": "Implement exportPublicKey (multibase)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`exportPublicKey` (multibase) is already implemented and the story validation passes.\n\n- **Implementation:** `packages/core/src/crypto.ts` (`exportPublicKey`) exports `raw` public key bytes, prepends multicodec (`Ed25519 => 0xed01`, `X25519 => 0xec01`), and returns base58btc multibase (leading `z`).\n- **Files modified (and why):** None (function already present and correct).\n- **Tests added/modified:** None (existing coverage in `packages/core/src/crypto.test.ts`).\n- **Validation:** `pnpm vitest"
     }
   ],
   "failures": [
