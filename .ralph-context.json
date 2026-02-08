@@ -262,9 +262,13 @@
     {
       "id": "story-4a-alarm-chain",
       "title": "4a: Bare alarm chain + start/stop API",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/index.ts",
+        "apps/network/wrangler.toml"
+      ],
+      "learnings": "Technical Discovery: `wrangler deploy` for `apps/network` can fail resolving Node builtins (e.g. \"http\", \"https\") under `nodejs_compat` unless `apps/network/wrangler.toml` uses `compatibility_date >= 2024-09-23`.\nAlso, `secrets lease` outputs JSON by default; use `--raw` when setting `CLOUDFLARE_API_TOKEN` (otherwise Wrangler gets an invalid Bearer header).\nGotcha: Prod verification of admin-protected routes depends on Cloudflare’s configured `ADMIN_TOKEN`; `secrets lease atproto-agents::admin_token` may not match what’s currently set in production, causing `401 Unauthorized` even when endpoints are correct.\nFiles Context: `apps/network/src/agent.ts`: Durable Object implementation (added alarm chain + loop start/stop/status routes and min interval clamp).\n`apps/network/src/index.ts`: Worker entrypoint that forwards `/agents/:name/*` to the AgentDO and enforces admin bearer auth.\n`apps/network/wrangler.toml`: Worker compatibility settings; `compatibility_date` impacts Node builtin resolution under `nodejs_compat` during deploy."
     }
   ],
   "failures": [

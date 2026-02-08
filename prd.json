@@ -67,7 +67,7 @@
       "title": "4b: Observe phase — inbox + event collection",
       "description": "GitHub Issue #61. Depends on #60. Implement observe() method that queries memory.list({collection: \"agent.comms.message\"}) for unread inbox messages, decrypts them, marks as processed, and collects events since last alarm. Returns structured Observations object. Wire into alarm() handler. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/envelope-encryption, .agents/skills/d1-patterns.\n\nAfter passing tests: deploy, smoke test, report. See AGENTS.md SHIP AND VERIFY mandate.",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "observe() returns structured Observations",
         "Inbox messages decrypted and collected",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 5,
-    "lastIteration": "2026-02-08T18:27:07.623Z"
+    "totalIterations": 6,
+    "lastIteration": "2026-02-08T18:35:58.291Z"
   },
   "totalStories": 11
 }

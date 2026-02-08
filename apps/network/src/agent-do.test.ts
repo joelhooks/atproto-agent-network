@@ -1138,4 +1138,132 @@ describe('AgentDO', () => {
     // Should either reject or clamp to minimum 5000
     expect(config.loopIntervalMs).toBeGreaterThanOrEqual(5000)
   })
+
+  // ===== Story 4b: Observe phase — inbox + event collection =====
+
+  it('observe() returns structured empty observations when inbox is empty', async () => {
+    const { state } = createState('agent-observe-empty')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const observations = await agent.observe()
+
+    expect(observations).toMatchObject({
+      inbox: [],
+      events: [],
+    })
+    expect(typeof observations.observedAt).toBe('number')
+    expect(observations.did).toBe('did:cf:agent-observe-empty')
+  })
+
+  it('observe() decrypts unread inbox messages, returns them, and marks them processed', async () => {
+    const { state } = createState('agent-observe-inbox')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:agent-observe-inbox',
+      content: { kind: 'text', text: 'observe me' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const postResponse = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+    expect(postResponse.status).toBe(200)
+    const { id } = (await postResponse.json()) as { id: string }
+
+    const obs1 = await agent.observe()
+    expect(obs1.inbox).toHaveLength(1)
+    expect(obs1.inbox[0]).toMatchObject({
+      id,
+      record: {
+        $type: 'agent.comms.message',
+        sender: 'did:cf:sender',
+        recipient: 'did:cf:agent-observe-inbox',
+        content: { kind: 'text', text: 'observe me' },
+        priority: 3,
+      },
+    })
+    expect(typeof (obs1.inbox[0] as any).record.processedAt).toBe('string')
+
+    // Second observe should return nothing (already processed)
+    const obs2 = await agent.observe()
+    expect(obs2.inbox).toEqual([])
+
+    // Record should still be encrypted at rest (update keeps private)
+    const row = db.records.get(id)
+    expect(row?.public).toBe(0)
+    expect(row?.encrypted_dek).toBeInstanceOf(Uint8Array)
+
+    // /inbox list should now include processedAt
+    const listResponse = await agent.fetch(new Request('https://example/inbox'))
+    expect(listResponse.status).toBe(200)
+    const listBody = (await listResponse.json()) as { entries: Array<{ id: string; record: any }> }
+    expect(listBody.entries[0].id).toBe(id)
+    expect(typeof listBody.entries[0].record.processedAt).toBe('string')
+  })
+
+  it('observe() collects and drains pending events since the last alarm timestamp', async () => {
+    const { state, storage } = createState('agent-observe-events')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const since = Date.now() - 10_000
+    const older = { ts: since - 1, type: 'older' }
+    const newer = { ts: since + 1, type: 'newer', detail: { ok: true } }
+
+    await storage.put('lastAlarmAt', since)
+    await storage.put('pendingEvents', [older, newer])
+
+    const observations = await agent.observe()
+    expect(observations.sinceAlarmAt).toBe(since)
+    expect(observations.events).toEqual([newer])
+
+    const remaining = (await storage.get<unknown[]>('pendingEvents')) ?? []
+    expect(remaining).toEqual([])
+  })
+
+  it('alarm() wires observe() and stores last observations in DO storage', async () => {
+    const { state, storage } = createState('agent-alarm-observe-wire')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Start loop + seed an event
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'seed' }])
+
+    await agent.alarm()
+
+    const last = await storage.get<Record<string, unknown>>('lastObservations')
+    expect(last).toMatchObject({
+      did: 'did:cf:agent-alarm-observe-wire',
+      events: [{ type: 'seed' }],
+    })
+  })
 })

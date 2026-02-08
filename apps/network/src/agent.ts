@@ -10,6 +10,7 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   EncryptedMemory,
   PiAgentWrapper,
+  type EncryptedMemoryRecord,
   type PiAgentFactory,
   type PiAgentMessage,
   type PiAgentTool,
@@ -69,6 +70,25 @@ interface StoredAgentSessionV1 {
   baseIndex?: number
   messages: PiAgentMessage[]
   branchPoints?: StoredAgentSessionBranchPoint[]
+}
+
+export interface ObservationEvent {
+  ts: number
+  type: string
+  [key: string]: unknown
+}
+
+export interface ObservationInboxEntry<T = unknown> {
+  id: string
+  record: T
+}
+
+export interface Observations {
+  did: string
+  observedAt: number
+  sinceAlarmAt: number | null
+  inbox: Array<ObservationInboxEntry>
+  events: ObservationEvent[]
 }
 
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
@@ -246,6 +266,15 @@ export class AgentDO extends DurableObject {
     intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
 
     try {
+      const observations = await this.observe()
+      await this.ctx.storage.put('lastObservations', observations)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('AgentDO observe failed', { did: this.did, error: message })
+      // Continue: observation errors must not break the chain.
+    }
+
+    try {
       const current = await this.ctx.storage.get<number>('loopCount')
       const next = (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1
       await this.ctx.storage.put('loopCount', next)
@@ -268,6 +297,66 @@ export class AgentDO extends DurableObject {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO alarm reschedule error', { did: this.did, error: message })
       // Don't throw: keep retries under our control.
+    }
+  }
+
+  async observe(): Promise<Observations> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    const observedAt = Date.now()
+    const sinceAlarmAtRaw = await this.ctx.storage.get<number>('lastAlarmAt')
+    const sinceAlarmAt =
+      typeof sinceAlarmAtRaw === 'number' && Number.isFinite(sinceAlarmAtRaw) ? sinceAlarmAtRaw : null
+
+    const pendingRaw = await this.ctx.storage.get<unknown>('pendingEvents')
+    const pending = Array.isArray(pendingRaw) ? (pendingRaw as ObservationEvent[]) : []
+    const normalizedPending = pending.filter((evt): evt is ObservationEvent => {
+      if (!evt || typeof evt !== 'object' || Array.isArray(evt)) return false
+      const asRecord = evt as Record<string, unknown>
+      return typeof asRecord.ts === 'number' && Number.isFinite(asRecord.ts) && typeof asRecord.type === 'string'
+    })
+
+    const events =
+      sinceAlarmAt === null
+        ? normalizedPending
+        : normalizedPending.filter((evt) => evt.ts > sinceAlarmAt && evt.ts <= observedAt)
+
+    // Drain pending events (they're a per-alarm-cycle queue).
+    await this.ctx.storage.put('pendingEvents', [])
+    await this.ctx.storage.put('lastAlarmAt', observedAt)
+
+    const inbox: Array<ObservationInboxEntry> = []
+
+    if (this.memory) {
+      const entries = await this.memory.list({ collection: 'agent.comms.message', limit: 100 })
+      const processedAt = new Date(observedAt).toISOString()
+
+      for (const entry of entries) {
+        const record = entry.record as Record<string, unknown>
+        if (!record || record.$type !== 'agent.comms.message') continue
+        if (record.recipient !== this.did) continue
+        if (typeof record.processedAt === 'string' && record.processedAt.length > 0) continue
+
+        const updated: EncryptedMemoryRecord = { ...(record as EncryptedMemoryRecord), processedAt }
+        try {
+          const ok = await this.memory.update(entry.id, updated)
+          if (!ok) continue
+        } catch {
+          continue
+        }
+
+        inbox.push({ id: entry.id, record: updated })
+      }
+    }
+
+    return {
+      did: this.did,
+      observedAt,
+      sinceAlarmAt,
+      inbox,
+      events,
     }
   }
   

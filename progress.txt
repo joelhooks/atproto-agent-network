@@ -417,3 +417,9 @@ Updated `apps/network/src/index.ts` to route through existing /agents forwarding
 Production: `wrangler deploy` initially failed due to Node builtin resolution under `nodejs_compat`; fixed by bumping `apps/network/wrangler.toml` `compatibility_date` to `2024-09-23`. Deployed successfully and `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` passed.
 
 Remaining gap vs SHIP+VERIFY: story-specific live HTTP tests for `/agents/:name/loop/*` returned `401 Unauthorized` using `secrets lease atproto-agents::admin_token` (token mismatch with prod `ADMIN_TOKEN`), so I could not confirm the start/stop/status APIs against prod despite deploy + health smoke test passing.
+
+---
+[2026-02-08T18:35:58.292Z]
+Completed: 4b: Observe phase — inbox + event collection
+Files: prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
+Summary: Implemented Story 4b observe phase in AgentDO. Added public `observe()` returning a structured Observations object, which lists unread `agent.comms.message` inbox records (already decrypted by EncryptedMemory), marks them processed via encrypted update (`processedAt`), and drains `pendingEvents` since `lastAlarmAt`. Wired `alarm()` to call `observe()` each tick and persist `lastObservations` in DO storage. Added TDD unit tests covering empty inbox, message processing, event draining, and alarm wiring. Ran full validation (typecheck + tests). Deployed to production and ran smoke test (/health). Attempted story-specific live inbox/loop tests but admin-protected routes returned 401 (ADMIN_TOKEN mismatch). Prior failure pattern detected: build_error/test_failure with missing logs; mitigation: ran typecheck/tests unpiped and fixed the surfaced TS2345 issue by passing an `EncryptedMemoryRecord` (with `$type`) into `EncryptedMemory.update()`.
