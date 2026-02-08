@@ -103,5 +103,32 @@ describe('network worker lexicon validation', () => {
     })
     expect(agentFetch).not.toHaveBeenCalled()
   })
-})
 
+  it('returns 500 JSON when a downstream route handler throws', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const agentFetch = vi.fn(async () => {
+      throw new Error('agent down')
+    })
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents/alice/identity'),
+      env
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Internal Server Error',
+    })
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Unhandled route error',
+      expect.objectContaining({ route: 'network.agents' })
+    )
+    consoleSpy.mockRestore()
+  })
+})

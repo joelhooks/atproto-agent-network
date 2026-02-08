@@ -25,6 +25,8 @@ import { createDid } from '../../../packages/core/src/identity'
 import { validateLexiconRecord } from '../../../packages/core/src/validation'
 import type { AgentIdentity } from '../../../packages/core/src/types'
 
+import { withErrorHandling } from './http-errors'
+
 interface AgentEnv {
   DB: D1Database
   BLOBS: R2Bucket
@@ -61,33 +63,59 @@ export class AgentDO extends DurableObject {
   }
   
   async fetch(request: Request): Promise<Response> {
-    if (!this.initialized) {
-      await this.initialize()
-    }
-    
-    const url = new URL(request.url)
-    
-    // WebSocket for real-time communication
-    if (request.headers.get('Upgrade') === 'websocket') {
-      return this.handleWebSocket(request)
-    }
-    
-    switch (url.pathname.split('/').pop()) {
-      case 'identity':
-        return this.getIdentity()
-      case 'prompt':
-        return this.handlePrompt(request)
-      case 'memory':
-        return this.handleMemory(request)
-      case 'share':
-        return this.handleShare(request)
-      case 'shared':
-        return this.handleShared(request)
-      case 'inbox':
-        return this.handleInbox(request)
-      default:
-        return new Response('Not found', { status: 404 })
-    }
+    return withErrorHandling(
+      async () => {
+        if (!this.initialized) {
+          await this.initialize()
+        }
+
+        const url = new URL(request.url)
+
+        // WebSocket for real-time communication
+        if (request.headers.get('Upgrade') === 'websocket') {
+          return withErrorHandling(
+            () => this.handleWebSocket(request),
+            { route: 'AgentDO.websocket', request }
+          )
+        }
+
+        switch (url.pathname.split('/').pop()) {
+          case 'identity':
+            return withErrorHandling(
+              () => this.getIdentity(),
+              { route: 'AgentDO.identity', request }
+            )
+          case 'prompt':
+            return withErrorHandling(
+              () => this.handlePrompt(request),
+              { route: 'AgentDO.prompt', request }
+            )
+          case 'memory':
+            return withErrorHandling(
+              () => this.handleMemory(request),
+              { route: 'AgentDO.memory', request }
+            )
+          case 'share':
+            return withErrorHandling(
+              () => this.handleShare(request),
+              { route: 'AgentDO.share', request }
+            )
+          case 'shared':
+            return withErrorHandling(
+              () => this.handleShared(request),
+              { route: 'AgentDO.shared', request }
+            )
+          case 'inbox':
+            return withErrorHandling(
+              () => this.handleInbox(request),
+              { route: 'AgentDO.inbox', request }
+            )
+          default:
+            return new Response('Not found', { status: 404 })
+        }
+      },
+      { route: 'AgentDO.fetch', request }
+    )
   }
   
   private async initialize(): Promise<void> {

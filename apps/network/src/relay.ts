@@ -11,6 +11,8 @@
 
 import { DurableObject } from 'cloudflare:workers'
 
+import { withErrorHandling } from './http-errors'
+
 interface Subscription {
   collections: string[]
   dids: string[]
@@ -29,36 +31,56 @@ interface AgentRegistration {
 export class RelayDO extends DurableObject {
   
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url)
-    const path = url.pathname.replace('/relay', '')
-    
-    // Firehose subscription
-    if (path === '/firehose' && request.headers.get('Upgrade') === 'websocket') {
-      return this.handleFirehoseSubscription(request)
-    }
-    
-    // Emit event (from agents)
-    if (path === '/emit' && request.method === 'POST') {
-      return this.handleEmit(request)
-    }
-    
-    // Agent registry
-    if (path === '/agents') {
-      return this.handleAgents(request)
-    }
-    
-    // Public key lookup
-    if (path.startsWith('/keys/')) {
-      const did = decodeURIComponent(path.replace('/keys/', ''))
-      return this.getPublicKey(did)
-    }
-    
-    // Federation
-    if (path === '/federation/peers') {
-      return this.listPeers()
-    }
-    
-    return new Response('Not found', { status: 404 })
+    return withErrorHandling(
+      async () => {
+        const url = new URL(request.url)
+        const path = url.pathname.replace('/relay', '')
+
+        // Firehose subscription
+        if (path === '/firehose' && request.headers.get('Upgrade') === 'websocket') {
+          return withErrorHandling(
+            () => this.handleFirehoseSubscription(request),
+            { route: 'RelayDO.firehose', request }
+          )
+        }
+
+        // Emit event (from agents)
+        if (path === '/emit' && request.method === 'POST') {
+          return withErrorHandling(
+            () => this.handleEmit(request),
+            { route: 'RelayDO.emit', request }
+          )
+        }
+
+        // Agent registry
+        if (path === '/agents') {
+          return withErrorHandling(
+            () => this.handleAgents(request),
+            { route: 'RelayDO.agents', request }
+          )
+        }
+
+        // Public key lookup
+        if (path.startsWith('/keys/')) {
+          const did = decodeURIComponent(path.replace('/keys/', ''))
+          return withErrorHandling(
+            () => this.getPublicKey(did),
+            { route: 'RelayDO.keys', request }
+          )
+        }
+
+        // Federation
+        if (path === '/federation/peers') {
+          return withErrorHandling(
+            () => this.listPeers(),
+            { route: 'RelayDO.federation.peers', request }
+          )
+        }
+
+        return new Response('Not found', { status: 404 })
+      },
+      { route: 'RelayDO.fetch', request }
+    )
   }
   
   private async handleFirehoseSubscription(request: Request): Promise<Response> {

@@ -720,4 +720,37 @@ describe('AgentDO', () => {
     expect((body.issues as unknown[]).length).toBeGreaterThan(0)
     expect(db.records.size).toBe(0)
   })
+
+  it('returns 500 JSON when a route handler throws', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { state } = createState('agent-route-error')
+    const prompt = vi.fn().mockRejectedValue(new Error('boom'))
+    const agentFactory = vi.fn().mockResolvedValue({ prompt })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hello' }),
+      })
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Internal Server Error',
+    })
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Unhandled route error',
+      expect.objectContaining({ route: 'AgentDO.prompt' })
+    )
+    consoleSpy.mockRestore()
+  })
 })

@@ -113,5 +113,41 @@ describe('RelayDO', () => {
       error: 'Not found',
     })
   })
-})
 
+  it('returns 500 JSON when a route handler throws', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { state, storage } = createState()
+    storage.put = vi.fn(async () => {
+      throw new Error('db down')
+    })
+
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, {} as never)
+
+    const did = 'did:cf:test-agent'
+    const encryption = await exportPublicKey((await generateX25519Keypair()).publicKey)
+    const signing = await exportPublicKey((await generateEd25519Keypair()).publicKey)
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          did,
+          publicKeys: { encryption, signing },
+        }),
+      })
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Internal Server Error',
+    })
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Unhandled route error',
+      expect.objectContaining({ route: 'RelayDO.agents' })
+    )
+    consoleSpy.mockRestore()
+  })
+})

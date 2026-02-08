@@ -449,3 +449,12 @@ Summary: **Agent Inbox (agent-inbox)** is implemented and covered by tests.
 - `apps/network/src/agent.ts`: `AgentDO` now exposes `/inbox`.
 - `POST /inbox`: validates a lexicon record, requires `$type === "agent.comms.message"`, enforces `recipient === this.did` (403 on mismatch), then stores via `EncryptedMemory.store()` (encrypted at rest).
 - `GET /inbox`: lists stored messages by filt
+
+---
+[2026-02-08T00:35:48.449Z]
+Completed: Add error handling wrappers to all route handlers
+Files: none
+Summary: **Implemented per-route error wrappers (more specific logging context) while keeping existing top-level `fetch()` protection.**
+
+**Files modified (and why)**
+- `apps/network/src/agent.ts`: wrapped each AgentDO route branch (`identity`, `prompt`, `memory`, `share`, `shared`, `inbox`, `websocket`) with `withErrorHandling(..., { route: 'AgentDO.<route>' })` so thrown errors log the actual handler rou
