@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "build:binary": "bun build ./src/index.ts --compile --outfile dist/zap",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },

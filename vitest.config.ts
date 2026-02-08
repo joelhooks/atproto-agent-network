@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],
+    // Replaces deprecated vitest.workspace.ts
+    projects: ["packages/*/vitest.config.ts", "apps/*/vitest.config.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
