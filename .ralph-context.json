@@ -269,6 +269,20 @@
         "apps/network/wrangler.toml"
       ],
       "learnings": "Technical Discovery: `wrangler deploy` for `apps/network` can fail resolving Node builtins (e.g. \"http\", \"https\") under `nodejs_compat` unless `apps/network/wrangler.toml` uses `compatibility_date >= 2024-09-23`.\nAlso, `secrets lease` outputs JSON by default; use `--raw` when setting `CLOUDFLARE_API_TOKEN` (otherwise Wrangler gets an invalid Bearer header).\nGotcha: Prod verification of admin-protected routes depends on Cloudflare’s configured `ADMIN_TOKEN`; `secrets lease atproto-agents::admin_token` may not match what’s currently set in production, causing `401 Unauthorized` even when endpoints are correct.\nFiles Context: `apps/network/src/agent.ts`: Durable Object implementation (added alarm chain + loop start/stop/status routes and min interval clamp).\n`apps/network/src/index.ts`: Worker entrypoint that forwards `/agents/:name/*` to the AgentDO and enforces admin bearer auth.\n`apps/network/wrangler.toml`: Worker compatibility settings; `compatibility_date` impacts Node builtin resolution under `nodejs_compat` during deploy."
+    },
+    {
+      "id": "story-4b-observe",
+      "title": "4b: Observe phase — inbox + event collection",
+      "status": "completed",
+      "filesModified": [
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: `EncryptedMemory.update()` requires an `EncryptedMemoryRecord` with a guaranteed `$type`; in `apps/network/src/agent.ts` observe() you must cast the updated inbox record after verifying `$type === 'agent.comms.message'`, otherwise `@atproto-agent/network` typecheck fails with TS2345.\nGotcha: Production verification of admin-protected endpoints is currently blocked: `secrets lease atproto-agents::admin_token` yielded a token that still gets `401 Unauthorized` from `https://agent-network.joelhooks.workers.dev` (observed on 2026-02-08), so story-specific live tests that require auth can’t be completed until the secret store and the Worker `ADMIN_TOKEN` are aligned.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO runtime (alarm loop + new observe() + inbox processing + pendingEvents drain). `apps/network/src/agent-do.test.ts` is the Vitest suite asserting encrypted inbox semantics and now observe/alarm wiring."
     }
   ],
   "failures": [
