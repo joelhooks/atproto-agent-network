@@ -248,17 +248,19 @@
     {
       "id": "story-mlde2057",
       "title": "Pi session persistence in DO storage",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`PiAgentWrapper` forwards `initialState.messages` directly from its constructor options, so `apps/network/src/agent.ts` must `loadSession()` before instantiating `PiAgentWrapper` to restore conversation history. Archiving overflow via `EncryptedMemory.store({ $type: 'agent.session.archive', messages })` ensures D1 rows remain encrypted (`public=0`, `encrypted_dek` set).\nDo not trim the session on DO init: trimming only during `saveSession()` is important (tests expect the overflow archive to contain the original oldest messages). Prior failure pattern detected: `test_failure`/“no output captured”. Mitigation: run unpiped, targeted `pnpm vitest run ...` while iterating to see real failures."
+    },
+    {
+      "id": "story-mlde2anm",
+      "title": "Alarm-driven Pi agent loop",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[test_failure] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
     }
   ],
   "failures": [
-    {
-      "storyId": "install-vitest",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ vitest /home/joel/Code/joelhooks/atproto-agent-network\n> node ./scripts/vitest.mjs \"run\" \"--passWithNoTests\"\n\n\n RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |@atproto-agent/agent| src/memory.test.ts (7 tests) 112ms\n ✓ |@atproto-agent/network| src/index.test.ts (9 tests) 250ms\n ✓ |@atproto-agent/network| src/agent-do.test.ts (15 tests) 335ms\n ✓ |@atproto-agent/core| src/crypto.test.ts (8 tests) 57ms\n ✓ |@atproto-agent/network| src/relay.test.ts (7 test"
-    },
     {
       "storyId": "pre-commit-hooks",
       "category": "unknown",
@@ -387,6 +389,18 @@
       "category": "test_failure",
       "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
       "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2anm",
+      "storyTitle": "Alarm-driven Pi agent loop",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "sed -n",
+        "node -e"
+      ]
     }
   ]
 }

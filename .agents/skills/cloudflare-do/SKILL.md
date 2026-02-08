@@ -122,23 +122,93 @@ await this.ctx.storage.transaction(async (txn) => {
 
 ## Alarms
 
-Schedule future work:
+**Source:** https://developers.cloudflare.com/durable-objects/api/alarms/
+
+Key facts:
+- Each DO can have **one alarm at a time** (`setAlarm()` overrides previous)
+- **Guaranteed at-least-once execution** — retried automatically on failure
+- Retries use **exponential backoff** starting at 2s, up to 6 retries
+- `alarm(alarmInfo)` receives `{ retryCount: number, isRetry: boolean }`
+- Only one `alarm()` runs at a time per DO instance
+- If DO crashes, alarm re-runs on another machine after short delay
+- Calling `deleteAlarm()` inside `alarm()` may prevent retries (best-effort, not guaranteed)
+- `getAlarm()` returns `null` while alarm is running (unless `setAlarm()` called during handler)
+
+### API
+
+```typescript
+// Storage API methods
+ctx.storage.setAlarm(scheduledTimeMs: number): void   // Set alarm (epoch ms)
+ctx.storage.getAlarm(): number | null                  // Get current alarm time or null
+ctx.storage.deleteAlarm(): void                        // Cancel alarm
+
+// Handler (on the DurableObject class)
+async alarm(alarmInfo?: { retryCount: number, isRetry: boolean }): void
+```
+
+### Agent Loop Pattern
 
 ```typescript
 export class AgentDO extends DurableObject {
-  async scheduleTask(delayMs: number) {
-    const scheduled = Date.now() + delayMs
-    await this.ctx.storage.setAlarm(scheduled)
+  async startLoop() {
+    await this.ctx.storage.put('loopRunning', true)
+    await this.ctx.storage.setAlarm(Date.now()) // Fire immediately
   }
-  
-  // Called when alarm fires
-  async alarm() {
-    // Process scheduled work
-    await this.processScheduledTasks()
-    
-    // Optionally schedule next alarm
-    await this.ctx.storage.setAlarm(Date.now() + 60000)
+
+  async stopLoop() {
+    await this.ctx.storage.put('loopRunning', false)
+    await this.ctx.storage.deleteAlarm()
   }
+
+  async alarm(alarmInfo?: { retryCount: number, isRetry: boolean }) {
+    const running = await this.ctx.storage.get('loopRunning')
+    if (!running) return // Don't reschedule
+
+    try {
+      if (alarmInfo?.isRetry) {
+        console.log(`Alarm retry #${alarmInfo.retryCount}`)
+      }
+      await this.runLoopCycle()
+    } catch (err) {
+      console.error('Loop cycle error:', err)
+      // DON'T rethrow if you want to control retry behavior
+      // Rethrow if you want automatic exponential backoff retry
+    }
+
+    // Always reschedule (even after error) to keep the chain alive
+    const config = await this.ctx.storage.get('config')
+    const interval = config?.loopIntervalMs ?? 60_000
+    await this.ctx.storage.setAlarm(Date.now() + interval)
+  }
+}
+```
+
+### Managing Multiple Scheduled Events
+
+For complex scheduling (multiple events at different times):
+
+```typescript
+async alarm() {
+  const now = Date.now()
+  const events = await this.ctx.storage.list({ prefix: 'event:' })
+  let nextAlarm = null
+
+  for (const [key, event] of events) {
+    if (event.runAt <= now) {
+      await this.processEvent(event)
+      if (event.repeatMs) {
+        event.runAt = now + event.repeatMs
+        await this.ctx.storage.put(key, event)
+      } else {
+        await this.ctx.storage.delete(key)
+      }
+    }
+    if (event.runAt > now && (!nextAlarm || event.runAt < nextAlarm)) {
+      nextAlarm = event.runAt
+    }
+  }
+
+  if (nextAlarm) await this.ctx.storage.setAlarm(nextAlarm)
 }
 ```
 

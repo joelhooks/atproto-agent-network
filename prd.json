@@ -1,12 +1,12 @@
 {
   "version": "1.0",
   "projectName": "atproto-agent-network-pi-loop",
-  "description": "Epic #50: Real Pi Agent Loop — DO IS the Agent. Replace AI SDK with Pi, implement persistent agent config, session trees, alarm-driven autonomous loop, Pi tools, agent creation API, dashboard enhancements, and self-extending agents.",
+  "description": "Epic #50: Real Pi Agent Loop \u2014 DO IS the Agent. Replace AI SDK with Pi, implement persistent agent config, session trees, alarm-driven autonomous loop, Pi tools, agent creation API, dashboard enhancements, and self-extending agents.",
   "stories": [
     {
       "id": "story-mlde1mhv",
       "title": "Install Pi deps + replace AI SDK wrapper",
-      "description": "**REPLACE AI SDK WITH PI — STEP BY STEP**\n\n1. Install Pi packages:\n   ```bash\n   pnpm add @mariozechner/pi-ai@0.52.8 --filter @atproto-agent/network\n   pnpm add @mariozechner/pi-ai@0.52.8 @mariozechner/pi-agent-core@0.52.8 --filter @atproto-agent/agent\n   ```\n\n2. Remove AI SDK packages:\n   ```bash\n   pnpm remove ai @openrouter/ai-sdk-provider --filter @atproto-agent/network\n   ```\n\n3. Read the current ai-provider.ts:\n   ```bash\n   cat apps/network/src/ai-provider.ts\n   ```\n\n4. Write new ai-provider.ts using Pi API:\n   ```typescript\n   import { getModel, complete, type Context } from '@mariozechner/pi-ai'\n   \n   export function getOpenRouterModel(modelId: string) {\n     return getModel('openrouter', modelId)\n   }\n   \n   export async function completeWithOpenRouter(\n     model: string,\n     context: Context,\n     options?: { tools?: any[] }\n   ) {\n     const model_obj = getOpenRouterModel(model)\n     return complete(model_obj, context, options)\n   }\n   ```\n\n5. Read the current agent-factory.ts:\n   ```bash\n   cat apps/network/src/agent-factory.ts\n   ```\n\n6. Rewrite agent-factory.ts to use Pi:\n   - Replace all imports from 'ai' with imports from '@mariozechner/pi-ai'\n   - Replace generateText() calls with complete() calls\n   - Keep the factory function signature the same\n   - Maintain OpenRouter + CF AI Gateway routing\n\n7. Run tests to verify:\n   ```bash\n   pnpm test 2>&1 | tail -5\n   ```\n\n8. Run typecheck:\n   ```bash\n   pnpm typecheck\n   ```\n\nSuccess criteria:\n- All 86 tests pass\n- No imports from 'ai' package remain\n- Agent factory returns working prompt() function\n- Typecheck clean",
+      "description": "**REPLACE AI SDK WITH PI \u2014 STEP BY STEP**\n\n1. Install Pi packages:\n   ```bash\n   pnpm add @mariozechner/pi-ai@0.52.8 --filter @atproto-agent/network\n   pnpm add @mariozechner/pi-ai@0.52.8 @mariozechner/pi-agent-core@0.52.8 --filter @atproto-agent/agent\n   ```\n\n2. Remove AI SDK packages:\n   ```bash\n   pnpm remove ai @openrouter/ai-sdk-provider --filter @atproto-agent/network\n   ```\n\n3. Read the current ai-provider.ts:\n   ```bash\n   cat apps/network/src/ai-provider.ts\n   ```\n\n4. Write new ai-provider.ts using Pi API:\n   ```typescript\n   import { getModel, complete, type Context } from '@mariozechner/pi-ai'\n   \n   export function getOpenRouterModel(modelId: string) {\n     return getModel('openrouter', modelId)\n   }\n   \n   export async function completeWithOpenRouter(\n     model: string,\n     context: Context,\n     options?: { tools?: any[] }\n   ) {\n     const model_obj = getOpenRouterModel(model)\n     return complete(model_obj, context, options)\n   }\n   ```\n\n5. Read the current agent-factory.ts:\n   ```bash\n   cat apps/network/src/agent-factory.ts\n   ```\n\n6. Rewrite agent-factory.ts to use Pi:\n   - Replace all imports from 'ai' with imports from '@mariozechner/pi-ai'\n   - Replace generateText() calls with complete() calls\n   - Keep the factory function signature the same\n   - Maintain OpenRouter + CF AI Gateway routing\n\n7. Run tests to verify:\n   ```bash\n   pnpm test 2>&1 | tail -5\n   ```\n\n8. Run typecheck:\n   ```bash\n   pnpm typecheck\n   ```\n\nSuccess criteria:\n- All 86 tests pass\n- No imports from 'ai' package remain\n- Agent factory returns working prompt() function\n- Typecheck clean",
       "priority": 1,
       "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
@@ -49,27 +49,67 @@
       ]
     },
     {
-      "id": "story-mlde2anm",
-      "title": "Alarm-driven Pi agent loop",
-      "description": "GitHub Issue #54. The core autonomous loop using DO alarms + Pi. Implement alarm() handler in AgentDO that runs the observe/think/act/reflect cycle: 1) OBSERVE: check inbox for messages from other agents via memory.list({collection: 'agent.comms.message'}), check for new events. 2) THINK: load Pi session, build loop prompt with observations + goals + relevant memories, call Pi complete() with kimi-k2.5 model. 3) ACT: Pi executes tool calls (remember, recall, message, etc). 4) REFLECT: save session, update goals if agent decided to. 5) SLEEP: set next alarm via ctx.storage.setAlarm(Date.now() + config.loopIntervalMs). Start alarm chain when agent config is first set or on first message. Add safety: max 5 tool call steps per alarm, 30s timeout, error handling that doesnt break the alarm chain. Broadcast loop events via WebSocket to connected dashboard clients. Add a startLoop() method and stopLoop() method accessible via API.",
+      "id": "story-4a-alarm-chain",
+      "title": "4a: Bare alarm chain + start/stop API",
+      "description": "GitHub Issue #60. The alarm skeleton \u2014 no Pi, no inbox. Just the chain that keeps ticking. Implement alarm() handler in AgentDO that logs, increments counter, and schedules next alarm via ctx.storage.setAlarm(). Add startLoop()/stopLoop() methods. HTTP routes: POST /agents/:name/loop/start, POST /agents/:name/loop/stop, GET /agents/:name/loop/status. Safety: check loopRunning flag, reject loopIntervalMs < 5000, errors must not break chain. Files: apps/network/src/agent.ts, apps/network/src/index.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (alarm patterns).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
       "priority": 4,
       "passes": false,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
-        "alarm() handler runs loop cycle",
-        "Agent checks inbox and processes messages",
-        "Agent uses Pi complete() with session context",
-        "Alarm chain continues autonomously",
-        "WebSocket broadcasts loop events",
-        "Safety limits prevent runaway loops",
-        "Tests for alarm lifecycle"
-      ]
+        "alarm() fires and reschedules",
+        "startLoop()/stopLoop() work via API",
+        "Error in alarm does not break chain",
+        "Tests pass"
+      ],
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-4b-observe",
+      "title": "4b: Observe phase \u2014 inbox + event collection",
+      "description": "GitHub Issue #61. Depends on #60. Implement observe() method that queries memory.list({collection: \"agent.comms.message\"}) for unread inbox messages, decrypts them, marks as processed, and collects events since last alarm. Returns structured Observations object. Wire into alarm() handler. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/envelope-encryption, .agents/skills/d1-patterns.\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "observe() returns structured Observations",
+        "Inbox messages decrypted and collected",
+        "Empty inbox handled gracefully",
+        "Tests pass"
+      ],
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-4c-think-act-reflect",
+      "title": "4c: Think/Act/Reflect \u2014 Pi loop cycle",
+      "description": "GitHub Issue #62. Depends on #60, #61. The brain: think() builds prompt from observations+goals+memories, calls Pi complete() with session context. act() executes tool calls (max 5 steps, 30s timeout). reflect() saves session, updates goals. Wire observe->think->act->reflect into alarm(). Files: apps/network/src/agent.ts, packages/agent/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/pi-agent (complete(), tools, session).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Pi called with correct context",
+        "Tool calls executed with safety limits",
+        "Session persisted after reflect",
+        "Goals updated when Pi decides",
+        "Tests pass"
+      ],
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-4d-ws-broadcast",
+      "title": "4d: WebSocket broadcast of loop events",
+      "description": "GitHub Issue #63. Depends on #62. Broadcast loop lifecycle events (loop.started, loop.observe, loop.think, loop.act, loop.reflect, loop.sleep, loop.error) to connected WS clients via ctx.getWebSockets(). Events match docs/O11Y.md schema (trace_id, span_id, agent_did). Handle stale connections gracefully. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts. Skill ref: .agents/skills/cloudflare-do (WebSocket hibernation), .agents/skills/zap-cli (O11Y events).\n\n## Deploy & Verify (MANDATORY)\nAfter tests pass locally:\n1. Deploy: `cd apps/network && wrangler deploy`\n2. Smoke test: `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev`\n3. Run story-specific live test against the real URL\n4. Report: `openclaw system event --mode now --text \"Ralph: deployed + verified [story title]. Live URL: https://agent-network.joelhooks.workers.dev\"`\n\nThe story is NOT done until the live endpoint works.",
+      "priority": 7,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Loop events broadcast to connected clients",
+        "Events match O11Y schema",
+        "Dead connections handled gracefully",
+        "Tests pass"
+      ],
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
       "id": "story-mlde2jqb",
       "title": "Pi tool definitions",
-      "description": "GitHub Issue #55. Define Pi-native tools for agents. Rewrite buildTools() in AgentDO to return Pi AgentTool format with split output (text for LLM) and details (structured for dashboard). Tools: 1) remember — store encrypted memory record, returns {output: \"Stored memory {id}\", details: {id}}. 2) recall — search memories semantically using Vectorize binding if available, fallback to list+filter, returns matching memories. 3) message — send agent.comms.message to another agent DO via RELAY namespace, includes sender DID and content. 4) search — semantic search across all agent memories on the network (query Vectorize index). 5) set_goal — add/update/complete goals on the agent config stored in DO. 6) think_aloud — record reasoning that gets broadcast via WebSocket to dashboard but NOT included in LLM context (UI-only). Each tool should have proper TypeBox or JSON Schema parameter definitions.",
-      "priority": 5,
+      "description": "GitHub Issue #55. Define Pi-native tools for agents. Rewrite buildTools() in AgentDO to return Pi AgentTool format with split output (text for LLM) and details (structured for dashboard). Tools: 1) remember \u2014 store encrypted memory record, returns {output: \"Stored memory {id}\", details: {id}}. 2) recall \u2014 search memories semantically using Vectorize binding if available, fallback to list+filter, returns matching memories. 3) message \u2014 send agent.comms.message to another agent DO via RELAY namespace, includes sender DID and content. 4) search \u2014 semantic search across all agent memories on the network (query Vectorize index). 5) set_goal \u2014 add/update/complete goals on the agent config stored in DO. 6) think_aloud \u2014 record reasoning that gets broadcast via WebSocket to dashboard but NOT included in LLM context (UI-only). Each tool should have proper TypeBox or JSON Schema parameter definitions.",
+      "priority": 8,
       "passes": false,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
@@ -86,7 +126,7 @@
       "id": "story-mlde2raq",
       "title": "Agent creation API",
       "description": "GitHub Issue #56. API endpoint to create new agents with full config. Add POST /agents route in apps/network/src/index.ts that: 1) Validates AgentConfig schema (name required, personality required, model defaults to moonshotai/kimi-k2.5). 2) Creates DO instance using env.AGENT.idFromName(name). 3) Forwards config to DO which stores it. 4) DO starts alarm chain (first alarm = now). 5) Returns agent identity (DID, public keys, config). Add GET /agents route that lists all known agents (query D1 for registered agents or maintain a registry). Handle duplicate names (409 Conflict). Handle invalid config (400 with validation errors). Auth required (ADMIN_TOKEN bearer). Update the existing agent creation flow (currently agents are created implicitly on first request to /agents/{name}/identity).",
-      "priority": 6,
+      "priority": 9,
       "passes": false,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
@@ -102,8 +142,8 @@
     {
       "id": "story-mlde2zb2",
       "title": "Dashboard: agent thoughts, goals, loop activity",
-      "description": "GitHub Issue #57. Enhance highswarm.com dashboard (packages/dashboard/index.html) to show real agent activity. 1) Agent detail view: click agent card to expand and show current goals with status indicators, recent think_aloud output, memory count, loop status (last alarm time, next alarm, iteration count), model being used, personality snippet. 2) Live activity feed improvements: show tool calls with structured details (not just raw text), show goal updates, show inter-agent messages with sender/recipient, show think_aloud entries styled differently (italic/dimmed — internal thought). 3) Fetch agent config from GET /agents/{name}/config and display. 4) Show loop heartbeat indicator (pulsing when alarm is active). Keep the existing dark theme and monospace aesthetic. Mobile responsive.",
-      "priority": 7,
+      "description": "GitHub Issue #57. Enhance highswarm.com dashboard (packages/dashboard/index.html) to show real agent activity. 1) Agent detail view: click agent card to expand and show current goals with status indicators, recent think_aloud output, memory count, loop status (last alarm time, next alarm, iteration count), model being used, personality snippet. 2) Live activity feed improvements: show tool calls with structured details (not just raw text), show goal updates, show inter-agent messages with sender/recipient, show think_aloud entries styled differently (italic/dimmed \u2014 internal thought). 3) Fetch agent config from GET /agents/{name}/config and display. 4) Show loop heartbeat indicator (pulsing when alarm is active). Keep the existing dark theme and monospace aesthetic. Mobile responsive.",
+      "priority": 10,
       "passes": false,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm --filter dashboard build && pnpm typecheck",
       "acceptanceCriteria": [
@@ -119,8 +159,8 @@
     {
       "id": "story-mlde37m4",
       "title": "Self-extending agents (R2 extension storage)",
-      "description": "GitHub Issue #58. Enable agents to write their own Pi extensions stored in R2. 1) Add write_extension tool: agent provides extension name and code, stored in R2 under extensions/{agentName}/{extensionName}.js. 2) Add load_extensions() method in AgentDO: on initialize(), list R2 objects under extensions/{agentName}/, load each as a module. Extensions export an activate(agent) function that can register additional tools. 3) Extension hot-reload: after write_extension, mark that extensions need reload on next alarm cycle. 4) Add list_extensions tool: shows what extensions the agent has. 5) Add remove_extension tool: deletes from R2. 6) Safety limits: max 10 extensions per agent, max 50KB per extension, no eval() — use structured tool registration only. 7) Bootstrap: on first loop, if agent has no extensions, provide a hint in the system prompt about self-extension capability. This is the Pi philosophy: agents extend themselves rather than downloading skills.",
-      "priority": 8,
+      "description": "GitHub Issue #58. Enable agents to write their own Pi extensions stored in R2. 1) Add write_extension tool: agent provides extension name and code, stored in R2 under extensions/{agentName}/{extensionName}.js. 2) Add load_extensions() method in AgentDO: on initialize(), list R2 objects under extensions/{agentName}/, load each as a module. Extensions export an activate(agent) function that can register additional tools. 3) Extension hot-reload: after write_extension, mark that extensions need reload on next alarm cycle. 4) Add list_extensions tool: shows what extensions the agent has. 5) Add remove_extension tool: deletes from R2. 6) Safety limits: max 10 extensions per agent, max 50KB per extension, no eval() \u2014 use structured tool registration only. 7) Bootstrap: on first loop, if agent has no extensions, provide a hint in the system prompt about self-extension capability. This is the Pi philosophy: agents extend themselves rather than downloading skills.",
+      "priority": 11,
       "passes": false,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
@@ -137,5 +177,6 @@
     "createdAt": "2026-02-08T06:54:17.324Z",
     "totalIterations": 4,
     "lastIteration": "2026-02-08T16:14:27.464Z"
-  }
+  },
+  "totalStories": 11
 }
