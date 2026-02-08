@@ -188,6 +188,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Re-running the full root Vitest suite now that `apps/network/vitest.config.ts` excludes `*.e2e.test.ts` (those require the separate `vitest.config.e2e.ts` globalSetup)."
+    },
+    {
+      "id": "fix-lockfile-miniflare",
+      "title": "Fix lockfile sync and install miniflare",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`miniflare` is consumed by the E2E harness in `scripts/e2e/miniflare.ts` (`import { Miniflare } from \"miniflare\"`), and the repo keeps it as a root devDependency (`package.json`) with the resolved version pinned in `pnpm-lock.yaml`.\nThe validation pipeline (`... | grep -qE \"passed\"`) can swallow the real Vitest failure output; run `pnpm vitest run --passWithNoTests` without piping when debugging. Also, Miniflare is ESM: use `import(\"miniflare\")`, not `require(\"miniflare\")`, for quick sanity checks."
     }
   ],
   "failures": [
@@ -248,6 +255,20 @@
     {
       "storyId": "e2e-test-harness",
       "storyTitle": "Setup E2E test harness (miniflare)",
+      "category": "unknown",
+      "error": "PASS\n",
+      "toolNames": []
+    },
+    {
+      "storyId": "fix-turbo-stubs",
+      "storyTitle": "Wire real turbo scripts or remove turbo",
+      "category": "unknown",
+      "error": "PASS\n",
+      "toolNames": []
+    },
+    {
+      "storyId": "fix-turbo-stubs",
+      "storyTitle": "Wire real turbo scripts or remove turbo",
       "category": "unknown",
       "error": "PASS\n",
       "toolNames": []

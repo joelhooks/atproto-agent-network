@@ -361,3 +361,17 @@ Files: none
 Summary: Prior failure pattern detected: **unknown/build_error** (piped validation hides Vitest output). Mitigation: ran `pnpm vitest run --passWithNoTests` **without piping** first to capture full output/exit code, then ran the exact validation command.
 
 - `package.json` already has `miniflare` in `devDependencies`, and `pnpm-lock.yaml` is already in sync (`pnpm install` reports “Lockfile is up to date”).
+
+---
+[2026-02-08T04:23:53.919Z]
+Failed: Wire real turbo scripts or remove turbo [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T04:34:15.706Z]
+Failed: Wire real turbo scripts or remove turbo [unknown]
+Validation: PASS
+
+Codex: 
