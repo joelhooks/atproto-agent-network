@@ -143,3 +143,18 @@ Summary: Validation already passes for this story.
 
 **Validation**
 - `pnpm vitest run packages/core/src/test-util
+
+---
+[2026-02-08T02:11:22.690Z]
+Completed: Add CI workflow (GitHub Actions)
+Files: none
+Summary: Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.
+
+**Files modified (and why)**
+- None; `.github/workflows/ci.yml` already exists and runs `pnpm test` on `push`/`pull_request`.
+
+**Tests added/modified**
+- None.
+
+**What I learned**
+- The repo’s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config
