@@ -458,3 +458,11 @@ Summary: **Implemented per-route error wrappers (more specific logging context) 
 
 **Files modified (and why)**
 - `apps/network/src/agent.ts`: wrapped each AgentDO route branch (`identity`, `prompt`, `memory`, `share`, `shared`, `inbox`, `websocket`) with `withErrorHandling(..., { route: 'AgentDO.<route>' })` so thrown errors log the actual handler rou
+
+---
+[2026-02-08T00:43:41.948Z]
+Completed: Implement relay subscription filtering for collections and DIDs
+Files: none
+Summary: **Files Modified (and why)**
+- `apps/network/src/relay.ts`: implemented `RelayDO` firehose fanout filtering by `collections` and `dids` (supports `*` + simple glob patterns like `agent.comms.*`; extracts DID from `did|repo|agent_did|agentDid` and collections from `collection|record.$type|ops[].path`). Also accepts Jetstream-style query params `wantedCollections`/`wantedDids`.
+- `apps/network/src/r

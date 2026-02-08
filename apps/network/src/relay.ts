@@ -85,8 +85,11 @@ export class RelayDO extends DurableObject {
   
   private async handleFirehoseSubscription(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const collections = url.searchParams.get('collections')?.split(',') || ['*']
-    const dids = url.searchParams.get('dids')?.split(',') || ['*']
+    // Support both our simplified query params and Jetstream-style naming.
+    const collections = this.parseFilterList(
+      url.searchParams.get('collections') ?? url.searchParams.get('wantedCollections')
+    )
+    const dids = this.parseFilterList(url.searchParams.get('dids') ?? url.searchParams.get('wantedDids'))
     
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
@@ -114,11 +117,131 @@ export class RelayDO extends DurableObject {
   }
   
   private matchesSubscription(event: unknown, sub: Subscription): boolean {
-    // TODO: Implement proper filtering
-    if (sub.collections.includes('*') && sub.dids.includes('*')) {
+    const collections = this.normalizeFilterList(sub?.collections)
+    const dids = this.normalizeFilterList(sub?.dids)
+
+    const anyCollection = collections.length === 0 || collections.includes('*')
+    const anyDid = dids.length === 0 || dids.includes('*')
+
+    if (anyCollection && anyDid) {
       return true
     }
+
+    const eventDids = this.extractEventDids(event)
+    const eventCollections = this.extractEventCollections(event)
+
+    const didMatches =
+      anyDid || (eventDids.length > 0 && eventDids.some((did) => this.matchesAnyPattern(did, dids)))
+    const collectionMatches =
+      anyCollection ||
+      (eventCollections.length > 0 &&
+        eventCollections.some((collection) => this.matchesAnyPattern(collection, collections)))
+
+    return didMatches && collectionMatches
+  }
+
+  private parseFilterList(param: string | null): string[] {
+    if (!param) return ['*']
+    return this.normalizeFilterList(param.split(','))
+  }
+
+  private normalizeFilterList(list: unknown): string[] {
+    if (!Array.isArray(list)) return ['*']
+    const normalized = list
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter((entry) => entry.length > 0)
+    return normalized.length > 0 ? normalized : ['*']
+  }
+
+  private extractEventDids(event: unknown): string[] {
+    if (!event || typeof event !== 'object') return []
+    const e = event as Record<string, unknown>
+
+    const dids: string[] = []
+    const push = (value: unknown) => {
+      if (typeof value === 'string' && value.length > 0) dids.push(value)
+    }
+
+    // Common fields for simplified JSON events and atproto/jetstream-style payloads.
+    push(e.did)
+    push(e.repo)
+    push(e.agent_did)
+    push((e as { agentDid?: unknown }).agentDid)
+
+    return Array.from(new Set(dids))
+  }
+
+  private extractEventCollections(event: unknown): string[] {
+    if (!event || typeof event !== 'object') return []
+    const e = event as Record<string, unknown>
+
+    const collections: string[] = []
+    const push = (value: unknown) => {
+      if (typeof value === 'string' && value.length > 0) collections.push(value)
+    }
+
+    // Simplified JSON event shape: { collection }
+    push(e.collection)
+
+    // Sometimes the payload is the record itself: { $type: 'agent.*' }
+    if (typeof e.$type === 'string' && e.$type.startsWith('agent.')) {
+      push(e.$type)
+    }
+
+    // Nested record shape: { record: { $type: 'agent.*' } }
+    const record = e.record
+    if (record && typeof record === 'object') {
+      const recordType = (record as { $type?: unknown }).$type
+      if (typeof recordType === 'string' && recordType.length > 0) {
+        push(recordType)
+      }
+    }
+
+    // atproto commit event style: { ops: [{ path: 'collection/rkey', ... }] }
+    const ops = e.ops
+    if (Array.isArray(ops)) {
+      for (const op of ops) {
+        if (!op || typeof op !== 'object') continue
+        const path = (op as { path?: unknown }).path
+        if (typeof path !== 'string') continue
+        const slash = path.indexOf('/')
+        push(slash === -1 ? path : path.slice(0, slash))
+      }
+    }
+
+    return Array.from(new Set(collections))
+  }
+
+  private matchesAnyPattern(value: string, patterns: string[]): boolean {
+    for (const pattern of patterns) {
+      if (this.matchesPattern(value, pattern)) return true
+    }
     return false
+  }
+
+  private matchesPattern(value: string, pattern: string): boolean {
+    if (pattern === '*') return true
+    if (!pattern.includes('*')) return value === pattern
+
+    const first = pattern.indexOf('*')
+    const last = pattern.lastIndexOf('*')
+
+    // Fast paths for the common "prefix*" / "*suffix" cases.
+    if (first === pattern.length - 1 && last === first) {
+      const prefix = pattern.slice(0, -1)
+      return value.startsWith(prefix)
+    }
+    if (first === 0 && last === 0) {
+      const suffix = pattern.slice(1)
+      return value.endsWith(suffix)
+    }
+
+    // General glob matching via a safe regex conversion.
+    const escapedParts = pattern
+      .split('*')
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&'))
+    const regex = new RegExp(`^${escapedParts.join('.*')}$`)
+    return regex.test(value)
   }
   
   private async handleAgents(request: Request): Promise<Response> {

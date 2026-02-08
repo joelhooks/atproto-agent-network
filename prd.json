@@ -455,7 +455,8 @@
       ],
       "estimatedMinutes": 15,
       "sprint": "hardening",
-      "dependsOn": []
+      "dependsOn": [],
+      "passes": true
     },
     {
       "id": "websocket-handlers",
@@ -675,7 +676,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T00:35:48.448Z",
-    "totalIterations": 29
+    "lastIteration": "2026-02-08T00:43:41.947Z",
+    "totalIterations": 30
   }
 }

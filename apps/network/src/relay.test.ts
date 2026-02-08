@@ -53,6 +53,13 @@ function createState() {
   return { state, storage }
 }
 
+function createSocket(sub: { collections: string[]; dids: string[] }) {
+  return {
+    deserializeAttachment: () => sub,
+    send: vi.fn(),
+  } as unknown as WebSocket
+}
+
 describe('RelayDO', () => {
   it('registers agents and serves their public keys', async () => {
     const { state } = createState()
@@ -149,5 +156,112 @@ describe('RelayDO', () => {
       expect.objectContaining({ route: 'RelayDO.agents' })
     )
     consoleSpy.mockRestore()
+  })
+
+  it('filters emitted events by collection (exact + wildcard prefix)', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, {} as never)
+
+    const all = createSocket({ collections: ['*'], dids: ['*'] })
+    const commsExact = createSocket({ collections: ['agent.comms.message'], dids: ['*'] })
+    const commsWildcard = createSocket({ collections: ['agent.comms.*'], dids: ['*'] })
+    const memoryWildcard = createSocket({ collections: ['agent.memory.*'], dids: ['*'] })
+
+    state.getWebSockets = vi
+      .fn()
+      .mockReturnValue([all, commsExact, commsWildcard, memoryWildcard] as WebSocket[])
+
+    const event = {
+      did: 'did:cf:alice',
+      collection: 'agent.comms.message',
+      action: 'create',
+      timestamp: Date.now(),
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((all as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((commsExact as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((commsWildcard as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((memoryWildcard as any).send).not.toHaveBeenCalled()
+  })
+
+  it('filters emitted events by did (and can combine did + collection filters)', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, {} as never)
+
+    const all = createSocket({ collections: ['*'], dids: ['*'] })
+    const alice = createSocket({ collections: ['*'], dids: ['did:cf:alice'] })
+    const bob = createSocket({ collections: ['*'], dids: ['did:cf:bob'] })
+    const aliceComms = createSocket({ collections: ['agent.comms.*'], dids: ['did:cf:alice'] })
+
+    state.getWebSockets = vi
+      .fn()
+      .mockReturnValue([all, alice, bob, aliceComms] as WebSocket[])
+
+    const event = {
+      did: 'did:cf:alice',
+      collection: 'agent.comms.task',
+      action: 'create',
+      timestamp: Date.now(),
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((all as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((alice as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((aliceComms as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((bob as any).send).not.toHaveBeenCalled()
+  })
+
+  it('filters commit-style events by repo did and op collection paths', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, {} as never)
+
+    const aliceComms = createSocket({ collections: ['agent.comms.*'], dids: ['did:cf:alice'] })
+    const bobComms = createSocket({ collections: ['agent.comms.*'], dids: ['did:cf:bob'] })
+
+    state.getWebSockets = vi.fn().mockReturnValue([aliceComms, bobComms] as WebSocket[])
+
+    const commitEvent = {
+      $type: 'com.atproto.sync.subscribeRepos#commit',
+      repo: 'did:cf:alice',
+      ops: [
+        {
+          action: 'create',
+          path: 'agent.comms.message/3jui7-test',
+          cid: 'bafyreibogus',
+        },
+      ],
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(commitEvent),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((aliceComms as any).send).toHaveBeenCalledWith(JSON.stringify(commitEvent))
+    expect((bobComms as any).send).not.toHaveBeenCalled()
   })
 })
