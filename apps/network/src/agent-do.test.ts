@@ -58,6 +58,10 @@ vi.mock('cloudflare:workers', () => {
     }
   }
 
+  // Cloudflare Workers exposes WebSocketPair as a global. Our DO code uses the global,
+  // so make it available in the Vitest runtime to avoid ReferenceError.
+  ;(globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = WebSocketPair
+
   return { DurableObject, WebSocketPair }
 })
 
@@ -1326,25 +1330,58 @@ describe('AgentDO', () => {
     const { AgentDO } = await import('./agent')
     const agent = new AgentDO(state as never, env as never)
 
+    const goal = {
+      id: 'goal-1',
+      description: 'monitor inbox',
+      priority: 1,
+      status: 'pending',
+      progress: 0,
+      createdAt: Date.now(),
+    }
+
+    await agent.fetch(
+      new Request('https://example/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goals: [goal] }),
+      })
+    )
+
     await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'seed-event' }])
+
     await agent.alarm()
 
-    // think() must have called the Pi agent's prompt method
-    expect(promptFn).toHaveBeenCalled()
+    expect(promptFn).toHaveBeenCalledTimes(1)
     const promptArg = promptFn.mock.calls[0][0]
-    // The prompt should include observations context
     expect(typeof promptArg).toBe('string')
-    expect(promptArg.length).toBeGreaterThan(0)
+    expect(promptArg).toContain('monitor inbox')
+    expect(promptArg).toContain('seed-event')
   })
 
-  it('alarm() executes tool calls returned by think() via act()', async () => {
-    const toolHandler = vi.fn().mockResolvedValue({ result: 'tool executed' })
+  it('alarm() executes tool calls returned by think() via act() with a max of 5 steps', async () => {
+    const now = new Date().toISOString()
+    const note = (summary: string) => ({
+      $type: 'agent.memory.note',
+      summary,
+      text: `text:${summary}`,
+      createdAt: now,
+    })
+
     const promptFn = vi.fn().mockResolvedValue({
       content: 'Using remember tool',
-      toolCalls: [{ name: 'remember', arguments: { text: 'test memory' } }],
+      toolCalls: [
+        { name: 'remember', arguments: { record: note('n1') } },
+        { name: 'remember', arguments: { record: note('n2') } },
+        { name: 'remember', arguments: { record: note('n3') } },
+        { name: 'remember', arguments: { record: note('n4') } },
+        { name: 'remember', arguments: { record: note('n5') } },
+        { name: 'remember', arguments: { record: note('n6') } },
+      ],
     })
+
     const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
-    const { state, storage } = createState('agent-act')
+    const { state } = createState('agent-act')
     const { env } = createEnv({
       PI_AGENT_FACTORY: agentFactory,
       PI_AGENT_MODEL: { provider: 'test' },
@@ -1356,15 +1393,33 @@ describe('AgentDO', () => {
     await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
     await agent.alarm()
 
-    // act() should have executed the tool call
-    // Check that the loop completed without error (chain intact)
-    const status = await agent.fetch(new Request('https://example/loop/status'))
-    const body = await status.json() as { loopCount: number }
-    expect(body.loopCount).toBe(1)
+    const listNotes = await agent.fetch(
+      new Request('https://example/memory?collection=agent.memory.note')
+    )
+    expect(listNotes.status).toBe(200)
+    const body = (await listNotes.json()) as { entries: Array<{ record: { summary: string } }> }
+
+    const summaries = body.entries.map((entry) => entry.record.summary)
+    expect(summaries).toEqual(expect.arrayContaining(['n1', 'n2', 'n3', 'n4', 'n5']))
+    expect(summaries).not.toEqual(expect.arrayContaining(['n6']))
   })
 
   it('reflect() persists session and updates goals in DO storage after think+act', async () => {
-    const promptFn = vi.fn().mockResolvedValue({ content: 'Reflecting on my actions.', toolCalls: [] })
+    const nextGoal = {
+      id: 'goal-next',
+      description: 'respond to messages',
+      priority: 2,
+      status: 'in_progress',
+      progress: 0.25,
+      createdAt: Date.now(),
+    }
+
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Reflecting on my actions.',
+      toolCalls: [],
+      goals: [nextGoal],
+    })
+
     const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
     const { state, storage } = createState('agent-reflect')
     const { env } = createEnv({
@@ -1375,22 +1430,53 @@ describe('AgentDO', () => {
     const { AgentDO } = await import('./agent')
     const agent = new AgentDO(state as never, env as never)
 
-    // Set initial goals
-    await agent.fetch(new Request('https://example/config', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goals: ['monitor inbox', 'respond to messages'] }),
-    }))
-
     await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
     await agent.alarm()
 
-    // reflect() should have saved session state
     const session = await storage.get<{ messages: unknown[] }>('session')
     expect(session).toBeTruthy()
     expect(Array.isArray(session!.messages)).toBe(true)
-    // Session should contain the Pi agent interaction from this loop cycle
     expect(session!.messages.length).toBeGreaterThan(0)
+
+    const config = await storage.get<{ goals?: unknown[] }>('config')
+    expect(config?.goals).toEqual([nextGoal])
+  })
+
+  it('act() enforces a 30s timeout per loop cycle tool execution', async () => {
+    vi.useFakeTimers()
+    try {
+      const promptFn = vi.fn().mockResolvedValue({
+        content: 'Try a slow recall',
+        toolCalls: [{ name: 'recall', arguments: { id: 'missing' } }],
+      })
+      const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+      const { state, storage } = createState('agent-act-timeout')
+      const { env } = createEnv({
+        PI_AGENT_FACTORY: agentFactory,
+        PI_AGENT_MODEL: { provider: 'test' },
+      })
+
+      const { AgentDO } = await import('./agent')
+      const agent = new AgentDO(state as never, env as never)
+
+      // Force initialization so we can override the recall tool.
+      await agent.fetch(new Request('https://example/identity'))
+      const tools = (agent as any).tools as Array<{ name: string; execute?: (args: unknown) => unknown }>
+      const recall = tools.find((t) => t.name === 'recall')
+      expect(recall).toBeTruthy()
+
+      recall!.execute = () => new Promise(() => {}) // never resolves
+
+      await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+      const alarmPromise = agent.alarm()
+      await vi.advanceTimersByTimeAsync(30_000)
+      await alarmPromise
+
+      const reflection = await storage.get<{ acted?: { timedOut?: boolean } }>('lastReflection')
+      expect(reflection?.acted?.timedOut).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('alarm() runs full observe→think→act→reflect cycle in order', async () => {

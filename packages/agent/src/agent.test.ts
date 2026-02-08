@@ -57,6 +57,24 @@ describe('PiAgentWrapper', () => {
     await expect(wrapper.promptStream('stream')).rejects.toThrow('promptStream')
   })
 
+  it('tracks a best-effort transcript when the underlying agent does not expose state.messages', async () => {
+    const prompt = vi.fn().mockResolvedValue({ content: 'assistant-ok' })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt })
+
+    const wrapper = new PiAgentWrapper({
+      systemPrompt: 'system',
+      model: 'model',
+      agentFactory,
+    })
+
+    await wrapper.prompt('user-hello')
+    const messages = wrapper.getMessages()
+
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({ role: 'user', content: 'user-hello' })
+    expect(messages[1]).toMatchObject({ role: 'assistant', content: 'assistant-ok' })
+  })
+
   it('initializes only once across concurrent prompts', async () => {
     const prompt = vi.fn().mockResolvedValue('ok')
     const agentFactory = vi.fn().mockImplementation(async () => {
