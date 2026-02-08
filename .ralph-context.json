@@ -202,6 +202,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`database_id = \"REPLACE_WITH_D1_ID\"` is intentionally non-real; any `wrangler deploy` (including `--dry-run`) may fail until it’s replaced with the actual D1 UUID from `wrangler d1 create`."
+    },
+    {
+      "id": "health-endpoint",
+      "title": "Add /health endpoint with binding checks",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "### Technical Discovery\n`apps/network/src/index.ts` enforced `requireAdminBearerAuth()` before all routing, so `/health` must be routed *before* auth to be usable by load balancers; binding readiness can be checked safely by testing method presence (`AGENTS/RELAY idFromName/get`, `DB prepare`, `BLOBS get/put`, `VECTORI\n`apps/network/src/index.ts` enforced `requireAdminBearerAuth()` before all routing, so `/health` must be routed *before* auth to be usable by load balancers; binding readiness can be checked safely by testing method presence (`AGENTS/RELAY idFromName/get`, `DB prepare`, `BLOBS get/put`, `VECTORI\nThe required validation pattern pipes Vitest through `grep`, which can hide the actual failing assertion/output; when debugging, always run the un-piped Vitest command first, then re-run the exact piped validation once green."
     }
   ],
   "failures": [

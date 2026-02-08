@@ -65,7 +65,7 @@
         "apps/network/package.json",
         "apps/network/wrangler.toml"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "github-actions-deploy",
@@ -90,7 +90,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T04:57:17.775Z",
-    "lastIteration": "2026-02-08T05:30:24.384Z",
-    "totalIterations": 4
+    "lastIteration": "2026-02-08T05:36:44.623Z",
+    "totalIterations": 5
   }
 }
