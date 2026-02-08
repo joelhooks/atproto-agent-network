@@ -209,6 +209,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`apps/network/src/index.ts` enforced `requireAdminBearerAuth()` before all routing, so `/health` must be routed *before* auth to be usable by load balancers; binding readiness can be checked safely by testing method presence (`AGENTS/RELAY idFromName/get`, `DB prepare`, `BLOBS get/put`, `VECTORI\n`apps/network/src/index.ts` enforced `requireAdminBearerAuth()` before all routing, so `/health` must be routed *before* auth to be usable by load balancers; binding readiness can be checked safely by testing method presence (`AGENTS/RELAY idFromName/get`, `DB prepare`, `BLOBS get/put`, `VECTORI\nThe required validation pattern pipes Vitest through `grep`, which can hide the actual failing assertion/output; when debugging, always run the un-piped Vitest command first, then re-run the exact piped validation once green."
+    },
+    {
+      "id": "wrangler-build-check",
+      "title": "Verify wrangler build succeeds locally",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "### Technical Discovery\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\n\n### Gotcha for Next Iteration\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `"
     }
   ],
   "failures": [

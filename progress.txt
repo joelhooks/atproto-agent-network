@@ -194,3 +194,12 @@ Validation:
 ```bash
 cd apps/network && npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist 2>&1 | grep -qiE '(Total Upload|successfully|dry-run)' && echo PASS
 
+
+---
+[2026-02-08T05:41:14.777Z]
+Completed: Create GitHub Actions deploy workflow
+Files: none
+Summary: Prior failure pattern detected: `unknown` + `build_error` (silent/piped validations hide real errors). Mitigation: ran the exact validation command before/after, and inspected `.github/workflows/` and the new file directly instead of relying on quiet `grep -q` output.
+
+Created GitHub Actions deploy workflow: `.github/workflows/deploy.yml`
+- Triggers on `push` to `main` and `workflow_dispatch` (inp

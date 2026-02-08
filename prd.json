@@ -75,7 +75,7 @@
       "files": [
         ".github/workflows/deploy.yml"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "smoke-test-script",
@@ -90,7 +90,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T04:57:17.775Z",
-    "lastIteration": "2026-02-08T05:36:44.623Z",
-    "totalIterations": 5
+    "lastIteration": "2026-02-08T05:41:14.776Z",
+    "totalIterations": 6
   }
 }
