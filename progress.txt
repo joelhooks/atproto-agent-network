@@ -93,3 +93,16 @@ Summary: Vitest + root config are already in place, and the story’s validation
 - Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)
 
 **Files
+
+---
+[2026-02-08T01:59:46.483Z]
+Completed: Create first unit test for identity.ts
+Files: none
+Summary: - `packages/core/src/identity.test.ts` already exists (covers `createDid`/`parseDid`, federated DID parsing, and `generateTid`), and the repo already has commit `751d108 ralph: Create first unit test for identity.ts`.
+- Validation: `pnpm vitest run packages/core/src/identity.test.ts` (passes: 4/4).
+
+**Files modified (and why)**
+- None for this story.
+
+**Tests added/modified**
+- None; existing `pac

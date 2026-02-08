@@ -68,7 +68,7 @@
       "title": "Install Vitest and create root config",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Vitest is installed at the workspace root and a root multi-project config is in place; validation passes.\n\n**Changes (and why)**\n- `package.json`: added `@vitest/coverage-v8` dev dependency (coverage provider for root config).\n- `pnpm-lock.yaml`: lockfile updated for the new dev dependency.\n- `vitest.config.ts`: switched to `test.projects` (workspace-style multi-project runner).\n- `vitest.workspace.ts`: removed (deprecated in Vitest v3+ in favor of `test.projects`).\n- `packages/cli/vitest.config"
+      "learnings": "Vitest + root config are already in place, and the story’s validation now passes.\n\n- Root config: `vitest.config.ts` (multi-project via `test.projects`)\n- Vitest install: `package.json` includes `vitest` + `@vitest/coverage-v8`\n- Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)\n\n**Files modified (and why)**\n- None for this story’s code/config (already implemented in existing commits)."
     }
   ],
   "failures": [
