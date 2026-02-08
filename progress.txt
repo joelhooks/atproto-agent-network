@@ -503,3 +503,18 @@ Summary: PR `#49` is up.
 - `apps/network/src/index.test.ts`: added CORS coverage (OPTIONS preflight, auth errors include CORS, configured origin).
 - `apps/network/src/cors.ts`: new CORS helpers (preflight + apply headers; `CORS_ORIGIN` config).
 - `a
+
+---
+[2026-02-08T01:39:18.164Z]
+Completed: Setup monorepo with Turborepo + pnpm
+Files: none
+Summary: Validation passes as-is: `pnpm install && pnpm turbo build --dry-run && echo PASS`.
+
+**Files Modified (and why)**
+- None (pnpm workspace + Turborepo config is already present and working).
+
+**Tests Added/Modified**
+- None.
+
+**What I Learned**
+- `pnpm turbo build --dry-run` is a quick monorepo wiring check; Turbo can print `<NONEXISTENT>` for packages missing a `build` script but still exit 0 (usef

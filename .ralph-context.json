@@ -59,9 +59,9 @@
     {
       "id": "consolidate-mocks-cors",
       "title": "Consolidate D1 mock and add CORS headers",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [],
-      "learnings": "[unknown] PASS\n"
+      "learnings": "PR `#49` is up.\n\n**Files Modified (and why)**\n- `apps/network/src/agent-do.test.ts`: removed the local duplicate record row shape so tests rely on the shared `D1MockDatabase`.\n- `apps/network/src/index.test.ts`: added CORS coverage (OPTIONS preflight, auth errors include CORS, configured origin).\n- `apps/network/src/cors.ts`: new CORS helpers (preflight + apply headers; `CORS_ORIGIN` config).\n- `apps/network/src/index.ts`: handles `OPTIONS` before auth/routing and applies CORS headers to every r"
     }
   ],
   "failures": [
