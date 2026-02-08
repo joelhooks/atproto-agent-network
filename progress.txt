@@ -121,3 +121,13 @@ Summary: Validation passes already: `pnpm vitest run --filter @atproto-agent/cor
 
 **What I learned**
 - This repo’s `p
+
+---
+[2026-02-08T02:06:58.610Z]
+Completed: Add turbo task for test
+Files: none
+Summary: Validation passes already: `pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS` prints `PASS`.
+
+- **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `"test": "vitest run"`, so Turbo can run tests for `@atproto-agent/core`.
+- **Tests added/modified:** None.
+- **What I learned:** `pnpm 
