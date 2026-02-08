@@ -319,3 +319,12 @@ Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitig
 Validation: `pnpm vitest run apps/network/src/agent-do.test.ts` (pass: 15/15)
 
 No code changes needed for this story; `apps/network/src/agent.ts` already wires `AgentDO` to `PiAgentWrapper` + `Encrypt
+
+---
+[2026-02-08T03:30:49.405Z]
+Completed: Setup integration test harness (D1 mock)
+Files: none
+Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitigation: I ran `pnpm vitest run --config vitest.config.integration.ts` *without piping* first to capture full Vitest output + exit code, then ran the exact validation command.
+
+- No code changes needed: `vitest.config.integration.ts` already exists and discovers `**/*.integration.test.ts`.
+- Integration run currently exercises th
