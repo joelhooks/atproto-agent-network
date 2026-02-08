@@ -38,7 +38,7 @@
       "title": "Pi session persistence in DO storage",
       "description": "GitHub Issue #53. Persist Pi session context (messages array) in DO storage so agents maintain conversation history across alarms and DO evictions. In AgentDO (apps/network/src/agent.ts): save Pi Context messages to DO storage after each interaction under 'session' key. Load session on DO initialize(). Implement window management: keep last 50 messages in DO storage, archive overflow to D1 (agent-records). Add helper methods: loadSession(), saveSession(), trimSession(). The session should include role, content, timestamp, and any tool call results. Support Pi session branching concept (store branch points). Add tests for session save/load/trim/branch.",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
         "Session messages persist in DO storage",
@@ -135,7 +135,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 3,
-    "lastIteration": "2026-02-08T07:58:58.075Z"
+    "totalIterations": 4,
+    "lastIteration": "2026-02-08T16:14:27.464Z"
   }
 }

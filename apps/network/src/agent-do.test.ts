@@ -837,4 +837,153 @@ describe('AgentDO', () => {
     )
     consoleSpy.mockRestore()
   })
+
+  it('persists Pi session messages in DO storage and restores them on init', async () => {
+    const { state, storage } = createState('agent-session')
+
+    const agentFactory = vi.fn().mockImplementation(async (init: any) => {
+      const messages = Array.isArray(init?.initialState?.messages)
+        ? structuredClone(init.initialState.messages)
+        : []
+
+      const stateRef = { messages }
+
+      return {
+        state: stateRef,
+        replaceMessages(next: unknown) {
+          stateRef.messages = Array.isArray(next) ? next : []
+        },
+        async prompt(input: string) {
+          const ts = Date.now()
+          stateRef.messages.push({ role: 'user', content: input, timestamp: ts })
+          stateRef.messages.push({ role: 'assistant', content: `echo:${input}`, timestamp: ts + 1 })
+          return { text: `echo:${input}` }
+        },
+      }
+    })
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent1 = new AgentDO(state as never, env as never)
+
+    const response1 = await agent1.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hello' }),
+      })
+    )
+    expect(response1.status).toBe(200)
+
+    const stored1 = await storage.get<any>('session')
+    expect(stored1).toMatchObject({ version: 1 })
+    expect(Array.isArray(stored1?.messages)).toBe(true)
+    expect(stored1.messages.at(-2)).toMatchObject({ role: 'user', content: 'hello' })
+    expect(stored1.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'echo:hello' })
+    expect(typeof stored1.messages.at(-1)?.timestamp).toBe('number')
+
+    let initMessages: unknown = null
+    const agentFactory2 = vi.fn().mockImplementation(async (init: any) => {
+      initMessages = init?.initialState?.messages
+      return { state: { messages: initMessages }, prompt: vi.fn().mockResolvedValue({ ok: true }) }
+    })
+    const { env: env2 } = createEnv({
+      PI_AGENT_FACTORY: agentFactory2,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const agent2 = new AgentDO(state as never, env2 as never)
+    await agent2.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'next' }),
+      })
+    )
+
+    expect(initMessages).toEqual(stored1.messages)
+  })
+
+  it('trims session window to last 50 messages and archives overflow to D1', async () => {
+    const { state, storage } = createState('agent-session-trim')
+
+    const initialMessages = Array.from({ length: 60 }, (_, i) => ({
+      role: 'user',
+      content: `m${i}`,
+      timestamp: i,
+    }))
+
+    await storage.put('session', {
+      version: 1,
+      messages: initialMessages,
+      branchPoints: [{ id: 'main', label: 'main', messageIndex: 10, createdAt: Date.now() }],
+    })
+
+    const agentFactory = vi.fn().mockImplementation(async (init: any) => {
+      const messages = Array.isArray(init?.initialState?.messages)
+        ? structuredClone(init.initialState.messages)
+        : []
+      const stateRef = { messages }
+      return {
+        state: stateRef,
+        replaceMessages(next: unknown) {
+          stateRef.messages = Array.isArray(next) ? next : []
+        },
+        async prompt(input: string) {
+          const ts = Date.now()
+          stateRef.messages.push({ role: 'user', content: input, timestamp: ts })
+          stateRef.messages.push({ role: 'assistant', content: `echo:${input}`, timestamp: ts + 1 })
+          return { text: `echo:${input}` }
+        },
+      }
+    })
+
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(
+      new Request('https://example/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'trim-test' }),
+      })
+    )
+    expect(response.status).toBe(200)
+
+    const stored = await storage.get<any>('session')
+    expect(stored).toMatchObject({ version: 1 })
+    expect(stored.messages).toHaveLength(50)
+    expect(stored.messages[0]).toMatchObject({ content: 'm12' })
+    expect(stored.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'echo:trim-test' })
+    expect(stored.branchPoints).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'main', label: 'main' })])
+    )
+
+    const archiveRows = Array.from(db.records.values()).filter(
+      (row) => row.collection === 'agent.session.archive'
+    )
+    expect(archiveRows.length).toBe(1)
+    expect(archiveRows[0]?.public).toBe(0)
+    expect(archiveRows[0]?.encrypted_dek).toBeInstanceOf(Uint8Array)
+
+    const archiveId = archiveRows[0]!.id
+    const loadArchive = await agent.fetch(
+      new Request(`https://example/memory?id=${encodeURIComponent(archiveId)}`)
+    )
+    expect(loadArchive.status).toBe(200)
+    const archiveBody = (await loadArchive.json()) as { record: { $type: string; messages: unknown[] } }
+    expect(archiveBody.record.$type).toBe('agent.session.archive')
+    expect(archiveBody.record.messages).toHaveLength(12)
+    expect(archiveBody.record.messages[0]).toMatchObject({ content: 'm0' })
+    expect(archiveBody.record.messages.at(-1)).toMatchObject({ content: 'm11' })
+  })
 })

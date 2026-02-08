@@ -11,6 +11,7 @@ import {
   EncryptedMemory,
   PiAgentWrapper,
   type PiAgentFactory,
+  type PiAgentMessage,
   type PiAgentTool,
 } from '../../../packages/agent/src'
 import { createOpenRouterAgentFactory } from './agent-factory'
@@ -52,6 +53,24 @@ interface StoredAgentIdentityV1 {
   rotatedAt?: number
 }
 
+interface StoredAgentSessionBranchPoint {
+  id: string
+  label?: string
+  // Message index at the time the branch point was created.
+  // Interpreted as a global index (see baseIndex in StoredAgentSessionV1).
+  messageIndex: number
+  createdAt: number
+  [key: string]: unknown
+}
+
+interface StoredAgentSessionV1 {
+  version: 1
+  // Global index of messages[0] in the full conversation history.
+  baseIndex?: number
+  messages: PiAgentMessage[]
+  branchPoints?: StoredAgentSessionBranchPoint[]
+}
+
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
@@ -75,6 +94,7 @@ export class AgentDO extends DurableObject {
   private memory: EncryptedMemory | null = null
   private agent: PiAgentWrapper | null = null
   private config: AgentConfig | null = null
+  private session: StoredAgentSessionV1 | null = null
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
@@ -187,6 +207,7 @@ export class AgentDO extends DurableObject {
       )
 
       const config = await this.loadOrCreateConfig(agentName)
+      this.session = await this.loadSession()
       const tools = this.buildTools()
       const systemPrompt = config.personality
       const model = config.model
@@ -207,6 +228,7 @@ export class AgentDO extends DurableObject {
         model,
         tools,
         agentFactory,
+        messages: this.session.messages,
       })
 
       this.initialized = true
@@ -459,6 +481,8 @@ export class AgentDO extends DurableObject {
         ? (options as Record<string, unknown>)
         : undefined
     )
+
+    await this.saveSession()
     return Response.json(result)
   }
   
@@ -721,6 +745,7 @@ export class AgentDO extends DurableObject {
         }
 
         const result = await this.agent.prompt(prompt, options)
+        await this.saveSession()
         ws.send(JSON.stringify({ type: 'prompt.result', id, result }))
         return
       }
@@ -732,6 +757,7 @@ export class AgentDO extends DurableObject {
       }
 
       const result = await this.agent.prompt(trimmed)
+      await this.saveSession()
       ws.send(JSON.stringify({ type: 'prompt.result', result }))
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)
@@ -752,4 +778,104 @@ export class AgentDO extends DurableObject {
     const message = error instanceof Error ? error.message : String(error)
     console.error('AgentDO websocket error', { did: this.did, error: message })
   }
+
+  private async loadSession(): Promise<StoredAgentSessionV1> {
+    if (this.session) {
+      return this.session
+    }
+
+    const stored = await this.ctx.storage.get<StoredAgentSessionV1>('session')
+    if (stored && stored.version === 1 && Array.isArray(stored.messages)) {
+      this.session = {
+        version: 1,
+        baseIndex: typeof stored.baseIndex === 'number' && Number.isFinite(stored.baseIndex) ? stored.baseIndex : 0,
+        messages: stored.messages.filter(isPiAgentMessage),
+        branchPoints: Array.isArray(stored.branchPoints)
+          ? stored.branchPoints.filter(isSessionBranchPoint)
+          : [],
+      }
+      return this.session
+    }
+
+    this.session = { version: 1, baseIndex: 0, messages: [], branchPoints: [] }
+    return this.session
+  }
+
+  private trimSession(
+    session: StoredAgentSessionV1,
+    maxMessages = 50
+  ): { session: StoredAgentSessionV1; overflow: PiAgentMessage[] } {
+    const messages = Array.isArray(session.messages) ? session.messages : []
+    if (messages.length <= maxMessages) {
+      return { session, overflow: [] }
+    }
+
+    const cut = messages.length - maxMessages
+    const overflow = messages.slice(0, cut)
+
+    return {
+      session: {
+        ...session,
+        messages: messages.slice(cut),
+      },
+      overflow,
+    }
+  }
+
+  private async saveSession(): Promise<void> {
+    if (!this.agent) return
+
+    const existing = await this.loadSession()
+    const messages = this.agent.getMessages()
+
+    const baseIndex = typeof existing.baseIndex === 'number' && Number.isFinite(existing.baseIndex) ? existing.baseIndex : 0
+    const branchPoints = Array.isArray(existing.branchPoints) ? existing.branchPoints : []
+
+    const next: StoredAgentSessionV1 = {
+      version: 1,
+      baseIndex,
+      messages: structuredClone(messages.filter(isPiAgentMessage)),
+      branchPoints: structuredClone(branchPoints),
+    }
+
+    const { session: trimmed, overflow } = this.trimSession(next, 50)
+
+    let finalSession = trimmed
+    if (overflow.length > 0 && this.memory) {
+      // Archive overflow before trimming the session window so we don't lose history.
+      const archiveRecord = {
+        $type: 'agent.session.archive',
+        baseIndex,
+        createdAt: new Date().toISOString(),
+        messages: structuredClone(overflow),
+      }
+
+      await this.memory.store(archiveRecord)
+
+      finalSession = {
+        ...trimmed,
+        baseIndex: baseIndex + overflow.length,
+      }
+    }
+
+    await this.ctx.storage.put('session', finalSession)
+    this.session = finalSession
+  }
+}
+
+function isPiAgentMessage(value: unknown): value is PiAgentMessage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return typeof (value as { role?: unknown }).role === 'string'
+}
+
+function isSessionBranchPoint(value: unknown): value is StoredAgentSessionBranchPoint {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const asRecord = value as Record<string, unknown>
+  return (
+    typeof asRecord.id === 'string' &&
+    typeof asRecord.messageIndex === 'number' &&
+    Number.isFinite(asRecord.messageIndex) &&
+    typeof asRecord.createdAt === 'number' &&
+    Number.isFinite(asRecord.createdAt)
+  )
 }

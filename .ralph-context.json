@@ -241,37 +241,19 @@
     {
       "id": "story-mlde1tos",
       "title": "Agent config schema + DO storage",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`apps/network/src/agent.ts` implements config as a structured-cloneable `AgentConfig` stored in Durable Object storage under `config`, with defaults (`moonshotai/kimi-k2.5`, `google/gemini-2.0-flash-001`, `60000`) applied in `createDefaultConfig()`. `handleConfig()` supports GET and PATCH merge semantics, and `apps/network/src/agent-do.test.ts` asserts persistence across new `AgentDO` instances using the same fake storage.\nDurable Object storage values must be structured-cloneable; keep `AgentConfig` JSON-only (no `CryptoKey`, functions, class instances). Also, validate failures by running commands directly (avoid `| grep -q`), otherwise Turbo/Vitest output can be swallowed and misclassified as “no output captured”."
+    },
+    {
+      "id": "story-mlde2057",
+      "title": "Pi session persistence in DO storage",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+      "learnings": "[test_failure] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
     }
   ],
   "failures": [
-    {
-      "storyId": "fix-turbo-stubs",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "memory-list-update-delete",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "shared-records",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "agent-inbox",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
-    {
-      "storyId": "consolidate-mocks-cors",
-      "category": "unknown",
-      "error": "PASS\n"
-    },
     {
       "storyId": "install-vitest",
       "category": "build_error",
@@ -355,6 +337,55 @@
       "storyTitle": "Install Pi deps + replace AI SDK wrapper",
       "category": "build_error",
       "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "test_failure",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "test_failure",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlde2057",
+      "storyTitle": "Pi session persistence in DO storage",
+      "category": "test_failure",
+      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
       "toolNames": []
     }
   ]

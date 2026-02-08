@@ -5,6 +5,7 @@
 export interface PiAgentMessage {
   role: string
   content?: string
+  timestamp?: number
   [key: string]: unknown
 }
 
@@ -24,6 +25,8 @@ export interface PiAgentInit {
     systemPrompt: string
     model: unknown
     tools?: PiAgentTool[]
+    messages?: PiAgentMessage[]
+    sessionId?: string
   }
   transformContext?: PiAgentTransformContext
 }
@@ -34,6 +37,9 @@ export interface PiAgentLike {
     input: string,
     options?: Record<string, unknown>
   ) => AsyncIterable<unknown>
+  // Optional Pi agent-core compatible state surface.
+  state?: { messages?: PiAgentMessage[] }
+  replaceMessages?: (messages: PiAgentMessage[]) => void
 }
 
 export type PiAgentFactory = (init: PiAgentInit) => PiAgentLike | Promise<PiAgentLike>
@@ -44,15 +50,19 @@ export interface PiAgentWrapperOptions {
   tools?: PiAgentTool[]
   transformContext?: PiAgentTransformContext
   agentFactory?: PiAgentFactory
+  messages?: PiAgentMessage[]
+  sessionId?: string
 }
 
 export class PiAgentWrapper {
   private agent: PiAgentLike | null = null
   private initializing: Promise<PiAgentLike> | null = null
   private readonly options: PiAgentWrapperOptions
+  private messages: PiAgentMessage[]
 
   constructor(options: PiAgentWrapperOptions) {
     this.options = options
+    this.messages = options.messages ? structuredClone(options.messages) : []
   }
 
   get isInitialized(): boolean {
@@ -65,12 +75,23 @@ export class PiAgentWrapper {
     }
 
     if (!this.initializing) {
+      const initialState: PiAgentInit['initialState'] = {
+        systemPrompt: this.options.systemPrompt,
+        model: this.options.model,
+      }
+
+      if (this.options.tools) {
+        initialState.tools = this.options.tools
+      }
+      if (this.options.messages) {
+        initialState.messages = this.options.messages
+      }
+      if (this.options.sessionId) {
+        initialState.sessionId = this.options.sessionId
+      }
+
       const init: PiAgentInit = {
-        initialState: {
-          systemPrompt: this.options.systemPrompt,
-          model: this.options.model,
-          tools: this.options.tools,
-        },
+        initialState,
         transformContext: this.options.transformContext,
       }
 
@@ -80,6 +101,9 @@ export class PiAgentWrapper {
           throw new Error('Pi agent factory returned an invalid agent')
         }
         this.agent = agent
+        this.messages = Array.isArray(agent.state?.messages)
+          ? agent.state!.messages!
+          : this.messages
         return agent
       })
     }
@@ -105,6 +129,28 @@ export class PiAgentWrapper {
 
   getAgent(): PiAgentLike | null {
     return this.agent
+  }
+
+  getMessages(): PiAgentMessage[] {
+    const agentMessages = this.agent?.state?.messages
+    if (Array.isArray(agentMessages)) {
+      this.messages = agentMessages
+      return agentMessages
+    }
+    return this.messages
+  }
+
+  replaceMessages(messages: PiAgentMessage[]): void {
+    this.messages = messages
+
+    if (this.agent?.replaceMessages) {
+      this.agent.replaceMessages(messages)
+      return
+    }
+
+    if (this.agent?.state && typeof this.agent.state === 'object') {
+      this.agent.state.messages = messages
+    }
   }
 }
 
