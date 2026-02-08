@@ -31,10 +31,9 @@ new_classes = ["AgentDO", "RelayDO"]
 binding = "BLOBS"
 bucket_name = "agent-blobs"
 
-# Vectorize needs additional API token permissions — create index manually or update token
-# [[vectorize]]
-# binding = "VECTORIZE"
-# index_name = "agent-memory"
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "agent-memory"
 
 [[queues.producers]]
 queue = "agent-messages"
