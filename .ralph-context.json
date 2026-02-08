@@ -69,6 +69,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "Vitest + root config are already in place, and the story’s validation now passes.\n\n- Root config: `vitest.config.ts` (multi-project via `test.projects`)\n- Vitest install: `package.json` includes `vitest` + `@vitest/coverage-v8`\n- Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)\n\n**Files modified (and why)**\n- None for this story’s code/config (already implemented in existing commits)."
+    },
+    {
+      "id": "identity-tests",
+      "title": "Create first unit test for identity.ts",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "- `packages/core/src/identity.test.ts` already exists (covers `createDid`/`parseDid`, federated DID parsing, and `generateTid`), and the repo already has commit `751d108 ralph: Create first unit test for identity.ts`.\n- Validation: `pnpm vitest run packages/core/src/identity.test.ts` (passes: 4/4).\n\n**Files modified (and why)**\n- None for this story.\n\n**Tests added/modified**\n- None; existing `packages/core/src/identity.test.ts` was used.\n\n**What I learned**\n- Vitest here runs in Node with globa"
     }
   ],
   "failures": [

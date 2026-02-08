@@ -106,3 +106,18 @@ Summary: - `packages/core/src/identity.test.ts` already exists (covers `createDi
 
 **Tests added/modified**
 - None; existing `pac
+
+---
+[2026-02-08T02:03:39.382Z]
+Completed: Create vitest workspace config for monorepo
+Files: none
+Summary: Validation passes already: `pnpm vitest run --filter @atproto-agent/core` runs only the `@atproto-agent/core` project and passes.
+
+**Files modified (and why)**
+- None (workspace-style multi-project setup is already in place via `vitest.config.ts`, per-package `packages/*/vitest.config.ts`, and the wrapper `scripts/vitest.mjs`).
+
+**Tests added/modified**
+- None.
+
+**What I learned**
+- This repo’s `p
