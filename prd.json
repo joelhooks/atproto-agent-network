@@ -27,7 +27,7 @@
       ],
       "estimatedMinutes": 10,
       "sprint": "bootstrap",
-      "passes": true
+      "passes": false
     },
     {
       "id": "install-vitest",
@@ -44,7 +44,7 @@
         "setup-monorepo"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "identity-tests",
@@ -61,7 +61,7 @@
         "install-vitest"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "vitest-workspace",
@@ -78,7 +78,7 @@
         "identity-tests"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "turbo-test-task",
@@ -94,7 +94,7 @@
         "vitest-workspace"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "test-utilities",
@@ -111,7 +111,7 @@
         "turbo-test-task"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "ci-workflow",
@@ -127,7 +127,7 @@
         "turbo-test-task"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "pre-commit-hooks",
@@ -144,7 +144,7 @@
         "ci-workflow"
       ],
       "sprint": "testing",
-      "passes": true
+      "passes": false
     },
     {
       "id": "generate-x25519",
@@ -161,7 +161,7 @@
         "turbo-test-task"
       ],
       "sprint": "crypto",
-      "passes": true
+      "passes": false
     },
     {
       "id": "generate-ed25519",
@@ -178,7 +178,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": true
+      "passes": false
     },
     {
       "id": "export-public-key",
@@ -195,7 +195,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": true
+      "passes": false
     },
     {
       "id": "derive-shared-secret",
@@ -212,7 +212,7 @@
         "generate-x25519"
       ],
       "sprint": "crypto",
-      "passes": true
+      "passes": false
     },
     {
       "id": "envelope-encryption",
@@ -230,7 +230,7 @@
       ],
       "sprint": "crypto",
       "hitlGate": "Security review required before proceeding",
-      "passes": true
+      "passes": false
     },
     {
       "id": "d1-schema",
@@ -247,7 +247,7 @@
         "envelope-encryption"
       ],
       "sprint": "storage",
-      "passes": true
+      "passes": false
     },
     {
       "id": "pi-agent-wrapper",
@@ -264,7 +264,7 @@
         "turbo-test-task"
       ],
       "sprint": "storage",
-      "passes": true
+      "passes": false
     },
     {
       "id": "encrypted-memory",
@@ -282,7 +282,7 @@
         "d1-schema"
       ],
       "sprint": "storage",
-      "passes": true
+      "passes": false
     },
     {
       "id": "wire-up-agentdo",
@@ -301,7 +301,7 @@
       ],
       "sprint": "storage",
       "hitlGate": "Phase 1 complete - verify no plaintext in D1",
-      "passes": true
+      "passes": false
     },
     {
       "id": "integration-test-harness",
@@ -317,7 +317,7 @@
         "d1-schema"
       ],
       "sprint": "testing-advanced",
-      "passes": true
+      "passes": false
     },
     {
       "id": "e2e-test-harness",
@@ -333,7 +333,7 @@
         "wire-up-agentdo"
       ],
       "sprint": "testing-advanced",
-      "passes": true
+      "passes": false
     },
     {
       "id": "lexicon-validation",
@@ -524,7 +524,7 @@
       "estimatedMinutes": 25,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": true
+      "passes": false
     },
     {
       "id": "fix-lockfile-miniflare",
@@ -539,7 +539,7 @@
       "estimatedMinutes": 10,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": true
+      "passes": false
     },
     {
       "id": "fix-turbo-stubs",
@@ -558,7 +558,7 @@
       "estimatedMinutes": 15,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": true
+      "passes": false
     }
   ],
   "sprints": [
