@@ -130,3 +130,9 @@ Key patterns:
 - E2E tests use separate vitest.config.e2e.ts with miniflare globalSetup
 - DO classes must extend DurableObject from 'cloudflare:workers'
 - CryptoKey objects can't be stored directly in DO storage — serialize to JWK
+
+---
+[2026-02-08T04:44:12.845Z]
+Completed: Wire real turbo scripts or remove turbo
+Files: none
+Summary: Prior failure pattern detected: **unknown**. Mitigation: run the validation suite without `| grep` first to confirm real Vitest pass/fail, then run the exact piped validation command; also complete the mandatory `swarm memory store ...` + `openclaw system event ...` steps so the iteration doesn’t get marked “unknown” due to missing side-effects.
