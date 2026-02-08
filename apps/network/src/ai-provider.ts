@@ -16,7 +16,7 @@ export interface OpenRouterViaAiGatewayEnv {
   OPENROUTER_MODEL_DEFAULT?: string
 }
 
-export const DEFAULT_OPENROUTER_MODEL = 'moonshotai/kimi-k2'
+export const DEFAULT_OPENROUTER_MODEL = 'moonshotai/kimi-k2.5'
 
 function requireNonEmptyString(name: string, value: unknown): string {
   if (typeof value !== 'string' || value.trim().length === 0) {

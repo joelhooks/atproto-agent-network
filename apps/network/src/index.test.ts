@@ -50,7 +50,9 @@ describe('network worker lexicon validation', () => {
 
     const { default: worker } = await import('./index')
 
-    const response = await worker.fetch(new Request('https://example.com/agents/alice/identity'), env)
+    // GET requests to agent routes are now public (read-only)
+    // Test with POST instead to verify auth is still required for writes
+    const response = await worker.fetch(new Request('https://example.com/agents/alice/prompt', { method: 'POST' }), env)
 
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toMatchObject({
@@ -244,8 +246,10 @@ describe('network worker CORS', () => {
 
     const { default: worker } = await import('./index')
 
+    // Use POST to trigger auth check (GET is public for agent reads)
     const response = await worker.fetch(
-      new Request('https://example.com/agents/alice/identity', {
+      new Request('https://example.com/agents/alice/prompt', {
+        method: 'POST',
         headers: { Origin: 'https://app.example' },
       }),
       env

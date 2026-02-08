@@ -97,8 +97,14 @@ export default {
           )
         }
 
-        const auth = requireAdminBearerAuth(request, env)
-        if (auth) return auth
+        // Public read-only access for agent identity + memory list (GET only)
+        // Write operations (POST/PUT/DELETE) and other routes require admin auth
+        const isAgentReadRoute = normalizedPathname.startsWith('/agents/') && request.method === 'GET'
+        
+        if (!isAgentReadRoute) {
+          const auth = requireAdminBearerAuth(request, env)
+          if (auth) return auth
+        }
 
         // Dashboard
         if (normalizedPathname === '/dashboard' || normalizedPathname.startsWith('/dashboard/')) {

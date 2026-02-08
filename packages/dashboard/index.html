@@ -560,13 +560,10 @@
 
     async function fetchAgentData(name) {
       try {
-        const headers = {}
-        const token = localStorage.getItem('adminToken')
-        if (token) headers['Authorization'] = `Bearer ${token}`
-
+        // Public read access — no auth needed for GET
         const [identity, memories] = await Promise.all([
-          fetch(`${API_BASE}/agents/${name}/identity`, { headers }).then(r => r.ok ? r.json() : null),
-          fetch(`${API_BASE}/agents/${name}/memory`, { headers }).then(r => r.ok ? r.json() : { entries: [] }),
+          fetch(`${API_BASE}/agents/${name}/identity`).then(r => r.ok ? r.json() : null),
+          fetch(`${API_BASE}/agents/${name}/memory`).then(r => r.ok ? r.json() : { entries: [] }),
         ])
 
         if (!identity) return
