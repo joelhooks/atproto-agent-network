@@ -27,19 +27,18 @@ database_id = "98bf7535-be31-42cb-a4fa-0767d294b5f1"
 tag = "v1"
 new_classes = ["AgentDO", "RelayDO"]
 
-# NOTE: R2, Vectorize, Queues, and AI bindings removed until account features are enabled.
-# Re-add when ready:
-# [[r2_buckets]]
-# binding = "BLOBS"
-# bucket_name = "agent-blobs"
-#
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "agent-blobs"
+
+# Vectorize needs additional API token permissions — create index manually or update token
 # [[vectorize]]
 # binding = "VECTORIZE"
 # index_name = "agent-memory"
-#
-# [[queues.producers]]
-# queue = "agent-messages"
-# binding = "MESSAGE_QUEUE"
-#
-# [ai]
-# binding = "AI"
+
+[[queues.producers]]
+queue = "agent-messages"
+binding = "MESSAGE_QUEUE"
+
+[ai]
+binding = "AI"
