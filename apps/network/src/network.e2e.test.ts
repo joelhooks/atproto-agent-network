@@ -1,55 +1,78 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Miniflare } from 'miniflare'
-import { fileURLToPath } from 'node:url'
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-const scriptPath = fileURLToPath(new URL('./index.ts', import.meta.url))
+import { adminAuthHeaders, createNetworkE2EContext, type NetworkE2EContext } from "../../../scripts/e2e/miniflare"
 
-let mf: Miniflare | null = null
+describe("network worker (miniflare e2e)", () => {
+  let ctx: NetworkE2EContext | undefined
 
-// TODO: Migrate to @cloudflare/vitest-pool-workers — Miniflare can't parse
-// TypeScript or cloudflare:workers imports without the pool plugin.
-describe.skip('Agent network E2E', () => {
-  beforeEach(() => {
-    mf = new Miniflare({
-      scriptPath,
-      modules: true,
-      compatibilityDate: '2024-01-01',
-      durableObjects: {
-        AGENTS: 'AgentDO',
-        RELAY: 'RelayDO',
+  beforeAll(async () => {
+    ctx = await createNetworkE2EContext()
+  })
+
+  afterAll(async () => {
+    await ctx?.dispose()
+  })
+
+  it("serves the network well-known endpoint when authorized", async () => {
+    const res = await ctx.fetch("/.well-known/agent-network.json", {
+      headers: adminAuthHeaders(ctx.adminToken),
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual(
+      expect.objectContaining({
+        version: "0.0.1",
+      })
+    )
+  })
+
+  it("stores and retrieves an encrypted memory record via AgentDO routing", async () => {
+    const agentName = "alice"
+
+    const identityRes = await ctx.fetch(`/agents/${agentName}/identity`, {
+      headers: adminAuthHeaders(ctx.adminToken),
+    })
+
+    expect(identityRes.status).toBe(200)
+    const identity = (await identityRes.json()) as {
+      did: string
+      publicKeys: { encryption: string; signing: string }
+    }
+    expect(identity.did).toMatch(/^did:cf:/)
+    expect(identity.publicKeys.encryption).toMatch(/^z/)
+    expect(identity.publicKeys.signing).toMatch(/^z/)
+
+    const createdAt = new Date().toISOString()
+    const record = {
+      $type: "agent.memory.note" as const,
+      summary: "E2E note",
+      text: "hello from miniflare",
+      createdAt,
+    }
+
+    const storeRes = await ctx.fetch(`/agents/${agentName}/memory`, {
+      method: "POST",
+      headers: {
+        ...adminAuthHeaders(ctx.adminToken),
+        "Content-Type": "application/json",
       },
-      d1Databases: ['DB'],
-      r2Buckets: ['BLOBS'],
+      body: JSON.stringify(record),
     })
-  })
 
-  afterEach(async () => {
-    await mf?.dispose()
-    mf = null
-  })
+    expect(storeRes.status).toBe(200)
+    const storeBody = (await storeRes.json()) as { id: string }
+    expect(storeBody.id).toContain("/agent.memory.note/")
 
-  it('serves network metadata', async () => {
-    const response = await mf!.dispatchFetch(
-      'http://localhost/.well-known/agent-network.json'
+    const getRes = await ctx.fetch(
+      `/agents/${agentName}/memory?id=${encodeURIComponent(storeBody.id)}`,
+      {
+        headers: adminAuthHeaders(ctx.adminToken),
+      }
     )
 
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      version: '0.0.1',
-      status: 'not-yet-implemented',
-    })
-  })
-
-  it('resolves agent identity via durable object', async () => {
-    const response = await mf!.dispatchFetch(
-      'http://localhost/agents/alice/identity'
-    )
-
-    expect(response.status).toBe(200)
-    const body = await response.json()
-
-    expect(body.did).toMatch(/^did:cf:/)
-    expect(body.publicKeys.encryption).toMatch(/^z/)
-    expect(body.publicKeys.signing).toMatch(/^z/)
+    expect(getRes.status).toBe(200)
+    const getBody = (await getRes.json()) as { id: string; record: unknown }
+    expect(getBody.id).toBe(storeBody.id)
+    expect(getBody.record).toEqual(record)
   })
 })

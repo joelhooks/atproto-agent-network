@@ -328,3 +328,28 @@ Summary: Prior failure pattern detected: **unknown (no output captured)**. Mitig
 
 - No code changes needed: `vitest.config.integration.ts` already exists and discovers `**/*.integration.test.ts`.
 - Integration run currently exercises th
+
+---
+[2026-02-08T03:41:12.568Z]
+Failed: Setup E2E test harness (miniflare) [build_error]
+Validation: Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS
+Codex: 
+
+---
+[2026-02-08T03:48:52.810Z]
+Failed: Setup E2E test harness (miniflare) [build_error]
+Validation: Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS
+Codex: Running the E2E suite now (no piping) to confirm Miniflare boots, bundles compile, and the new `*.e2e.test.ts` executes end-to-end.
+
+---
+[2026-02-08T03:59:16.700Z]
+Failed: Setup E2E test harness (miniflare) [unknown]
+Validation: PASS
+
+Codex: 
+
+---
+[2026-02-08T04:09:33.959Z]
+Completed: Fix CryptoKeyPair serialization in DO storage
+Files: none
+Summary: Re-running the full root Vitest suite now that `apps/network/vitest.config.ts` excludes `*.e2e.test.ts` (those require the separate `vitest.config.e2e.ts` globalSetup).

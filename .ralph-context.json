@@ -167,6 +167,20 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "### Technical Discovery\n`apps/network/src/agent.ts` persists a versioned `StoredAgentIdentityV1` to DO storage by exporting Ed25519/X25519 keypairs as JWK (`exportCryptoKeyPairJwk`/`importCryptoKeyPairJwk`), then initiali\n`apps/network/src/agent.ts` persists a versioned `StoredAgentIdentityV1` to DO storage by exporting Ed25519/X25519 keypairs as JWK (`exportCryptoKeyPairJwk`/`importCryptoKeyPairJwk`), then initiali\nDurable Object storage must remain structured-cloneable: do not store `CryptoKey` objects or functions; always seriali"
+    },
+    {
+      "id": "integration-test-harness",
+      "title": "Setup integration test harness (D1 mock)",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "`vitest.config.integration.ts` is a standalone Vitest config that runs only `packages/*/src/**/*.integration.test.ts` and `apps/*/src/**/*.integration.test.ts`; the current integration suite includes `packages/core/src/d1-mock.integration.test.ts` which validates `D1MockDatabase` works with the repo’s prepared-statement patterns.\nThe story validation uses a `| grep ...` pipe, which can hide the underlying Vitest failure output; when debugging, run `pnpm vitest run --config vitest.config.integration.ts` without piping to see full errors and the real exit code."
+    },
+    {
+      "id": "e2e-test-harness",
+      "title": "Setup E2E test harness (miniflare)",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] PASS\n"
     }
   ],
   "failures": [
@@ -209,6 +223,27 @@
       "storyId": "pre-commit-hooks",
       "category": "unknown",
       "error": "PASS\n"
+    },
+    {
+      "storyId": "e2e-test-harness",
+      "storyTitle": "Setup E2E test harness (miniflare)",
+      "category": "build_error",
+      "error": "Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "toolNames": []
+    },
+    {
+      "storyId": "e2e-test-harness",
+      "storyTitle": "Setup E2E test harness (miniflare)",
+      "category": "build_error",
+      "error": "Command failed: pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
+      "toolNames": []
+    },
+    {
+      "storyId": "e2e-test-harness",
+      "storyTitle": "Setup E2E test harness (miniflare)",
+      "category": "unknown",
+      "error": "PASS\n",
+      "toolNames": []
     }
   ]
 }

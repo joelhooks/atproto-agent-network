@@ -62,13 +62,64 @@ interface SharedRecordsRow {
   shared_at: string
 }
 
-function toUint8Array(value: Uint8Array | ArrayBuffer | ArrayBufferView, label: string): Uint8Array {
-  if (value instanceof Uint8Array) return value
-  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+function decodeBase64ToBytes(input: string): Uint8Array {
+  const normalized = input
+    .trim()
+    // base64url -> base64
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+  // atob is available in Workers (and in modern Node), but keep a Buffer fallback.
+  if (typeof atob === 'function') {
+    const binary = atob(padded)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const BufferCtor = (globalThis as any).Buffer as undefined | {
+    from(data: string, encoding: 'base64'): Uint8Array
+  }
+  if (BufferCtor) {
+    return new Uint8Array(BufferCtor.from(padded, 'base64'))
+  }
+
+  throw new Error('base64 decode unsupported in this runtime')
+}
+
+function toUint8Array(value: unknown, label: string): Uint8Array {
+  // Miniflare/D1 can return ArrayBuffers from a different JS realm than the
+  // Worker runtime. Avoid `instanceof` checks which break across realms.
   if (ArrayBuffer.isView(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
   }
-  throw new Error(`${label} must be bytes`)
+  if (Object.prototype.toString.call(value) === '[object ArrayBuffer]') {
+    return new Uint8Array(value as ArrayBuffer)
+  }
+  if (typeof value === 'string') {
+    return decodeBase64ToBytes(value)
+  }
+  if (Array.isArray(value) && value.every((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 255)) {
+    return Uint8Array.from(value)
+  }
+  if (value && typeof value === 'object') {
+    const asRecord = value as Record<string, unknown>
+    // Node Buffer JSON shape: { type: 'Buffer', data: number[] }
+    if (
+      asRecord.type === 'Buffer' &&
+      Array.isArray(asRecord.data) &&
+      asRecord.data.every((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 255)
+    ) {
+      return Uint8Array.from(asRecord.data as number[])
+    }
+  }
+
+  const tag = Object.prototype.toString.call(value)
+  throw new Error(`${label} must be bytes (received ${typeof value} ${tag})`)
 }
 
 export class EncryptedMemory {

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { generateEd25519Keypair, generateX25519Keypair } from '../../core/src/crypto'
+import {
+  encryptDekForPublicKey,
+  encryptWithDek,
+  generateDek,
+  generateEd25519Keypair,
+  generateNonce,
+  generateX25519Keypair,
+} from '../../core/src/crypto'
 import { D1MockDatabase } from '../../core/src/d1-mock'
 import type { AgentIdentity } from '../../core/src/types'
 
@@ -193,5 +200,64 @@ describe('EncryptedMemory', () => {
     const updated = { ...record, text: 'v2' }
     await expect(aliceMemory.update(id, updated)).resolves.toBe(true)
     await expect(bobMemory.retrieveShared(id)).resolves.toEqual(updated)
+  })
+
+  it('decodes base64-encoded blob fields returned by some D1 runtimes', async () => {
+    const identity = await createIdentity('did:cf:base64')
+    const record = {
+      $type: 'agent.memory.note',
+      summary: 'Base64 blobs',
+      text: 'decode me',
+      createdAt: new Date().toISOString(),
+    }
+
+    const collection = record.$type
+    const id = `${identity.did}/${collection}/test`
+
+    const dek = await generateDek()
+    const nonce = await generateNonce()
+    const plaintext = new TextEncoder().encode(JSON.stringify(record))
+    const ciphertext = await encryptWithDek(plaintext, dek, nonce)
+    const encryptedDek = await encryptDekForPublicKey(dek, identity.encryptionKey.publicKey)
+
+    const bytesToBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
+
+    const row = {
+      id,
+      did: identity.did,
+      collection,
+      rkey: 'test',
+      ciphertext: bytesToBase64(ciphertext),
+      encrypted_dek: bytesToBase64(encryptedDek),
+      nonce: bytesToBase64(nonce),
+      public: 0,
+      created_at: new Date().toISOString(),
+      updated_at: null,
+      deleted_at: null,
+    }
+
+    const db = {
+      prepare: (_sql: string) => {
+        const params: unknown[] = []
+        const stmt = {
+          bind: (...next: unknown[]) => {
+            params.length = 0
+            params.push(...next)
+            return stmt as any
+          },
+          run: async () => ({}),
+          first: async () => {
+            const [queryId, queryDid] = params
+            if (queryId === id && queryDid === identity.did) return row as any
+            return null
+          },
+          all: async () => ({ results: [] }),
+        }
+        return stmt
+      },
+    }
+
+    const memory = new EncryptedMemory(db as any, null, identity)
+    await expect(memory.retrieve(id)).resolves.toEqual(record)
   })
 })

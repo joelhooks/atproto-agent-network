@@ -34,7 +34,7 @@
       "title": "Install Vitest and create root config",
       "issue": 24,
       "priority": 1,
-      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|\u2713|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
+      "validationCommand": "pnpm test --pass-with-no-tests 2>&1 | grep -qE '(no test|passed|✓|PASS)' && echo PASS || pnpm vitest run --passWithNoTests",
       "files": [
         "vitest.config.ts",
         "package.json"
@@ -85,7 +85,7 @@
       "title": "Add turbo task for test",
       "issue": 27,
       "priority": 4,
-      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|\u2713|PASS)' && echo PASS",
+      "validationCommand": "pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS",
       "files": [
         "turbo.json"
       ],
@@ -308,7 +308,7 @@
       "title": "Setup integration test harness (D1 mock)",
       "issue": 16,
       "priority": 30,
-      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|\u2713|no test)' && echo PASS",
+      "validationCommand": "pnpm vitest run --config vitest.config.integration.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
       "files": [
         "vitest.config.integration.ts"
       ],
@@ -324,7 +324,7 @@
       "title": "Setup E2E test harness (miniflare)",
       "issue": 17,
       "priority": 31,
-      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|\u2713|no test)' && echo PASS",
+      "validationCommand": "pnpm vitest run --config vitest.config.e2e.ts 2>&1 | grep -qE '(passed|✓|no test)' && echo PASS",
       "files": [
         "vitest.config.e2e.ts"
       ],
@@ -351,7 +351,7 @@
       "sprint": "hardening",
       "dependsOn": [],
       "passes": true,
-      "description": "Wire up Zod lexicon validation at API boundaries. The existing test file was added but NO implementation code was shipped. You MUST:\\n1. Import the Zod schemas from packages/core/src/lexicons.ts\\n2. Add validation middleware or helper that validates request bodies against schemas\\n3. Wire validation into the route handlers in packages/network/src/index.ts\\n4. Ensure invalid payloads return 400 with descriptive error messages\\n5. Write tests that verify both valid and invalid payloads\\n\\nDo NOT just add tests \u2014 the implementation code is the primary deliverable."
+      "description": "Wire up Zod lexicon validation at API boundaries. The existing test file was added but NO implementation code was shipped. You MUST:\\n1. Import the Zod schemas from packages/core/src/lexicons.ts\\n2. Add validation middleware or helper that validates request bodies against schemas\\n3. Wire validation into the route handlers in packages/network/src/index.ts\\n4. Ensure invalid payloads return 400 with descriptive error messages\\n5. Write tests that verify both valid and invalid payloads\\n\\nDo NOT just add tests — the implementation code is the primary deliverable."
     },
     {
       "id": "memory-list-update-delete",
@@ -370,11 +370,11 @@
       "sprint": "hardening",
       "dependsOn": [],
       "passes": true,
-      "description": "Add memory list, update, and soft-delete to EncryptedMemory class. The current class only has write() and read(). You MUST:\\n1. Add list() method \u2014 returns all memory record IDs/metadata for an agent (query D1)\\n2. Add update() method \u2014 re-encrypts and overwrites an existing record by ID\\n3. Add softDelete() method \u2014 marks a record as deleted (adds deleted_at timestamp) without removing data\\n4. Add tests for all three methods using the D1 mock from test-utils\\n5. Update the AgentDO route handlers to expose list/update/delete via API endpoints\\n\\nFiles to modify:\\n- packages/agent/src/encrypted-memory.ts (add methods)\\n- packages/agent/src/encrypted-memory.test.ts (add tests)\\n- packages/network/src/index.ts (add route handlers)"
+      "description": "Add memory list, update, and soft-delete to EncryptedMemory class. The current class only has write() and read(). You MUST:\\n1. Add list() method — returns all memory record IDs/metadata for an agent (query D1)\\n2. Add update() method — re-encrypts and overwrites an existing record by ID\\n3. Add softDelete() method — marks a record as deleted (adds deleted_at timestamp) without removing data\\n4. Add tests for all three methods using the D1 mock from test-utils\\n5. Update the AgentDO route handlers to expose list/update/delete via API endpoints\\n\\nFiles to modify:\\n- packages/agent/src/encrypted-memory.ts (add methods)\\n- packages/agent/src/encrypted-memory.test.ts (add tests)\\n- packages/network/src/index.ts (add route handlers)"
     },
     {
       "id": "shared-records",
-      "title": "Implement shared_records \u2014 encrypted record sharing between agents",
+      "title": "Implement shared_records — encrypted record sharing between agents",
       "issue": 38,
       "priority": 42,
       "validationCommand": "pnpm vitest run --passWithNoTests 2>&1 | grep -qE \"passed\" && echo PASS",
@@ -524,7 +524,7 @@
       "estimatedMinutes": 25,
       "sprint": "foundations-fix",
       "dependsOn": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "fix-lockfile-miniflare",
@@ -679,7 +679,7 @@
   },
   "metadata": {
     "createdAt": "2026-02-07T19:40:42.490Z",
-    "lastIteration": "2026-02-08T03:30:49.405Z",
-    "totalIterations": 51
+    "lastIteration": "2026-02-08T04:09:33.958Z",
+    "totalIterations": 52
   }
 }
