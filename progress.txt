@@ -250,3 +250,14 @@ Files: none
 Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: ran the exact validation command directly (no piping) and polled the running process to capture full Vitest output + exit code.
 
 `apps/network/schema.sql` already exists and matches the encrypted-records requirements (`records`, `shared_records`, and the lookup indexes). `apps/network/src/schema.test.ts` already asserts th
+
+---
+[2026-02-08T03:14:48.386Z]
+Completed: Implement Pi agent wrapper in packages/agent
+Files: none
+Summary: Prior failure pattern detected: `unknown` (no output captured). Mitigation: I ran the validation command directly (no piping) and polled the running Vitest session until it exited so output + exit code were captured.
+
+`PiAgentWrapper` is already implemented and matches the tests in `packages/agent/src/agent.test.ts`.
+
+- Validation: `pnpm vitest run packages/agent/src/agent.test.ts` (pass: 4/4)
+- F

@@ -139,6 +139,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "`packages/core/src/crypto.ts` implements a v1 DEK envelope as `[version|salt(16)|nonce(12)|ephemeralX25519PublicKey(32)|ciphertext]`, using X25519 shared secret -> HKDF(SHA-256, info `atproto-agent-network:dek`) -> AES-GCM to encrypt the 32-byte DEK.\n`encryptDekForPublicKey`/`decryptDekWithPrivateKey` require X25519 keys; the envelope parser rejects wrong versions/lengths, and decrypting with the wrong private key correctly throws."
+    },
+    {
+      "id": "d1-schema",
+      "title": "Create D1 schema for encrypted records",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "### Technical Discovery\n`apps/network/src/schema.test.ts` normali\n`apps/network/src/schema.test.ts` normali\nThe command in AGENTS.md, `swarm hive cells --status open`, is outdated; use `swarm cells --status open` instead (the former errors with “Unknown command: hive”)."
     }
   ],
   "failures": [
