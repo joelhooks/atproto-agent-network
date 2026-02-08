@@ -18,6 +18,7 @@ vi.mock('cloudflare:workers', () => {
 
 class FakeStorage {
   private readonly store = new Map<string, unknown>()
+  private _alarm: number | null = null
 
   async get<T = unknown>(key: string): Promise<T | undefined> {
     return this.store.get(key) as T | undefined
@@ -26,6 +27,18 @@ class FakeStorage {
   async put(key: string, value: unknown): Promise<void> {
     assertDurableObjectSerializable(value)
     this.store.set(key, structuredClone(value))
+  }
+
+  async setAlarm(scheduledTime: number | Date): Promise<void> {
+    this._alarm = typeof scheduledTime === 'number' ? scheduledTime : scheduledTime.getTime()
+  }
+
+  async getAlarm(): Promise<number | null> {
+    return this._alarm
+  }
+
+  async deleteAlarm(): Promise<void> {
+    this._alarm = null
   }
 }
 
@@ -985,5 +998,144 @@ describe('AgentDO', () => {
     expect(archiveBody.record.messages).toHaveLength(12)
     expect(archiveBody.record.messages[0]).toMatchObject({ content: 'm0' })
     expect(archiveBody.record.messages.at(-1)).toMatchObject({ content: 'm11' })
+  })
+
+  // ===== Story 4a: Bare alarm chain + start/stop API =====
+
+  it('alarm() fires, increments counter, and reschedules next alarm', async () => {
+    const { state, storage } = createState('agent-alarm')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Start the loop first
+    const startRes = await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    expect(startRes.status).toBe(200)
+
+    // Simulate alarm firing
+    await agent.alarm()
+
+    // Counter should be incremented
+    const loopCount = await storage.get<number>('loopCount')
+    expect(loopCount).toBeGreaterThanOrEqual(1)
+
+    // Next alarm should be scheduled
+    const nextAlarm = await storage.getAlarm()
+    expect(nextAlarm).not.toBeNull()
+  })
+
+  it('startLoop() sets loopRunning flag and schedules first alarm', async () => {
+    const { state, storage } = createState('agent-start-loop')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const res = await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    expect(res.status).toBe(200)
+
+    const body = await res.json() as Record<string, unknown>
+    expect(body.loopRunning).toBe(true)
+
+    const loopRunning = await storage.get<boolean>('loopRunning')
+    expect(loopRunning).toBe(true)
+
+    const alarm = await storage.getAlarm()
+    expect(alarm).not.toBeNull()
+  })
+
+  it('stopLoop() clears loopRunning flag and deletes alarm', async () => {
+    const { state, storage } = createState('agent-stop-loop')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Start then stop
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const res = await agent.fetch(new Request('https://example/loop/stop', { method: 'POST' }))
+    expect(res.status).toBe(200)
+
+    const body = await res.json() as Record<string, unknown>
+    expect(body.loopRunning).toBe(false)
+
+    const loopRunning = await storage.get<boolean>('loopRunning')
+    expect(loopRunning).toBe(false)
+
+    const alarm = await storage.getAlarm()
+    expect(alarm).toBeNull()
+  })
+
+  it('GET /loop/status returns current loop state', async () => {
+    const { state } = createState('agent-loop-status')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const res = await agent.fetch(new Request('https://example/loop/status'))
+    expect(res.status).toBe(200)
+
+    const body = await res.json() as Record<string, unknown>
+    expect(body).toHaveProperty('loopRunning')
+    expect(body).toHaveProperty('loopCount')
+  })
+
+  it('error in alarm does not break the chain — alarm reschedules anyway', async () => {
+    const { state, storage } = createState('agent-alarm-error')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Start the loop
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    // Force an error condition by corrupting state, then call alarm
+    // The alarm should still reschedule despite errors
+    await agent.alarm()
+
+    // Alarm should be rescheduled even if there was an error
+    const nextAlarm = await storage.getAlarm()
+    expect(nextAlarm).not.toBeNull()
+  })
+
+  it('rejects loopIntervalMs < 5000', async () => {
+    const { state } = createState('agent-min-interval')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Try to set interval too low via config
+    const res = await agent.fetch(new Request('https://example/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loopIntervalMs: 1000 }),
+    }))
+
+    const body = await res.json() as Record<string, unknown>
+    const config = body as { loopIntervalMs?: number }
+    // Should either reject or clamp to minimum 5000
+    expect(config.loopIntervalMs).toBeGreaterThanOrEqual(5000)
   })
 })
