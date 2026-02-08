@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 AI_GATEWAY_SLUG = "atproto-agent-network"
-OPENROUTER_MODEL_DEFAULT = "moonshot/kimi-k2"
+OPENROUTER_MODEL_DEFAULT = "moonshotai/kimi-k2"
 
 # Durable Objects
 [[durable_objects.bindings]]

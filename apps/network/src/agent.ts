@@ -13,6 +13,7 @@ import {
   type PiAgentFactory,
   type PiAgentTool,
 } from '../../../packages/agent/src'
+import { createOpenRouterAgentFactory } from './agent-factory'
 import {
   exportPublicKey,
   exportCryptoKeyPairJwk,
@@ -35,6 +36,11 @@ interface AgentEnv {
   PI_AGENT_FACTORY?: PiAgentFactory
   PI_AGENT_MODEL?: unknown
   PI_SYSTEM_PROMPT?: string
+  // OpenRouter via AI Gateway
+  CF_ACCOUNT_ID?: string
+  AI_GATEWAY_SLUG?: string
+  OPENROUTER_API_KEY?: string
+  OPENROUTER_MODEL_DEFAULT?: string
 }
 
 interface StoredAgentIdentityV1 {
@@ -166,11 +172,22 @@ export class AgentDO extends DurableObject {
         'You are a Pi agent running on the AT Protocol Agent Network.'
       const model = this.agentEnv.PI_AGENT_MODEL ?? this.agentEnv.AI ?? { provider: 'unknown' }
 
+      // Use OpenRouter via AI Gateway as default agent factory
+      const agentFactory = this.agentEnv.PI_AGENT_FACTORY ??
+        (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
+          ? createOpenRouterAgentFactory({
+              CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
+              AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
+              OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
+              OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
+            })
+          : undefined)
+
       this.agent = new PiAgentWrapper({
         systemPrompt,
         model,
         tools,
-        agentFactory: this.agentEnv.PI_AGENT_FACTORY,
+        agentFactory,
       })
 
       this.initialized = true
