@@ -403,3 +403,17 @@ Validation:
 • Remote caching disabled
 @atp
 Codex: 
+
+---
+[2026-02-08T18:27:07.624Z]
+Completed: 4a: Bare alarm chain + start/stop API
+Files: apps/network/src/agent.ts, apps/network/src/index.ts, apps/network/wrangler.toml
+Summary: Prior failure pattern detected: test_failure (404 on /loop/start) + build_error. Mitigation: implemented the missing loop routes in AgentDO and re-ran typecheck/tests unpiped; fixed prod deploy by updating Workers compatibility_date.
+
+Implemented Story 4a alarm skeleton in `apps/network/src/agent.ts`: `alarm()` increments `loopCount`, logs, and reschedules via `ctx.storage.setAlarm()` while `loopRunning` is true; added `startLoop()`/`stopLoop()` and `/loop/{start,stop,status}` DO routes (also works when forwarded as `/agents/:name/loop/...`). Enforced safety clamp for `loopIntervalMs` to >= 5000ms.
+
+Updated `apps/network/src/index.ts` to route through existing /agents forwarding and keep auth behavior consistent.
+
+Production: `wrangler deploy` initially failed due to Node builtin resolution under `nodejs_compat`; fixed by bumping `apps/network/wrangler.toml` `compatibility_date` to `2024-09-23`. Deployed successfully and `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` passed.
+
+Remaining gap vs SHIP+VERIFY: story-specific live HTTP tests for `/agents/:name/loop/*` returned `401 Unauthorized` using `secrets lease atproto-agents::admin_token` (token mismatch with prod `ADMIN_TOKEN`), so I could not confirm the start/stop/status APIs against prod despite deploy + health smoke test passing.
