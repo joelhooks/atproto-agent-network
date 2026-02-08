@@ -69,3 +69,15 @@ These stories need implementation. Check existing code first — some may alread
 - Advanced integration stories
 
 **IMPORTANT**: Many "remaining" stories may already be implemented from loop 1. If validation passes without changes, commit with a note that it was already done. Don't re-implement existing code.
+
+---
+[2026-02-08T01:56:47.757Z]
+Completed: Install Vitest and create root config
+Files: none
+Summary: Vitest is installed at the workspace root and a root multi-project config is in place; validation passes.
+
+**Changes (and why)**
+- `package.json`: added `@vitest/coverage-v8` dev dependency (coverage provider for root config).
+- `pnpm-lock.yaml`: lockfile updated for the new dev dependency.
+- `vitest.config.ts`: switched to `test.projects` (workspace-style multi-project runner).
+- `vitest.workspac

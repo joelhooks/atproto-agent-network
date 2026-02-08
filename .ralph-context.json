@@ -62,6 +62,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "PR `#49` is up.\n\n**Files Modified (and why)**\n- `apps/network/src/agent-do.test.ts`: removed the local duplicate record row shape so tests rely on the shared `D1MockDatabase`.\n- `apps/network/src/index.test.ts`: added CORS coverage (OPTIONS preflight, auth errors include CORS, configured origin).\n- `apps/network/src/cors.ts`: new CORS helpers (preflight + apply headers; `CORS_ORIGIN` config).\n- `apps/network/src/index.ts`: handles `OPTIONS` before auth/routing and applies CORS headers to every r"
+    },
+    {
+      "id": "install-vitest",
+      "title": "Install Vitest and create root config",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] \n> atproto-agent-network@ vitest /home/joel/Code/joelhooks/atproto-agent-network\n> node ./scripts/vitest.mjs \"run\" \"--passWithNoTests\"\n\n\n RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |@atproto-agent/agent| src/memory.test.ts (7 tests) 112ms\n ✓ |@atproto-agent/network| src/index.te"
     }
   ],
   "failures": [
@@ -89,6 +96,11 @@
       "storyId": "consolidate-mocks-cors",
       "category": "unknown",
       "error": "PASS\n"
+    },
+    {
+      "storyId": "install-vitest",
+      "category": "build_error",
+      "error": "\n> atproto-agent-network@ vitest /home/joel/Code/joelhooks/atproto-agent-network\n> node ./scripts/vitest.mjs \"run\" \"--passWithNoTests\"\n\n\n RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |@atproto-agent/agent| src/memory.test.ts (7 tests) 112ms\n ✓ |@atproto-agent/network| src/index.test.ts (9 tests) 250ms\n ✓ |@atproto-agent/network| src/agent-do.test.ts (15 tests) 335ms\n ✓ |@atproto-agent/core| src/crypto.test.ts (8 tests) 57ms\n ✓ |@atproto-agent/network| src/relay.test.ts (7 test"
     }
   ]
 }
