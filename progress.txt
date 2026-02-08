@@ -213,3 +213,13 @@ Summary: **Implemented**
 
 **Validation**
 - `pnpm vitest run p
+
+---
+[2026-02-08T02:45:38.463Z]
+Completed: Implement exportPublicKey (multibase)
+Files: none
+Summary: `exportPublicKey` (multibase) is already implemented and the story validation passes.
+
+- **Implementation:** `packages/core/src/crypto.ts` (`exportPublicKey`) exports `raw` public key bytes, prepends multicodec (`Ed25519 => 0xed01`, `X25519 => 0xec01`), and returns base58btc multibase (leading `z`).
+- **Files modified (and why):** None (function already present and correct).
+- **Tests added/modifi

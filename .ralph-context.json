@@ -111,6 +111,13 @@
       "status": "completed",
       "filesModified": [],
       "learnings": "`generateX25519Keypair` is already implemented and the story’s validation passes.\n\n- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'` (pass)\n- **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)\n- **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)\n- **What I learned:** Node WebCrypto can generate an extractable X25519 `CryptoKeyPair` via `crypto.subtle.genera"
+    },
+    {
+      "id": "generate-ed25519",
+      "title": "Implement generateEd25519Keypair",
+      "status": "completed",
+      "filesModified": [],
+      "learnings": "**Implemented**\n- `generateEd25519Keypair` was already implemented in `packages/core/src/crypto.ts` using WebCrypto (`crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign','verify'])`).\n\n**Files modified (and why)**\n- None (implementation already present).\n\n**Tests added/modified**\n- None (existing coverage already in `packages/core/src/crypto.test.ts`).\n\n**Validation**\n- `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateEd25519Keypair'` (pass)\n\n**What I learned**\n- WebCrypto "
     }
   ],
   "failures": [
