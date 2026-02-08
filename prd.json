@@ -96,7 +96,7 @@
       "title": "4d: WebSocket broadcast of loop events",
       "description": "GitHub Issue #63. Depends on #62. Broadcast loop lifecycle events (loop.started, loop.observe, loop.think, loop.act, loop.reflect, loop.sleep, loop.error) to connected WS clients via ctx.getWebSockets(). Events match docs/O11Y.md schema (trace_id, span_id, agent_did). Handle stale connections gracefully. Files: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts.\n\nTESTING APPROACH: Real integration tests against deployed worker, NOT unit test mocks.\n1. Deploy to https://agent-network.joelhooks.workers.dev\n2. Write integration test (apps/network/src/network.e2e.test.ts or similar) that:\n   - Opens a real WebSocket to wss://agent-network.joelhooks.workers.dev/agents/test-ws/ws\n   - POSTs to /agents/test-ws/loop/start with admin auth\n   - Asserts lifecycle events arrive on the socket (loop.observe, loop.think, loop.reflect)\n   - Verifies O11Y schema (trace_id, span_id, agent_did)\n   - Tests stale connection handling (connect, disconnect, verify loop continues)\n3. Use ADMIN_TOKEN from env for auth\n4. Validation: deploy + e2e test pass against real CF\n\nDO NOT mock WebSocketPair. DO NOT use miniflare. Test against the real deployed worker.",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Loop events broadcast to connected clients",
         "Events match O11Y schema",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 8,
-    "lastIteration": "2026-02-08T18:45:10.384Z"
+    "totalIterations": 9,
+    "lastIteration": "2026-02-08T19:47:59.156Z"
   },
   "totalStories": 11
 }

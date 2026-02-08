@@ -481,3 +481,9 @@ Validation: • turbo 2.8.3
 Error: Transform failed with 1 error:
 /home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected ")" but found end 
 Codex: Starting story 4d. First I’m going to (1) run the required `swarm memory find` for this story topic, and (2) open `docs/O11Y.md` plus the current AgentDO implementation/routes/tests so we can implement WS broadcast without repeating the prior `WebSocketPair is not defined` failure pattern.
+
+---
+[2026-02-08T19:47:59.157Z]
+Completed: 4d: WebSocket broadcast of loop events
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/network.ws.live.test.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts
+Summary: Implemented story-4d verification path and fixed the prior broken test state by removing the unit-level WS broadcast tests that depended on `WebSocketPair` (which is unavailable in local Vitest), relying on the required real-worker live integration test instead. Deployed `apps/network` to production and verified WS loop lifecycle broadcasts (`loop.observe`, `loop.think`, `loop.reflect`) over a real WebSocket with O11Y fields, plus stale disconnect tolerance. Local validation (`pnpm typecheck && pnpm test`) also passes.
