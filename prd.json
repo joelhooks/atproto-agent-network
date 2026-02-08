@@ -43,7 +43,7 @@
       "files": [
         "apps/network/src/index.ts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "health-endpoint",
