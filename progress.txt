@@ -568,3 +568,20 @@ If `index.html` drifts back to inline JS, you’ll lose all the new agent detail
 - `packages/dashboard/index.html`: DOM skeleton + dark monospace CSS + module entrypoint.
 - `packages/dashboard/src/main.ts`: rendering (expandable agent cards), `/agents/{name}/config` fetch, loop heartbeat, WS event ingestion.
 - `packages/dashboard/src/activity.ts`: normalizes WS events (think_aloud/tool/loop) and summarizes lexicon records (comms sender/recipient, etc.).
+
+---
+[2026-02-08T22:32:32.326Z]
+Failed: Self-extending agents (R2 extension storage) [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:typecheck: 
+@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:typecheck: > ts
+Codex: Starting story #58. First I’m going to load PI-POC.md, docs/O11Y.md, the pi-agent + cloudflare-do skills, then inspect the current AgentDO implementation and the existing failing timeout test so we start from a green baseline before adding the extension lifecycle tests.
+
+---
+[2026-02-08T22:39:38.763Z]
+Completed: Self-extending agents (R2 extension storage)
+Files: packages/dashboard/index.html, packages/dashboard/src/activity.test.ts, packages/dashboard/src/activity.ts, packages/dashboard/src/index-html.test.ts, packages/dashboard/src/main.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
+Summary: Story #58 is already implemented in the workspace and passes the requested validation. AgentDO now supports R2-backed self-extending Pi extensions (write/list/remove + load on init + alarm-cycle hot reload + safety limits + first-loop hint), with unit tests covering the full extension lifecycle. Note: the git worktree currently shows unexpected modifications to repo-tracking files (.ralph-context.json, .ralph-iterations.jsonl, progress.txt) in addition to the story files; I did not revert anything and did not create a commit so you can decide how to handle those meta-file diffs.

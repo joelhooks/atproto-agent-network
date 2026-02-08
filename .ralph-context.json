@@ -329,16 +329,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
+    },
+    {
+      "id": "story-mlde37m4",
+      "title": "Self-extending agents (R2 extension storage)",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "test_failure",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2057",
       "storyTitle": "Pi session persistence in DO storage",
@@ -507,6 +507,17 @@
       "toolNames": [
         "/usr/bin/zsh -lc",
         "sed -n",
+        "rg -n"
+      ]
+    },
+    {
+      "storyId": "story-mlde37m4",
+      "storyTitle": "Self-extending agents (R2 extension storage)",
+      "category": "timeout",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atpro",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
         "rg -n"
       ]
     }

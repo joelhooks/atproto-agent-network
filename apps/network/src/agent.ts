@@ -124,6 +124,10 @@ const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
 const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
 
+const EXTENSION_PREFIX = 'extensions'
+const MAX_AGENT_EXTENSIONS = 10
+const MAX_EXTENSION_BYTES = 50 * 1024
+
 function extractAgentNameFromPath(pathname: string): string | undefined {
   const parts = pathname.split('/').filter(Boolean)
   if (parts[0] === 'agents' && parts[1]) {
@@ -160,6 +164,7 @@ export class AgentDO extends DurableObject {
   private memory: EncryptedMemory | null = null
   private agent: PiAgentWrapper | null = null
   private tools: PiAgentTool[] = []
+  private extensionKeys: string[] = []
   private config: AgentConfig | null = null
   private session: StoredAgentSessionV1 | null = null
   private sessionId: string | null = null
@@ -364,26 +369,7 @@ export class AgentDO extends DurableObject {
 
     // Ensure the Pi wrapper uses the freshly stored config prompt/model.
     if (this.session) {
-      const tools = this.buildTools()
-      this.tools = tools
-      const agentFactory =
-        this.agentEnv.PI_AGENT_FACTORY ??
-        (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
-          ? createOpenRouterAgentFactory({
-              CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
-              AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
-              OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
-              OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
-            })
-          : undefined)
-
-      this.agent = new PiAgentWrapper({
-        systemPrompt: next.personality,
-        model: next.model,
-        tools,
-        agentFactory,
-        messages: this.session.messages,
-      })
+      await this.rebuildAgentWrapper({ config: next })
     }
 
     const loop = await this.startLoop()
@@ -460,6 +446,15 @@ export class AgentDO extends DurableObject {
       console.log('AgentDO alarm fired while loop stopped', { did: this.did })
       return
     }
+
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    // Hot reload extensions at the start of the next alarm cycle after writes/removals.
+    await this.maybeReloadExtensions()
+    // Bootstrap hint for agents that haven't extended themselves yet.
+    await this.maybeInjectSelfExtensionHint()
 
     const traceId = createTraceId()
 
@@ -883,29 +878,7 @@ export class AgentDO extends DurableObject {
 
       const config = await this.loadOrCreateConfig(agentName)
       this.session = await this.loadSession()
-      const tools = this.buildTools()
-      this.tools = tools
-      const systemPrompt = config.personality
-      const model = config.model
-
-      // Use OpenRouter via AI Gateway as default agent factory
-      const agentFactory = this.agentEnv.PI_AGENT_FACTORY ??
-        (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
-          ? createOpenRouterAgentFactory({
-              CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
-              AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
-              OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
-              OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
-            })
-          : undefined)
-
-      this.agent = new PiAgentWrapper({
-        systemPrompt,
-        model,
-        tools,
-        agentFactory,
-        messages: this.session.messages,
-      })
+      await this.rebuildAgentWrapper({ config })
 
       this.initialized = true
       this.initializing = null
@@ -1387,6 +1360,118 @@ export class AgentDO extends DurableObject {
           return { content: [], details: { message } }
         },
       },
+      {
+        name: 'write_extension',
+        label: 'Write Extension',
+        description:
+          'Store a Pi extension module in R2 at extensions/{agentName}/{extensionName}.js. ' +
+          'The module must export activate(agent) and may register additional tools via agent.registerTool({...}).',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Extension name (^[a-zA-Z0-9][a-zA-Z0-9_-]*$).' },
+            code: { type: 'string', description: 'JavaScript module source code.' },
+          },
+          required: ['name', 'code'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const bucket = env.BLOBS as any
+          if (!bucket || typeof bucket.put !== 'function') throw new Error('R2 bucket unavailable')
+
+          const { params } = parseArgs<{ name?: unknown; code?: unknown }>(toolCallIdOrParams, maybeParams)
+          const name = this.validateExtensionName(typeof params.name === 'string' ? params.name : '')
+          const code = typeof params.code === 'string' ? params.code : ''
+          if (!code.trim()) throw new Error('write_extension requires code')
+          this.validateExtensionSource(code)
+
+          const key = this.extensionKeyForName(name)
+          const existing = await this.listExtensionObjects()
+          const existingNames = new Set(
+            existing
+              .map((obj) => this.extensionNameFromKey(obj.key))
+              .filter((value): value is string => typeof value === 'string')
+          )
+
+          if (!existingNames.has(name) && existingNames.size >= MAX_AGENT_EXTENSIONS) {
+            throw new Error(`max extensions reached (${MAX_AGENT_EXTENSIONS})`)
+          }
+
+          await bucket.put(key, code, {
+            httpMetadata: { contentType: 'text/javascript; charset=utf-8' },
+          })
+
+          await this.ctx.storage.put('extensionsReloadNeeded', true)
+
+          const bytes = new TextEncoder().encode(code).byteLength
+          return {
+            content: toTextContent(`Stored extension ${name} (${bytes} bytes). Reload scheduled.`),
+            details: { name, key, bytes, reloadOnNextAlarm: true },
+          }
+        },
+      },
+      {
+        name: 'list_extensions',
+        label: 'List Extensions',
+        description: 'List the agent-owned Pi extension modules currently stored in R2.',
+        parameters: { type: 'object', properties: {} },
+        execute: async () => {
+          const objects = await this.listExtensionObjects()
+          const prefix = this.getExtensionPrefixForAgent()
+          const entries = objects
+            .filter((obj) => obj.key.startsWith(prefix) && obj.key.endsWith('.js'))
+            .map((obj) => ({
+              name: this.extensionNameFromKey(obj.key),
+              key: obj.key,
+              size: obj.size,
+              uploaded: obj.uploaded,
+            }))
+            .filter((entry): entry is { name: string; key: string; size: number | null; uploaded: string | null } =>
+              typeof entry.name === 'string'
+            )
+            .sort((a, b) => a.name.localeCompare(b.name))
+
+          const lines = entries.length ? entries.map((e) => `- ${e.name}`).join('\n') : 'No extensions.'
+          const overLimit = entries.length > MAX_AGENT_EXTENSIONS
+
+          return {
+            content: toTextContent(lines),
+            details: {
+              count: entries.length,
+              max: MAX_AGENT_EXTENSIONS,
+              overLimit,
+              entries,
+            },
+          }
+        },
+      },
+      {
+        name: 'remove_extension',
+        label: 'Remove Extension',
+        description: 'Delete an extension module from R2 and schedule an extensions reload.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Extension name to delete.' },
+          },
+          required: ['name'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const bucket = env.BLOBS as any
+          if (!bucket || typeof bucket.delete !== 'function') throw new Error('R2 bucket unavailable')
+
+          const { params } = parseArgs<{ name?: unknown }>(toolCallIdOrParams, maybeParams)
+          const name = this.validateExtensionName(typeof params.name === 'string' ? params.name : '')
+          const key = this.extensionKeyForName(name)
+
+          await bucket.delete(key)
+          await this.ctx.storage.put('extensionsReloadNeeded', true)
+
+          return {
+            content: toTextContent(`Removed extension ${name}. Reload scheduled.`),
+            details: { name, key, reloadOnNextAlarm: true },
+          }
+        },
+      },
     ]
   }
   
@@ -1448,6 +1533,7 @@ export class AgentDO extends DurableObject {
   }
   
   private async handlePrompt(request: Request): Promise<Response> {
+    await this.maybeReloadExtensions()
     if (!this.agent) {
       return Response.json({ error: 'Agent unavailable' }, { status: 500 })
     }
@@ -1696,6 +1782,8 @@ export class AgentDO extends DurableObject {
         await this.initialize()
       }
 
+      await this.maybeReloadExtensions()
+
       if (!this.agent) {
         ws.send(JSON.stringify({ type: 'error', error: 'Agent unavailable' }))
         return
@@ -1856,6 +1944,203 @@ export class AgentDO extends DurableObject {
 
     await this.ctx.storage.put('session', finalSession)
     this.session = finalSession
+  }
+
+  private getExtensionPrefixForAgent(): string {
+    const name = this.config?.name ?? this.did
+    return `${EXTENSION_PREFIX}/${name}/`
+  }
+
+  private extensionKeyForName(extensionName: string): string {
+    const prefix = this.getExtensionPrefixForAgent()
+    return `${prefix}${extensionName}.js`
+  }
+
+  private extensionNameFromKey(key: string): string | null {
+    const prefix = this.getExtensionPrefixForAgent()
+    if (!key.startsWith(prefix)) return null
+    if (!key.endsWith('.js')) return null
+    const rest = key.slice(prefix.length, -'.js'.length)
+    if (!rest) return null
+    if (rest.includes('/')) return null
+    return rest
+  }
+
+  private async listExtensionObjects(): Promise<Array<{ key: string; size: number | null; uploaded: string | null }>> {
+    const bucket = this.agentEnv.BLOBS as any
+    if (!bucket || typeof bucket.list !== 'function') return []
+
+    const prefix = this.getExtensionPrefixForAgent()
+    const result = (await bucket.list({ prefix })) as any
+    const objects = Array.isArray(result?.objects) ? (result.objects as Array<any>) : []
+
+    return objects
+      .map((obj) => ({
+        key: typeof obj?.key === 'string' ? obj.key : '',
+        size: typeof obj?.size === 'number' && Number.isFinite(obj.size) ? obj.size : null,
+        uploaded:
+          obj?.uploaded && typeof obj.uploaded.toISOString === 'function'
+            ? obj.uploaded.toISOString()
+            : typeof obj?.uploaded === 'string'
+              ? obj.uploaded
+              : null,
+      }))
+      .filter((o) => o.key.length > 0)
+  }
+
+  private validateExtensionName(name: string): string {
+    const trimmed = name.trim()
+    if (!trimmed) throw new Error('extension name is required')
+    if (trimmed.length > 64) throw new Error('extension name too long')
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(trimmed)) {
+      throw new Error('extension name must match ^[a-zA-Z0-9][a-zA-Z0-9_-]*$')
+    }
+    return trimmed
+  }
+
+  private validateExtensionSource(code: string): void {
+    const bytes = new TextEncoder().encode(code).byteLength
+    if (bytes > MAX_EXTENSION_BYTES) {
+      throw new Error(`extension exceeds max size (${MAX_EXTENSION_BYTES} bytes)`)
+    }
+
+    const lower = code.toLowerCase()
+    if (/\beval\s*\(/.test(lower)) throw new Error('extension code may not use eval()')
+    if (/\bnew\s+function\s*\(/.test(lower)) throw new Error('extension code may not use Function()')
+  }
+
+  private toDataUrl(js: string): string {
+    const bytes = new TextEncoder().encode(js)
+    let base64: string
+    if (typeof (globalThis as any).btoa === 'function') {
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]!)
+      }
+      base64 = (globalThis as any).btoa(binary)
+    } else if (typeof Buffer !== 'undefined') {
+      // Node fallback (tests).
+      base64 = Buffer.from(bytes).toString('base64')
+    } else {
+      throw new Error('base64 encoder unavailable')
+    }
+
+    return `data:text/javascript;base64,${base64}`
+  }
+
+  private async loadExtensionsIntoTools(tools: PiAgentTool[]): Promise<void> {
+    const objects = await this.listExtensionObjects()
+    const prefix = this.getExtensionPrefixForAgent()
+    const candidates = objects
+      .map((obj) => obj.key)
+      .filter((key) => key.startsWith(prefix) && key.endsWith('.js'))
+      .sort()
+
+    this.extensionKeys = candidates.slice(0, MAX_AGENT_EXTENSIONS)
+
+    const api = {
+      registerTool: (tool: PiAgentTool) => {
+        if (!tool || typeof tool !== 'object') throw new Error('registerTool requires a tool object')
+        if (typeof tool.name !== 'string' || tool.name.trim().length === 0) throw new Error('tool.name is required')
+        if (typeof tool.execute !== 'function') throw new Error('tool.execute is required')
+        if (tools.some((t) => t.name === tool.name)) throw new Error(`tool already exists: ${tool.name}`)
+        tools.push(tool)
+      },
+    }
+
+    const bucket = this.agentEnv.BLOBS as any
+    if (!bucket || typeof bucket.get !== 'function') return
+
+    for (const key of this.extensionKeys) {
+      try {
+        const object = await bucket.get(key)
+        if (!object) continue
+        const code = typeof object.text === 'function' ? await object.text() : null
+        if (typeof code !== 'string') continue
+        this.validateExtensionSource(code)
+
+        const module = (await import(this.toDataUrl(code))) as unknown as { activate?: unknown }
+        const activate = (module as any)?.activate
+        if (typeof activate !== 'function') {
+          console.warn('Extension missing activate(agent) export', { did: this.did, key })
+          continue
+        }
+
+        await Promise.resolve(activate(api))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn('Failed to load extension', { did: this.did, key, error: message })
+      }
+    }
+  }
+
+  private async rebuildAgentWrapper(input?: {
+    config?: AgentConfig
+    systemPromptOverride?: string
+    toolsOverride?: PiAgentTool[]
+  }): Promise<void> {
+    if (!this.session) {
+      this.session = await this.loadSession()
+    }
+
+    const config = input?.config ?? (await this.loadOrCreateConfig())
+    this.config = config
+
+    const tools = input?.toolsOverride ?? this.buildTools()
+    if (!input?.toolsOverride) {
+      await this.loadExtensionsIntoTools(tools)
+    }
+    this.tools = tools
+
+    const agentFactory =
+      this.agentEnv.PI_AGENT_FACTORY ??
+      (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
+        ? createOpenRouterAgentFactory({
+            CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
+            AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
+            OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
+            OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
+          })
+        : undefined)
+
+    this.agent = new PiAgentWrapper({
+      systemPrompt: input?.systemPromptOverride ?? config.personality,
+      model: config.model,
+      tools,
+      agentFactory,
+      messages: this.session.messages,
+    })
+  }
+
+  private async maybeReloadExtensions(): Promise<void> {
+    const reloadNeeded = Boolean(await this.ctx.storage.get<boolean>('extensionsReloadNeeded'))
+    if (!reloadNeeded) return
+    await this.ctx.storage.put('extensionsReloadNeeded', false)
+    await this.rebuildAgentWrapper()
+  }
+
+  private async maybeInjectSelfExtensionHint(): Promise<void> {
+    const shown = Boolean(await this.ctx.storage.get<boolean>('extensionsHintShown'))
+    if (shown) return
+
+    // If any extensions are present, mark as shown and move on.
+    if (this.extensionKeys.length > 0) {
+      await this.ctx.storage.put('extensionsHintShown', true)
+      return
+    }
+
+    const hint =
+      '\n\n' +
+      'You can extend yourself at runtime by writing Pi extensions.\n' +
+      'Use the write_extension tool to save a JS module to R2. Extensions must export activate(agent) and call agent.registerTool({...}).\n' +
+      'Manage them with list_extensions and remove_extension.'
+
+    await this.ctx.storage.put('extensionsHintShown', true)
+    const base = this.config?.personality ?? DEFAULT_AGENT_SYSTEM_PROMPT
+    // Keep the current tool instances when only updating the system prompt. This avoids
+    // surprising tool mutation resets (tests override tool.execute) and keeps the hint
+    // injection from interfering with the next loop cycle's timing behavior.
+    await this.rebuildAgentWrapper({ systemPromptOverride: `${base}${hint}`, toolsOverride: this.tools })
   }
 }
 

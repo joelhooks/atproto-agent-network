@@ -161,7 +161,7 @@
       "title": "Self-extending agents (R2 extension storage)",
       "description": "GitHub Issue #58. Enable agents to write their own Pi extensions stored in R2. 1) Add write_extension tool: agent provides extension name and code, stored in R2 under extensions/{agentName}/{extensionName}.js. 2) Add load_extensions() method in AgentDO: on initialize(), list R2 objects under extensions/{agentName}/, load each as a module. Extensions export an activate(agent) function that can register additional tools. 3) Extension hot-reload: after write_extension, mark that extensions need reload on next alarm cycle. 4) Add list_extensions tool: shows what extensions the agent has. 5) Add remove_extension tool: deletes from R2. 6) Safety limits: max 10 extensions per agent, max 50KB per extension, no eval() — use structured tool registration only. 7) Bootstrap: on first loop, if agent has no extensions, provide a hint in the system prompt about self-extension capability. This is the Pi philosophy: agents extend themselves rather than downloading skills.",
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
         "write_extension stores code in R2",
@@ -175,8 +175,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 12,
-    "lastIteration": "2026-02-08T21:11:10.221Z"
+    "totalIterations": 13,
+    "lastIteration": "2026-02-08T22:39:38.761Z"
   },
   "totalStories": 11
 }

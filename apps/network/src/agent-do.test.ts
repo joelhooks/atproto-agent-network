@@ -183,6 +183,41 @@ function createEnv(overrides: Record<string, unknown> = {}) {
   return { env, db }
 }
 
+function createFakeR2Bucket(initial: Record<string, string> = {}) {
+  const objects = new Map<string, { body: string; uploaded: Date }>()
+
+  for (const [key, body] of Object.entries(initial)) {
+    objects.set(key, { body, uploaded: new Date() })
+  }
+
+  return {
+    put: vi.fn(async (key: string, value: unknown) => {
+      objects.set(key, { body: String(value), uploaded: new Date() })
+    }),
+    get: vi.fn(async (key: string) => {
+      const obj = objects.get(key)
+      if (!obj) return null
+      return { text: async () => obj.body }
+    }),
+    delete: vi.fn(async (key: string) => {
+      objects.delete(key)
+    }),
+    list: vi.fn(async ({ prefix }: { prefix?: string } = {}) => {
+      const keys = Array.from(objects.keys()).filter((key) => (prefix ? key.startsWith(prefix) : true))
+      return {
+        objects: keys.map((key) => {
+          const obj = objects.get(key)!
+          return {
+            key,
+            size: new TextEncoder().encode(obj.body).byteLength,
+            uploaded: obj.uploaded,
+          }
+        }),
+      }
+    }),
+  }
+}
+
 describe('AgentDO', () => {
   it('creates an identity and exposes public keys', async () => {
     const { state, storage } = createState('agent-identity')
@@ -1838,4 +1873,157 @@ describe('AgentDO', () => {
   })
   // Story 4d (WS loop lifecycle broadcast) is tested live against the deployed Worker:
   // `apps/network/src/network.ws.live.test.ts`
+
+  it('write_extension stores code in R2 and schedules reload', async () => {
+    const bucket = createFakeR2Bucket()
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-ext-write')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => unknown }>
+    const write = tools.find((t) => t.name === 'write_extension')
+    expect(write).toBeTruthy()
+    expect(typeof write!.execute).toBe('function')
+
+    await write!.execute!({
+      name: 'hello',
+      code: 'export function activate(agent) { agent.registerTool({ name: \"hi\", execute: () => \"ok\" }) }',
+    })
+
+    expect(bucket.put).toHaveBeenCalled()
+    const reloadNeeded = await storage.get<boolean>('extensionsReloadNeeded')
+    expect(reloadNeeded).toBe(true)
+  })
+
+  it('loads extensions on initialize() and activates tools', async () => {
+    const key = 'extensions/alice/ext-one.js'
+    const bucket = createFakeR2Bucket({
+      [key]:
+        'export function activate(agent) { agent.registerTool({ name: \"ext_tool\", label: \"Ext Tool\", execute: () => ({ ok: true }) }) }',
+    })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { state } = createState('agent-ext-init')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string }>
+    expect(tools.some((t) => t.name === 'ext_tool')).toBe(true)
+  })
+
+  it('hot reload loads new extensions on the next alarm cycle after write_extension', async () => {
+    const bucket = createFakeR2Bucket()
+    const promptFn = vi.fn().mockResolvedValue({ content: 'no-op', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-ext-reload')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+    let tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => unknown }>
+    expect(tools.some((t) => t.name === 'ext_tool_2')).toBe(false)
+
+    const write = tools.find((t) => t.name === 'write_extension')
+    expect(write).toBeTruthy()
+    expect(typeof write!.execute).toBe('function')
+    await write!.execute!({
+      name: 'ext-two',
+      code: 'export function activate(agent) { agent.registerTool({ name: \"ext_tool_2\", execute: () => ({ ok: true }) }) }',
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    tools = (agent as any).tools as Array<{ name: string }>
+    expect(tools.some((t) => t.name === 'ext_tool_2')).toBe(true)
+
+    const reloadNeeded = await storage.get<boolean>('extensionsReloadNeeded')
+    expect(Boolean(reloadNeeded)).toBe(false)
+  })
+
+  it('list_extensions and remove_extension work', async () => {
+    const bucket = createFakeR2Bucket()
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state, storage } = createState('agent-ext-list-remove')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => any }>
+    const write = tools.find((t) => t.name === 'write_extension')!
+    const list = tools.find((t) => t.name === 'list_extensions')!
+    const remove = tools.find((t) => t.name === 'remove_extension')!
+    expect(typeof write.execute).toBe('function')
+    expect(typeof list.execute).toBe('function')
+    expect(typeof remove.execute).toBe('function')
+
+    await write.execute!({ name: 'a', code: 'export function activate() {}' })
+    await write.execute!({ name: 'b', code: 'export function activate() {}' })
+
+    const listed = await list.execute!({})
+    expect(listed.details.count).toBe(2)
+    expect(listed.details.entries.map((e: any) => e.name)).toEqual(['a', 'b'])
+
+    await remove.execute!({ name: 'a' })
+    const reloadNeeded = await storage.get<boolean>('extensionsReloadNeeded')
+    expect(reloadNeeded).toBe(true)
+  })
+
+  it('enforces extension safety limits (max 10, max 50KB, no eval)', async () => {
+    const initial: Record<string, string> = {}
+    for (let i = 0; i < 10; i += 1) {
+      initial[`extensions/alice/e${i}.js`] = 'export function activate() {}'
+    }
+    const bucket = createFakeR2Bucket(initial)
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state } = createState('agent-ext-limits')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => unknown }>
+    const write = tools.find((t) => t.name === 'write_extension')!
+    expect(typeof write.execute).toBe('function')
+
+    await expect(write.execute!({ name: 'overflow', code: 'export function activate() {}' })).rejects.toThrow(/max extensions/i)
+
+    await expect(write.execute!({ name: 'too_big', code: 'a'.repeat(50 * 1024 + 1) })).rejects.toThrow(/max size/i)
+
+    await expect(write.execute!({ name: 'nope', code: 'export function activate() { eval(\"1\") }' })).rejects.toThrow(/eval/i)
+  })
 })
