@@ -183,3 +183,74 @@ describe('network worker lexicon validation', () => {
     consoleSpy.mockRestore()
   })
 })
+
+describe('network worker CORS', () => {
+  it('responds to OPTIONS preflight without requiring auth', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents/alice/identity', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://app.example',
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'Authorization, Content-Type',
+        },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(response.headers.get('Access-Control-Allow-Methods')).toContain('GET')
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain('Authorization')
+    expect(agentFetch).not.toHaveBeenCalled()
+  })
+
+  it('adds CORS headers to auth errors', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents/alice/identity', {
+        headers: { Origin: 'https://app.example' },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
+  })
+
+  it('uses a configured CORS origin when provided', async () => {
+    const agentFetch = vi.fn(async () => new Response('ok'))
+    const env = {
+      AGENTS: createAgentNamespace(agentFetch),
+      ADMIN_TOKEN,
+      CORS_ORIGIN: 'https://dashboard.example',
+    } as never
+
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/agents/alice/identity', {
+        headers: { Origin: 'https://dashboard.example', Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://dashboard.example')
+  })
+})

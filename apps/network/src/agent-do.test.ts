@@ -93,19 +93,6 @@ function assertDurableObjectSerializable(value: unknown): void {
   visit(value, '$')
 }
 
-interface RecordRow {
-  id: string
-  did: string
-  collection: string
-  rkey: string
-  ciphertext: Uint8Array
-  encrypted_dek: Uint8Array | null
-  nonce: Uint8Array
-  public: number
-  created_at: string
-  updated_at?: string | null
-}
-
 function createState(id = 'agent-123') {
   const storage = new FakeStorage()
   const state = {
