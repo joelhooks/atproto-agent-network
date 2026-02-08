@@ -23,7 +23,7 @@
       "title": "Agent config schema + DO storage",
       "description": "GitHub Issue #52. Define and persist per-agent configuration in DO storage. Create AgentConfig interface: name, personality (system prompt), specialty, model (default moonshotai/kimi-k2.5), fastModel (google/gemini-2.0-flash-001), loopIntervalMs (default 60000), goals array (AgentGoal with id/description/priority/status/progress/createdAt/completedAt), enabledTools array. Store config in DO storage under 'config' key in AgentDO (apps/network/src/agent.ts). Add GET /agents/{name}/config endpoint (returns config). Add PATCH /agents/{name}/config endpoint (partial update, merges with existing). Config is set at agent creation time and updatable at runtime. Add types to packages/core/src/types.ts or a new file. Add tests for config CRUD operations.",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "acceptanceCriteria": [
         "AgentConfig interface defined with all fields",
@@ -135,7 +135,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 2,
-    "lastIteration": "2026-02-08T07:54:40.521Z"
+    "totalIterations": 3,
+    "lastIteration": "2026-02-08T07:58:58.075Z"
   }
 }

@@ -144,3 +144,13 @@ Summary: Completed Pi swap for the network AI wrapper/factory.
 - Pi deps are in place: `apps/network/package.json` uses `@mariozechner/pi-ai@0.52.8`; `packages/agent/package.json` uses `@mariozechner/pi-ai@0.52.8` + `@mariozechner/pi-agent-core@0.52.8`.
 - AI SDK is gone from runtime TS: `rg "from 'ai'|@openrouter/ai-sdk-provider" --glob '*.ts'` returns no matches.
 - `apps/network/src/ai-provider.ts` route
+
+---
+[2026-02-08T07:58:58.075Z]
+Completed: Agent config schema + DO storage
+Files: none
+Summary: Prior failure pattern detected: `build_error`/`unknown` with “no output captured”. Mitigation: run `pnpm typecheck` and `pnpm test` unpiped (no `| grep -q`) to surface real errors; both now pass.
+
+Implemented (already present in the workspace) for Issue #52 / story `story-mlde1tos`:
+- Types: `AgentGoalStatus`, `AgentGoal`, `AgentConfig` in `packages/core/src/types.ts`.
+- DO persistence: `AgentDO` 
