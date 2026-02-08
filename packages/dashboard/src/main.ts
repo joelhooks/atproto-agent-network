@@ -136,6 +136,13 @@ function truncateDid(did: unknown): string {
   return s.slice(0, 16) + '…' + s.slice(-8)
 }
 
+function resolveDidToName(did: string): string {
+  for (const [name, agent] of state.agents) {
+    if (agent.did === did) return name
+  }
+  return truncateDid(did)
+}
+
 function heartbeatActive(agent: AgentCardState): boolean {
   const next =
     agent.loop?.nextAlarmAt ??
@@ -388,8 +395,10 @@ function renderEvent(ev: DashboardActivityEvent): string {
       const content = asPlainObject((ctx as any).content)
       const kind = content && typeof content.kind === 'string' ? content.kind : null
       if (sender || recipient || kind) {
+        const senderName = sender ? resolveDidToName(sender) : null
+        const recipientName = recipient ? resolveDidToName(recipient) : null
         body += `<div class="inline-block"><div class="inline-label">Message</div><div class="inline-kv">${
-          sender && recipient ? `${escapeHtml(sender)} → ${escapeHtml(recipient)}` : escapeHtml(sender ?? recipient ?? '—')
+          senderName && recipientName ? `${escapeHtml(senderName)} → ${escapeHtml(recipientName)}` : escapeHtml(senderName ?? recipientName ?? '—')
         }${kind ? ` <span class="chip">kind:${escapeHtml(kind)}</span>` : ''}</div></div>`
       }
     } else if (ev.kind === 'tool') {
