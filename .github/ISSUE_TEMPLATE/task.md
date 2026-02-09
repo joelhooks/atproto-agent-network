@@ -11,6 +11,34 @@ assignees: ''
 **Parent Epic:** #
 **Package:** `packages/` or `apps/`
 **Skill:** `.agents/skills/[skill-name]`
+**GitHub Issue:** #[number] (required for commits)
+
+---
+
+## Agent Lifecycle (Label + Status Rules)
+
+**Starting state (triage):**
+- Label: `agent/ready` means any agent can pick this up.
+- If this needs human input before work can start, use `agent/blocked` and add `hitl/*` label(s).
+
+**When an agent claims the task:**
+1. Remove `agent/ready`
+2. Add `agent/claimed`
+3. (Optional) Assign the issue to the agent identity (if used)
+
+**When the agent is done and wants review:**
+1. Remove `agent/claimed`
+2. Add `agent/review`
+3. Ensure there is a PR link (or a note explaining why there isn't)
+
+**When the task is blocked mid-flight:**
+1. Add `agent/blocked`
+2. Add `hitl/decision` or `hitl/architecture` or `hitl/security-gate`
+3. Post a single comment with the exact question(s) and what was tried
+
+**On close:**
+- Remove any of: `agent/ready`, `agent/claimed`, `agent/review`, `agent/blocked`
+- If closed without merge, explain why (superseded, wontfix, duplicate) and link the replacement issue.
 
 ---
 
@@ -83,7 +111,7 @@ describe('[Feature]', () => {
 - [ ] Implementation complete
 - [ ] All tests pass
 - [ ] Types check
-- [ ] PR opened with description
+- [ ] PR opened with description (or explicit rationale for no PR)
 - [ ] Update affected issues (link to this)
 - [ ] Close with reason explaining what was done
 
@@ -98,6 +126,9 @@ describe('[Feature]', () => {
 - Commit after each test passes
 - Keep commits small and focused
 - Use conventional commits: `feat:`, `test:`, `fix:`
+- Every commit must reference the issue number:
+  - Title: `feat(pkg): summary (#N)` is fine
+  - Body: must include `Closes #N` (mandatory)
 
 **After completing:**
 - Run full test suite: `bun turbo test`

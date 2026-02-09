@@ -655,6 +655,19 @@
         "progress.txt"
       ],
       "learnings": "{\"success\":true,\"summary\":\"Starting story-mlfm68ug. First I’m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlfm6a4e",
+      "title": "Solo penalty — double damage when alone",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/wrangler.toml",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/environments/rpg.ts` uses `createDice()` with `Math.random`, so combat flow (player attack + enemy dodge + counterattack rolls + d6 damage) can be made fully deterministic in tests by mocking `Math.random` with a fixed sequence; this enabled reliable assertions around `soloMultiplier()` and `partyWipe()` without changing the engine RNG API.\nGotcha: If `partyWipe()` is called inside combat resolution, it clears `game.combat`; any subsequent logic that assumes `game.combat.enemies` exists must be guarded (use optional chaining / phase checks) or it will throw at runtime.\nFiles Context: `apps/network/src/games/rpg-engine.ts` holds core state transitions (explore/attack) and now exports `soloMultiplier()` + `partyWipe()` for consistent wipe handling. `apps/network/src/environments/rpg.ts` is where enemy combat behavior lives (including the new counter-attack) and must apply multipliers at the environment layer for enemy damage. The corresponding tests live in `apps/network/src/games/rpg-engine.test.ts` and `apps/network/src/environments/rpg.test.ts`."
     }
   ],
   "failures": [

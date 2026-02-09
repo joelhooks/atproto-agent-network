@@ -439,14 +439,14 @@
       "title": "Cooperation prompts — teach agents to work together",
       "description": "**`apps/network/src/agent.ts`:**\n1. In buildThinkPrompt RPG section, add COOPERATION RULES: never solo, join parties, healers heal, warriors taunt, scouts disarm, mages AoE\n2. Blocked mode: \"URGENT: Recruit {requiredClass} via message tool\"\n\n**Tests in agent-do.test.ts:** cooperation rules in prompt, blocked adds recruitment msg",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 40,
-    "lastIteration": "2026-02-09T20:45:01.096Z"
+    "totalIterations": 41,
+    "lastIteration": "2026-02-09T20:54:38.557Z"
   },
   "totalStories": 11
 }

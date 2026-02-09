@@ -2212,6 +2212,114 @@ describe('AgentDO', () => {
     vi.useRealTimers()
   })
 
+  it('includes RPG cooperation rules in the think prompt', async () => {
+    const { state } = createState('agent-rpg-coop-prompt')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+    await agent.fetch(new Request(`https://example/agents/${agentName}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: agentName, enabledTools: [] }),
+    }))
+
+    await db
+      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(
+        'rpg_test_1',
+        'rpg',
+        agentName,
+        JSON.stringify({
+          type: 'rpg',
+          phase: 'playing',
+          mode: 'exploring',
+          roomIndex: 0,
+          currentPlayer: agentName,
+          party: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          turnOrder: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          dungeon: [{ type: 'trap', description: 'A pressure plate clicks underfoot.' }],
+          log: [],
+        }),
+        'playing',
+        JSON.stringify([agentName])
+      )
+      .run()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    const thinkPrompt = prompt.mock.calls[0]?.[0]
+    expect(typeof thinkPrompt).toBe('string')
+    expect(thinkPrompt).toContain('COOPERATION RULES')
+    expect(thinkPrompt).toContain('never solo')
+    expect(thinkPrompt).toContain('join parties')
+    expect(thinkPrompt).toContain('healers heal')
+    expect(thinkPrompt).toContain('warriors taunt')
+    expect(thinkPrompt).toContain('scouts disarm')
+    expect(thinkPrompt).toContain('mages AoE')
+  })
+
+  it('adds a blocked-mode recruitment message when an RPG barrier requires a missing class', async () => {
+    const { state } = createState('agent-rpg-blocked-prompt')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+    await agent.fetch(new Request(`https://example/agents/${agentName}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: agentName, enabledTools: [] }),
+    }))
+
+    await db
+      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(
+        'rpg_test_2',
+        'rpg',
+        agentName,
+        JSON.stringify({
+          type: 'rpg',
+          phase: 'playing',
+          mode: 'exploring',
+          roomIndex: 0,
+          currentPlayer: agentName,
+          party: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          turnOrder: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          dungeon: [
+            {
+              type: 'barrier',
+              requiredClass: 'Mage',
+              description: 'A sealed archway bars the way. Only a Mage can open it.',
+            },
+          ],
+          log: [],
+        }),
+        'playing',
+        JSON.stringify([agentName])
+      )
+      .run()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    const thinkPrompt = prompt.mock.calls[0]?.[0]
+    expect(typeof thinkPrompt).toBe('string')
+    expect(thinkPrompt).toContain('URGENT: Recruit Mage via message tool')
+  })
+
   it('rejects loopIntervalMs < 5000', async () => {
     const { state } = createState('agent-min-interval')
     const { env } = createEnv({

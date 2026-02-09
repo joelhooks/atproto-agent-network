@@ -1204,22 +1204,47 @@ export class AgentDO extends DurableObject {
           const state = JSON.parse(gameRow.state)
           const gameType = gameRow.type ?? state.type ?? 'catan'
 
-          // Non-Catan games: provide minimal context, let the environment tool handle specifics
-          if (gameType !== 'catan') {
-            const isMyTurn = state.currentPlayer === agentName
-            const partyMember = state.party?.find((p: any) => p.name === agentName)
-            const room = state.dungeon?.[state.roomIndex ?? 0]
-            gameContext = [
-              isMyTurn
-                ? `🎮🎮🎮 IT IS YOUR TURN in ${gameType.toUpperCase()} adventure ${gameRow.id}!`
-                : `🎲 Active ${gameType.toUpperCase()} adventure: ${gameRow.id} — waiting for ${state.currentPlayer}.`,
-              partyMember ? `You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})` : '',
-              room ? `Current room: ${room.description} (type: ${room.type})` : '',
-              ``,
-              isMyTurn ? `Use the rpg tool to act: rpg({"command":"explore","gameId":"${gameRow.id}"}) or rpg({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
-              `DO NOT create a new game.`,
-            ].filter(Boolean).join('\n')
-          } else {
+	          // Non-Catan games: provide minimal context, let the environment tool handle specifics
+	          if (gameType !== 'catan') {
+	            const isMyTurn = state.currentPlayer === agentName
+	            const partyMember = state.party?.find((p: any) => p.name === agentName)
+	            const room = state.dungeon?.[state.roomIndex ?? 0]
+	            const isRpg = gameType === 'rpg'
+	            const blockedRecruitment = (() => {
+	              if (!isRpg) return ''
+	              if (!room || typeof room !== 'object') return ''
+	              const r = room as { type?: unknown; requiredClass?: unknown }
+	              if (r.type !== 'barrier') return ''
+	              const requiredClass = typeof r.requiredClass === 'string' ? r.requiredClass : ''
+	              if (!requiredClass) return ''
+	              const party = Array.isArray(state.party) ? state.party : []
+	              const hasClass = party.some((p: any) => p?.klass === requiredClass)
+	              if (hasClass) return ''
+	              return `URGENT: Recruit ${requiredClass} via message tool`
+	            })()
+	            const cooperationRules = isRpg
+	              ? [
+	                  'COOPERATION RULES:',
+	                  '- never solo: join parties',
+	                  '- healers heal',
+	                  '- warriors taunt',
+	                  '- scouts disarm',
+	                  '- mages AoE',
+	                ].join('\n')
+	              : ''
+	            gameContext = [
+	              isMyTurn
+	                ? `🎮🎮🎮 IT IS YOUR TURN in ${gameType.toUpperCase()} adventure ${gameRow.id}!`
+	                : `🎲 Active ${gameType.toUpperCase()} adventure: ${gameRow.id} — waiting for ${state.currentPlayer}.`,
+	              partyMember ? `You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})` : '',
+	              room ? `Current room: ${room.description} (type: ${room.type})` : '',
+	              blockedRecruitment,
+	              cooperationRules,
+	              ``,
+	              isMyTurn ? `Use the rpg tool to act: rpg({"command":"explore","gameId":"${gameRow.id}"}) or rpg({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
+	              `DO NOT create a new game.`,
+	            ].filter(Boolean).join('\n')
+	          } else {
           const isMyTurn = state.currentPlayer === agentName
           // Build rich game context for the model
           const me = state.players?.find((p: any) => p.name === agentName)

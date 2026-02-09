@@ -310,3 +310,19 @@ If you add any new `UPDATE games SET ...` shapes, `packages/core/src/d1-mock.ts`
 Completed: Solo penalty — double damage when alone
 Files: apps/network/wrangler.toml, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts
 Summary: Implemented solo danger scaling + party wipe for RPG. Added `soloMultiplier()` and `partyWipe()` to the engine, applied multiplier to trap damage, and ensured wipe is triggered after damage events. Added enemy counter-attacks in combat (environment layer) with damage scaled by soloMultiplier. Wrote unit tests for multiplier values, solo double-damage, wipe behavior, and combat counter-attack scaling. Validation `pnpm typecheck && pnpm test` passes. Prior failure pattern detected: test_failure/build_error. Mitigation: kept changes tightly scoped to RPG engine/environment + deterministic tests (mocked Math.random), and ran full validation to avoid unrelated Vectorize/index noise regressions.
+
+---
+[2026-02-09T20:54:38.559Z]
+Completed: Cooperation prompts — teach agents to work together
+Files: packages/dashboard/package.json, .github/ISSUE_TEMPLATE/epic.md, .github/ISSUE_TEMPLATE/task.md, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json
+Summary: Implemented RPG cooperation + recruitment prompt guidance and added TDD coverage.
+
+Prior failure pattern detected: `test_failure` / `build_error`. Mitigation: added narrowly-scoped unit tests first, ran targeted `vitest -t ...`, then ran full `pnpm typecheck && pnpm test` to catch workspace-wide regressions.
+
+Changes:
+- `apps/network/src/agent.ts`: In `buildThinkPrompt()` RPG gameContext, added `COOPERATION RULES` (never solo, join parties, healers heal, warriors taunt, scouts disarm, mages AoE). Added blocked-mode line `URGENT: Recruit {requiredClass} via message tool` when the current room is a barrier and the party lacks `requiredClass`.
+- `apps/network/src/agent-do.test.ts`: Added tests asserting cooperation rules appear in the think prompt and barrier rooms add the urgent recruitment line.
+
+Validation:
+- ✅ `pnpm typecheck && pnpm test`
+- ❌ Deploy attempt blocked: `wrangler deploy` failed with Cloudflare error `No index was found with name 'agent-memory'` (Vectorize binding validation).

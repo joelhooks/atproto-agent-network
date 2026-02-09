@@ -14,6 +14,21 @@ assignees: ''
 
 ---
 
+## Agent Workflow (How This Epic Ships)
+
+This epic should be decomposed into `type/task` issues that are executable by agents end-to-end.
+
+**Task lifecycle labels:**
+- `agent/ready`: good task spec; safe to claim
+- `agent/claimed`: an agent is actively working it
+- `agent/review`: done, needs human review
+- `agent/blocked`: blocked on human input
+
+**Rules:**
+- A task is not `agent/ready` unless it includes: acceptance criteria, validation command(s), file targets, and any HITL/security gates.
+- Closed tasks must not retain `agent/*` labels.
+- If a task is superseded, close it and link the replacement issue in the close comment.
+
 ## Goal
 
 [What does completing this epic achieve?]
@@ -73,6 +88,7 @@ Track progress by checking boxes as tasks complete:
 - [ ] Security gate passed (if applicable)
 - [ ] Documentation updated
 - [ ] Retrospective created
+- [ ] All closed subtasks have agent lifecycle labels cleared (`agent/*`)
 
 ## Notes
 
