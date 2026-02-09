@@ -172,13 +172,30 @@ pnpm vitest run packages/[pkg]/src/[feature].test.ts
 # 4. Run test (should pass)
 pnpm vitest run packages/[pkg]/src/[feature].test.ts
 
-# 5. Commit
-git add -A && git commit -m "test(pkg): add tests for feature"
-git add -A && git commit -m "feat(pkg): implement feature"
+# 5. Commit — ALWAYS reference the GitHub issue
+git add -A && git commit -m "test(pkg): add tests for feature (#N)"
+git add -A && git commit -m "feat(pkg): implement feature
+
+Closes #N"
 
 # 6. Refactor if needed, ensure tests still pass
 pnpm test
 ```
+
+### ⚠️ Commit Convention (MANDATORY)
+
+**Every commit MUST reference its GitHub issue.** Use `Closes #N` in the commit body (not just the title) so GitHub auto-closes the issue on merge.
+
+```
+feat(network): fix Vectorize embedding dimensions
+
+Switch from bge-base (768D) to bge-large (1024D) to match Vectorize index.
+Add dimension validation test.
+
+Closes #76
+```
+
+**Ralph loop stories:** Include `GitHub Issue: #N` in the story description so Codex agents know to add `Closes #N` to their commits.
 
 ### Completing Work
 
