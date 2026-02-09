@@ -426,6 +426,20 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
         if (check.success) actor.skills.use_skill = check.nextSkill
       }
     }
+
+    if (room.type === 'barrier') {
+      const requiredClass = (room as { requiredClass?: string }).requiredClass ?? ''
+      const actor = findCharacter(game, game.currentPlayer)
+      const hasRequiredClass = game.party.some(p => p.klass === requiredClass)
+      if (!hasRequiredClass) {
+        // Block: can't pass without the required class, stay on this room
+        game.roomIndex -= 1
+        game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: blocked (need ${requiredClass})` })
+        return { ok: true, room }
+      }
+      // Party has the class — barrier resolved, continue
+      game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: resolved by ${requiredClass}` })
+    }
   }
 
   game.log.push({ at: Date.now(), who: game.currentPlayer, what: `explore: ${room.type}` })
