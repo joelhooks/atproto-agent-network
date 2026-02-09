@@ -447,19 +447,30 @@
     {
       "id": "story-mlfbhaur",
       "title": "Smarter error backoff — tiered by error type",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` alarm cycles can “fail” without throwing: `act()` often returns `steps` with `{ ok: false }` instead of throwing, so backoff logic must treat failed tool steps as an error signal (and can derive game-context errors by checking `steps.some(s => s.name === 'game' && !s.ok)`). Persisting `{category, streak}` in DO storage (`errorBackoff`) makes category-specific escalation stable across hibernation/restarts.\nGotcha: Wrangler deploy in non-interactive mode requires an *exported* `CLOUDFLARE_API_TOKEN` (a plain shell variable assignment is not enough). Also, `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt` may appear modified locally; do not stage/commit them per workspace rules.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO alarm loop, error categorization (`categorizeAlarmError`), and tier computation (`computeTieredBackoffMs`) plus storage keys (`errorBackoff`, `consecutiveErrors`). `apps/network/src/agent-do.test.ts` has the AgentDO alarm/backoff tests validating transient/persistent/game tiers and reset-on-success behavior."
+    },
+    {
+      "id": "story-mlfbhfmx",
+      "title": "Clear stale game state on completion",
       "status": "failed",
-      "filesModified": [],
-      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "[verification_rejected] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -677,6 +688,13 @@
         "nl -ba",
         "rg -n"
       ]
+    },
+    {
+      "storyId": "story-mlfbhfmx",
+      "storyTitle": "Clear stale game state on completion",
+      "category": "verification_rejected",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
+      "toolNames": []
     }
   ]
 }
