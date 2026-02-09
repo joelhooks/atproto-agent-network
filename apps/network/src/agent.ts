@@ -1107,7 +1107,7 @@ export class AgentDO extends DurableObject {
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
       '',
       'INSTRUCTIONS:',
-      '1. If you see a 🎮 GAME TURN notification above, use the game tool FIRST. Do NOT use message or think_aloud.',
+      '1. If you see a 🎮 GAME TURN notification above, use the appropriate game tool FIRST (rpg for RPG adventures, game for Catan). Do NOT use message or think_aloud.',
       '2. If you have non-game inbox messages, RESPOND to each one using the message tool.',
       '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
       '4. Always use at least one tool per cycle. Do NOT just think — ACT.',

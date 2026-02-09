@@ -209,8 +209,9 @@ export const catanEnvironment: AgentEnvironment = {
         const gameId = typeof params.gameId === 'string' ? params.gameId : ''
         if (!gameId) throw new Error('gameId required')
 
-        const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+        const row = await db.prepare('SELECT state, type FROM games WHERE id = ?').bind(gameId).first<{ state: string; type?: string }>()
         if (!row) throw new Error(`Game ${gameId} not found - check the game ID`)
+        if (row.type && row.type !== 'catan') throw new Error(`Game ${gameId} is a ${row.type} game, not Catan. Use the ${row.type} tool instead.`)
         const game = JSON.parse(row.state) as Record<string, unknown>
 
         if (command === 'status') {
