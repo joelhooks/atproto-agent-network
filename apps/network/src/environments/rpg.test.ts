@@ -136,6 +136,59 @@ describe('rpgEnvironment', () => {
     expect(String((result as any).error)).toContain(gameId)
   })
 
+  it('non-grimlock agent calling new_game gets rejected with helpful message', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'bob',
+      agentDid: 'did:cf:bob',
+      db: db as any,
+      broadcast,
+    }
+
+    // Create a joinable game so the error lists it
+    const gameId = 'rpg_test_grimlock_guard'
+    const game = createGame({ id: gameId, players: ['alice'] })
+    game.phase = 'playing'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['bob'] })
+
+    expect(result).toMatchObject({ ok: false })
+    const error = String((result as any).error)
+    expect(error).toContain('Only Grimlock can create new dungeons')
+    expect(error).toContain('join_game')
+    expect(error).toContain(gameId)
+  })
+
+  it('grimlock calling new_game succeeds', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+    }
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['grimlock', 'alice'] })
+
+    expect(result).toHaveProperty('content')
+    expect(result).toHaveProperty('details')
+    expect((result as any).details.players).toContain('grimlock')
+    expect((result as any).details.phase).toBe('playing')
+  })
+
   it("logs a structured game.completed event when the adventure finishes (phase becomes 'finished')", async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()

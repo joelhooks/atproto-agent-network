@@ -244,6 +244,25 @@ export const rpgEnvironment: AgentEnvironment = {
         if (command === 'new_game') {
           const agentName = ctx.agentName.trim()
 
+          // Only Grimlock can create new games
+          if (agentName !== 'grimlock') {
+            const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+            const lines: string[] = [
+              'Only Grimlock can create new dungeons. Use join_game to join an existing adventure.',
+            ]
+            if (joinable.length > 0) {
+              lines.push('')
+              lines.push('Available adventures to join:')
+              for (const candidate of joinable) {
+                const recommended = pickJoinClass(candidate.game)
+                lines.push(
+                  `- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Join with {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`
+                )
+              }
+            }
+            return { ok: false, error: lines.join('\n') }
+          }
+
           const existing = await db
             .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase = 'playing' AND players LIKE ? LIMIT 1")
             .bind(`%${agentName}%`)

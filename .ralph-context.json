@@ -781,6 +781,18 @@
         ".ralph-iterations.jsonl"
       ],
       "learnings": "Technical Discovery: `packages/core/src/d1-mock.ts` is intentionally SQL-shape-specific; adding a new table requires wiring both `run()` (INSERT/UPDATE) and `all()` (SELECT) with a small parser (here `parseWorkItemConditions` + `applyWorkItemUpdate`). Keeping tool queries simple (e.g. `WHERE id = ?`, `status = 'open'`, `ORDER BY priority DESC`, `LIMIT 1`) avoids unsupported SQL like `GROUP BY` and keeps unit tests deterministic.\nGotcha: If you update `apps/network/schema.sql`, also update the corresponding D1Mock no-op DDL and supported query shapes in `packages/core/src/d1-mock.ts`; otherwise schema tests may pass (Miniflare D1) while environment/tool tests using `D1MockDatabase` will throw `Unsupported SQL ...` at runtime. Also, changing an existing tool command’s semantics (like `status`) can break older tests unless you preserve prior fields (agent identity) in the response details.\nFiles Context: - `apps/network/src/environments/ralph.ts`: Ralph environment Pi tool implementation and DB queries for work_items.\n- `apps/network/src/environments/ralph.test.ts`: End-to-end unit tests for propose/claim/submit/status flows using `D1MockDatabase`.\n- `apps/network/schema.sql`: Source-of-truth D1 schema; now includes `work_items`.\n- `apps/network/src/schema.test.ts`: Miniflare D1-backed schema validation; asserts `work_items` DDL matches expected columns/defaults.\n- `packages/core/src/d1-mock.ts`: In-memory D1 emulator; must be kept in sync with schema and tool SQL shapes."
+    },
+    {
+      "id": "story-mlfo27gl",
+      "title": "Ralph autoplay: agents claim queued work items",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/ralph.ts",
+        "packages/core/src/d1-mock.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/environments/ralph.ts` autoplay can be implemented purely as an environment-provided `getAutoPlayActions(ctx)` that returns tool calls; it doesn’t need AgentDO changes as long as the environment query is simple and deterministic (single `SELECT ... ORDER BY ... LIMIT 1`). Also, `D1MockDatabase` is SQL-shape sensitive, so tests that depend on ordering must ensure the mock supports the specific `ORDER BY` clause used in production queries.\nGotcha: Avoid backticks in `swarm memory store` messages under zsh: they trigger command substitution and can emit `permission denied`, potentially mangling the stored learning. Also, when adding new D1 queries for tests, confirm `packages/core/src/d1-mock.ts` supports the exact `ORDER BY`/`WHERE` shape (here, missing `order by priority asc` support would make priority-selection tests flaky or wrong).\nFiles Context: `apps/network/src/environments/ralph.ts` defines the Ralph environment tool and its autoplay behavior. `packages/core/src/d1-mock.ts` emulates D1 for unit tests and must be kept in sync with the SQL shapes used by environments. `apps/network/src/agent-do.test.ts` contains AgentDO runtime tests and now includes the unit test that pins Ralph autoplay selection semantics."
     }
   ],
   "failures": [
