@@ -61,6 +61,8 @@ export type Room =
   | { type: 'treasure'; description: string }
   | { type: 'rest'; description: string }
   | { type: 'puzzle'; description: string }
+  | { type: 'boss'; description: string; enemies: Enemy[] }
+  | { type: 'barrier'; description: string; requiredClass: RpgClass }
 
 export type RpgMode = 'exploring' | 'combat' | 'finished'
 
@@ -152,17 +154,118 @@ function computeTurnOrder(party: Character[]): Character[] {
 }
 
 function defaultDungeon(): Room[] {
-  return [
-    { type: 'rest', description: 'A quiet alcove.' },
-    { type: 'trap', description: 'A pressure plate clicks underfoot.' },
-    {
-      type: 'combat',
-      description: 'A snarling goblin blocks the way.',
-      enemies: [{ name: 'Goblin', hp: 6, DEX: 40, attack: 30, dodge: 20 }],
-    },
-    { type: 'puzzle', description: 'A rune-locked door hums with strange energy.' },
-    { type: 'treasure', description: 'A small chest with a few coins.' },
-  ]
+  return generateDungeon(12, createDice())
+}
+
+function safeInt(value: unknown, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback
+  return Math.floor(value as number)
+}
+
+function rollDie(dice: Dice, sides: number): number {
+  const roll = safeInt(dice.d(sides), 1)
+  return Math.max(1, Math.min(sides, roll))
+}
+
+function shuffle<T>(items: T[], dice: Dice): T[] {
+  const arr = [...items]
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = rollDie(dice, i + 1) - 1
+    const tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+  }
+  return arr
+}
+
+function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice }): Room {
+  const { tier, dice } = input
+  const hp = tier === 'early' ? 5 + rollDie(dice, 3) : 9 + rollDie(dice, 5)
+
+  const enemy: Enemy =
+    tier === 'early'
+      ? { name: 'Goblin', hp, DEX: 40, attack: 30, dodge: 20 }
+      : { name: 'Orc', hp, DEX: 45, attack: 40, dodge: 25 }
+
+  return { type: 'combat', description: `A ${enemy.name.toLowerCase()} prowls here.`, enemies: [enemy] }
+}
+
+function buildBossRoom(dice: Dice): Room {
+  const hp = 29 + rollDie(dice, 20) // 30+
+  const enemy: Enemy = { name: 'Dungeon Boss', hp, DEX: 55, attack: 55, dodge: 35 }
+  return { type: 'boss', description: 'A hulking presence fills the chamber.', enemies: [enemy] }
+}
+
+export function generateDungeon(depth: number = 12, dice: Dice): Room[] {
+  const rooms = safeInt(depth, 12)
+  if (rooms < 6) throw new Error('generateDungeon requires depth >= 6')
+
+  const lastIndex = rooms - 1
+  const classes: RpgClass[] = shuffle(['Warrior', 'Scout', 'Mage', 'Healer'], dice)
+
+  const barrierIndices = new Set<number>()
+  for (let i = 1; i <= 4; i += 1) {
+    // Evenly spread across the run, but never in the first room or the final boss room.
+    let idx = Math.floor((i * lastIndex) / 5)
+    idx = Math.max(1, Math.min(lastIndex - 1, idx))
+    while (barrierIndices.has(idx)) {
+      idx = idx + 1
+      if (idx >= lastIndex) idx = 1
+    }
+    barrierIndices.add(idx)
+  }
+
+  const orderedBarrierIndices = [...barrierIndices].sort((a, b) => a - b)
+  const requiredClassByIndex = new Map<number, RpgClass>()
+  for (let i = 0; i < orderedBarrierIndices.length; i += 1) {
+    requiredClassByIndex.set(orderedBarrierIndices[i]!, classes[i]!)
+  }
+
+  const fillerCycle = ['rest', 'combat', 'trap', 'treasure', 'puzzle'] as const
+  const midpoint = Math.floor(rooms / 2)
+  let fillCursor = rollDie(dice, fillerCycle.length) - 1
+
+  const dungeon: Room[] = []
+  for (let index = 0; index < lastIndex; index += 1) {
+    const requiredClass = requiredClassByIndex.get(index)
+    if (requiredClass) {
+      dungeon.push({
+        type: 'barrier',
+        requiredClass,
+        description: `A sealed archway bars the way. Only a ${requiredClass} can open it.`,
+      })
+      continue
+    }
+
+    const type = fillerCycle[fillCursor % fillerCycle.length]!
+    fillCursor += 1
+
+    if (type === 'combat') {
+      const tier: 'early' | 'mid' = index < midpoint ? 'early' : 'mid'
+      dungeon.push(buildCombatRoom({ tier, dice }))
+      continue
+    }
+
+    if (type === 'rest') {
+      dungeon.push({ type: 'rest', description: 'A quiet alcove.' })
+      continue
+    }
+
+    if (type === 'trap') {
+      dungeon.push({ type: 'trap', description: 'A pressure plate clicks underfoot.' })
+      continue
+    }
+
+    if (type === 'treasure') {
+      dungeon.push({ type: 'treasure', description: 'A small chest with a few coins.' })
+      continue
+    }
+
+    dungeon.push({ type: 'puzzle', description: 'A rune-locked door hums with strange energy.' })
+  }
+
+  dungeon.push(buildBossRoom(dice))
+  return dungeon
 }
 
 function toCharacter(value: string | Character, index: number): Character {
@@ -180,10 +283,12 @@ export function createGame(input: {
   const turnOrder = computeTurnOrder(party)
   const dungeon = input.dungeon ?? defaultDungeon()
 
-  const initialMode: RpgMode = dungeon[0]?.type === 'combat' ? 'combat' : 'exploring'
+  const initialRoom = dungeon[0]
+  const initialMode: RpgMode =
+    initialRoom?.type === 'combat' || initialRoom?.type === 'boss' ? 'combat' : 'exploring'
   const combat =
-    initialMode === 'combat' && dungeon[0]?.type === 'combat'
-      ? { enemies: dungeon[0].enemies.map((e) => ({ ...e })) }
+    initialMode === 'combat' && (initialRoom?.type === 'combat' || initialRoom?.type === 'boss')
+      ? { enemies: initialRoom.enemies.map((e) => ({ ...e })) }
       : undefined
 
   return {
@@ -260,7 +365,7 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
 
   if (!room) return { ok: true, room: null }
 
-  if (room.type === 'combat') {
+  if (room.type === 'combat' || room.type === 'boss') {
     game.mode = 'combat'
     game.combat = { enemies: room.enemies.map((e) => ({ ...e })) }
   } else {
