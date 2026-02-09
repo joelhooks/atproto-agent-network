@@ -254,6 +254,7 @@ export const catanEnvironment: AgentEnvironment = {
             error?: string
             events: string[]
             gameOver: boolean
+            stalemate?: boolean
           }
 
           await db
@@ -291,7 +292,7 @@ export const catanEnvironment: AgentEnvironment = {
           if (result.gameOver) {
             await ctx.broadcast({
               event_type: 'game.finished',
-              context: { gameId, winner: (game as any).winner, turns: (game as any).turn },
+              context: { gameId, winner: (game as any).winner, turns: (game as any).turn, stalemate: Boolean(result.stalemate) },
             })
           }
 
@@ -328,7 +329,7 @@ export const catanEnvironment: AgentEnvironment = {
             content: toTextContent(
               (result.ok ? result.events.join('\n') : `Error: ${result.error}`) + '\n\n' + renderBoard(game as any)
             ),
-            details: { ok: result.ok, error: result.error, events: result.events, gameOver: result.gameOver },
+            details: { ok: result.ok, error: result.error, events: result.events, gameOver: result.gameOver, stalemate: result.stalemate },
           }
         }
 

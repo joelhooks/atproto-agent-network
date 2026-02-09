@@ -49,6 +49,8 @@ export interface GameState {
   id: string
   phase: 'setup' | 'playing' | 'finished'
   turn: number
+  // Consecutive turns ended without any settlement/road being built.
+  staleTurns: number
   currentPlayer: string
   players: PlayerState[]
   board: {
@@ -244,6 +246,7 @@ export function createGame(id: string, playerNames: string[]): GameState {
     id,
     phase: 'setup',
     turn: 0,
+    staleTurns: 0,
     currentPlayer: playerNames[0],
     players,
     board: generateBoard(),
@@ -299,6 +302,7 @@ export interface ActionResult {
   error?: string
   events: string[]
   gameOver?: boolean
+  stalemate?: boolean
 }
 
 const SETTLEMENT_COST: Record<Resource, number> = { wood: 1, brick: 1, sheep: 1, wheat: 1, ore: 0 }
@@ -376,6 +380,8 @@ export function executeAction(state: GameState, playerName: string, action: Game
   if (!player) return { ok: false, error: 'Player not found', events: [] }
 
   if (state.phase === 'finished') return { ok: false, error: 'Game is over', events: [] }
+  // Back-compat for persisted games created before staleTurns existed.
+  if (typeof (state as any).staleTurns !== 'number') (state as any).staleTurns = 0
 
   // ─── Setup Phase ───
   if (state.phase === 'setup') {
@@ -410,6 +416,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
       state.board.vertices[action.vertexId].owner = playerName
       player.settlements.push(action.vertexId)
       player.victoryPoints += 1
+      state.staleTurns = 0
       addLog(state, playerName, 'build_settlement', `Built settlement at vertex ${action.vertexId}`)
       if (player.victoryPoints >= 10) {
         state.phase = 'finished'
@@ -426,6 +433,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
       deductResources(player, ROAD_COST)
       state.board.edges[action.edgeId].owner = playerName
       player.roads.push(action.edgeId)
+      state.staleTurns = 0
       addLog(state, playerName, 'build_road', `Built road on edge ${action.edgeId}`)
       return { ok: true, events: [`Built road on edge ${action.edgeId}`] }
     }
@@ -443,6 +451,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
     }
 
     case 'end_turn': {
+      const turnJustEnded = state.turn
       state.lastDiceRoll = null
       // Expire pending trades
       for (const trade of state.trades) {
@@ -452,6 +461,34 @@ export function executeAction(state: GameState, playerName: string, action: Game
       state.currentPlayer = state.players[nextIdx].name
       state.turn += 1
       addLog(state, playerName, 'end_turn', `Turn ${state.turn}`)
+
+      const builtThisTurn = state.log.some(
+        (entry) =>
+          entry.turn === turnJustEnded && (entry.action === 'build_settlement' || entry.action === 'build_road')
+      )
+      state.staleTurns = builtThisTurn ? 0 : state.staleTurns + 1
+
+      const STALEMATE_THRESHOLD = 20
+      if (state.staleTurns >= STALEMATE_THRESHOLD) {
+        const sorted = [...state.players].sort((a, b) => b.victoryPoints - a.victoryPoints)
+        state.phase = 'finished'
+        state.winner = sorted[0].name
+        addLog(
+          state,
+          sorted[0].name,
+          'game_over',
+          `Stalemate: no settlement/road built for ${STALEMATE_THRESHOLD} turns. ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`
+        )
+        return {
+          ok: true,
+          events: [
+            `Game over! Stalemate after ${STALEMATE_THRESHOLD} buildless turns.`,
+            `${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`,
+          ],
+          gameOver: true,
+          stalemate: true,
+        }
+      }
 
       // Turn cap: after 300 turns, highest VP wins
       const MAX_TURNS = 300
@@ -487,6 +524,7 @@ function executeSetupAction(state: GameState, player: PlayerState, action: GameA
     state.board.vertices[action.vertexId].owner = player.name
     player.settlements.push(action.vertexId)
     player.victoryPoints += 1
+    state.staleTurns = 0
 
     // In round 2, give initial resources from adjacent hexes
     if (state.setupRound === 2) {
@@ -508,6 +546,7 @@ function executeSetupAction(state: GameState, player: PlayerState, action: GameA
     if (error) return { ok: false, error, events: [] }
     state.board.edges[action.edgeId].owner = player.name
     player.roads.push(action.edgeId)
+    state.staleTurns = 0
     addLog(state, player.name, 'setup_road', `Placed road on edge ${action.edgeId}`)
 
     // Advance to next player or next round

@@ -79,6 +79,11 @@ export class PiAgentWrapper {
     return this.agent !== null
   }
 
+  /** Access the underlying PiAgentLike instance (for o11y, extensions, etc.) */
+  get innerAgent(): PiAgentLike | null {
+    return this.agent
+  }
+
   async initialize(): Promise<PiAgentLike> {
     if (this.agent) {
       return this.agent

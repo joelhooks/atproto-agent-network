@@ -136,6 +136,34 @@ describe('Agents of Catan', () => {
       return game
     }
 
+    function findBuildableRoadEdge(game: GameState, playerName: string): number {
+      const player = game.players.find((p) => p.name === playerName)
+      if (!player) return -1
+
+      const ownedSettlements = new Set(player.settlements)
+      const ownedRoads = new Set(player.roads)
+
+      for (const edge of game.board.edges) {
+        if (edge.owner) continue
+        const [v1, v2] = edge.vertices
+
+        // Connected to the player's existing network (settlement or road endpoint).
+        if (ownedSettlements.has(v1) || ownedSettlements.has(v2)) return edge.id
+        if (
+          game.board.edges.some(
+            (e) =>
+              e.owner === playerName &&
+              (e.vertices.includes(v1) || e.vertices.includes(v2)) &&
+              ownedRoads.has(e.id)
+          )
+        ) {
+          return edge.id
+        }
+      }
+
+      return -1
+    }
+
     it('requires dice roll before building', () => {
       const game = setupGame()
       const v = findValidVertex(game)
@@ -162,19 +190,70 @@ describe('Agents of Catan', () => {
       const player = game.players[0]
       player.resources = { wood: 5, brick: 0, sheep: 0, wheat: 0, ore: 0 }
       
-      executeAction(game, 'a', { type: 'roll_dice' })
       const result = executeAction(game, 'a', { type: 'bank_trade', offering: 'wood', requesting: 'brick' })
       expect(result.ok).toBe(true)
       expect(player.resources.wood).toBe(2)
       expect(player.resources.brick).toBe(1)
     })
 
+    it('ends the game by stalemate when no one builds for 20 consecutive turns', () => {
+      const game = setupGame()
+
+      // Force a clear points leader without triggering normal victory.
+      game.players[0].victoryPoints = 6 // a
+      game.players[1].victoryPoints = 4 // b
+
+      for (let i = 0; i < 19; i++) {
+        const current = game.currentPlayer
+        const res = executeAction(game, current, { type: 'end_turn' })
+        expect(res.ok).toBe(true)
+        expect(game.phase).toBe('playing')
+        expect(game.winner).toBeNull()
+      }
+
+      const lastCurrent = game.currentPlayer
+      const last = executeAction(game, lastCurrent, { type: 'end_turn' }) as any
+      expect(last.ok).toBe(true)
+      expect(last.gameOver).toBe(true)
+      expect(last.stalemate).toBe(true)
+      expect(game.phase).toBe('finished')
+      expect(game.winner).toBe('a')
+    })
+
+    it('resets the stale turn counter when a road is built', () => {
+      const game = setupGame()
+
+      // Run up the stale counter a bit.
+      for (let i = 0; i < 5; i++) {
+        const current = game.currentPlayer
+        const res = executeAction(game, current, { type: 'end_turn' })
+        expect(res.ok).toBe(true)
+      }
+
+      // Now build a road and ensure the counter resets.
+      const builder = game.currentPlayer
+      const player = game.players.find((p) => p.name === builder)!
+      player.resources.wood = 10
+      player.resources.brick = 10
+
+      expect(executeAction(game, builder, { type: 'roll_dice' }).ok).toBe(true)
+      const edgeId = findBuildableRoadEdge(game, builder)
+      expect(edgeId).toBeGreaterThanOrEqual(0)
+
+      const built = executeAction(game, builder, { type: 'build_road', edgeId })
+      expect(built.ok).toBe(true)
+      expect((game as any).staleTurns).toBe(0)
+
+      const ended = executeAction(game, builder, { type: 'end_turn' })
+      expect(ended.ok).toBe(true)
+      expect((game as any).staleTurns).toBe(0)
+      expect(game.phase).toBe('playing')
+    })
+
     it('supports player-to-player trading', () => {
       const game = setupGame()
       game.players[0].resources = { wood: 2, brick: 0, sheep: 0, wheat: 0, ore: 0 }
       game.players[1].resources = { wood: 0, brick: 2, sheep: 0, wheat: 0, ore: 0 }
-
-      executeAction(game, 'a', { type: 'roll_dice' })
 
       const propose = executeAction(game, 'a', {
         type: 'propose_trade',

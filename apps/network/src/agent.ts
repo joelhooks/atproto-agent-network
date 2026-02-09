@@ -990,7 +990,8 @@ export class AgentDO extends DurableObject {
     await this.ctx.storage.put('debug:lastThinkRaw', debugInfo)
 
     // O11y: store agentic loop transcript + prompt snapshot from factory
-    const o11y = (this.agent as any)?._o11y
+    const innerAgent = (this.agent as any)?.innerAgent
+    const o11y = innerAgent?._o11y
     if (o11y?.lastTranscript) {
       await this.ctx.storage.put('debug:loopTranscript', o11y.lastTranscript)
     }
