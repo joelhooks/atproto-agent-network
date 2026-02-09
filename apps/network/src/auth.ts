@@ -24,7 +24,9 @@ export function requireAdminBearerAuth(request: Request, env: BearerAuthEnv): Re
     return Response.json({ error: 'Auth token not configured' }, { status: 500 })
   }
 
-  const token = parseBearerToken(request.headers.get('Authorization'))
+  // Support query param auth for WebSocket connections (browsers can't set headers on WS)
+  const url = new URL(request.url)
+  const token = parseBearerToken(request.headers.get('Authorization')) || url.searchParams.get('token')
   if (!token || token !== expected) {
     return Response.json(
       { error: 'Unauthorized' },
