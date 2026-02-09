@@ -463,7 +463,7 @@
       "title": "RalphEnvironment: skeleton environment + tool + tests",
       "description": "GH Issue #112. New files: apps/network/src/environments/ralph.ts, apps/network/src/environments/ralph.test.ts. Modify: apps/network/src/environments/builtins.ts.\n\nImplement AgentEnvironment for 'ralph' type. Tool 'ralph' with commands 'help' and 'status'. Register in builtins.ts. Tests for registry lookup, tool commands, buildContext, isActionTaken.\n\nReference: rpg.ts and catan.ts for the pattern.\n\nCloses #112",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -485,8 +485,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 43,
-    "lastIteration": "2026-02-09T21:28:11.127Z"
+    "totalIterations": 44,
+    "lastIteration": "2026-02-09T21:33:19.796Z"
   },
   "totalStories": 11
 }

@@ -348,3 +348,20 @@ Completed: Environment runtime: drive context + autoplay via AgentEnvironment re
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/schema.sql, packages/core/src/d1-mock.ts, packages/dashboard/index.html, packages/dashboard/package.json, packages/dashboard/src/App.tsx, packages/dashboard/src/components/ActivityEvent.tsx, packages/dashboard/src/components/ActivityFeed.tsx, packages/dashboard/src/components/AgentCard.tsx, packages/dashboard/src/components/AgentDetail.tsx, packages/dashboard/src/components/EnvironmentCard.tsx, packages/dashboard/src/components/StatsBar.tsx, packages/dashboard/src/main.tsx, packages/dashboard/vite.config.ts, prd.json, progress.txt
 Summary: 
 ⚠️ LAZY LEARNINGS: Learning content too short (0 chars, minimum 50)
+
+---
+[2026-02-09T21:33:19.798Z]
+Completed: RalphEnvironment: skeleton environment + tool + tests
+Files: packages/dashboard/src/components/AgentDetail.tsx, packages/dashboard/src/components/EnvironmentCard.tsx, packages/dashboard/src/components/Header.tsx, packages/dashboard/src/components/ui/Heartbeat.tsx, packages/dashboard/src/styles/app.css, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Implemented the new built-in `ralph` AgentEnvironment with a minimal Pi tool and tests (GH #112).
+
+Changes:
+- Added `apps/network/src/environments/ralph.ts` implementing `AgentEnvironment` (`type: 'ralph'`) with tool `ralph` supporting `help` and `status`, plus `buildContext`, `isActionTaken`, and no-op autoplay.
+- Added `apps/network/src/environments/ralph.test.ts` covering built-ins registry lookup, tool commands, `buildContext`, and `isActionTaken`.
+- Updated `apps/network/src/environments/builtins.ts` to register `ralphEnvironment`.
+
+Prior failure pattern detected: build_error/test_failure. Mitigation: kept changes scoped to the story files and ran full validation.
+
+Validation: `pnpm typecheck && pnpm test`.
+
+Notes: There are unrelated unstaged local modifications remaining in `.ralph-context.json`, `.ralph-iterations.jsonl`, and several `packages/dashboard/...` files; they were not included in the GH #112 commit.

@@ -726,6 +726,31 @@
         "packages/dashboard/vite.config.ts"
       ],
       "learnings": "Technical Discovery: `apps/network/src/schema.test.ts` validates D1 schema by executing `apps/network/schema.sql` into a real Miniflare D1 instance, splitting statements on semicolons and stripping `--` comments. This means new DDL must be a single valid statement terminated by `;`, and tests introspect the resulting `sqlite_master.sql` for column assertions.\nGotcha: If you paste file paths or code spans in shell commands using backticks, zsh treats them as command substitution (causing noisy `permission denied` output). For `swarm memory store ...`, use plain quotes without backticks. Also, keep mock DDL handling aligned: `packages/core/src/d1-mock.ts` is an in-memory SQL-shape emulator, so any schema DDL that tests might exec should be explicitly no-oped to avoid “Unsupported SQL” errors.\nFiles Context: `apps/network/schema.sql` is the authoritative D1 schema deployed to Cloudflare. `apps/network/src/schema.test.ts` enforces schema correctness by loading/executing that file into Miniflare D1 and asserting table/index/column presence. `packages/core/src/d1-mock.ts` is the in-memory D1 emulation used by many unit tests; it should tolerate (no-op) schema DDL that callers may apply during test setup."
+    },
+    {
+      "id": "story-mlfo25hl",
+      "title": "Environment runtime: drive context + autoplay via AgentEnvironment registry",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/schema.sql",
+        "packages/core/src/d1-mock.ts",
+        "packages/dashboard/index.html",
+        "packages/dashboard/package.json",
+        "packages/dashboard/src/App.tsx",
+        "packages/dashboard/src/components/ActivityEvent.tsx",
+        "packages/dashboard/src/components/ActivityFeed.tsx",
+        "packages/dashboard/src/components/AgentCard.tsx",
+        "packages/dashboard/src/components/AgentDetail.tsx",
+        "packages/dashboard/src/components/EnvironmentCard.tsx",
+        "packages/dashboard/src/components/StatsBar.tsx",
+        "packages/dashboard/src/main.tsx",
+        "packages/dashboard/vite.config.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": ""
     }
   ],
   "failures": [
