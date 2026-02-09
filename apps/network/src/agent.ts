@@ -325,6 +325,52 @@ export class AgentDO extends DurableObject {
         }
 
         switch (leaf) {
+          case 'analytics': {
+            // Internal-only endpoint used by `/admin/analytics` in the network worker.
+            // Guard it so it can't be reached via public `/agents/:name/...` forwarding.
+            if (penultimate !== '__internal') return new Response('Not found', { status: 404 })
+            if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+            const isActionOutcome = (value: unknown): value is ActionOutcome => {
+              if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+              const rec = value as Record<string, unknown>
+              if (typeof rec.tool !== 'string' || rec.tool.length === 0) return false
+              if (typeof rec.success !== 'boolean') return false
+              if (typeof rec.timestamp !== 'number' || !Number.isFinite(rec.timestamp)) return false
+              if ('goalId' in rec && rec.goalId !== undefined && typeof rec.goalId !== 'string') return false
+              return true
+            }
+
+            const loopCountRaw = await this.ctx.storage.get<number>('loopCount')
+            const loopCount = typeof loopCountRaw === 'number' && Number.isFinite(loopCountRaw) ? loopCountRaw : null
+
+            const consecutiveErrorsRaw = await this.ctx.storage.get<number>('consecutiveErrors')
+            const consecutiveErrors =
+              typeof consecutiveErrorsRaw === 'number' && Number.isFinite(consecutiveErrorsRaw)
+                ? consecutiveErrorsRaw
+                : null
+
+            const alarmModeRaw = await this.ctx.storage.get<AlarmMode>('alarmMode')
+            const alarmMode =
+              alarmModeRaw === 'think' || alarmModeRaw === 'housekeeping' || alarmModeRaw === 'reflection'
+                ? alarmModeRaw
+                : null
+
+            const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+            const actionOutcomes: ActionOutcome[] = Array.isArray(outcomesRaw) ? outcomesRaw.filter(isActionOutcome) : []
+
+            const extensionMetrics = await this.listExtensionMetrics()
+            const lastReflection = (await this.ctx.storage.get('lastReflection')) ?? null
+
+            return Response.json({
+              loopCount,
+              consecutiveErrors,
+              alarmMode,
+              actionOutcomes: actionOutcomes.slice(-10),
+              extensionMetrics,
+              lastReflection,
+            })
+          }
           case 'identity':
             return withErrorHandling(
               () => this.getIdentity(),

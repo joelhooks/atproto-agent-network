@@ -696,8 +696,81 @@ export default {
         // Admin
         if (normalizedPathname.startsWith('/admin/')) {
           return withErrorHandling(
-            () => {
-              // TODO: Admin routes
+            async () => {
+              const authError = requireAdminBearerAuth(request, env)
+              if (authError) return authError
+
+              if (normalizedPathname === '/admin/analytics') {
+                if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+                const registry = await listAgentRegistryRows(env.DB)
+
+                const agents = await Promise.all(
+                  registry.map(async (row) => {
+                    try {
+                      const agentId = env.AGENTS.idFromName(row.name)
+                      const agent = env.AGENTS.get(agentId)
+
+                      const analyticsRes = await agent.fetch(new Request('https://agent/__internal/analytics'))
+                      const payload =
+                        analyticsRes.ok ? await analyticsRes.json().catch(() => null) : null
+
+                      const loopCount =
+                        payload && typeof payload === 'object' && typeof (payload as any).loopCount === 'number'
+                          ? (payload as any).loopCount
+                          : null
+                      const errors =
+                        payload &&
+                        typeof payload === 'object' &&
+                        typeof (payload as any).consecutiveErrors === 'number'
+                          ? (payload as any).consecutiveErrors
+                          : null
+                      const mode =
+                        payload && typeof payload === 'object' && typeof (payload as any).alarmMode === 'string'
+                          ? (payload as any).alarmMode
+                          : null
+
+                      const recentActionsRaw =
+                        payload && typeof payload === 'object' ? (payload as any).actionOutcomes : null
+                      const recentActions = Array.isArray(recentActionsRaw) ? recentActionsRaw.slice(-10) : []
+
+                      const extensionsRaw =
+                        payload && typeof payload === 'object' ? (payload as any).extensionMetrics : null
+                      const extensions = Array.isArray(extensionsRaw) ? extensionsRaw : []
+
+                      const lastReflection =
+                        payload && typeof payload === 'object' && 'lastReflection' in (payload as any)
+                          ? (payload as any).lastReflection ?? null
+                          : null
+
+                      return {
+                        name: row.name,
+                        loopCount,
+                        errors,
+                        mode,
+                        recentActions,
+                        extensions,
+                        lastReflection,
+                      }
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : String(error)
+                      return {
+                        name: row.name,
+                        loopCount: null,
+                        errors: null,
+                        mode: null,
+                        recentActions: [],
+                        extensions: [],
+                        lastReflection: null,
+                        error: message,
+                      }
+                    }
+                  })
+                )
+
+                return Response.json({ agents })
+              }
+
               return new Response('Admin not yet implemented', { status: 501 })
             },
             { route: 'network.admin', request }

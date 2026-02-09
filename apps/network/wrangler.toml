@@ -56,6 +56,3 @@ invocation_logs = true
 [observability.traces]
 enabled = true
 
-[[pipelines]]
-binding = "O11Y_PIPELINE"
-pipeline = "agent-o11y"

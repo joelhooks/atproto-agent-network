@@ -893,3 +893,79 @@ describe('network worker environments API', () => {
     })
   })
 })
+
+describe('admin analytics endpoint', () => {
+  it('GET /admin/analytics returns per-agent analytics shape', async () => {
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+    await registerAgent(db, { name: 'bob', did: 'did:cf:bob' })
+
+    const env = createHealthEnv({
+      DB: db,
+      AGENTS: {
+        idFromName: vi.fn((name: string) => name),
+        get: vi.fn((id: unknown) => {
+          const name = String(id)
+          return {
+            fetch: vi.fn(async (req: Request) => {
+              const url = new URL(req.url)
+              if (url.pathname === '/__internal/analytics') {
+                if (name === 'alice') {
+                  return Response.json({
+                    loopCount: 5,
+                    consecutiveErrors: 1,
+                    alarmMode: 'think',
+                    actionOutcomes: [{ tool: 'remember', success: true, timestamp: 1700000000000 }],
+                    extensionMetrics: [{ name: 'ext', totalCalls: 1, successCalls: 1, failedCalls: 0, lastUsed: 1700000000000 }],
+                    lastReflection: { text: 'ok' },
+                  })
+                }
+                // Simulate older DOs / missing keys.
+                return Response.json({})
+              }
+              return new Response('Not found', { status: 404 })
+            }),
+          }
+        }),
+      },
+    })
+
+    const { default: worker } = await import('./index')
+
+    const res = await worker.fetch(
+      new Request('https://example.com/admin/analytics', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      agents: expect.any(Array),
+    })
+
+    const agents = (body as any).agents as any[]
+    const alice = agents.find((a) => a.name === 'alice')
+    const bob = agents.find((a) => a.name === 'bob')
+
+    expect(alice).toMatchObject({
+      name: 'alice',
+      loopCount: 5,
+      errors: 1,
+      mode: 'think',
+      recentActions: expect.any(Array),
+      extensions: expect.any(Array),
+    })
+
+    expect(bob).toMatchObject({
+      name: 'bob',
+      loopCount: null,
+      errors: null,
+      mode: null,
+      recentActions: [],
+      extensions: [],
+      lastReflection: null,
+    })
+  })
+})
