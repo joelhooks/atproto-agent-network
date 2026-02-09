@@ -2273,6 +2273,107 @@ describe('AgentDO', () => {
     vi.useRealTimers()
   })
 
+  it('suppresses think_aloud and recall tool definitions during active game turns', async () => {
+    const { state } = createState('agent-gameplay-tools')
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { tools?: Array<{ function?: { name?: string } }> }
+      const names = (body.tools ?? []).map((t) => t.function?.name).filter(Boolean) as string[]
+
+      expect(names).toContain('remember')
+      expect(names).toContain('rpg')
+      expect(names).not.toContain('think_aloud')
+      expect(names).not.toContain('recall')
+
+      return new Response(
+        JSON.stringify({
+          model: 'test-model',
+          choices: [{ message: { role: 'assistant', content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { env, db } = createEnv({
+      CF_ACCOUNT_ID: 'acct',
+      AI_GATEWAY_SLUG: 'slug',
+      OPENROUTER_API_KEY: 'test-key',
+      OPENROUTER_MODEL_DEFAULT: 'test-model',
+      BLOBS: createFakeR2Bucket(),
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+    await agent.fetch(
+      new Request(`https://example/agents/${agentName}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: agentName }),
+      })
+    )
+
+    await db
+      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(
+        'rpg_test_tools_1',
+        'rpg',
+        agentName,
+        JSON.stringify({
+          type: 'rpg',
+          phase: 'playing',
+          mode: 'exploring',
+          roomIndex: 0,
+          currentPlayer: agentName,
+          party: [
+            {
+              name: agentName,
+              klass: 'Warrior',
+              hp: 10,
+              maxHp: 10,
+              mp: 2,
+              maxMp: 2,
+              stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 },
+              skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 },
+            },
+          ],
+          turnOrder: [
+            {
+              name: agentName,
+              klass: 'Warrior',
+              hp: 10,
+              maxHp: 10,
+              mp: 2,
+              maxMp: 2,
+              stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 },
+              skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 },
+            },
+          ],
+          dungeon: [{ type: 'trap', description: 'A pressure plate clicks underfoot.' }],
+          log: [],
+        }),
+        'playing',
+        JSON.stringify([agentName])
+      )
+      .run()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    const events = parseJsonLogs(logSpy.mock.calls)
+    const filterEvent = events.find((e) => e.event_type === 'tools.gameplay_filter')
+    expect(filterEvent).toBeTruthy()
+    expect(filterEvent?.suppressed).toEqual(['think_aloud', 'recall'])
+  })
+
   it('includes RPG cooperation rules in the think prompt', async () => {
     const { state } = createState('agent-rpg-coop-prompt')
     const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
