@@ -224,7 +224,7 @@
       "title": "Dashboard: environment panel per agent",
       "description": "GH Issue #74. Add environment state display to the dashboard at `packages/dashboard/src/index.html`.\n\nWhen viewing agent detail:\n1. Fetch `GET /environments?player={agentName}` to get active environments\n2. Show environment cards: type icon, label, phase, other players, VP/HP summary\n3. For Catan: show board summary (settlements, roads, resources, VP)\n4. For RPG: show character sheet (class, HP, skills, current room)\n5. Expandable detail view with full state\n\nThe dashboard is vanilla HTML/JS, no framework. Use fetch() and DOM manipulation.",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo typecheck && npx vitest run --passWithNoTests",
       "acceptanceCriteria": [
         "Dashboard shows environment cards per agent",
@@ -253,8 +253,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 17,
-    "lastIteration": "2026-02-09T06:31:33.558Z"
+    "totalIterations": 18,
+    "lastIteration": "2026-02-09T06:38:59.870Z"
   },
   "totalStories": 11
 }

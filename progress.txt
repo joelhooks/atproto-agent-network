@@ -660,3 +660,9 @@ Summary: Implemented/finished the BRP-inspired RPG dungeon crawl environment.
 - Storage/test infra: extended `D1MockDatabase` games handling to support optional `type` column and the 6-bind INSERT shape used by RPG rows.
 
 Validation: `npx turbo typecheck` and `npx vitest run --passWithNoTests` both passed.
+
+---
+[2026-02-09T06:38:59.870Z]
+Completed: Dashboard: environment panel per agent
+Files: apps/network/src/agent-factory.ts, packages/dashboard/index.html, packages/dashboard/src/environments.test.ts, packages/dashboard/src/environments.ts, packages/dashboard/src/main.ts
+Summary: Implemented the dashboard environment panel per agent: on agent-card expand, the dashboard fetches `GET /environments?player=<agent>` (admin auth), fetches per-environment details from `GET /environments/:id` for state, and renders environment cards with Catan board summary + RPG character sheet plus expandable full-state views. Added focused unit tests for card rendering and updated dashboard CSS.
