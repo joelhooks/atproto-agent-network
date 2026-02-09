@@ -126,6 +126,14 @@ interface ActResult {
 
 type ActionOutcome = { tool: string; success: boolean; timestamp: number; goalId?: string }
 
+type ExtensionMetrics = {
+  name: string
+  totalCalls: number
+  successCalls: number
+  failedCalls: number
+  lastUsed: number
+}
+
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
@@ -146,6 +154,7 @@ const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 const EXTENSION_PREFIX = 'extensions'
 const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
+const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
 type WorkersAiModelName = Parameters<Ai['run']>[0]
@@ -362,6 +371,7 @@ export class AgentDO extends DurableObject {
             const lastPrompt = await this.ctx.storage.get('debug:lastPrompt') ?? null
             const lastError = await this.ctx.storage.get('debug:lastError') ?? null
             const consecutiveErrors = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
+            const extensionMetrics = await this.listExtensionMetrics()
             return new Response(JSON.stringify({
               lastThinkRaw: lastThinkRaw ?? null,
               lastOpenRouterReq: lastOpenRouterReq ?? null,
@@ -370,6 +380,7 @@ export class AgentDO extends DurableObject {
               lastPrompt,
               lastError,
               consecutiveErrors,
+              extensionMetrics,
             }, null, 2), {
               headers: { 'Content-Type': 'application/json' },
             })
@@ -3517,6 +3528,72 @@ export class AgentDO extends DurableObject {
     return rest
   }
 
+  private extensionMetricsKeyForName(name: string): string {
+    return `${EXTENSION_METRICS_PREFIX}${name}`
+  }
+
+  private isExtensionMetrics(value: unknown): value is ExtensionMetrics {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const rec = value as Record<string, unknown>
+    if (typeof rec.name !== 'string' || rec.name.trim().length === 0) return false
+    if (typeof rec.totalCalls !== 'number' || !Number.isFinite(rec.totalCalls)) return false
+    if (typeof rec.successCalls !== 'number' || !Number.isFinite(rec.successCalls)) return false
+    if (typeof rec.failedCalls !== 'number' || !Number.isFinite(rec.failedCalls)) return false
+    if (typeof rec.lastUsed !== 'number' || !Number.isFinite(rec.lastUsed)) return false
+    return true
+  }
+
+  private async updateExtensionMetrics(name: string, success: boolean): Promise<void> {
+    const now = Date.now()
+    const safeName = name.trim()
+    if (!safeName) return
+
+    const key = this.extensionMetricsKeyForName(safeName)
+
+    try {
+      const raw = await this.ctx.storage.get<unknown>(key)
+      const existing = this.isExtensionMetrics(raw)
+        ? raw
+        : { name: safeName, totalCalls: 0, successCalls: 0, failedCalls: 0, lastUsed: 0 }
+
+      const next: ExtensionMetrics = {
+        name: safeName,
+        totalCalls: Math.max(0, Math.floor(existing.totalCalls)) + 1,
+        successCalls: Math.max(0, Math.floor(existing.successCalls)) + (success ? 1 : 0),
+        failedCalls: Math.max(0, Math.floor(existing.failedCalls)) + (success ? 0 : 1),
+        lastUsed: now,
+      }
+
+      await this.ctx.storage.put(key, next)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn('Failed to update extension metrics', { did: this.did, name: safeName, error: message })
+    }
+  }
+
+  private async listExtensionMetrics(): Promise<ExtensionMetrics[]> {
+    try {
+      const stored = await (this.ctx.storage as any).list?.({ prefix: EXTENSION_METRICS_PREFIX })
+      const entries: Array<[string, unknown]> =
+        stored && typeof stored.entries === 'function' ? Array.from(stored.entries()) : []
+
+      const metrics = entries
+        .map(([, value]) => value)
+        .filter((value): value is ExtensionMetrics => this.isExtensionMetrics(value))
+        .map((m) => ({ ...m, name: m.name.trim() }))
+        .filter((m) => m.name.length > 0)
+
+      metrics.sort((a, b) => {
+        if (b.lastUsed !== a.lastUsed) return b.lastUsed - a.lastUsed
+        return a.name.localeCompare(b.name)
+      })
+
+      return metrics
+    } catch {
+      return []
+    }
+  }
+
   private async listExtensionObjects(): Promise<Array<{ key: string; size: number | null; uploaded: string | null }>> {
     const bucket = this.agentEnv.BLOBS as any
     if (!bucket || typeof bucket.list !== 'function') return []
@@ -3603,24 +3680,34 @@ export class AgentDO extends DurableObject {
     if (!bucket || typeof bucket.get !== 'function') return
 
     for (const key of this.extensionKeys) {
+      const name = this.extensionNameFromKey(key) ?? key
       try {
         const object = await bucket.get(key)
-        if (!object) continue
+        if (!object) {
+          await this.updateExtensionMetrics(name, false)
+          continue
+        }
         const code = typeof object.text === 'function' ? await object.text() : null
-        if (typeof code !== 'string') continue
+        if (typeof code !== 'string') {
+          await this.updateExtensionMetrics(name, false)
+          continue
+        }
         this.validateExtensionSource(code)
 
         const module = (await import(this.toDataUrl(code))) as unknown as { activate?: unknown }
         const activate = (module as any)?.activate
         if (typeof activate !== 'function') {
           console.warn('Extension missing activate(agent) export', { did: this.did, key })
+          await this.updateExtensionMetrics(name, false)
           continue
         }
 
         await Promise.resolve(activate(api))
+        await this.updateExtensionMetrics(name, true)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         console.warn('Failed to load extension', { did: this.did, key, error: message })
+        await this.updateExtensionMetrics(name, false)
       }
     }
   }
