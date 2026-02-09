@@ -223,7 +223,10 @@ function humanizeMemoryNote(
     if (action) parts.push(action.replace(/_/g, ' '))
     if (result) parts.push(`(${result})`)
     if (gameId) parts.push(`#${gameId.split('_').pop()}`)
-    const summary = parts.length > 0 ? parts.join(' ') : rawSummary
+    // NEVER fall back to raw JSON — use extracted text or a generic label
+    const summary = parts.length > 0
+      ? parts.join(' ')
+      : (note ?? decision ?? extractHumanText(obj) ?? 'Memory note')
 
     // Use the first human-readable field as text
     const text = extractHumanText(obj)

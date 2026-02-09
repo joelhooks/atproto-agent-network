@@ -89,11 +89,22 @@ function linkifyDids(text: string, agents: Map<string, AgentCardState>): string 
   return text.replace(/did:[a-z]+:[a-zA-Z0-9._:%-]+/g, (did) => resolveDidToName(did, agents))
 }
 
+/** If a string looks like raw JSON, suppress it */
+function sanitizeDisplay(s: string | undefined): string | undefined {
+  if (!s) return s
+  const trimmed = s.trimStart()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return undefined
+  return s
+}
+
 export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent; agents: Map<string, AgentCardState> }) {
   const [showDetails, setShowDetails] = useState(false)
   const Icon = kindIcons[event.kind] ?? Cog
   const details = event.details
   const memoryData = details?.memoryData as Record<string, unknown> | undefined
+  // Last-mile defense: never render raw JSON in summary or text
+  const displaySummary = sanitizeDisplay(event.summary) ?? event.kind
+  const displayText = sanitizeDisplay(event.text)
   const hasDetails = Boolean(details && (details.context || details.error))
   const context = details?.context
   const rawError = details?.error
@@ -125,13 +136,13 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
 
           {/* Summary */}
           <p className="text-[0.72rem] text-text leading-relaxed break-words">
-            {linkifyDids(truncate(event.summary, 200), agents)}
+            {linkifyDids(truncate(displaySummary, 200), agents)}
           </p>
 
           {/* Body text */}
-          {event.text && (
+          {displayText && (
             <p className="text-[0.65rem] text-text-dim mt-2 leading-relaxed break-words whitespace-pre-wrap">
-              {linkifyDids(truncate(event.text, 500), agents)}
+              {linkifyDids(truncate(displayText, 500), agents)}
             </p>
           )}
 
