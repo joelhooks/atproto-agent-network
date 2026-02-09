@@ -22,7 +22,10 @@ function createEnv(type: string, label = type): AgentEnvironment {
       }
     },
     buildContext() {
-      return { type }
+      return [`context:${type}`]
+    },
+    isActionTaken() {
+      return false
     },
     getAutoPlayActions() {
       return []

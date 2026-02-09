@@ -1078,6 +1078,13 @@ export class AgentDO extends DurableObject {
       }
 
       const name = call.name
+
+      // Skip tool calls already executed in the agentic factory loop
+      if ((call as any)._executed) {
+        steps.push({ name, ok: true, result: { _executed_in_factory: true }, durationMs: 0 })
+        continue
+      }
+
       if (allowlist && !allowlist.has(name)) {
         steps.push({ name, ok: false, error: 'Tool not enabled' })
         continue
