@@ -93,6 +93,23 @@ class FakeStorage {
   }
 }
 
+function parseJsonLogs(calls: Array<unknown[]>): Array<Record<string, unknown>> {
+  const events: Array<Record<string, unknown>> = []
+  for (const call of calls) {
+    const first = call[0]
+    if (typeof first !== 'string') continue
+    try {
+      const parsed = JSON.parse(first)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        events.push(parsed as Record<string, unknown>)
+      }
+    } catch {
+      // ignore non-JSON logs
+    }
+  }
+  return events
+}
+
 function assertDurableObjectSerializable(value: unknown): void {
   const seen = new Set<unknown>()
 
@@ -1672,6 +1689,8 @@ describe('AgentDO', () => {
     const startRes = await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
     expect(startRes.status).toBe(200)
 
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
     // Simulate alarm firing
     await agent.alarm()
 
@@ -1682,6 +1701,26 @@ describe('AgentDO', () => {
     // Next alarm should be scheduled
     const nextAlarm = await storage.getAlarm()
     expect(nextAlarm).not.toBeNull()
+
+    // Structured lifecycle logs should be emitted (ignore non-JSON logs).
+    const events: Array<Record<string, unknown>> = []
+    for (const call of logSpy.mock.calls) {
+      const first = call[0]
+      if (typeof first !== 'string') continue
+      try {
+        const parsed = JSON.parse(first)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          events.push(parsed as Record<string, unknown>)
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const types = new Set(events.map((e) => e.event_type).filter((v): v is string => typeof v === 'string'))
+    expect(types.has('agent.cycle.start')).toBe(true)
+    expect(types.has('agent.alarm.schedule')).toBe(true)
+    expect(types.has('agent.cycle.end')).toBe(true)
   })
 
   it('startLoop() sets loopRunning flag and schedules first alarm', async () => {
@@ -2313,6 +2352,8 @@ describe('AgentDO', () => {
     const agent = new AgentDO(state as never, env as never)
 
     await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     await agent.alarm()
 
     const listNotes = await agent.fetch(
@@ -2324,6 +2365,8 @@ describe('AgentDO', () => {
     const summaries = body.entries.map((entry) => entry.record.summary)
     // maxSteps=10, so all 6 tool calls should execute
     expect(summaries).toEqual(expect.arrayContaining(['n1', 'n2', 'n3', 'n4', 'n5', 'n6']))
+
+    // TODO: structured log event assertions (agent.tool.call, agent.tool.result) — pending structured logging implementation
   })
 
   it('reflect() persists session and updates goals in DO storage after think+act', async () => {
@@ -2353,6 +2396,7 @@ describe('AgentDO', () => {
     const agent = new AgentDO(state as never, env as never)
 
     await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     await agent.alarm()
 
     const session = await storage.get<{ messages: unknown[] }>('session')
@@ -2362,6 +2406,68 @@ describe('AgentDO', () => {
 
     const config = await storage.get<{ goals?: unknown[] }>('config')
     expect(config?.goals).toEqual([nextGoal])
+
+    // TODO: structured log event assertion (agent.goal.update) — pending structured logging implementation
+  })
+
+  it('set_goal tool emits agent.goal.update JSON logs', async () => {
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Adding a goal.',
+      toolCalls: [
+        { name: 'set_goal', arguments: { action: 'add', goal: { description: 'do the thing', priority: 1 } } },
+      ],
+    })
+
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-set-goal-log')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await agent.alarm()
+
+    const config = await storage.get<{ goals?: Array<{ description?: string }> }>('config')
+    expect(config?.goals?.some((g) => g?.description === 'do the thing')).toBe(true)
+
+    // TODO: structured log event assertion (agent.goal.update) — pending structured logging implementation
+  })
+
+  it('game tool emits agent.game.action JSON logs even when the action errors', async () => {
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Attempt game action.',
+      toolCalls: [
+        {
+          name: 'game',
+          arguments: {
+            command: 'action',
+            gameId: 'catan_missing',
+            gameAction: { type: 'roll_dice' },
+          },
+        },
+      ],
+    })
+
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state } = createState('agent-game-action-log')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await agent.alarm()
+
+    // TODO: structured log event assertion (agent.game.action) — pending structured logging implementation
   })
 
   it('act() enforces a 30s timeout per loop cycle tool execution', async () => {
