@@ -776,6 +776,10 @@ export class AgentDO extends DurableObject {
       throw new Error('Agent unavailable')
     }
 
+    // Reset conversation history each cycle — each alarm is a fresh think.
+    // Without this, 50+ cycles of no-tool-call history poisons the model.
+    this.agent.resetConversation?.()
+
     const prompt = this.buildThinkPrompt(observations)
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
 

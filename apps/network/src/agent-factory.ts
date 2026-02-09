@@ -57,16 +57,29 @@ export function createOpenRouterAgentFactory(
     return {
       state: { messages: [] },
 
+      /** Reset conversation to just system prompt — call before each alarm cycle */
+      resetConversation() {
+        messages.length = 1 // keep system prompt, drop everything else
+      },
+
       async prompt(input: string, options?: Record<string, unknown>): Promise<unknown> {
         const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 2048
 
         messages.push({ role: 'user', content: input })
 
+        // Keep conversation manageable — system prompt + last 6 messages max.
+        // Each alarm cycle is a fresh think, so deep history hurts more than helps.
+        // Old no-tool-call responses reinforce passive behavior.
+        const MAX_HISTORY = 6
+        const trimmedMessages = messages.length > MAX_HISTORY + 1
+          ? [messages[0], ...messages.slice(-MAX_HISTORY)]
+          : messages
+
         const toolDefs = buildToolDefs()
 
         const body: Record<string, unknown> = {
           model: modelId,
-          messages,
+          messages: trimmedMessages,
           max_tokens: maxTokens,
         }
 
@@ -74,6 +87,15 @@ export function createOpenRouterAgentFactory(
           body.tools = toolDefs
           body.tool_choice = 'auto'
         }
+
+        // Debug: log the full request for tool-calling diagnosis
+        console.log('OpenRouter request', {
+          model: modelId,
+          messageCount: trimmedMessages.length,
+          toolCount: toolDefs.length,
+          toolNames: toolDefs.map((t: any) => t.function?.name),
+          lastUserMsg: input.slice(0, 200),
+        })
 
         const response = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',

@@ -48,6 +48,8 @@ export interface PiAgentLike {
   // Optional Pi agent-core compatible state surface.
   state?: { messages?: PiAgentMessage[] }
   replaceMessages?: (messages: PiAgentMessage[]) => void
+  /** Reset conversation to just the system prompt */
+  resetConversation?: () => void
 }
 
 export type PiAgentFactory = (init: PiAgentInit) => PiAgentLike | Promise<PiAgentLike>
@@ -152,6 +154,12 @@ export class PiAgentWrapper {
       throw new Error('Pi agent does not support promptStream')
     }
     return agent.promptStream(input, options)
+  }
+
+  /** Reset conversation to just the system prompt — call before each alarm cycle */
+  resetConversation(): void {
+    this.messages = []
+    this.agent?.resetConversation?.()
   }
 
   getAgent(): PiAgentLike | null {
