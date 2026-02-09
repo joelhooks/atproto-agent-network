@@ -169,4 +169,57 @@ describe('schema.sql', () => {
       await mf.dispose()
     }
   })
+
+  it('defines a work_items table with the expected columns', async () => {
+    const schema = readFileSync(schemaPath, 'utf8')
+    const normalized = normalize(schema)
+
+    // Ensure the on-disk schema uses IF NOT EXISTS to avoid destructive deploys.
+    expect(normalized).toContain('create table if not exists work_items')
+
+    const mf = new Miniflare({
+      modules: true,
+      compatibilityDate: '2024-01-01',
+      script: "export default { fetch(){ return new Response('ok') } }",
+      d1Databases: { DB: 'DB' },
+    })
+
+    try {
+      const db = await mf.getD1Database('DB')
+      for (const statement of splitSqlStatements(schema)) {
+        await db.exec(statement)
+      }
+
+      const tableRow = await db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_items'")
+        .first<{ name: string }>()
+      expect(tableRow?.name).toBe('work_items')
+
+      const createRow = await db
+        .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='work_items'")
+        .first<{ sql: string }>()
+      expect(createRow?.sql).toBeTruthy()
+
+      const workItems = extractTable(normalize(createRow!.sql), 'work_items')
+      const required = [
+        'id text primary key',
+        'env_type text not null',
+        'env_id text',
+        "status text not null default 'open'",
+        'priority integer not null default 0',
+        'title text not null',
+        "payload_json text not null default '{}'",
+        'claimed_by_did text',
+        'claimed_at text',
+        'created_at text not null',
+        'updated_at text not null',
+      ]
+
+      for (const snippet of required) {
+        expect(workItems).toContain(snippet)
+      }
+    } finally {
+      await mf.dispose()
+    }
+  })
 })

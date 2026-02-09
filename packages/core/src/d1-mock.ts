@@ -38,9 +38,27 @@ export interface GameRow {
   updated_at: string
 }
 
+export interface WorkItemRow {
+  id: string
+  env_type: string
+  env_id: string | null
+  status: string
+  priority: number
+  title: string
+  payload_json: string
+  claimed_by_did: string | null
+  claimed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Keep in sync with `apps/network/schema.sql`.
 export const D1_MOCK_GAMES_SCHEMA_SQL =
   'CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);'
+
+// Keep in sync with `apps/network/schema.sql`.
+export const D1_MOCK_WORK_ITEMS_SCHEMA_SQL =
+  "CREATE TABLE IF NOT EXISTS work_items (id TEXT PRIMARY KEY, env_type TEXT NOT NULL, env_id TEXT, status TEXT NOT NULL DEFAULT 'open', priority INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', claimed_by_did TEXT, claimed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
 
 interface Condition {
   column: keyof RecordRow
@@ -62,6 +80,12 @@ interface GameCondition {
   column?: keyof GameRow
   values?: string[]
   value?: unknown
+}
+
+interface WorkItemCondition {
+  kind: 'eq'
+  column: keyof WorkItemRow
+  value: unknown
 }
 
 export class D1MockStatement {
@@ -98,6 +122,7 @@ export class D1MockDatabase {
   readonly sharedRecords = new Map<string, SharedRecordRow>()
   readonly agents = new Map<string, AgentRow>()
   readonly games = new Map<string, GameRow>()
+  readonly workItems = new Map<string, WorkItemRow>()
   private sharedAutoIncrement = 0
 
   prepare(sql: string): D1MockStatement {
@@ -110,7 +135,13 @@ export class D1MockDatabase {
     // Some callers apply `apps/network/schema.sql` against the mock DB to
     // validate wiring. We don't emulate DDL; we just no-op known table creates.
     const gamesSchemaNormalized = normalizeSql(D1_MOCK_GAMES_SCHEMA_SQL.replace(/;\s*$/, ''))
-    if (normalized === gamesSchemaNormalized || /^create table (if not exists )?games\b/.test(normalized)) {
+    const workItemsSchemaNormalized = normalizeSql(D1_MOCK_WORK_ITEMS_SCHEMA_SQL.replace(/;\s*$/, ''))
+    if (
+      normalized === gamesSchemaNormalized ||
+      /^create table (if not exists )?games\b/.test(normalized) ||
+      normalized === workItemsSchemaNormalized ||
+      /^create table (if not exists )?work_items\b/.test(normalized)
+    ) {
       return
     }
 
@@ -174,6 +205,47 @@ export class D1MockDatabase {
         created_at: now,
         updated_at: now,
       })
+      return
+    }
+
+    if (normalized.startsWith('insert into work_items')) {
+      const [
+        id,
+        envType,
+        envId,
+        status,
+        priority,
+        title,
+        payloadJson,
+        claimedByDid,
+        claimedAt,
+        createdAt,
+        updatedAt,
+      ] = params
+
+      const key = String(id)
+      if (this.workItems.has(key)) {
+        throw new Error(`UNIQUE constraint failed: work_items.id (${key})`)
+      }
+
+      this.workItems.set(key, {
+        id: key,
+        env_type: String(envType ?? ''),
+        env_id: envId == null ? null : String(envId),
+        status: String(status ?? 'open'),
+        priority: Number(priority ?? 0),
+        title: String(title ?? ''),
+        payload_json: String(payloadJson ?? '{}'),
+        claimed_by_did: claimedByDid == null ? null : String(claimedByDid),
+        claimed_at: claimedAt == null ? null : String(claimedAt),
+        created_at: String(createdAt ?? ''),
+        updated_at: String(updatedAt ?? ''),
+      })
+      return
+    }
+
+    if (normalized.startsWith('update work_items set')) {
+      this.applyWorkItemUpdate(normalized, params)
       return
     }
 
@@ -301,6 +373,11 @@ export class D1MockDatabase {
       return { results: rows as T[] }
     }
 
+    if (normalized.startsWith('select') && normalized.includes('from work_items')) {
+      const rows = this.filterWorkItems(normalized, params)
+      return { results: rows as T[] }
+    }
+
     if (normalized.startsWith('select') && normalized.includes('from records')) {
       const rows = this.filterRecords(normalized, params)
       return { results: rows as T[] }
@@ -389,6 +466,49 @@ export class D1MockDatabase {
     return projected
   }
 
+  private filterWorkItems(normalized: string, params: unknown[]): any[] {
+    const whereClause = extractWhereClause(normalized)
+    const { conditions, usedParams } = parseWorkItemConditions(whereClause ?? '', params)
+
+    let rows = Array.from(this.workItems.values()).filter((row) =>
+      conditions.every((condition) => matchWorkItemCondition(row, condition))
+    )
+
+    if (normalized.includes('order by priority desc')) {
+      rows = rows.sort((a, b) => {
+        const prio = b.priority - a.priority
+        if (prio !== 0) return prio
+        return a.created_at.localeCompare(b.created_at)
+      })
+    } else if (normalized.includes('order by created_at asc')) {
+      rows = rows.sort((a, b) => a.created_at.localeCompare(b.created_at))
+    }
+
+    const limitMatch = normalized.match(/\s+limit\s+(\d+)\s*$/)
+    if (limitMatch) {
+      const limit = Number(limitMatch[1])
+      if (Number.isFinite(limit) && limit >= 0) rows = rows.slice(0, limit)
+    }
+
+    const projection = extractSelectColumns(normalized, 'work_items')
+    if (projection === '*') return rows as unknown as any[]
+
+    const projected = rows.map((row) => {
+      const out: Record<string, unknown> = {}
+      for (const col of projection) {
+        out[col] = (row as any)[col]
+      }
+      return out
+    })
+
+    if (usedParams !== params.length && whereClause) {
+      // best-effort: allow extra params for unsupported clauses rather than silently misbehaving
+      // (tests should pin the supported shapes).
+    }
+
+    return projected
+  }
+
   private applyUpdate(normalized: string, params: unknown[]): void {
     const setIndex = normalized.indexOf(' set ')
     const whereIndex = normalized.indexOf(' where ')
@@ -444,6 +564,67 @@ export class D1MockDatabase {
       }
 
       this.records.set(row.id, row)
+    }
+  }
+
+  private applyWorkItemUpdate(normalized: string, params: unknown[]): void {
+    const setIndex = normalized.indexOf(' set ')
+    const whereIndex = normalized.indexOf(' where ')
+    if (setIndex === -1 || whereIndex === -1) {
+      throw new Error(`Unsupported update statement: ${normalized}`)
+    }
+
+    const setClause = normalized.slice(setIndex + 5, whereIndex).trim()
+    const assignments = setClause
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+
+    const sets: Array<{ column: keyof WorkItemRow; value: unknown }> = []
+    let paramIndex = 0
+    for (const assignment of assignments) {
+      const match = assignment.match(/^(\w+)\s*=\s*\?$/)
+      if (!match) {
+        throw new Error(`Unsupported set clause: ${assignment}`)
+      }
+      const column = match[1] as keyof WorkItemRow
+      sets.push({ column, value: params[paramIndex] })
+      paramIndex += 1
+    }
+
+    const whereClause = extractWhereClause(normalized)
+    if (!whereClause) {
+      throw new Error(`Unsupported update statement (missing where): ${normalized}`)
+    }
+
+    const { conditions } = parseWorkItemConditions(whereClause, params.slice(paramIndex))
+    const targets = Array.from(this.workItems.values()).filter((row) =>
+      conditions.every((condition) => matchWorkItemCondition(row, condition))
+    )
+
+    for (const row of targets) {
+      for (const set of sets) {
+        const { column, value } = set
+        if (column === 'priority') {
+          row.priority = Number(value ?? 0)
+          continue
+        }
+        if (column === 'env_id') {
+          row.env_id = value == null ? null : String(value)
+          continue
+        }
+        if (column === 'claimed_by_did') {
+          row.claimed_by_did = value == null ? null : String(value)
+          continue
+        }
+        if (column === 'claimed_at') {
+          row.claimed_at = value == null ? null : String(value)
+          continue
+        }
+
+        ;(row as WorkItemRow & Record<string, unknown>)[column] = value as never
+      }
+      this.workItems.set(row.id, row)
     }
   }
 }
@@ -624,6 +805,49 @@ function parseGameConditions(clause: string, params: unknown[]): { conditions: G
   }
 
   return { conditions, usedParams: index }
+}
+
+function parseWorkItemConditions(
+  clause: string,
+  params: unknown[]
+): { conditions: WorkItemCondition[]; usedParams: number } {
+  const trimmed = clause.trim()
+  if (!trimmed) return { conditions: [], usedParams: 0 }
+
+  const parts = trimmed.split(' and ').map((part) => part.trim())
+  const conditions: WorkItemCondition[] = []
+  let index = 0
+
+  for (const part of parts) {
+    if (!part || part === '1=1') continue
+
+    // status = 'open'
+    const eqLiteralMatch = part.match(/^(\w+)\s*=\s*'(.*)'$/)
+    if (eqLiteralMatch) {
+      const column = eqLiteralMatch[1] as keyof WorkItemRow
+      const value = eqLiteralMatch[2]
+      conditions.push({ kind: 'eq', column, value })
+      continue
+    }
+
+    const eqMatch = part.match(/^(\w+)\s*=\s*\?$/)
+    if (eqMatch) {
+      const column = eqMatch[1] as keyof WorkItemRow
+      const value = params[index]
+      index += 1
+      conditions.push({ kind: 'eq', column, value })
+      continue
+    }
+
+    throw new Error(`Unsupported where clause: ${part}`)
+  }
+
+  return { conditions, usedParams: index }
+}
+
+function matchWorkItemCondition(row: WorkItemRow, condition: WorkItemCondition): boolean {
+  const value = (row as any)[condition.column]
+  return value === condition.value
 }
 
 function sqlLike(haystack: string, pattern: string): boolean {

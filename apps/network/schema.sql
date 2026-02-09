@@ -41,3 +41,17 @@ CREATE TABLE agents (
 CREATE INDEX idx_agents_created_at ON agents(created_at);
 
 CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);
+
+CREATE TABLE IF NOT EXISTS work_items (
+  id TEXT PRIMARY KEY,
+  env_type TEXT NOT NULL,
+  env_id TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  priority INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  claimed_by_did TEXT,
+  claimed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
