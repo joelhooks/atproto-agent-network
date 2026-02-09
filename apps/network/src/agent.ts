@@ -762,11 +762,41 @@ export class AgentDO extends DurableObject {
               `DO NOT create a new game. DO NOT use new_game.`,
             ].join('\n')
           } else if (isMyTurn) {
+            // Compute valid moves so the LLM can make informed decisions
+            const allEdges = state.board?.edges || []
+            const allVertices = state.board?.vertices || []
+            const occupiedVertices = new Set(allVertices.filter((v: any) => v.owner).map((v: any) => v.id))
+            const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
+            const networkVertices = new Set<number>()
+            for (const v of allVertices.filter((v: any) => v.owner === agentName)) networkVertices.add(v.id)
+            for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
+
+            // Valid road edges: unowned, adjacent to my network
+            const validRoads = allEdges
+              .filter((e: any) => !e.owner && (e.vertices || []).some((v: number) => networkVertices.has(v)))
+              .map((e: any) => e.id)
+              .slice(0, 10)
+
+            // Valid settlement vertices: unowned, in my network, distance rule satisfied
+            const validSettlements: number[] = []
+            for (const vid of networkVertices) {
+              if (occupiedVertices.has(vid)) continue
+              const adjacent = new Set<number>()
+              for (const e of allEdges) {
+                if (e.vertices?.includes(vid)) for (const av of e.vertices) if (av !== vid) adjacent.add(av)
+              }
+              if (![...adjacent].some(av => occupiedVertices.has(av))) validSettlements.push(vid)
+            }
+
+            // Tradeable resources (3:1 bank trade)
+            const tradeableFor = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 3).map(([k, v]) => `${k}(${v})`) : []
+
             const strategyHints: string[] = []
-            if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement! Look for a vertex connected to your roads, not adjacent to any existing settlement.')
-            if (canAffordRoad) strategyHints.push('🛤️ You can afford a road. Expand toward empty vertices for future settlements.')
-            if (surplus.length > 0 && scarce.length > 0) strategyHints.push(`💱 Trade surplus ${surplus.join('/')} (3:1 bank trade) for scarce ${scarce.join('/')}.`)
-            if (!canAffordSettlement && !canAffordRoad) strategyHints.push('💰 Save up — you need wood+brick for roads, wood+brick+sheep+wheat for settlements.')
+            if (canAffordSettlement && validSettlements.length > 0) strategyHints.push(`🏠 BUILD SETTLEMENT NOW! Valid vertices: [${validSettlements.join(', ')}]`)
+            else if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement but no valid spots — build roads to reach one!')
+            if (canAffordRoad && validRoads.length > 0) strategyHints.push(`🛤️ BUILD ROAD! Valid edges: [${validRoads.join(', ')}]`)
+            if (tradeableFor.length > 0 && scarce.length > 0) strategyHints.push(`💱 TRADE! Surplus: ${tradeableFor.join(', ')}. Need: ${scarce.join(', ')}. Bank trade is 3:1.`)
+            if (!canAffordSettlement && !canAffordRoad && tradeableFor.length === 0) strategyHints.push('💰 Nothing affordable this turn — just roll and end.')
 
             gameContext = [
               `🎮🎮🎮 IT IS YOUR TURN in Catan game ${gameRow.id} (turn ${state.turn})!`,
@@ -774,25 +804,22 @@ export class AgentDO extends DurableObject {
               `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads`,
               `💎 Resources: ${resStr}`,
               `🏆 Scoreboard: ${scoreboard}`,
+              `🎯 GOAL: First to 10 VP wins! Each settlement = 1VP.`,
               ``,
-              `🧠 STRATEGY:`,
+              `🧠 VALID MOVES THIS TURN:`,
               ...strategyHints,
               ``,
-              `📋 TURN ORDER: 1) Roll dice  2) Trade/Build (as many as you can afford!)  3) End turn`,
-              `🎯 GOAL: First to 10 VP wins! Each settlement = 1VP. Build roads to reach new settlement spots.`,
+              `📋 TURN ORDER: 1) Roll dice  2) Trade & Build (do as many as you can!)  3) End turn`,
               ``,
-              `⚠️⚠️⚠️ YOU MUST USE command:"action" — NOT command:"status"! Status is read-only and wastes your turn!`,
+              `TOOL CALL FORMAT — use command:"action" with these gameAction types:`,
+              `  Roll:       game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}})`,
+              validRoads.length > 0 ? `  Build road: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":${validRoads[0]}}})  [costs 1 wood + 1 brick]` : '',
+              validSettlements.length > 0 ? `  Settlement: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":${validSettlements[0]}}})  [costs 1 wood + 1 brick + 1 sheep + 1 wheat]` : '',
+              tradeableFor.length > 0 ? `  Bank trade: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"bank_trade","offering":"RESOURCE_YOU_HAVE","requesting":"RESOURCE_YOU_NEED"}})  [3:1 ratio]` : '',
+              `  End turn:   game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}})`,
               ``,
-              `EXACT TOOL CALLS — copy these exactly, just fill in values:`,
-              `  Step 1 - Roll: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}})`,
-              `  Step 2 - Build road: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":NUMBER}})`,
-              `  Step 2 - Build settlement: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":NUMBER}})`,
-              `  Step 2 - Bank trade: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"bank_trade","offering":"wood","requesting":"brick"}})`,
-              `  Step 3 - End turn: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}})`,
-              ``,
-              `⚡ IMPORTANT: Do ALL your building/trading BEFORE ending your turn! Don't just roll and end.`,
-              canAffordRoad ? `🛤️ YOU CAN AFFORD A ROAD RIGHT NOW! Build one before ending your turn!` : '',
-              canAffordSettlement ? `🏠 YOU CAN AFFORD A SETTLEMENT RIGHT NOW! Build one before ending your turn!` : '',
+              `⚠️ USE command:"action" NOT command:"status"!`,
+              `⚡ MAKE MULTIPLE TOOL CALLS! Roll, then trade, then build, then end. All in one response.`,
             ].filter(Boolean).join('\n')
           } else {
             gameContext = [
@@ -912,7 +939,7 @@ export class AgentDO extends DurableObject {
   private async act(thought: ThinkResult): Promise<ActResult> {
     const startedAt = Date.now()
     const timeoutMs = 30_000
-    const maxSteps = 5
+    const maxSteps = 10 // LLM needs room: roll + trades + builds + end_turn
     const deadline = startedAt + timeoutMs
 
     const toolCalls = Array.isArray(thought.toolCalls) ? thought.toolCalls : []
@@ -995,8 +1022,8 @@ export class AgentDO extends DurableObject {
       }
     }
 
-    // ASSIST MODE: Model makes strategic decisions, but we help fill gaps.
-    // If model rolled but didn't build when it could, inject builds. Always ensure end_turn.
+    // SAFETY NET: Only inject roll_dice (if model forgot) and end_turn (to prevent stuck turns).
+    // All strategic decisions (trades, builds) are made entirely by the LLM.
     const hasEndTurnCall = selected.some(c => {
       if (c.name !== 'game') return false
       const args = c.arguments as Record<string, unknown> | undefined
@@ -1009,13 +1036,6 @@ export class AgentDO extends DurableObject {
       const ga = args?.gameAction as Record<string, unknown> | undefined
       return args?.command === 'action' && ga?.type === 'roll_dice'
     })
-    const hasBuildCall = selected.some(c => {
-      if (c.name !== 'game') return false
-      const args = c.arguments as Record<string, unknown> | undefined
-      const ga = args?.gameAction as Record<string, unknown> | undefined
-      const t = ga?.type as string | undefined
-      return args?.command === 'action' && (t === 'build_road' || t === 'build_settlement' || t === 'bank_trade')
-    })
     if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
       try {
         const agentName = this.config?.name ?? ''
@@ -1024,104 +1044,33 @@ export class AgentDO extends DurableObject {
           .bind(agentName)
           .first<{ id: string; state: string }>()
 
-        const autoPlayDebug = {
+        const safetyDebug = {
           agent: agentName,
           hasActiveGame: !!gameRow,
           gameId: gameRow?.id ?? null,
           modelCalledGame: selected.some(c => c.name === 'game'),
           hasRollCall,
-          hasBuildCall,
+          modelToolCalls: selected.map(c => c.name === 'game' ? (c.arguments as any)?.gameAction?.type : c.name),
           ts: Date.now(),
         }
-        console.log('ASSIST check:', autoPlayDebug)
-        await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
+        console.log('SAFETY NET check:', safetyDebug)
+        await this.ctx.storage.put('debug:autoPlay', safetyDebug)
 
         if (gameRow) {
           const gameId = gameRow.id
           const state = JSON.parse(gameRow.state)
           const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
 
-          // Inject roll_dice if needed
+          // Inject roll_dice only if model forgot AND hasn't rolled yet this turn
           if (!hasRollCall && !alreadyRolled) {
             selected.unshift({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
           }
 
-          // If model didn't build, inject smart builds (the model "wanted" to build but only sent 1 action)
-          if (!hasBuildCall) {
-            const me = state.players?.find((p: any) => p.name === agentName)
-            if (me?.resources) {
-              const r = { ...me.resources } as Record<string, number>
-              const allEdges = state.board?.edges || []
-              const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
-              const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
-              const networkVertices = new Set<number>()
-              for (const v of (state.board?.vertices?.filter((v: any) => v.owner === agentName) || [])) networkVertices.add(v.id)
-              for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
-
-              // Trade surplus for scarce (same logic as before)
-              const needed = ['wood', 'brick', 'sheep', 'wheat']
-              const low = needed.filter(x => (r[x] || 0) < 3)
-              const surplus = Object.entries(r).filter(([, count]) => typeof count === 'number' && count >= 4)
-              let trades = 0
-              for (const missing of low) {
-                if (trades >= 3) break
-                for (const [res] of surplus) {
-                  if (res === missing) continue
-                  if ((r[res] || 0) >= 3) {
-                    selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing } } })
-                    r[res] = (r[res] || 0) - 3
-                    r[missing] = (r[missing] || 0) + 1
-                    trades++
-                    break
-                  }
-                }
-              }
-
-              // Build roads
-              for (let i = 0; i < 2 && (r.wood || 0) >= 1 && (r.brick || 0) >= 1; i++) {
-                let bestEdge: number | null = null
-                for (const edge of allEdges) {
-                  if (edge.owner) continue
-                  const [v1, v2] = edge.vertices || []
-                  if (!networkVertices.has(v1) && !networkVertices.has(v2)) continue
-                  const farEnd = networkVertices.has(v1) ? v2 : v1
-                  if (!occupiedVertices.has(farEnd)) { bestEdge = edge.id; break }
-                }
-                if (bestEdge !== null) {
-                  selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: bestEdge } } })
-                  r.wood = (r.wood || 0) - 1
-                  r.brick = (r.brick || 0) - 1
-                  const roadData = allEdges.find((e: any) => e.id === bestEdge)
-                  if (roadData) for (const vid of roadData.vertices || []) networkVertices.add(vid)
-                } else break
-              }
-
-              // Build settlement
-              if (r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1) {
-                for (const vid of networkVertices) {
-                  if (occupiedVertices.has(vid)) continue
-                  const adjacentVerts = new Set<number>()
-                  for (const e of allEdges) {
-                    if (e.vertices?.includes(vid)) {
-                      for (const av of e.vertices) if (av !== vid) adjacentVerts.add(av)
-                    }
-                  }
-                  if (![...adjacentVerts].some(av => occupiedVertices.has(av))) {
-                    selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: vid } } })
-                    break
-                  }
-                }
-              }
-
-              console.log('ASSIST: Injected builds for', agentName, 'trades:', trades)
-            }
-          }
-
-          // Always end turn
+          // Always inject end_turn as final action to prevent stuck turns
           selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
         }
       } catch (err) {
-        console.error('ASSIST D1 query failed:', err instanceof Error ? err.message : String(err))
+        console.error('SAFETY NET D1 query failed:', err instanceof Error ? err.message : String(err))
       }
     }
 

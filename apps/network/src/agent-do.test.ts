@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
@@ -219,6 +221,16 @@ function createFakeR2Bucket(initial: Record<string, string> = {}) {
 }
 
 describe('AgentDO', () => {
+  it('agent.ts contains no Catan-specific code (delegated to environments/catan.ts)', async () => {
+    const agentPath = resolve(__dirname, 'agent.ts')
+    const source = readFileSync(agentPath, 'utf8')
+
+    // Hard-coded Catan/game logic must live in apps/network/src/environments/catan.ts only.
+    expect(source.toLowerCase()).not.toContain('catan')
+    expect(source).not.toContain('Agents of Catan')
+    expect(source).not.toContain('FROM games')
+  })
+
   it('creates an identity and exposes public keys', async () => {
     const { state, storage } = createState('agent-identity')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
@@ -1140,6 +1152,32 @@ describe('AgentDO', () => {
     expect(config3).toEqual(config2)
   })
 
+  it('accepts and persists enabledEnvironments in agent config', async () => {
+    const { state, storage } = createState('agent-config-envs')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const patch = await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabledEnvironments: ['testenv'] }),
+      })
+    )
+    expect(patch.status).toBe(200)
+    const body = (await patch.json()) as Record<string, unknown>
+    expect(body.enabledEnvironments).toEqual(['testenv'])
+
+    const stored = await storage.get<Record<string, unknown>>('config')
+    expect(stored?.enabledEnvironments).toEqual(['testenv'])
+  })
+
   it('creates an agent via /create, persists config, and starts the alarm chain', async () => {
     const { state, storage } = createState('agent-create')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
@@ -1648,6 +1686,56 @@ describe('AgentDO', () => {
     expect(remaining).toEqual([])
   })
 
+  it('observe() appends enabled environment context strings onto observations', async () => {
+    vi.resetModules()
+
+    const { registerEnvironment } = await import('./environments/registry')
+    registerEnvironment({
+      type: 'testenv',
+      label: 'Test Environment',
+      getTool() {
+        return {
+          name: 'env_tool',
+          label: 'Env Tool',
+          description: 'test tool',
+          parameters: { type: 'object', properties: {} },
+          async execute() {
+            return { content: [{ type: 'text', text: 'ok' }] }
+          },
+        }
+      },
+      buildContext() {
+        return ['TESTENV CONTEXT']
+      },
+      isActionTaken() {
+        return false
+      },
+      getAutoPlayActions() {
+        return []
+      },
+    })
+
+    const { state } = createState('agent-observe-env-context')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn() }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabledEnvironments: ['testenv'] }),
+      })
+    )
+
+    const observations = await agent.observe()
+    expect((observations as any).environmentContext).toEqual(['TESTENV CONTEXT'])
+  })
+
   it('alarm() wires observe() and stores last observations in DO storage', async () => {
     const { state, storage } = createState('agent-alarm-observe-wire')
     const { env } = createEnv({
@@ -1870,6 +1958,62 @@ describe('AgentDO', () => {
     // Loop count incremented
     const count = await storage.get<number>('loopCount')
     expect(count).toBe(1)
+  })
+
+  it('act() assist mode runs environment autoplay actions when the model did not take an environment action', async () => {
+    vi.resetModules()
+
+    const { registerEnvironment } = await import('./environments/registry')
+    registerEnvironment({
+      type: 'testenv',
+      label: 'Test Environment',
+      getTool() {
+        return {
+          name: 'env_tool',
+          label: 'Env Tool',
+          description: 'test tool',
+          parameters: { type: 'object', properties: {} },
+          async execute() {
+            return { content: [{ type: 'text', text: 'autoplay ok' }] }
+          },
+        }
+      },
+      buildContext() {
+        return []
+      },
+      isActionTaken(toolCalls) {
+        return toolCalls.some((c) => c.name === 'env_tool')
+      },
+      getAutoPlayActions() {
+        return [{ name: 'env_tool', arguments: {} }]
+      },
+    })
+
+    const promptFn = vi.fn().mockResolvedValue({ content: 'no tools', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-env-autoplay')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabledEnvironments: ['testenv'] }),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    const reflection = await storage.get<{ acted?: { steps?: Array<{ name: string }> } }>('lastReflection')
+    const stepNames = reflection?.acted?.steps?.map((s) => s.name) ?? []
+    expect(stepNames).toContain('env_tool')
   })
   // Story 4d (WS loop lifecycle broadcast) is tested live against the deployed Worker:
   // `apps/network/src/network.ws.live.test.ts`
