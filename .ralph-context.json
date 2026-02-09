@@ -417,19 +417,27 @@
     {
       "id": "story-mlfbgyyr",
       "title": "Goal lifecycle — prune completed goals, cap prompt bloat",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/index.ts",
+        "packages/core/src/types.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` implements goal lifecycle in `pruneAndArchiveCompletedGoals()`: it sorts completed goals by `completedAt ?? createdAt`, keeps only the N most-recent completed (from `config.maxCompletedGoals`), persists the pruned config back to DO storage (`config`), and appends overflow completed goals into a structured-clone-safe archive array at storage key `goalsArchive` (deduped by goal id). This is invoked on config load, config PATCH/POST create, `set_goal`, and `reflect()` goal updates, so goals don’t accumulate indefinitely.\nGotcha: The AGENTS.md instruction `swarm hive cells --status open` no longer exists (command is `swarm cells --status open`). Also note the worktree currently shows dirty `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt`; avoid accidentally committing these tracking files when making future changes.\nFiles Context: `apps/network/src/agent.ts` contains `AgentConfig.maxCompletedGoals`, `selectGoalsForPrompt()`, and `pruneAndArchiveCompletedGoals()` plus the DO storage key `goalsArchive`. `apps/network/src/agent-do.test.ts` includes the regression test `prunes completed goals to maxCompletedGoals and archives overflow in DO storage` asserting both stored config pruning and that the Pi prompt excludes archived goal text."
+    },
+    {
+      "id": "story-mlfbh5sv",
+      "title": "Enforce enabledTools strictly",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/"
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -634,6 +642,20 @@
         "swarm memory",
         "secrets exec",
         "secrets lease"
+      ]
+    },
+    {
+      "storyId": "story-mlfbh5sv",
+      "storyTitle": "Enforce enabledTools strictly",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
+      "toolNames": [
+        "sed -n",
+        "ls -la",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "git diff",
+        "swarm memory"
       ]
     }
   ]

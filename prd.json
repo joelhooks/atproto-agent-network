@@ -271,7 +271,7 @@
       "title": "Enforce enabledTools strictly",
       "description": "Filter tool definitions sent to OpenRouter to ONLY include tools in agent enabledTools config. Snarl called recall/search which aren't in its config. If enabledTools empty, expose all (backward compat). Files: apps/network/src/agent-factory.ts, apps/network/src/agent.ts. IMPORTANT: Include \"Closes #78\" in your commit message body.",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -333,8 +333,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 20,
-    "lastIteration": "2026-02-09T15:42:02.882Z"
+    "totalIterations": 21,
+    "lastIteration": "2026-02-09T15:57:04.092Z"
   },
   "totalStories": 11
 }

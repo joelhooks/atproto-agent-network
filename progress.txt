@@ -706,3 +706,20 @@ Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/networ
 Summary: Story already implemented in commit `6d7d510 feat(network): prune completed goals` (includes `Closes #77`). Completed-goal prompt bloat is capped via `AgentConfig.maxCompletedGoals` (default 2): overflow completed goals are pruned from `config.goals` and appended to DO storage under `goalsArchive`. Validation ran and passed: `pnpm typecheck` and `pnpm test`. Also stored a hivemind learning and emitted the required openclaw system event.
 
 Prior failure pattern detected: build_error. Mitigation: run the requested validation commands explicitly (`pnpm typecheck` then `pnpm test`) and capture full output (no ad-hoc partial runs).
+
+---
+[2026-02-09T15:52:55.486Z]
+Failed: Enforce enabledTools strictly [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:typecheck: 
+@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:typecheck: > ts
+Codex: Starting story story-mlfbh5sv: I’m going to inspect how tools are assembled/passed to OpenRouter, write a failing test that reproduces the unwanted recall/search tool exposure, then implement filtering based on agent config.enabledTools (empty => all) in the network agent factory/agent runtime.
+
+---
+[2026-02-09T15:57:04.092Z]
+Completed: Enforce enabledTools strictly
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent-factory.test.ts, apps/network/src/agent-factory.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Enabled-tools enforcement for OpenRouter is already implemented and validated. OpenRouter tool definitions are filtered to `enabledTools` (non-empty allowlist) with backward-compat behavior (empty => expose all), and disabled tool calls are not executed even if the model requests them. Validation ran cleanly: `pnpm typecheck` and `pnpm test` both passed. Also stored a hivemind learning and emitted the required openclaw system event.
