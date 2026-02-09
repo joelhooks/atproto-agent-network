@@ -228,17 +228,20 @@ function renderScoreboard(game) {
   const sb = document.getElementById('scoreboard');
   const resStr = (r) => Object.entries(r).filter(([,v]) => v > 0).map(([k,v]) => `${RESOURCE_EMOJI[k]||k}${v}`).join(' ');
   
+  const winnerBadge = (name) => game.winner === name ? ' 👑' : '';
   sb.innerHTML = game.players.map(p => `
     <div class="player-score">
       <span class="player-dot ${p.name}"></span>
-      <span style="color:${PLAYER_COLORS[p.name]||'#fff'}">${p.name}</span>
+      <span style="color:${PLAYER_COLORS[p.name]||'#fff'}">${p.name}${winnerBadge(p.name)}</span>
       <span class="vp">${p.victoryPoints}VP</span>
       <span class="resources">${resStr(p.resources)}</span>
     </div>
   `).join('') + `
     <div class="turn-info">
-      Turn <span class="current-turn">${game.turn}</span> · 
-      <span style="color:${PLAYER_COLORS[game.currentPlayer]||'#fff'}">${game.currentPlayer}</span>'s move
+      ${game.phase === 'finished' 
+        ? `<span style="color:var(--green)">🏆 ${game.winner} wins!</span> · Turn ${game.turn}`
+        : `Turn <span class="current-turn">${game.turn}</span> · <span style="color:${PLAYER_COLORS[game.currentPlayer]||'#fff'}">${game.currentPlayer}</span>'s move`
+      }
     </div>
   `;
 }
@@ -285,9 +288,15 @@ async function findActiveGame() {
   const res = await fetch(`${API}/games`, { headers });
   const data = await res.json();
   const games = data.games || [];
-  // Find first active catan game
+  // Prefer active, then most recently updated
   const active = games.find(g => g.phase === 'playing' || g.phase === 'setup');
-  return active?.id || null;
+  if (active) return active.id;
+  // Fall back to most recent game (even finished)
+  if (games.length > 0) {
+    games.sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+    return games[0].id;
+  }
+  return null;
 }
 
 let lastTurn = 0;
@@ -326,7 +335,7 @@ async function poll() {
     renderScoreboard(game);
     renderFeed(allLog);
     
-    document.getElementById('statusBadge').textContent = '⚡ live';
+    document.getElementById('statusBadge').textContent = game.phase === 'finished' ? '🏆 finished' : '⚡ live';
     document.getElementById('statusBadge').className = 'status-badge live';
     
     // Flash on new turns

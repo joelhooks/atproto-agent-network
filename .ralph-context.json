@@ -375,9 +375,14 @@
     {
       "id": "story-mlepe7gy",
       "title": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[type_error] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n@atproto-agent/network:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-"
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-factory.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "packages/core/src/d1-mock.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "Technical Discovery: `packages/core/src/d1-mock.ts` had a hard-coded 5-bind `INSERT INTO games` shape; adding an environment that writes `type` (6 binds) requires the mock to accept both shapes, otherwise `apps/network/src/environments/rpg.ts` queries like `WHERE type = 'rpg'` will never match in tests even though code looks correct.\nGotcha: In strict TS, array filter predicates must return a boolean: `typeof p === 'string' && p.trim()` produces `string | false` and breaks `tsc` (fixed in `apps/network/src/environments/rpg.ts`). Also, avoid passing extra properties to `createGame({...})` object literals (e.g. `dice`) since excess-property checks will fail typecheck.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the pure BRP-ish game logic (d100 checks, combat, dungeon rooms). `apps/network/src/environments/rpg.ts` adapts the engine into an `AgentEnvironment` + Pi tool surface and persists state in the shared `games` table. `apps/network/src/environments/builtins.ts` registers the environment. `packages/core/src/d1-mock.ts` must stay in sync with the SQL shapes used by environments (notably `games.type`)."
     },
     {
       "id": "story-mlerh2h4",
