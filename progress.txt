@@ -603,3 +603,9 @@ npm warn Unknown project config "confirmModulesPurge". This will stop working in
 
  FAIL  |@atproto-agent/networ
 Codex: 
+
+---
+[2026-02-09T05:36:06.314Z]
+Completed: Wire environment hooks into agent alarm cycle
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent-factory.ts, apps/network/src/agent.ts, apps/network/src/environments/registry.test.ts
+Summary: Starting story-mlepdwd0 by pulling required context (PI-POC, O11Y, skills, env framework) and checking the swarm hive for any open work before writing the first failing test.

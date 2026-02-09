@@ -174,10 +174,10 @@
     },
     {
       "id": "story-mlepdwd0",
-      "title": "Wire environment hooks into agent alarm cycle (step 1: buildTools + observe delegation)",
-      "description": "GH Issue #71 — Step 1 of extraction. Do NOT attempt to remove all Catan code from agent.ts in one go.\n\nSCOPE (only these two changes):\n\n1. **buildTools() delegation** — In `buildTools()` method (~line 1448), after building the existing tool array, iterate `this.config?.enabledEnvironments` (new config field), load each from the registry at `apps/network/src/environments/registry.ts`, and call `env.getTool(ctx)`. Append returned tools. Keep the existing inline game tool definition as-is for now (backward compat).\n\n2. **observe() delegation** — In `observe()` method (~line 654), after collecting inbox+events, iterate enabled environments and call `env.buildContext(ctx)`. Store returned strings in `observations.environmentContext?: string[]`.\n\n3. **Config type** — Add `enabledEnvironments?: string[]` to `AgentConfig` in `packages/core/src/types.ts`.\n\n4. **EnvironmentContext** — Create it from agent state (name, did, DB, relay ref, broadcast fn) and pass to env methods. The type already exists in `apps/network/src/environments/types.ts`.\n\nDO NOT:\n- Remove any existing Catan code from agent.ts\n- Move the game tool definition\n- Move the safety net / auto-play code\n- Write tests asserting 'catan' is absent from agent.ts\n\nTests: Write tests that verify environment tools are merged into buildTools() output and observe() includes environment context.",
+      "title": "Wire environment hooks into agent alarm cycle",
+      "description": "GH Issue #71. Replace the Catan-specific touchpoints in agent.ts with generic environment hooks.\n\n1. **observe()** — After collecting inbox/events, iterate over agent's enabled environments via the registry in `apps/network/src/environments/`. Call `env.buildContext(ctx)` for each. Append returned context strings to observations.\n\n2. **act() assist mode** — After model tool execution, if no environment-specific action was taken, iterate enabled environments and call `env.getAutoPlayActions(ctx)`. Inject returned tool calls. The current inline D1 game query and assist injection should be delegated to the CatanEnvironment.\n\n3. **buildTools()** — Call `env.getTool(ctx)` for each enabled environment and merge into the tool set. The inline game tool definition should move to `environments/catan.ts`.\n\n4. Agent config: Add `enabledEnvironments?: string[]` to the agent config type. If present, only load those environments. This replaces checking for 'game' in enabledTools for Catan.\n\n5. Create an `EnvironmentContext` from the agent's state (name, did, DB, relay, broadcast function) and pass it to environment methods.\n\nThe result: agent.ts has ZERO Catan-specific code. All game logic lives in environments/catan.ts.\n\nIMPORTANT: The environment files already exist at `apps/network/src/environments/` — types.ts, registry.ts, catan.ts, builtins.ts. Use them. The current Catan game tool definition (~line 2100-2150 in agent.ts) and assist mode logic (~line 993-1080 in agent.ts) and think prompt game context (~line 730-800 in agent.ts) need to move into the CatanEnvironment class methods.",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo typecheck && npx vitest run --passWithNoTests",
       "acceptanceCriteria": [
         "No Catan-specific code in agent.ts",
@@ -237,8 +237,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 13,
-    "lastIteration": "2026-02-08T22:39:38.761Z"
+    "totalIterations": 14,
+    "lastIteration": "2026-02-09T05:36:06.313Z"
   },
   "totalStories": 11
 }
