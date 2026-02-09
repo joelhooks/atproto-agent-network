@@ -28,7 +28,7 @@ interface OpenRouterToolDef {
   }
 }
 
-const MAX_TOOL_LOOP_STEPS = 8
+// Pi philosophy: agent decides when it's done, timeout is the only limit
 const TOOL_LOOP_TIMEOUT_MS = 25_000
 
 /**
@@ -154,7 +154,7 @@ export function createOpenRouterAgentFactory(
         let steps = 0
 
         // Agentic tool loop — model calls tools, sees results, decides next action
-        while (steps < MAX_TOOL_LOOP_STEPS) {
+        while (true) {
           if (Date.now() - startedAt > TOOL_LOOP_TIMEOUT_MS) {
             console.log('Tool loop timeout', { steps, elapsed: Date.now() - startedAt })
             break
