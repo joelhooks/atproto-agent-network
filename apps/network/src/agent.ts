@@ -2152,6 +2152,23 @@ export class AgentDO extends DurableObject {
       }
 
       const id = await this.memory.store(validated.value)
+
+      // Interrupt-driven: wake up immediately to process incoming message
+      // instead of waiting for the next scheduled alarm tick.
+      const running = await this.ctx.storage.get<boolean>('loopRunning')
+      if (running) {
+        try {
+          const currentAlarm = await this.ctx.storage.getAlarm()
+          // Only reschedule if next alarm is >10s away (avoid thrashing)
+          if (!currentAlarm || currentAlarm - Date.now() > 10_000) {
+            await this.ctx.storage.setAlarm(Date.now() + 1_000) // Wake in 1 second
+            console.log('AgentDO inbox interrupt — immediate alarm scheduled', { did: this.did })
+          }
+        } catch {
+          // Non-fatal — worst case, message waits for next scheduled alarm
+        }
+      }
+
       return Response.json({ id })
     }
 
