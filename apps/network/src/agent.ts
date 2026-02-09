@@ -906,6 +906,78 @@ export class AgentDO extends DurableObject {
           if (!alreadyRolled) {
             actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
           }
+
+          // Smart auto-play: check resources and build/trade before ending turn
+          const me = state.players?.find((p: any) => p.name === agentName)
+          if (me?.resources) {
+            const r = me.resources as Record<string, number>
+            const hasSettlement = r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1
+
+            if (hasSettlement) {
+              // Find a valid vertex to build on — must be adjacent to our roads, not occupied, distance rule
+              const myRoads = state.board?.edges?.filter((e: any) => e.owner === agentName) || []
+              const mySettlements = new Set((state.board?.vertices?.filter((v: any) => v.owner === agentName) || []).map((v: any) => v.id))
+              const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
+              
+              // Get vertices connected to our roads
+              const reachableVertices = new Set<number>()
+              for (const road of myRoads) {
+                for (const vid of road.vertices || []) {
+                  reachableVertices.add(vid)
+                }
+              }
+
+              // Find buildable vertex: reachable, not occupied, no adjacent settlement (distance rule)
+              const allEdges = state.board?.edges || []
+              for (const vid of reachableVertices) {
+                if (occupiedVertices.has(vid)) continue
+                // Distance rule: no settlement on adjacent vertices
+                const adjacentVerts = new Set<number>()
+                for (const e of allEdges) {
+                  if (e.vertices?.includes(vid)) {
+                    for (const av of e.vertices) if (av !== vid) adjacentVerts.add(av)
+                  }
+                }
+                const tooClose = [...adjacentVerts].some(av => occupiedVertices.has(av))
+                if (!tooClose) {
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertex: vid } } })
+                  break
+                }
+              }
+            } else if (r.wood >= 1 && r.brick >= 1) {
+              // Build a road toward unoccupied vertices
+              const myRoads = state.board?.edges?.filter((e: any) => e.owner === agentName) || []
+              const myVertices = new Set<number>()
+              for (const road of myRoads) {
+                for (const vid of road.vertices || []) myVertices.add(vid)
+              }
+              const mySettlements = (state.board?.vertices?.filter((v: any) => v.owner === agentName) || []).map((v: any) => v.id)
+              for (const sv of mySettlements) myVertices.add(sv)
+
+              // Find an unowned edge adjacent to our network
+              for (const edge of (state.board?.edges || [])) {
+                if (edge.owner) continue
+                const [v1, v2] = edge.vertices || []
+                if (myVertices.has(v1) || myVertices.has(v2)) {
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edge: edge.id } } })
+                  break
+                }
+              }
+            }
+
+            // Bank trade if we have 4+ of something and are missing a key resource
+            const needed = ['wood', 'brick', 'sheep', 'wheat']
+            const missing = needed.filter(x => (r[x] || 0) === 0)
+            if (missing.length > 0) {
+              for (const [res, count] of Object.entries(r)) {
+                if (typeof count === 'number' && count >= 4 && needed.includes(res)) {
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing[0] } } })
+                  break
+                }
+              }
+            }
+          }
+
           actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
           
           selected = [
