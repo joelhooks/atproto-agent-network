@@ -731,7 +731,7 @@ export class AgentDO extends DurableObject {
       const agentName = this.config?.name ?? ''
       try {
         const gameRow = await this.agentEnv.DB
-          .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
+          .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
           .bind(`%${agentName}%`)
           .first<{ id: string; state: string }>()
         if (gameRow) {
@@ -752,7 +752,16 @@ export class AgentDO extends DurableObject {
           const surplus = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 6).map(([k]) => k) : []
           const scarce = myRes ? ['wood','brick','sheep','wheat'].filter(r => (myRes[r] || 0) < 2) : []
 
-          if (isMyTurn) {
+          if (state.phase === 'setup' && isMyTurn) {
+            gameContext = [
+              `🎮🎮🎮 SETUP PHASE — Place your settlements and roads!`,
+              `Game: ${gameRow.id} | Round ${state.setupRound ?? 1}`,
+              `Place a settlement on any unoccupied vertex (respect distance rule), then a road adjacent to it.`,
+              `Use: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":NUMBER}}`,
+              `Then: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":NUMBER}}`,
+              `DO NOT create a new game. DO NOT use new_game.`,
+            ].join('\n')
+          } else if (isMyTurn) {
             const strategyHints: string[] = []
             if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement! Look for a vertex connected to your roads, not adjacent to any existing settlement.')
             if (canAffordRoad) strategyHints.push('🛤️ You can afford a road. Expand toward empty vertices for future settlements.')
@@ -912,6 +921,72 @@ export class AgentDO extends DurableObject {
 
     let selected = toolCalls.slice(0, maxSteps)
     truncated = toolCalls.length > selected.length
+
+    // AUTO-PLAY SETUP PHASE: Handle initial settlement + road placement
+    if (this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
+      try {
+        const agentName = this.config?.name ?? ''
+        const setupRow = await this.agentEnv.DB
+          .prepare("SELECT id, state FROM games WHERE phase = 'setup' AND json_extract(state, '$.currentPlayer') = ?")
+          .bind(agentName)
+          .first<{ id: string; state: string }>()
+        if (setupRow) {
+          const state = JSON.parse(setupRow.state)
+          const gameId = setupRow.id
+          const allEdges = state.board?.edges || []
+          const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
+          
+          // Check what's needed: settlement or road
+          const me = state.players?.find((p: any) => p.name === agentName)
+          const settlementsThisRound = me?.settlements?.filter((_: any, i: number) => i >= (state.setupRound === 2 ? me.settlements.length - (me.settlements.length > 1 ? 0 : 0) : 0)).length ?? 0
+          const needsSettlement = me?.settlements?.length < state.setupRound * 1 // round 1: need 1, round 2: need 2 total... 
+          // Simpler: check if last action was settlement (then need road) or not (need settlement)
+          const lastAction = state.log?.[state.log.length - 1]
+          const lastWasMySettlement = lastAction?.player === agentName && lastAction?.action === 'setup_settlement'
+          
+          const setupActions: typeof selected = []
+          if (lastWasMySettlement) {
+            // Need to place road adjacent to last settlement
+            const lastVertex = me?.settlements?.[me.settlements.length - 1]
+            if (lastVertex !== undefined) {
+              for (const edge of allEdges) {
+                if (edge.owner) continue
+                if (edge.vertices?.includes(lastVertex)) {
+                  setupActions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: edge.id } } })
+                  break
+                }
+              }
+            }
+          } else {
+            // Need to place settlement — pick a random unoccupied vertex with distance rule
+            const vertices = state.board?.vertices || []
+            const candidates: number[] = []
+            for (const v of vertices) {
+              if (v.owner) continue
+              const adjacent = new Set<number>()
+              for (const e of allEdges) {
+                if (e.vertices?.includes(v.id)) {
+                  for (const av of e.vertices) if (av !== v.id) adjacent.add(av)
+                }
+              }
+              if (![...adjacent].some(av => occupiedVertices.has(av))) candidates.push(v.id)
+            }
+            if (candidates.length > 0) {
+              // Pick vertex adjacent to most productive hexes
+              const pick = candidates[Math.floor(Math.random() * candidates.length)]
+              setupActions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: pick } } })
+            }
+          }
+          
+          if (setupActions.length > 0) {
+            console.log('SETUP AUTO-PLAY:', { agent: agentName, gameId, actions: setupActions.map(a => (a.arguments as any)?.gameAction?.type) })
+            selected = [...selected.filter(c => c.name !== 'think_aloud'), ...setupActions].slice(0, maxSteps)
+          }
+        }
+      } catch (err) {
+        console.error('SETUP AUTO-PLAY failed:', err instanceof Error ? err.message : String(err))
+      }
+    }
 
     // AUTO-PLAY: If the agent has a game turn but didn't call the game tool, inject game actions.
     // This is the nuclear option for models that refuse to use the game tool despite explicit prompting.
@@ -2081,7 +2156,7 @@ export class AgentDO extends DurableObject {
           if (command === 'new_game') {
             // Check if there's already an active game — block creating duplicates
             const existingGame = await db.prepare(
-              "SELECT id FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1"
+              "SELECT id FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1"
             ).bind(`%${this.config?.name ?? ''}%`).first<{ id: string }>()
             if (existingGame) {
               return {
