@@ -946,7 +946,7 @@ export class AgentDO extends DurableObject {
                 }
                 const tooClose = [...adjacentVerts].some(av => occupiedVertices.has(av))
                 if (!tooClose) {
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertex: vid } } })
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: vid } } })
                   break
                 }
               }
@@ -965,7 +965,7 @@ export class AgentDO extends DurableObject {
                 if (edge.owner) continue
                 const [v1, v2] = edge.vertices || []
                 if (myVertices.has(v1) || myVertices.has(v2)) {
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edge: edge.id } } })
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: edge.id } } })
                   break
                 }
               }
