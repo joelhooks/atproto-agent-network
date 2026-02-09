@@ -415,7 +415,7 @@
       "title": "Barrier rooms — class-gated progression",
       "description": "Barriers block progression without the required class.\n\n**`apps/network/src/games/rpg-engine.ts`:**\n1. `explore()`: barrier rooms check party for matching klass, set mode='blocked' if missing\n2. Add 'blocked' to RpgMode\n3. `resolveBarrier(game)` export — checks if barrier clearable, resets to exploring\n\n**`apps/network/src/environments/rpg.ts`:**\n4. `create_character`: call resolveBarrier after adding\n5. `buildContext()`: blocked → \"⛔ BLOCKED: requires {class}. Message other agents!\"\n6. `getAutoPlayActions()`: empty when blocked\n\n**Tests:** blocks without class, resolves when class joins",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -445,8 +445,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 37,
-    "lastIteration": "2026-02-09T20:26:51.672Z"
+    "totalIterations": 38,
+    "lastIteration": "2026-02-09T20:30:03.931Z"
   },
   "totalStories": 11
 }

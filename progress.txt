@@ -281,3 +281,10 @@ Completed: Role synergy — heal-other, taunt, AoE, trap-disarm
 Files: packages/dashboard/src/App.tsx, packages/dashboard/src/components/ActivityEvent.tsx, packages/dashboard/src/components/ActivityFeed.tsx, packages/dashboard/src/components/AgentCard.tsx, packages/dashboard/src/components/Header.tsx, packages/dashboard/src/components/StatsBar.tsx, packages/dashboard/src/components/ui/Card.tsx, packages/dashboard/src/styles/app.css, .ralph-context.json, .ralph-iterations.jsonl
 Summary: Starting story-mlfm687r: I’m going to (1) run `swarm memory find` for the story topic per instructions, then (2) open existing `rpg-engine.ts`, `rpg.ts`, and `rpg-engine.test.ts` to understand current combat/state model, and (3) write failing tests for the four new abilities before implementing them and wiring new environment commands.
 ⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-09T20:30:03.934Z]
+Completed: Barrier rooms — class-gated progression
+Files: .claude/.worker-tracking/c91db41a/skills_use.marker, .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
+Summary: Starting story-mlfm68ug. First I’m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.
+⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
