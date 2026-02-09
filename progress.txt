@@ -244,3 +244,9 @@ Summary: Implemented GH #92 extension activation metrics tracked in Durable Obje
 Prior failure pattern detected: test_failure/build_error/verification_rejected. Mitigation: wrote a focused failing unit test first, kept changes scoped to the two story files, ran full `pnpm typecheck && pnpm test`, and also deployed + smoke-tested against real Cloudflare to avoid “verified locally only” regressions.
 
 Note: `git status` still shows pre-existing dirty files (`prd.json`, `.ralph-context.json`, `.ralph-iterations.jsonl`) that were not staged/committed.
+
+---
+[2026-02-09T19:44:10.465Z]
+Completed: Add Cloudflare Pipeline binding for o11y event streaming
+Files: packages/dashboard/src/activity.ts, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Implemented GH #93 (story-mlfedv85): added Cloudflare Pipelines binding `O11Y_PIPELINE` to `apps/network/wrangler.toml`, extended `AgentEnv` in `apps/network/src/agent.ts`, added `sendO11yEvent()` helper (non-fatal try/catch), and emit an `agent.cycle` summary event at the end of `AgentDO.alarm()`. Added unit tests mocking the pipeline binding in `apps/network/src/agent-do.test.ts`. Ran `pnpm typecheck && pnpm test` successfully. Attempted `wrangler deploy` but deploy is blocked in the target CF account(s) due to missing referenced resources (Vectorize index and/or Pipeline/Stream); did not create any resources per story constraints.

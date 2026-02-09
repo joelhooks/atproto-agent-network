@@ -383,7 +383,7 @@
       "title": "Add Cloudflare Pipeline binding for o11y event streaming",
       "description": "GH Issue #93.\\n\\nThis story adds the Pipeline binding to wrangler.toml and a helper to send events. The pipeline itself is created via `wrangler pipelines create agent-o11y`.\\n\\n1. In apps/network/wrangler.toml, add under [pipelines]:\\n   ```\\n   [[pipelines]]\\n   binding = \\\"O11Y_PIPELINE\\\"\\n   pipeline = \\\"agent-o11y\\\"\\n   ```\\n2. In apps/network/src/agent.ts, add the binding to the Env interface: `O11Y_PIPELINE?: { send(events: unknown[]): Promise<void> }`\\n3. Create a helper function `sendO11yEvent(pipeline: unknown, event: Record<string, unknown>)` that calls pipeline.send([event]) with try/catch (non-fatal)\\n4. Call sendO11yEvent at the end of alarm() with a cycle summary: { event_type: 'agent.cycle', agent, mode, durationMs, toolCalls: count, errors: count }\\n\\nDO NOT create the pipeline — just add the binding and code. Tests should mock the pipeline binding.\\n\\nFiles: apps/network/wrangler.toml, apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 33,
-    "lastIteration": "2026-02-09T19:35:35.854Z"
+    "totalIterations": 34,
+    "lastIteration": "2026-02-09T19:44:10.463Z"
   },
   "totalStories": 11
 }

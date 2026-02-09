@@ -577,6 +577,18 @@
         ".ralph-iterations.jsonl"
       ],
       "learnings": "Technical Discovery: `apps/network/src/agent.ts` already used `lastReflection` for a structured object written by `reflect()`. Reflection alarm mode needed to bypass the normal loop and use a new `runReflection()` that calls `PiAgentWrapper.prompt()` and uses `normalizeThinkResult()` to detect an optional `goals` array (then persists via `pruneAndArchiveCompletedGoals()`).\nGotcha: The DO storage key `lastReflection` is now type-polymorphic: normal cycles store an object in `reflect()`, while `alarmMode='reflection'` stores a string. Any future `/debug` or dashboard readers must tolerate both shapes. Also, for non-interactive deploys, `wrangler deploy` requires `CLOUDFLARE_API_TOKEN`; in this workspace the working token source was `secrets lease atproto-agents::cloudflare_api_key --raw` (the generic `cloudflare_api_token` belonged to a different account and failed D1 binding validation).\nFiles Context: `apps/network/src/agent.ts` contains AgentDO alarm-mode branching, action outcome storage, Pi prompt calls, and config/goal persistence (`pruneAndArchiveCompletedGoals()`). `apps/network/src/agent-do.test.ts` provides the Durable Object FakeStorage harness and alarm-mode unit tests (rotation/housekeeping/reflection)."
+    },
+    {
+      "id": "story-mlfedukk",
+      "title": "Track extension usage metrics in DO storage",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` executes extensions during agent rebuild in `loadExtensionsIntoTools()` by dynamic-importing the R2 module and calling `activate(agent)`. This is the correct choke point to record per-extension activation metrics in DO storage (`extensionMetrics:${name}`) without needing to modify Pi’s tool execution internals. Exposing metrics on `/debug` is easiest via `ctx.storage.list({ prefix: 'extensionMetrics:' })`.\nGotcha: Extension activation can happen more than once (initial `initialize()` and any later `rebuildAgentWrapper()` via `extensionsReloadNeeded`), so `totalCalls` will increment on each activation attempt. If you add more `/debug` fields backed by DO storage listing, ensure the test harness `FakeStorage` implements the corresponding storage APIs (at minimum `list({ prefix })`) or `/debug` tests will throw at runtime.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO implementation: `/debug` endpoint wiring, extension load path (`loadExtensionsIntoTools()`), and DO storage usage. `apps/network/src/agent-do.test.ts` contains the DO unit tests and the `FakeStorage` harness used to simulate `ctx.storage` behavior (now including `list()`)."
     }
   ],
   "failures": [
