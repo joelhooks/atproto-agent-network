@@ -1784,6 +1784,11 @@ export class AgentDO extends DurableObject {
     if (Array.isArray(patch.enabledTools)) {
       next.enabledTools = patch.enabledTools.filter((tool): tool is string => typeof tool === 'string')
     }
+    if (typeof patch.webhookUrl === 'string') {
+      next.webhookUrl = patch.webhookUrl
+    } else if (patch.webhookUrl === null) {
+      next.webhookUrl = undefined
+    }
     if (patch.loopMode === 'passive' || patch.loopMode === 'autonomous') {
       (next as any).loopMode = patch.loopMode
     }
@@ -3187,7 +3192,16 @@ export class AgentDO extends DurableObject {
         return Response.json({ error: 'Recipient mismatch' }, { status: 403 })
       }
 
-      const id = await this.memory.store(validated.value)
+      const incomingMessage = validated.value
+      const id = await this.memory.store(incomingMessage)
+
+      if (this.config?.webhookUrl) {
+        fetch(this.config.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'inbox', message: incomingMessage }),
+        }).catch(() => {}) // fire and forget
+      }
 
       // Interrupt-driven: wake up immediately to process incoming message
       // instead of waiting for the next scheduled alarm tick.

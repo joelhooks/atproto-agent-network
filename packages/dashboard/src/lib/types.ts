@@ -21,6 +21,7 @@ export type AgentConfig = {
   loopIntervalMs: number
   goals: AgentGoal[]
   enabledTools: string[]
+  webhookUrl?: string
 }
 
 export type AgentLoop = {
