@@ -600,6 +600,21 @@
         ".ralph-iterations.jsonl"
       ],
       "learnings": "Technical Discovery: Cloudflare Pipelines bindings can be treated as an optional env object with a single `send(events: unknown[]): Promise<void>` method. In `apps/network/src/agent.ts`, the safest place to emit a per-cycle summary is the `AgentDO.alarm()` scheduling block’s `finally`, so it runs after the cycle regardless of backoff/scheduling outcomes, and failures must be swallowed to keep the loop reliable.\nGotcha: `wrangler deploy` fails if referenced bindings don’t exist in the target Cloudflare account: missing Vectorize index names and missing Pipeline/Stream resources will hard-error deploy (even though the Worker code/tests are fine). For this story specifically, ensure `agent-o11y` is created via `wrangler pipelines create agent-o11y` in the same account you deploy to, and that the Vectorize index exists before attempting live verification.\nFiles Context: `apps/network/src/agent.ts` contains the `AgentEnv` interface, the `sendO11yEvent()` helper, and the `AgentDO.alarm()` loop where the `agent.cycle` summary is emitted. `apps/network/wrangler.toml` defines the `[[pipelines]]` binding (`O11Y_PIPELINE` -> `agent-o11y`). `apps/network/src/agent-do.test.ts` is the main DO test harness and now includes mocks asserting the pipeline send behavior."
+    },
+    {
+      "id": "story-mlfedvzt",
+      "title": "Admin analytics endpoint — GET /admin/analytics with cycle stats",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "apps/network/wrangler.toml",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json"
+      ],
+      "learnings": "Technical Discovery: A safe way to aggregate DO storage into a worker-level admin endpoint is to add an internal AgentDO route like `GET /__internal/analytics` and explicitly guard it (`penultimate === \"__internal\"`) so public `/agents/:name/...` forwarding cannot reach it; the worker can still call it via `env.AGENTS.get(id).fetch()` in `apps/network/src/index.ts`.\nGotcha: When the worker calls a DO internal path that does not include `/agents/:name/...`, `extractAgentNameFromPath()` returns undefined; ensure any DO logic used by that internal route does not depend on `agentName` being present, and keep the worker tolerant of older DO versions by treating non-OK/invalid analytics responses as null/empty fields.\nFiles Context: `apps/network/src/index.ts` owns HTTP routing and admin auth; `/admin/analytics` lives in the `/admin/*` block and enumerates agents via `listAgentRegistryRows(env.DB)`.\n\n`apps/network/src/agent.ts` is the Agent Durable Object; it now exposes an internal-only `analytics` leaf under `__internal` that reads `loopCount`, `consecutiveErrors`, `alarmMode`, `actionOutcomes` (last 10), `extensionMetrics`, and `lastReflection` from `this.ctx.storage`.\n\n`apps/network/src/index.test.ts` contains the worker unit tests; the new test stubs `env.AGENTS` and validates the `/admin/analytics` response shape + null/empty fallbacks."
     }
   ],
   "failures": [
