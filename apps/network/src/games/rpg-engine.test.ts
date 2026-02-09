@@ -5,6 +5,7 @@ import {
   createCharacter,
   createGame,
   createTestDice,
+  generateDungeon,
   explore,
   resolveSkillCheck,
   rollD100,
@@ -124,13 +125,70 @@ describe('rpg-engine', () => {
   })
 
   it('default dungeon includes all encounter types (combat, trap, treasure, rest, puzzle)', () => {
-    const game = createGame({ id: 'rpg_1', players: ['alice', 'bob'] })
-    const types = new Set(game.dungeon.map((r) => r.type))
+    // defaultDungeon() is procedural (uses Math.random), so test generateDungeon() deterministically instead.
+    const dice = createTestDice({ d100: () => 1, d: () => 1 })
+    const dungeon = generateDungeon(12, dice)
+
+    const types = new Set(dungeon.map((r) => r.type))
     expect(types.has('combat')).toBe(true)
     expect(types.has('trap')).toBe(true)
     expect(types.has('treasure')).toBe(true)
     expect(types.has('rest')).toBe(true)
     expect(types.has('puzzle')).toBe(true)
+    expect(types.has('barrier')).toBe(true)
+    expect(types.has('boss')).toBe(true)
+  })
+
+  it('generateDungeon creates the requested number of rooms, contains all 4 class barriers, and ends with a boss room', () => {
+    const dice = createTestDice({ d100: () => 1, d: () => 1 })
+    const dungeon = generateDungeon(12, dice)
+
+    expect(dungeon).toHaveLength(12)
+    expect(dungeon.at(-1)?.type).toBe('boss')
+
+    const barriers = dungeon.filter((r) => r.type === 'barrier')
+    expect(barriers).toHaveLength(4)
+
+    const required = new Set(barriers.map((b) => b.requiredClass))
+    expect(required).toEqual(new Set<RpgClass>(['Warrior', 'Scout', 'Mage', 'Healer']))
+  })
+
+  it('generateDungeon scales enemy HP (early 6-8, mid 10-14, boss 30+)', () => {
+    const dice = createTestDice({ d100: () => 1, d: () => 1 })
+    const dungeon = generateDungeon(12, dice)
+
+    const last = dungeon.at(-1)
+    expect(last?.type).toBe('boss')
+    if (last?.type === 'boss') {
+      expect(last.enemies[0]!.hp).toBeGreaterThanOrEqual(30)
+    }
+
+    const midpoint = Math.floor(dungeon.length / 2)
+    const combats = dungeon
+      .map((room, index) => ({ room, index }))
+      .filter((x) => x.room.type === 'combat')
+
+    const earlyCombats = combats.filter((c) => c.index < midpoint).map((c) => c.room)
+    const midCombats = combats.filter((c) => c.index >= midpoint).map((c) => c.room)
+
+    expect(earlyCombats.length).toBeGreaterThan(0)
+    expect(midCombats.length).toBeGreaterThan(0)
+
+    for (const room of earlyCombats) {
+      if (room.type !== 'combat') continue
+      for (const e of room.enemies) {
+        expect(e.hp).toBeGreaterThanOrEqual(6)
+        expect(e.hp).toBeLessThanOrEqual(8)
+      }
+    }
+
+    for (const room of midCombats) {
+      if (room.type !== 'combat') continue
+      for (const e of room.enemies) {
+        expect(e.hp).toBeGreaterThanOrEqual(10)
+        expect(e.hp).toBeLessThanOrEqual(14)
+      }
+    }
   })
 
   it('rest rooms heal the party (capped at max)', () => {
