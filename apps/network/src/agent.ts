@@ -38,6 +38,7 @@ interface AgentEnv {
   RELAY?: DurableObjectNamespace
   VECTORIZE?: VectorizeIndex
   AI?: Ai
+  O11Y_PIPELINE?: { send(events: unknown[]): Promise<void> }
   EMBEDDING_MODEL?: string
   VECTORIZE_DIMENSIONS?: string
   PI_AGENT_FACTORY?: PiAgentFactory
@@ -188,6 +189,17 @@ function createTraceId(): string {
 function createSpanId(): string {
   // OpenTelemetry span_id: 8 bytes => 16 hex chars.
   return randomHex(8)
+}
+
+async function sendO11yEvent(pipeline: unknown, event: Record<string, unknown>): Promise<void> {
+  if (!pipeline || typeof pipeline !== 'object') return
+  const send = (pipeline as { send?: unknown }).send
+  if (typeof send !== 'function') return
+  try {
+    await (send as (events: unknown[]) => Promise<void>).call(pipeline, [event])
+  } catch {
+    // non-fatal: o11y must not break the agent loop
+  }
 }
 
 export class AgentDO extends DurableObject {
@@ -1013,15 +1025,25 @@ export class AgentDO extends DurableObject {
       })
       // Don't throw: keep retries under our control.
     } finally {
+      const durationMs = Date.now() - cycleStartedAt
       logger.info('agent.cycle.end', {
         span_id: createSpanId(),
         context: {
           phase: 'alarm',
-          durationMs: Date.now() - cycleStartedAt,
+          durationMs,
           hadError,
           errorCategory: hadError ? selectAlarmErrorCategory(cycleErrors) : null,
           errors: cycleErrors.slice(0, 5),
         },
+      })
+
+      await sendO11yEvent(this.agentEnv?.O11Y_PIPELINE, {
+        event_type: 'agent.cycle',
+        agent: this.did,
+        mode,
+        durationMs,
+        toolCalls: acted?.steps?.length ?? 0,
+        errors: cycleErrors.length,
       })
     }
   }
