@@ -343,7 +343,7 @@ export default {
         if (normalizedPathname === '/games') {
           return withErrorHandling(
             async () => {
-              const active = url.searchParams.get('all') === 'true' ? '' : " AND phase != 'finished'"
+              const active = url.searchParams.get('all') === 'true' ? '' : " AND phase NOT IN ('finished', 'abandoned', 'setup')"
               const rows = await env.DB.prepare(
                 `SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE 1=1${active} ORDER BY updated_at DESC LIMIT 20`
               ).all()
