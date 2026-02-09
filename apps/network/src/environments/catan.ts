@@ -20,10 +20,17 @@ async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow 
 
   try {
     const row = await ctx.db
-      .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
+      .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
       .first<GameRow>()
-    return row ?? null
+    if (!row) return null
+    // Only match Catan games (type is 'catan', null, or absent)
+    try {
+      const parsed = JSON.parse(row.state) as Record<string, unknown>
+      const gameType = parsed.type ?? 'catan'
+      if (gameType !== 'catan') return null
+    } catch { return null }
+    return row
   } catch {
     return null
   }
@@ -38,7 +45,13 @@ async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<Ga
       .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?")
       .bind(agentName)
       .first<GameRow>()
-    return row ?? null
+    if (!row) return null
+    try {
+      const parsed = JSON.parse(row.state) as Record<string, unknown>
+      const gameType = parsed.type ?? 'catan'
+      if (gameType !== 'catan') return null
+    } catch { return null }
+    return row
   } catch {
     return null
   }
@@ -357,36 +370,155 @@ export const catanEnvironment: AgentEnvironment = {
   },
 
   async buildContext(ctx: EnvironmentContext): Promise<string[]> {
+    const agentName = ctx.agentName
     const row = await findActiveGameForAgent(ctx)
     if (!row) return []
 
     try {
       const state = JSON.parse(row.state) as any
-      const isMyTurn = state.currentPlayer === ctx.agentName
+      const isMyTurn = state.currentPlayer === agentName
+      const me = state.players?.find((p: any) => p.name === agentName)
+      const myRes = me?.resources as Record<string, number> | undefined
+      const resStr = myRes ? `Wood:${myRes.wood||0} Brick:${myRes.brick||0} Sheep:${myRes.sheep||0} Wheat:${myRes.wheat||0} Ore:${myRes.ore||0}` : 'unknown'
+      const mySettlements = me?.settlements?.length ?? 0
+      const myRoads = me?.roads?.length ?? 0
+      const scoreboard = state.players?.map((p: any) => `${p.name}: ${p.victoryPoints}VP, ${p.settlements?.length ?? 0} settlements, ${p.roads?.length ?? 0} roads`).join(' | ') ?? ''
 
-      if (isMyTurn) {
+      // Strategic hints based on resources
+      const canAffordSettlement = myRes && myRes.wood >= 1 && myRes.brick >= 1 && myRes.sheep >= 1 && myRes.wheat >= 1
+      const canAffordRoad = myRes && myRes.wood >= 1 && myRes.brick >= 1
+      const scarce = myRes ? ['wood','brick','sheep','wheat'].filter(r => (myRes[r] || 0) < 2) : []
+
+      if (state.phase === 'setup' && isMyTurn) {
+        const allEdges = state.board?.edges || []
+        const allVertices = state.board?.vertices || []
+        const occupiedVertices = new Set(allVertices.filter((v: any) => v.owner).map((v: any) => v.id))
+        const hexes = state.board?.hexes || []
+
+        const lastAction = state.log?.[state.log.length - 1]
+        const lastWasMySettlement = lastAction?.player === agentName && lastAction?.action === 'setup_settlement'
+
+        if (lastWasMySettlement) {
+          const lastVertex = (state.players?.find((p: any) => p.name === agentName)?.settlements ?? []).slice(-1)[0]
+          const validRoads = allEdges
+            .filter((e: any) => !e.owner && (e.vertices || []).includes(lastVertex))
+            .map((e: any) => e.id)
+
+          return [
+            `🎮🎮🎮 SETUP PHASE — Place a road!`,
+            `Game: ${row.id} | You just placed a settlement at vertex ${lastVertex}.`,
+            `Now place a road adjacent to it.`,
+            ``,
+            `🛤️ VALID ROAD EDGES: [${validRoads.join(', ')}]`,
+            ``,
+            `TOOL CALL:`,
+            `  game({"command":"action","gameId":"${row.id}","gameAction":{"type":"build_road","edgeId":${validRoads[0] ?? 0}}})`,
+            ``,
+            `Pick ONE edge from the list above. DO NOT create a new game.`,
+          ]
+        } else {
+          const validVertices: { id: number; hexes: string[] }[] = []
+          for (const v of allVertices) {
+            if (v.owner) continue
+            const adjacent = new Set<number>()
+            for (const e of allEdges) {
+              if (e.vertices?.includes(v.id)) for (const av of e.vertices) if (av !== v.id) adjacent.add(av)
+            }
+            if ([...adjacent].some(av => occupiedVertices.has(av))) continue
+            const touchedHexes = (v.hexIds || []).map((hid: number) => {
+              const hex = hexes[hid]
+              return hex ? `${hex.type}(${hex.diceNumber ?? '--'})` : '?'
+            })
+            validVertices.push({ id: v.id, hexes: touchedHexes })
+          }
+
+          validVertices.sort((a, b) => b.hexes.filter(h => !h.includes('desert')).length - a.hexes.filter(h => !h.includes('desert')).length)
+
+          const vertexList = validVertices.slice(0, 15).map(v =>
+            `  Vertex ${v.id}: touches ${v.hexes.join(', ')}`
+          ).join('\n')
+
+          return [
+            `🎮🎮🎮 SETUP PHASE — Place a settlement!`,
+            `Game: ${row.id} | Round ${state.setupRound ?? 1}`,
+            `Choose a vertex for your settlement. Pick one that touches PRODUCTIVE hexes (numbers close to 7 are best: 6, 8, 5, 9).`,
+            ``,
+            `🏠 VALID SETTLEMENT VERTICES (sorted by productivity):`,
+            vertexList,
+            ``,
+            `TOOL CALL:`,
+            `  game({"command":"action","gameId":"${row.id}","gameAction":{"type":"build_settlement","vertexId":NUMBER}})`,
+            ``,
+            `Pick ONE vertex from the list. Prioritize resource diversity and high-probability numbers.`,
+            `DO NOT create a new game. DO NOT use command:"status".`,
+          ]
+        }
+      } else if (isMyTurn) {
+        const allEdges = state.board?.edges || []
+        const allVertices = state.board?.vertices || []
+        const occupiedVertices = new Set(allVertices.filter((v: any) => v.owner).map((v: any) => v.id))
+        const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
+        const networkVertices = new Set<number>()
+        for (const v of allVertices.filter((v: any) => v.owner === agentName)) networkVertices.add(v.id)
+        for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
+
+        const validRoads = allEdges
+          .filter((e: any) => !e.owner && (e.vertices || []).some((v: number) => networkVertices.has(v)))
+          .map((e: any) => e.id)
+          .slice(0, 10)
+
+        const validSettlements: number[] = []
+        for (const vid of networkVertices) {
+          if (occupiedVertices.has(vid)) continue
+          const adjacent = new Set<number>()
+          for (const e of allEdges) {
+            if (e.vertices?.includes(vid)) for (const av of e.vertices) if (av !== vid) adjacent.add(av)
+          }
+          if (![...adjacent].some(av => occupiedVertices.has(av))) validSettlements.push(vid)
+        }
+
+        const tradeableFor = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 3).map(([k, v]) => `${k}(${v})`) : []
+
+        const strategyHints: string[] = []
+        if (canAffordSettlement && validSettlements.length > 0) strategyHints.push(`🏠 BUILD SETTLEMENT NOW! Valid vertices: [${validSettlements.join(', ')}]`)
+        else if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement but no valid spots — build roads to reach one!')
+        if (canAffordRoad && validRoads.length > 0) strategyHints.push(`🛤️ BUILD ROAD! Valid edges: [${validRoads.join(', ')}]`)
+        if (tradeableFor.length > 0 && scarce.length > 0) strategyHints.push(`💱 TRADE! Surplus: ${tradeableFor.join(', ')}. Need: ${scarce.join(', ')}. Bank trade is 3:1.`)
+        if (!canAffordSettlement && !canAffordRoad && tradeableFor.length === 0) strategyHints.push('💰 Nothing affordable this turn — just roll and end.')
+
         return [
           `🎮🎮🎮 IT IS YOUR TURN in Catan game ${row.id} (turn ${state.turn})!`,
-          `Use the game tool: {"command":"action","gameId":"${row.id}","gameAction":{"type":"roll_dice"}}`,
-          `Then: {"command":"action","gameId":"${row.id}","gameAction":{"type":"end_turn"}}`,
+          ``,
+          `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads`,
+          `💎 Resources: ${resStr}`,
+          `🏆 Scoreboard: ${scoreboard}`,
+          `🎯 GOAL: First to 10 VP wins! Each settlement = 1VP.`,
+          ``,
+          `🧠 VALID MOVES THIS TURN:`,
+          ...strategyHints,
+          ``,
+          `📋 TURN ORDER: 1) Roll dice  2) Trade & Build (do as many as you can!)  3) End turn`,
+          ``,
+          `TOOL CALL FORMAT — use command:"action" with these gameAction types:`,
+          `  Roll:       game({"command":"action","gameId":"${row.id}","gameAction":{"type":"roll_dice"}})`,
+          validRoads.length > 0 ? `  Build road: game({"command":"action","gameId":"${row.id}","gameAction":{"type":"build_road","edgeId":${validRoads[0]}}})  [costs 1 wood + 1 brick]` : '',
+          validSettlements.length > 0 ? `  Settlement: game({"command":"action","gameId":"${row.id}","gameAction":{"type":"build_settlement","vertexId":${validSettlements[0]}}})  [costs 1 wood + 1 brick + 1 sheep + 1 wheat]` : '',
+          tradeableFor.length > 0 ? `  Bank trade: game({"command":"action","gameId":"${row.id}","gameAction":{"type":"bank_trade","offering":"RESOURCE_YOU_HAVE","requesting":"RESOURCE_YOU_NEED"}})  [3:1 ratio]` : '',
+          `  End turn:   game({"command":"action","gameId":"${row.id}","gameAction":{"type":"end_turn"}})`,
+          ``,
+          `⚠️ USE command:"action" NOT command:"status"!`,
+          `⚡ MAKE MULTIPLE TOOL CALLS! Roll, then trade, then build, then end. All in one response.`,
+        ].filter(Boolean)
+      } else {
+        return [
+          `🎲 Active Catan game: ${row.id} (turn ${state.turn})`,
+          `Current player: ${state.currentPlayer} — waiting for them to play.`,
+          `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads | ${resStr}`,
+          `🏆 Scoreboard: ${scoreboard}`,
+          'DO NOT create a new game. You are already in one.',
+          'Use think_aloud to strategize or trash talk the other players while you wait.',
         ]
       }
-
-      const players =
-        state.players
-          ?.map((p: any) => {
-            const resources = isRecord(p?.resources) ? p.resources : {}
-            const resourceCount = Object.values(resources).reduce((a: number, b: any) => a + Number(b ?? 0), 0)
-            return `${p.name}: ${p.victoryPoints}VP, ${resourceCount} resources`
-          })
-          .join(', ') ?? ''
-
-      return [
-        `🎲 Active Catan game: ${row.id} (turn ${state.turn})`,
-        `Current player: ${state.currentPlayer} - waiting for them to play.`,
-        players ? `Scoreboard: ${players}` : '',
-        'DO NOT create a new game. You are already in one.',
-      ].filter(Boolean)
     } catch {
       return []
     }

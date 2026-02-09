@@ -601,23 +601,48 @@ export const rpgEnvironment: AgentEnvironment = {
       const game = JSON.parse(row.state) as RpgGameState
       const room = game.dungeon[game.roomIndex]
       const isMyTurn = game.currentPlayer === ctx.agentName
+      const partyMember = game.party?.find((p: any) => p.name === ctx.agentName)
+
+      // Barrier detection: if room requires a class nobody has, prompt recruitment
+      const blockedRecruitment = (() => {
+        if (!room || typeof room !== 'object') return ''
+        const r = room as { type?: unknown; requiredClass?: unknown }
+        if (r.type !== 'barrier') return ''
+        const requiredClass = typeof r.requiredClass === 'string' ? r.requiredClass : ''
+        if (!requiredClass) return ''
+        const party = Array.isArray(game.party) ? game.party : []
+        const hasClass = party.some((p: any) => p?.klass === requiredClass)
+        if (hasClass) return ''
+        return `URGENT: Recruit ${requiredClass} via message tool`
+      })()
+
+      const cooperationRules = [
+        'COOPERATION RULES:',
+        '- never solo: join parties',
+        '- healers heal',
+        '- warriors taunt',
+        '- scouts disarm',
+        '- mages AoE',
+      ].join('\n')
 
       const lines: string[] = []
       if (isMyTurn) {
-        lines.push(`🏰 IT IS YOUR TURN in Dungeon Crawl ${row.id}!`)
-        lines.push(`Mode: ${game.mode} | Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}`)
-        if (room?.description) lines.push(room.description)
-        lines.push(`Party: ${summarizeParty(game)}`)
-        lines.push('Suggested actions:')
-        if (game.mode === 'combat') {
-          lines.push(`- {"command":"attack","gameId":"${row.id}"}`)
-        } else {
-          lines.push(`- {"command":"explore","gameId":"${row.id}"}`)
-        }
+        lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
+        if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
+        if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
+        if (blockedRecruitment) lines.push(blockedRecruitment)
+        lines.push(cooperationRules)
+        lines.push('')
+        lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"}) or rpg({"command":"status","gameId":"${row.id}"})`)
+        lines.push(`DO NOT create a new game.`)
       } else {
-        lines.push(`🏰 Active Dungeon Crawl: ${row.id}`)
-        lines.push(`Current player: ${game.currentPlayer} | Mode: ${game.mode}`)
-        lines.push(`Party: ${summarizeParty(game)}`)
+        lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
+        if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
+        if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
+        if (blockedRecruitment) lines.push(blockedRecruitment)
+        lines.push(cooperationRules)
+        lines.push('Wait for your turn.')
+        lines.push(`DO NOT create a new game.`)
       }
 
       return lines.filter(Boolean)

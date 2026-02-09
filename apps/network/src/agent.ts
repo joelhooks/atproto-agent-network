@@ -1187,227 +1187,37 @@ export class AgentDO extends DurableObject {
           .join('\n')
       : '(none)'
 
-    // Game-aware context (query D1 for active games)
+    // Game-aware context via environment registry
     let gameContext = ''
     if (this.agentEnv?.DB) {
       const agentName = this.config?.name ?? ''
-      const playerLike = agentName ? `%${JSON.stringify(agentName)}%` : null
+      const did = this.identity?.did ?? ''
+      const envCtx = {
+        agentName,
+        agentDid: did,
+        db: this.agentEnv.DB,
+        broadcast: async (event: Record<string, unknown>) => {
+          const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
+          const msg = JSON.stringify(event)
+          for (const ws of sockets) { try { ws.send(msg) } catch {} }
+        },
+      }
       try {
-        const gameRow =
-          playerLike
-            ? await this.agentEnv.DB
-                .prepare("SELECT id, type, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
-                .bind(playerLike)
-                .first<{ id: string; type?: string; state: string }>()
-            : null
-        if (gameRow) {
-          const state = JSON.parse(gameRow.state)
-          const gameType = gameRow.type ?? state.type ?? 'catan'
-
-	          // Non-Catan games: provide minimal context, let the environment tool handle specifics
-	          if (gameType !== 'catan') {
-	            const isMyTurn = state.currentPlayer === agentName
-	            const partyMember = state.party?.find((p: any) => p.name === agentName)
-	            const room = state.dungeon?.[state.roomIndex ?? 0]
-	            const isRpg = gameType === 'rpg'
-	            const blockedRecruitment = (() => {
-	              if (!isRpg) return ''
-	              if (!room || typeof room !== 'object') return ''
-	              const r = room as { type?: unknown; requiredClass?: unknown }
-	              if (r.type !== 'barrier') return ''
-	              const requiredClass = typeof r.requiredClass === 'string' ? r.requiredClass : ''
-	              if (!requiredClass) return ''
-	              const party = Array.isArray(state.party) ? state.party : []
-	              const hasClass = party.some((p: any) => p?.klass === requiredClass)
-	              if (hasClass) return ''
-	              return `URGENT: Recruit ${requiredClass} via message tool`
-	            })()
-	            const cooperationRules = isRpg
-	              ? [
-	                  'COOPERATION RULES:',
-	                  '- never solo: join parties',
-	                  '- healers heal',
-	                  '- warriors taunt',
-	                  '- scouts disarm',
-	                  '- mages AoE',
-	                ].join('\n')
-	              : ''
-	            gameContext = [
-	              isMyTurn
-	                ? `🎮🎮🎮 IT IS YOUR TURN in ${gameType.toUpperCase()} adventure ${gameRow.id}!`
-	                : `🎲 Active ${gameType.toUpperCase()} adventure: ${gameRow.id} — waiting for ${state.currentPlayer}.`,
-	              partyMember ? `You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})` : '',
-	              room ? `Current room: ${room.description} (type: ${room.type})` : '',
-	              blockedRecruitment,
-	              cooperationRules,
-	              ``,
-	              isMyTurn ? `Use the rpg tool to act: rpg({"command":"explore","gameId":"${gameRow.id}"}) or rpg({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
-	              `DO NOT create a new game.`,
-	            ].filter(Boolean).join('\n')
-	          } else {
-          const isMyTurn = state.currentPlayer === agentName
-          // Build rich game context for the model
-          const me = state.players?.find((p: any) => p.name === agentName)
-          const others = state.players?.filter((p: any) => p.name !== agentName) || []
-          const myRes = me?.resources as Record<string, number> | undefined
-          const resStr = myRes ? `Wood:${myRes.wood||0} Brick:${myRes.brick||0} Sheep:${myRes.sheep||0} Wheat:${myRes.wheat||0} Ore:${myRes.ore||0}` : 'unknown'
-          const mySettlements = me?.settlements?.length ?? 0
-          const myRoads = me?.roads?.length ?? 0
-          const scoreboard = state.players?.map((p: any) => `${p.name}: ${p.victoryPoints}VP, ${p.settlements?.length ?? 0} settlements, ${p.roads?.length ?? 0} roads`).join(' | ') ?? ''
-          
-          // Strategic hints based on resources
-          const canAffordSettlement = myRes && myRes.wood >= 1 && myRes.brick >= 1 && myRes.sheep >= 1 && myRes.wheat >= 1
-          const canAffordRoad = myRes && myRes.wood >= 1 && myRes.brick >= 1
-          const surplus = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 4).map(([k]) => k) : []
-          const scarce = myRes ? ['wood','brick','sheep','wheat'].filter(r => (myRes[r] || 0) < 2) : []
-
-          if (state.phase === 'setup' && isMyTurn) {
-            // Compute valid setup placements for the LLM
-            const allEdges = state.board?.edges || []
-            const allVertices = state.board?.vertices || []
-            const occupiedVertices = new Set(allVertices.filter((v: any) => v.owner).map((v: any) => v.id))
-            const hexes = state.board?.hexes || []
-
-            // Check if we need settlement or road
-            const lastAction = state.log?.[state.log.length - 1]
-            const lastWasMySettlement = lastAction?.player === agentName && lastAction?.action === 'setup_settlement'
-
-            if (lastWasMySettlement) {
-              // Need to place a road adjacent to last settlement
-              const lastVertex = (state.players?.find((p: any) => p.name === agentName)?.settlements ?? []).slice(-1)[0]
-              const validRoads = allEdges
-                .filter((e: any) => !e.owner && (e.vertices || []).includes(lastVertex))
-                .map((e: any) => e.id)
-
-              gameContext = [
-                `🎮🎮🎮 SETUP PHASE — Place a road!`,
-                `Game: ${gameRow.id} | You just placed a settlement at vertex ${lastVertex}.`,
-                `Now place a road adjacent to it.`,
-                ``,
-                `🛤️ VALID ROAD EDGES: [${validRoads.join(', ')}]`,
-                ``,
-                `TOOL CALL:`,
-                `  game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":${validRoads[0] ?? 0}}})`,
-                ``,
-                `Pick ONE edge from the list above. DO NOT create a new game.`,
-              ].join('\n')
-            } else {
-              // Need to place a settlement — show valid vertices with hex resources
-              const validVertices: { id: number; hexes: string[] }[] = []
-              for (const v of allVertices) {
-                if (v.owner) continue
-                // Distance rule: no adjacent vertex can have an owner
-                const adjacent = new Set<number>()
-                for (const e of allEdges) {
-                  if (e.vertices?.includes(v.id)) for (const av of e.vertices) if (av !== v.id) adjacent.add(av)
-                }
-                if ([...adjacent].some(av => occupiedVertices.has(av))) continue
-                // What hexes does this vertex touch?
-                const touchedHexes = (v.hexIds || []).map((hid: number) => {
-                  const hex = hexes[hid]
-                  return hex ? `${hex.type}(${hex.diceNumber ?? '--'})` : '?'
-                })
-                validVertices.push({ id: v.id, hexes: touchedHexes })
-              }
-
-              // Sort by number of productive hexes (more = better)
-              validVertices.sort((a, b) => b.hexes.filter(h => !h.includes('desert')).length - a.hexes.filter(h => !h.includes('desert')).length)
-
-              const vertexList = validVertices.slice(0, 15).map(v => 
-                `  Vertex ${v.id}: touches ${v.hexes.join(', ')}`
-              ).join('\n')
-
-              gameContext = [
-                `🎮🎮🎮 SETUP PHASE — Place a settlement!`,
-                `Game: ${gameRow.id} | Round ${state.setupRound ?? 1}`,
-                `Choose a vertex for your settlement. Pick one that touches PRODUCTIVE hexes (numbers close to 7 are best: 6, 8, 5, 9).`,
-                ``,
-                `🏠 VALID SETTLEMENT VERTICES (sorted by productivity):`,
-                vertexList,
-                ``,
-                `TOOL CALL:`,
-                `  game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":NUMBER}})`,
-                ``,
-                `Pick ONE vertex from the list. Prioritize resource diversity and high-probability numbers.`,
-                `DO NOT create a new game. DO NOT use command:"status".`,
-              ].join('\n')
-            }
-          } else if (isMyTurn) {
-            // Compute valid moves so the LLM can make informed decisions
-            const allEdges = state.board?.edges || []
-            const allVertices = state.board?.vertices || []
-            const occupiedVertices = new Set(allVertices.filter((v: any) => v.owner).map((v: any) => v.id))
-            const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
-            const networkVertices = new Set<number>()
-            for (const v of allVertices.filter((v: any) => v.owner === agentName)) networkVertices.add(v.id)
-            for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
-
-            // Valid road edges: unowned, adjacent to my network
-            const validRoads = allEdges
-              .filter((e: any) => !e.owner && (e.vertices || []).some((v: number) => networkVertices.has(v)))
-              .map((e: any) => e.id)
-              .slice(0, 10)
-
-            // Valid settlement vertices: unowned, in my network, distance rule satisfied
-            const validSettlements: number[] = []
-            for (const vid of networkVertices) {
-              if (occupiedVertices.has(vid)) continue
-              const adjacent = new Set<number>()
-              for (const e of allEdges) {
-                if (e.vertices?.includes(vid)) for (const av of e.vertices) if (av !== vid) adjacent.add(av)
-              }
-              if (![...adjacent].some(av => occupiedVertices.has(av))) validSettlements.push(vid)
-            }
-
-            // Tradeable resources (3:1 bank trade)
-            const tradeableFor = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 3).map(([k, v]) => `${k}(${v})`) : []
-
-            const strategyHints: string[] = []
-            if (canAffordSettlement && validSettlements.length > 0) strategyHints.push(`🏠 BUILD SETTLEMENT NOW! Valid vertices: [${validSettlements.join(', ')}]`)
-            else if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement but no valid spots — build roads to reach one!')
-            if (canAffordRoad && validRoads.length > 0) strategyHints.push(`🛤️ BUILD ROAD! Valid edges: [${validRoads.join(', ')}]`)
-            if (tradeableFor.length > 0 && scarce.length > 0) strategyHints.push(`💱 TRADE! Surplus: ${tradeableFor.join(', ')}. Need: ${scarce.join(', ')}. Bank trade is 3:1.`)
-            if (!canAffordSettlement && !canAffordRoad && tradeableFor.length === 0) strategyHints.push('💰 Nothing affordable this turn — just roll and end.')
-
-            gameContext = [
-              `🎮🎮🎮 IT IS YOUR TURN in Catan game ${gameRow.id} (turn ${state.turn})!`,
-              ``,
-              `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads`,
-              `💎 Resources: ${resStr}`,
-              `🏆 Scoreboard: ${scoreboard}`,
-              `🎯 GOAL: First to 10 VP wins! Each settlement = 1VP.`,
-              ``,
-              `🧠 VALID MOVES THIS TURN:`,
-              ...strategyHints,
-              ``,
-              `📋 TURN ORDER: 1) Roll dice  2) Trade & Build (do as many as you can!)  3) End turn`,
-              ``,
-              `TOOL CALL FORMAT — use command:"action" with these gameAction types:`,
-              `  Roll:       game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}})`,
-              validRoads.length > 0 ? `  Build road: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":${validRoads[0]}}})  [costs 1 wood + 1 brick]` : '',
-              validSettlements.length > 0 ? `  Settlement: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":${validSettlements[0]}}})  [costs 1 wood + 1 brick + 1 sheep + 1 wheat]` : '',
-              tradeableFor.length > 0 ? `  Bank trade: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"bank_trade","offering":"RESOURCE_YOU_HAVE","requesting":"RESOURCE_YOU_NEED"}})  [3:1 ratio]` : '',
-              `  End turn:   game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}})`,
-              ``,
-              `⚠️ USE command:"action" NOT command:"status"!`,
-              `⚡ MAKE MULTIPLE TOOL CALLS! Roll, then trade, then build, then end. All in one response.`,
-            ].filter(Boolean).join('\n')
-          } else {
-            gameContext = [
-              `🎲 Active Catan game: ${gameRow.id} (turn ${state.turn})`,
-              `Current player: ${state.currentPlayer} — waiting for them to play.`,
-              `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads | ${resStr}`,
-              `🏆 Scoreboard: ${scoreboard}`,
-              'DO NOT create a new game. You are already in one.',
-              'Use think_aloud to strategize or trash talk the other players while you wait.',
-            ].join('\n')
+        // Try each registered environment's buildContext
+        const { getAllEnvironments } = await import('./environments/registry')
+        const { registerBuiltInEnvironments } = await import('./environments/builtins')
+        registerBuiltInEnvironments()
+        for (const env of getAllEnvironments()) {
+          const lines = await env.buildContext(envCtx)
+          if (lines.length > 0) {
+            gameContext = lines.join('\n')
+            break
           }
-          } // close: else (catan branch)
         }
       } catch { /* non-fatal */ }
     }
 
-    if (gameContext.includes('🎮🎮🎮 IT IS YOUR TURN')) {
+    if (gameContext.includes('🎮🎮🎮')) {
       this.intervalReason = 'my_turn'
     } else if (gameContext.includes('🎲 Active')) {
       this.intervalReason = 'waiting'
@@ -1591,80 +1401,56 @@ export class AgentDO extends DurableObject {
     let selected = toolCalls.slice(0, maxSteps)
     truncated = toolCalls.length > selected.length
 
-    // Setup and playing decisions are fully LLM-driven.
-    // The think prompt provides valid vertices/edges/resources so the model can make informed choices.
-
-    // SAFETY NET: Only inject roll_dice (if model forgot) and end_turn (to prevent stuck turns).
-    // All strategic decisions (trades, builds) are made entirely by the LLM.
-    const hasEndTurnCall = selected.some(c => {
-      if (c.name !== 'game') return false
-      const args = c.arguments as Record<string, unknown> | undefined
-      const ga = args?.gameAction as Record<string, unknown> | undefined
-      return args?.command === 'action' && ga?.type === 'end_turn'
-    })
-    const hasRollCall = selected.some(c => {
-      if (c.name !== 'game') return false
-      const args = c.arguments as Record<string, unknown> | undefined
-      const ga = args?.gameAction as Record<string, unknown> | undefined
-      return args?.command === 'action' && ga?.type === 'roll_dice'
-    })
-    if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
+    // Auto-play injection via environment registry.
+    // Each environment defines isActionTaken() and getAutoPlayActions() to handle
+    // safety-net logic (e.g. inject roll_dice/end_turn for Catan).
+    if (this.agentEnv?.DB) {
       try {
+        const { getAllEnvironments } = await import('./environments/registry')
+        const { registerBuiltInEnvironments } = await import('./environments/builtins')
+        registerBuiltInEnvironments()
         const agentName = this.config?.name ?? ''
-        const playerLike = agentName ? `%${JSON.stringify(agentName)}%` : null
-
-        // "Active game" for UI/debug means: any setup/playing game where I'm a player (not only when it's my turn).
-        const activeGameRow =
-          playerLike
-            ? await this.agentEnv.DB
-                .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
-                .bind(playerLike)
-                .first<{ id: string; state: string }>()
-            : null
-
-        // Safety net injections must only apply when it's my turn in a playing-phase game.
-        const myTurnRow =
-          playerLike
-            ? await this.agentEnv.DB
-                .prepare(
-                  "SELECT id, state FROM games WHERE phase = 'playing' AND players LIKE ? AND json_extract(state, '$.currentPlayer') = ? LIMIT 1"
-                )
-                .bind(playerLike, agentName)
-                .first<{ id: string; state: string }>()
-            : null
-
-        const intervalReason: AlarmIntervalReason = myTurnRow ? 'my_turn' : activeGameRow ? 'waiting' : 'default'
-        this.intervalReason = intervalReason
-
-        const safetyDebug = {
-          agent: agentName,
-          hasActiveGame: !!activeGameRow,
-          gameId: activeGameRow?.id ?? null,
-          isMyTurn: !!myTurnRow,
-          intervalReason,
-          modelCalledGame: selected.some(c => c.name === 'game'),
-          hasRollCall,
-          modelToolCalls: selected.map(c => c.name === 'game' ? (c.arguments as any)?.gameAction?.type : c.name),
-          ts: Date.now(),
+        const did = this.identity?.did ?? ''
+        const envCtx = {
+          agentName,
+          agentDid: did,
+          db: this.agentEnv.DB,
+          broadcast: async (event: Record<string, unknown>) => {
+            const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
+            const msg = JSON.stringify(event)
+            for (const ws of sockets) { try { ws.send(msg) } catch {} }
+          },
         }
-        console.log('SAFETY NET check:', safetyDebug)
-        await this.ctx.storage.put('debug:autoPlay', safetyDebug)
+        const toolCallsForCheck = selected.map(c => ({ name: c.name, arguments: (c.arguments ?? {}) as Record<string, unknown> }))
 
-        if (myTurnRow) {
-          const gameId = myTurnRow.id
-          const state = JSON.parse(myTurnRow.state)
-          const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
+        for (const env of getAllEnvironments()) {
+          if (env.isActionTaken(toolCallsForCheck)) break
+          const autoActions = await env.getAutoPlayActions(envCtx)
+          if (autoActions.length > 0) {
+            // Prepend all but the last (usually roll_dice), append the last (usually end_turn)
+            if (autoActions.length === 1) {
+              selected.push(autoActions[0])
+            } else {
+              const prepend = autoActions.slice(0, -1)
+              const append = autoActions.slice(-1)
+              selected.unshift(...prepend)
+              selected.push(...append)
+            }
 
-          // Inject roll_dice only if model forgot AND hasn't rolled yet this turn
-          if (!hasRollCall && !alreadyRolled) {
-            selected.unshift({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
+            const safetyDebug = {
+              agent: agentName,
+              environment: env.type,
+              injectedActions: autoActions.map(a => a.name),
+              modelToolCalls: selected.map(c => c.name),
+              ts: Date.now(),
+            }
+            console.log('Auto-play injection:', safetyDebug)
+            await this.ctx.storage.put('debug:autoPlay', safetyDebug)
+            break
           }
-
-          // Always inject end_turn as final action to prevent stuck turns
-          selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
         }
       } catch (err) {
-        console.error('SAFETY NET D1 query failed:', err instanceof Error ? err.message : String(err))
+        console.error('Auto-play injection failed:', err instanceof Error ? err.message : String(err))
       }
     }
 
