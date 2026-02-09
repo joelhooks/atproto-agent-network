@@ -2954,6 +2954,42 @@ describe('AgentDO', () => {
     expect(typeof outcomes[1]?.timestamp).toBe('number')
   })
 
+  it('ralphEnvironment.getAutoPlayActions() claims the next open ralph work item by priority', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const { ralphEnvironment } = await import('./environments/ralph')
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    } as any
+
+    // Seed two open Ralph work items with different priorities.
+    const tool = ralphEnvironment.getTool(ctx)
+    await tool.execute?.('toolcall-propose-1', {
+      command: 'propose_work',
+      env_type: 'ralph',
+      id: 'work_p2',
+      title: 'second',
+      priority: 2,
+      payload: {},
+    })
+    await tool.execute?.('toolcall-propose-2', {
+      command: 'propose_work',
+      env_type: 'ralph',
+      id: 'work_p1',
+      title: 'first',
+      priority: 1,
+      payload: {},
+    })
+
+    const actions = await ralphEnvironment.getAutoPlayActions(ctx)
+    expect(actions).toEqual([{ name: 'ralph', arguments: { command: 'claim_work', id: 'work_p1' } }])
+  })
+
   it.skip('act() assist mode runs environment autoplay actions when the model did not take an environment action', async () => {
     vi.resetModules()
 
