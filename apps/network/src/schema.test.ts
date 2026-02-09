@@ -1,12 +1,24 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Miniflare } from 'miniflare'
 
 const schemaPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '..',
   'schema.sql'
 )
+
+function splitSqlStatements(sql: string): string[] {
+  // Miniflare's D1 exec parser is strict: strip `--` comments and exec
+  // statements one-by-one.
+  return sql
+    .replace(/^\uFEFF/, '')
+    .replace(/--.*$/gm, '')
+    .split(';')
+    .map((statement) => statement.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+}
 
 function normalize(sql: string): string {
   return sql
@@ -17,7 +29,10 @@ function normalize(sql: string): string {
 }
 
 function extractTable(sql: string, table: string): string {
-  const pattern = new RegExp(`create table\\s+${table}\\s*\\(([^;]+)\\)`, 'i')
+  const pattern = new RegExp(
+    `create table\\s+(?:if not exists\\s+)?${table}\\s*\\(([^;]+)\\)`,
+    'i'
+  )
   const match = sql.match(pattern)
   if (!match) {
     throw new Error(`Missing ${table} table definition`)
@@ -101,6 +116,57 @@ describe('schema.sql', () => {
 
     for (const snippet of required) {
       expect(agents).toContain(snippet)
+    }
+  })
+
+  it('defines a games table with the expected columns', async () => {
+    const schema = readFileSync(schemaPath, 'utf8')
+    const normalized = normalize(schema)
+
+    // Ensure the on-disk schema uses IF NOT EXISTS to avoid destructive deploys.
+    expect(normalized).toContain('create table if not exists games')
+
+    const mf = new Miniflare({
+      modules: true,
+      compatibilityDate: '2024-01-01',
+      script: "export default { fetch(){ return new Response('ok') } }",
+      d1Databases: { DB: 'DB' },
+    })
+
+    try {
+      const db = await mf.getD1Database('DB')
+      for (const statement of splitSqlStatements(schema)) {
+        await db.exec(statement)
+      }
+
+      const tableRow = await db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+        .first<{ name: string }>()
+      expect(tableRow?.name).toBe('games')
+
+      const createRow = await db
+        .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='games'")
+        .first<{ sql: string }>()
+      expect(createRow?.sql).toBeTruthy()
+
+      const games = extractTable(normalize(createRow!.sql), 'games')
+      const required = [
+        'id text primary key',
+        'type text',
+        'host_agent text',
+        'state text',
+        'phase text',
+        'players text',
+        'winner text',
+        'created_at text',
+        'updated_at text',
+      ]
+
+      for (const snippet of required) {
+        expect(games).toContain(snippet)
+      }
+    } finally {
+      await mf.dispose()
     }
   })
 })

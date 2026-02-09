@@ -103,6 +103,12 @@ export class D1MockDatabase {
   async run(sql: string, params: unknown[]): Promise<void> {
     const normalized = normalizeSql(sql)
 
+    // Some callers apply `apps/network/schema.sql` against the mock DB to
+    // validate wiring. We don't emulate DDL; we just no-op known table creates.
+    if (/^create table (if not exists )?games\b/.test(normalized)) {
+      return
+    }
+
     if (normalized.startsWith('insert into agents')) {
       const [name, did, createdAt] = params
       const key = String(name)
