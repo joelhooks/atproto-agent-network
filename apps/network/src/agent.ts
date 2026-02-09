@@ -859,8 +859,37 @@ export class AgentDO extends DurableObject {
     let truncated = false
     let timedOut = false
 
-    const selected = toolCalls.slice(0, maxSteps)
+    let selected = toolCalls.slice(0, maxSteps)
     truncated = toolCalls.length > selected.length
+
+    // AUTO-PLAY: If the agent has a game turn but didn't call the game tool, inject game actions.
+    // This is the nuclear option for models that refuse to use the game tool despite explicit prompting.
+    const hasGamePlayCall = selected.some(c => {
+      if (c.name !== 'game') return false
+      const args = c.arguments as Record<string, unknown> | undefined
+      return args?.command === 'action' && args?.gameAction && typeof args.gameAction === 'object'
+    })
+    if (!hasGamePlayCall && this.config?.enabledTools?.includes('game')) {
+      const lastObs = await this.ctx.storage.get<Observations>('lastObservations')
+      const gameNotif = lastObs?.inbox?.find((m: any) => {
+        const text = m?.record?.content?.text ?? m?.content?.text ?? ''
+        return typeof text === 'string' && text.includes('your turn in Catan')
+      })
+      if (gameNotif) {
+        const text = (gameNotif as any)?.record?.content?.text ?? (gameNotif as any)?.content?.text ?? ''
+        const gameIdMatch = text.match(/catan_[a-z0-9]+/)
+        if (gameIdMatch) {
+          const gameId = gameIdMatch[0]
+          console.log('AUTO-PLAY: Injecting game actions for', { agent: this.config?.name, gameId })
+          // Inject roll_dice + end_turn (conservative: just advance the turn)
+          selected = [
+            ...selected.filter(c => c.name !== 'think_aloud'), // drop think_aloud to make room
+            { name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } },
+            { name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } },
+          ].slice(0, maxSteps)
+        }
+      }
+    }
 
     for (const call of selected) {
       const remaining = deadline - Date.now()
