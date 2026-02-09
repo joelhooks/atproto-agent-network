@@ -330,7 +330,19 @@ export const rpgEnvironment: AgentEnvironment = {
         let gameId = typeof params.gameId === 'string' ? params.gameId : ''
         if (!gameId) {
           const row = await findActiveGameForAgent(ctx)
-          if (!row) throw new Error('No active adventure. Use command new_game first.')
+          if (!row) {
+            // List joinable games so agent knows what to do
+            const joinable = await db
+              .prepare("SELECT id, players FROM games WHERE type = 'rpg' AND phase = 'playing' ORDER BY created_at DESC LIMIT 5")
+              .all<{ id: string; players: string }>()
+            const listings = (joinable.results ?? [])
+              .map(g => `- ${g.id} (${JSON.parse(g.players).join(', ')})`)
+              .join('\n')
+            const hint = listings
+              ? `\nJoinable adventures:\n${listings}\nUse command join_game with a gameId.`
+              : '\nNo adventures available. Ask Grimlock to create one.'
+            throw new Error(`No active adventure.${hint}`)
+          }
           gameId = row.id
         }
 
