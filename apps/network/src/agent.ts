@@ -581,7 +581,13 @@ export class AgentDO extends DurableObject {
         // Continue: action errors must not break the chain.
       }
     } else {
-      console.log('AgentDO passive mode — skipping think/act, awaiting external brain', { did: this.did })
+      // Passive mode: skip think (no model calls) but still run act() for auto-play
+      // Auto-play is pure deterministic logic — no API costs
+      try {
+        acted = await this.act({ text: '', toolCalls: [] })
+      } catch (error) {
+        console.error('AgentDO passive auto-play failed', { did: this.did, error: error instanceof Error ? error.message : String(error) })
+      }
     }
 
     try {
