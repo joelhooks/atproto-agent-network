@@ -126,6 +126,25 @@ export function normalizeAgentEvent(
       return toolName ? `Tool: ${toolName}` : type
     }
 
+    // Memory events: extract human-readable summary from context
+    if (kind === 'memory') {
+      const raw = typeof context.summary === 'string' ? context.summary
+        : typeof context.note === 'string' ? context.note
+        : typeof context.message === 'string' ? context.message
+        : null
+      if (raw) {
+        const parsed = tryParseJson(raw)
+        if (parsed) {
+          const t = typeof parsed.type === 'string' ? parsed.type.replace(/_/g, ' ') : null
+          const a = typeof parsed.action === 'string' ? parsed.action.replace(/_/g, ' ') : null
+          const r = typeof parsed.result === 'string' ? `(${parsed.result})` : null
+          return [t, a, r].filter(Boolean).join(' ') || type
+        }
+        return raw.length > 120 ? raw.slice(0, 120) + '…' : raw
+      }
+      return `Memory: ${type.split('.').pop() ?? type}`
+    }
+
     return type
   })()
 
@@ -137,7 +156,31 @@ export function normalizeAgentEvent(
   if (typeof p.trace_id === 'string') details.trace_id = p.trace_id
   if (typeof p.span_id === 'string') details.span_id = p.span_id
 
-  return { type, agent, kind, summary, timestamp, details }
+  // For memory events, humanize context into text + structured data grid
+  let text: string | undefined
+  if (kind === 'memory' && Object.keys(context).length > 0) {
+    // Try to extract human text from context fields
+    text = extractHumanText(context)
+
+    // If context has JSON string fields, parse them and merge into memoryData
+    const memoryData: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(context)) {
+      if (typeof v === 'string') {
+        const parsed = tryParseJson(v)
+        if (parsed) {
+          Object.assign(memoryData, parsed)
+          if (!text) text = extractHumanText(parsed)
+          continue
+        }
+      }
+      memoryData[k] = v
+    }
+    if (Object.keys(memoryData).length > 0) {
+      details.memoryData = memoryData
+    }
+  }
+
+  return { type, agent, kind, summary, timestamp, text, details }
 }
 
 function tryParseJson(s: string): Record<string, unknown> | null {
