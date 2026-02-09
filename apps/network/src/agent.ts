@@ -29,7 +29,7 @@ import { validateLexiconRecord } from '../../../packages/core/src/validation'
 import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../../packages/core/src/types'
 
 import { withErrorHandling } from './http-errors'
-import { createLogger, toErrorDetails } from './logger'
+import { createLogger, logEvent, toErrorDetails } from './logger'
 
 interface AgentEnv {
   AGENTS?: DurableObjectNamespace
@@ -644,7 +644,7 @@ export class AgentDO extends DurableObject {
             trace_id: traceId,
             span_id: createSpanId(),
           })
-          acted = await this.act(thought, { traceId })
+          acted = await this.act(thought)
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -674,7 +674,7 @@ export class AgentDO extends DurableObject {
       // Passive mode: skip think (no model calls) but still run act() for auto-play
       // Auto-play is pure deterministic logic — no API costs
       try {
-        acted = await this.act({ text: '', toolCalls: [] }, { traceId })
+        acted = await this.act({ text: "", toolCalls: [] })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'act' })
