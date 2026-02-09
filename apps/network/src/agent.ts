@@ -501,6 +501,53 @@ export class AgentDO extends DurableObject {
     return { loopRunning, loopCount, nextAlarm }
   }
 
+  private async runHousekeeping(): Promise<void> {
+    const config = await this.loadOrCreateConfig()
+    const goals = Array.isArray(config.goals) ? config.goals : []
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
+
+    const nextGoals = goals.filter((goal) => {
+      if (goal.status !== 'completed') return true
+      const completedAt = goal.completedAt ?? goal.createdAt
+      return typeof completedAt === 'number' && Number.isFinite(completedAt) ? completedAt >= cutoff : true
+    })
+
+    const prunedGoals = goals.length - nextGoals.length
+    if (prunedGoals > 0) {
+      const nextConfig: AgentConfig = { ...config, goals: nextGoals }
+      await this.ctx.storage.put('config', nextConfig)
+      this.config = nextConfig
+    }
+
+    const isActionOutcome = (value: unknown): value is ActionOutcome => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      const rec = value as Record<string, unknown>
+      if (typeof rec.tool !== 'string' || rec.tool.length === 0) return false
+      if (typeof rec.success !== 'boolean') return false
+      if (typeof rec.timestamp !== 'number' || !Number.isFinite(rec.timestamp)) return false
+      if ('goalId' in rec && rec.goalId !== undefined && typeof rec.goalId !== 'string') return false
+      return true
+    }
+
+    const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+    const outcomes: ActionOutcome[] = Array.isArray(outcomesRaw) ? outcomesRaw.filter(isActionOutcome) : []
+    const kept = outcomes.slice(-50)
+    const trimmedOutcomes = Math.max(0, outcomes.length - kept.length)
+
+    if (trimmedOutcomes > 0) {
+      await this.ctx.storage.put('actionOutcomes', kept)
+    }
+
+    console.log(
+      JSON.stringify({
+        event_type: 'agent.housekeeping',
+        level: 'info',
+        prunedGoals,
+        trimmedOutcomes,
+      })
+    )
+  }
+
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
     const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
     if (!running) {
@@ -578,167 +625,183 @@ export class AgentDO extends DurableObject {
     const loopMode = (storedConfig as any)?.loopMode ?? 'autonomous'
     const isPassive = loopMode === 'passive'
 
-    try {
-      await this.broadcastLoopEvent({
-        event_type: 'loop.observe',
-        trace_id: traceId,
-        span_id: createSpanId(),
-      })
-      observations = await this.observe()
-      await this.ctx.storage.put('lastObservations', observations)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const category = this.categorizeAlarmError(error, { phase: 'observe' })
-      logger.error('agent.error', {
-        span_id: createSpanId(),
-        context: { phase: 'observe', category },
-        error: toErrorDetails(error),
-      })
-      hadError = true
-      cycleErrors.push({ category, phase: 'observe', message })
+    if (mode === 'housekeeping') {
       try {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.error',
-          trace_id: traceId,
-          span_id: createSpanId(),
-          outcome: 'error',
-          context: { phase: 'observe' },
-          error: { code: 'observe_failed', message, retryable: true },
-        })
-      } catch {
-        // ignore
-      }
-      // Continue: observation errors must not break the chain.
-    }
-
-    // In passive mode, skip think/act — external brain handles those via API
-    if (!isPassive) {
-      try {
-        if (observations) {
-          await this.broadcastLoopEvent({
-            event_type: 'loop.think',
-            trace_id: traceId,
-            span_id: createSpanId(),
-          })
-          thought = await this.think(observations)
-        }
+        await this.runHousekeeping()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        const category = this.categorizeAlarmError(error, { phase: 'think' })
+        const category = this.categorizeAlarmError(error, { phase: 'housekeeping' })
         logger.error('agent.error', {
           span_id: createSpanId(),
-          context: { phase: 'think', category },
+          context: { phase: 'housekeeping', category },
           error: toErrorDetails(error),
         })
         hadError = true
-        cycleErrors.push({ category, phase: 'think', message })
-        try {
-          await this.broadcastLoopEvent({
-            event_type: 'loop.error',
-            trace_id: traceId,
-            span_id: createSpanId(),
-            outcome: 'error',
-            context: { phase: 'think' },
-            error: { code: 'think_failed', message, retryable: true },
-          })
-        } catch {
-          // ignore
-        }
-        // Continue: think errors must not break the chain.
-      }
-
-      try {
-        if (thought) {
-          await this.broadcastLoopEvent({
-            event_type: 'loop.act',
-            trace_id: traceId,
-            span_id: createSpanId(),
-          })
-          acted = await this.act(thought)
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        const category = this.categorizeAlarmError(error, { phase: 'act' })
-        logger.error('agent.error', {
-          span_id: createSpanId(),
-          context: { phase: 'act', category },
-          error: toErrorDetails(error),
-        })
-        hadError = true
-        cycleErrors.push({ category, phase: 'act', message })
-        try {
-          await this.broadcastLoopEvent({
-            event_type: 'loop.error',
-            trace_id: traceId,
-            span_id: createSpanId(),
-            outcome: 'error',
-            context: { phase: 'act' },
-            error: { code: 'act_failed', message, retryable: true },
-          })
-        } catch {
-          // ignore
-        }
-        // Continue: action errors must not break the chain.
+        cycleErrors.push({ category, phase: 'housekeeping', message })
       }
     } else {
-      // Passive mode: skip think (no model calls) but still run act() for auto-play
-      // Auto-play is pure deterministic logic — no API costs
       try {
-        acted = await this.act({ text: "", toolCalls: [] })
+        await this.broadcastLoopEvent({
+          event_type: 'loop.observe',
+          trace_id: traceId,
+          span_id: createSpanId(),
+        })
+        observations = await this.observe()
+        await this.ctx.storage.put('lastObservations', observations)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        const category = this.categorizeAlarmError(error, { phase: 'act' })
+        const category = this.categorizeAlarmError(error, { phase: 'observe' })
         logger.error('agent.error', {
           span_id: createSpanId(),
-          context: { phase: 'act.passive', category },
+          context: { phase: 'observe', category },
           error: toErrorDetails(error),
         })
         hadError = true
+        cycleErrors.push({ category, phase: 'observe', message })
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.error',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            outcome: 'error',
+            context: { phase: 'observe' },
+            error: { code: 'observe_failed', message, retryable: true },
+          })
+        } catch {
+          // ignore
+        }
+        // Continue: observation errors must not break the chain.
+      }
+
+      // In passive mode, skip think/act — external brain handles those via API
+      if (!isPassive) {
+        try {
+          if (observations) {
+            await this.broadcastLoopEvent({
+              event_type: 'loop.think',
+              trace_id: traceId,
+              span_id: createSpanId(),
+            })
+            thought = await this.think(observations)
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          const category = this.categorizeAlarmError(error, { phase: 'think' })
+          logger.error('agent.error', {
+            span_id: createSpanId(),
+            context: { phase: 'think', category },
+            error: toErrorDetails(error),
+          })
+          hadError = true
+          cycleErrors.push({ category, phase: 'think', message })
+          try {
+            await this.broadcastLoopEvent({
+              event_type: 'loop.error',
+              trace_id: traceId,
+              span_id: createSpanId(),
+              outcome: 'error',
+              context: { phase: 'think' },
+              error: { code: 'think_failed', message, retryable: true },
+            })
+          } catch {
+            // ignore
+          }
+          // Continue: think errors must not break the chain.
+        }
+
+        try {
+          if (thought) {
+            await this.broadcastLoopEvent({
+              event_type: 'loop.act',
+              trace_id: traceId,
+              span_id: createSpanId(),
+            })
+            acted = await this.act(thought)
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          const category = this.categorizeAlarmError(error, { phase: 'act' })
+          logger.error('agent.error', {
+            span_id: createSpanId(),
+            context: { phase: 'act', category },
+            error: toErrorDetails(error),
+          })
+          hadError = true
+          cycleErrors.push({ category, phase: 'act', message })
+          try {
+            await this.broadcastLoopEvent({
+              event_type: 'loop.error',
+              trace_id: traceId,
+              span_id: createSpanId(),
+              outcome: 'error',
+              context: { phase: 'act' },
+              error: { code: 'act_failed', message, retryable: true },
+            })
+          } catch {
+            // ignore
+          }
+          // Continue: action errors must not break the chain.
+        }
+      } else {
+        // Passive mode: skip think (no model calls) but still run act() for auto-play
+        // Auto-play is pure deterministic logic — no API costs
+        try {
+          acted = await this.act({ text: "", toolCalls: [] })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          const category = this.categorizeAlarmError(error, { phase: 'act' })
+          logger.error('agent.error', {
+            span_id: createSpanId(),
+            context: { phase: 'act.passive', category },
+            error: toErrorDetails(error),
+          })
+          hadError = true
+          cycleErrors.push({ category, phase: 'act', message })
+        }
+      }
+
+      // Tool errors in act() are recorded as step failures (act() itself does not throw).
+      // Treat failed steps as an error signal for alarm scheduling.
+      if (acted?.steps?.some((s) => !s.ok)) {
+        hadError = true
+        const gameStepFailed = acted.steps.some((s) => s.name === 'game' && !s.ok)
+        const category: AlarmErrorCategory = gameStepFailed ? 'game' : 'persistent'
+        const firstFailure = acted.steps.find((s) => !s.ok)
+        const message = typeof (firstFailure as any)?.error === 'string' ? (firstFailure as any).error : 'tool_failed'
         cycleErrors.push({ category, phase: 'act', message })
       }
-    }
 
-    // Tool errors in act() are recorded as step failures (act() itself does not throw).
-    // Treat failed steps as an error signal for alarm scheduling.
-    if (acted?.steps?.some((s) => !s.ok)) {
-      hadError = true
-      const gameStepFailed = acted.steps.some((s) => s.name === 'game' && !s.ok)
-      const category: AlarmErrorCategory = gameStepFailed ? 'game' : 'persistent'
-      const firstFailure = acted.steps.find((s) => !s.ok)
-      const message = typeof (firstFailure as any)?.error === 'string' ? (firstFailure as any).error : 'tool_failed'
-      cycleErrors.push({ category, phase: 'act', message })
-    }
-
-    try {
-      await this.broadcastLoopEvent({
-        event_type: 'loop.reflect',
-        trace_id: traceId,
-        span_id: createSpanId(),
-      })
-      await this.reflect({ observations, thought, acted })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const category = this.categorizeAlarmError(error, { phase: 'reflect' })
-      logger.error('agent.error', {
-        span_id: createSpanId(),
-        context: { phase: 'reflect', category },
-        error: toErrorDetails(error),
-      })
-      hadError = true
-      cycleErrors.push({ category, phase: 'reflect', message })
       try {
         await this.broadcastLoopEvent({
-          event_type: 'loop.error',
+          event_type: 'loop.reflect',
           trace_id: traceId,
           span_id: createSpanId(),
-          outcome: 'error',
-          context: { phase: 'reflect' },
-          error: { code: 'reflect_failed', message, retryable: true },
         })
-      } catch {
-        // ignore
+        await this.reflect({ observations, thought, acted })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const category = this.categorizeAlarmError(error, { phase: 'reflect' })
+        logger.error('agent.error', {
+          span_id: createSpanId(),
+          context: { phase: 'reflect', category },
+          error: toErrorDetails(error),
+        })
+        hadError = true
+        cycleErrors.push({ category, phase: 'reflect', message })
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.error',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            outcome: 'error',
+            context: { phase: 'reflect' },
+            error: { code: 'reflect_failed', message, retryable: true },
+          })
+        } catch {
+          // ignore
+        }
+        // Continue: reflect errors must not break the chain.
       }
-      // Continue: reflect errors must not break the chain.
     }
 
     try {
@@ -755,8 +818,7 @@ export class AgentDO extends DurableObject {
       // Continue: errors must not break the chain.
     }
 
-    // Alarm mode rotation. For now, all modes run the same observe→think→act→reflect cycle.
-    // This just persists a rotation state so later stories can add mode-specific behavior.
+    // Alarm mode rotation.
     try {
       const modeCounter =
         typeof modeCounterRaw === 'number' && Number.isFinite(modeCounterRaw) ? modeCounterRaw : 0

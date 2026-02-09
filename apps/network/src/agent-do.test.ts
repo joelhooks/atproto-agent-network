@@ -1765,6 +1765,69 @@ describe('AgentDO', () => {
     expect(await storage.get('alarmModeCounter')).toBe(0)
   })
 
+  it("alarm() in housekeeping mode prunes completed goals older than 24h", async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-alarm-housekeeping-goals')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const now = Date.now()
+    const old = now - 25 * 60 * 60 * 1000
+    const completed = (id: string, completedAt: number) => ({
+      id,
+      description: id,
+      priority: 0,
+      status: 'completed' as const,
+      progress: 1,
+      createdAt: completedAt - 1_000,
+      completedAt,
+    })
+    const pending = {
+      id: 'goal-pending',
+      description: 'keep me',
+      priority: 1,
+      status: 'pending',
+      progress: 0,
+      createdAt: now - 1_000,
+    }
+
+    await agent.fetch(
+      new Request('https://example/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maxCompletedGoals: 10,
+          goals: [
+            pending,
+            completed('goal-old-1', old - 3_000),
+            completed('goal-old-2', old - 2_000),
+            completed('goal-old-3', old - 1_000),
+          ],
+        }),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('alarmMode', 'housekeeping')
+
+    // Quiet noisy lifecycle logs. This test asserts only stored config mutation.
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await agent.alarm()
+
+    const storedConfig = await storage.get<{ goals?: Array<{ id?: unknown }> }>('config')
+    const storedIds = Array.isArray(storedConfig?.goals) ? storedConfig!.goals.map((g) => g.id) : []
+
+    expect(storedIds).toEqual(expect.arrayContaining(['goal-pending']))
+    expect(storedIds).not.toEqual(expect.arrayContaining(['goal-old-1', 'goal-old-2', 'goal-old-3']))
+  })
+
   it('startLoop() sets loopRunning flag and schedules first alarm', async () => {
     const { state, storage } = createState('agent-start-loop')
     const { env } = createEnv({
@@ -1905,10 +1968,15 @@ describe('AgentDO', () => {
     await agent.alarm()
     expect(await storage.getAlarm()).toBe(tSuccess + 5_000)
 
-    // Next transient error after success restarts at 15s.
+    // After success, the next cycle is housekeeping (no model call), so it schedules the normal interval again.
     vi.setSystemTime(new Date(tSuccess + 5_000))
     await agent.alarm()
-    expect(await storage.getAlarm()).toBe(tSuccess + 5_000 + 15_000)
+    expect(await storage.getAlarm()).toBe(tSuccess + 5_000 + 5_000)
+
+    // Next transient error after success happens on the following reflection cycle and restarts at 15s.
+    vi.setSystemTime(new Date(tSuccess + 10_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(tSuccess + 10_000 + 15_000)
 
     vi.useRealTimers()
   })
