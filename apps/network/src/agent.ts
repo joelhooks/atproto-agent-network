@@ -737,20 +737,58 @@ export class AgentDO extends DurableObject {
         if (gameRow) {
           const state = JSON.parse(gameRow.state)
           const isMyTurn = state.currentPlayer === agentName
+          // Build rich game context for the model
+          const me = state.players?.find((p: any) => p.name === agentName)
+          const others = state.players?.filter((p: any) => p.name !== agentName) || []
+          const myRes = me?.resources as Record<string, number> | undefined
+          const resStr = myRes ? `Wood:${myRes.wood||0} Brick:${myRes.brick||0} Sheep:${myRes.sheep||0} Wheat:${myRes.wheat||0} Ore:${myRes.ore||0}` : 'unknown'
+          const mySettlements = me?.settlements?.length ?? 0
+          const myRoads = me?.roads?.length ?? 0
+          const scoreboard = state.players?.map((p: any) => `${p.name}: ${p.victoryPoints}VP, ${p.settlements?.length ?? 0} settlements, ${p.roads?.length ?? 0} roads`).join(' | ') ?? ''
+          
+          // Strategic hints based on resources
+          const canAffordSettlement = myRes && myRes.wood >= 1 && myRes.brick >= 1 && myRes.sheep >= 1 && myRes.wheat >= 1
+          const canAffordRoad = myRes && myRes.wood >= 1 && myRes.brick >= 1
+          const surplus = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 6).map(([k]) => k) : []
+          const scarce = myRes ? ['wood','brick','sheep','wheat'].filter(r => (myRes[r] || 0) < 2) : []
+
           if (isMyTurn) {
+            const strategyHints: string[] = []
+            if (canAffordSettlement) strategyHints.push('🏠 You can afford a settlement! Look for a vertex connected to your roads, not adjacent to any existing settlement.')
+            if (canAffordRoad) strategyHints.push('🛤️ You can afford a road. Expand toward empty vertices for future settlements.')
+            if (surplus.length > 0 && scarce.length > 0) strategyHints.push(`💱 Trade surplus ${surplus.join('/')} (3:1 bank trade) for scarce ${scarce.join('/')}.`)
+            if (!canAffordSettlement && !canAffordRoad) strategyHints.push('💰 Save up — you need wood+brick for roads, wood+brick+sheep+wheat for settlements.')
+
             gameContext = [
               `🎮🎮🎮 IT IS YOUR TURN in Catan game ${gameRow.id} (turn ${state.turn})!`,
-              `Use the game tool: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}}`,
-              `Then: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}}`,
+              ``,
+              `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads`,
+              `💎 Resources: ${resStr}`,
+              `🏆 Scoreboard: ${scoreboard}`,
+              ``,
+              `🧠 STRATEGY:`,
+              ...strategyHints,
+              ``,
+              `📋 TURN ORDER: 1) Roll dice  2) Trade/Build (as many as you can afford!)  3) End turn`,
+              `🎯 GOAL: First to 5 VP wins! Each settlement = 1VP. Build roads to reach new settlement spots.`,
+              ``,
+              `ACTIONS — use game tool with gameId "${gameRow.id}":`,
+              `  Roll: {"type":"roll_dice"}`,
+              `  Build settlement: {"type":"build_settlement","vertexId":NUMBER}`,
+              `  Build road: {"type":"build_road","edgeId":NUMBER}`,
+              `  Bank trade (3:1): {"type":"bank_trade","offering":"RESOURCE","requesting":"RESOURCE"}`,
+              `  End turn: {"type":"end_turn"}`,
+              ``,
+              `⚡ IMPORTANT: Do ALL your building/trading BEFORE ending your turn! Don't just roll and end.`,
             ].join('\n')
           } else {
-            const players = state.players?.map((p: any) => `${p.name}: ${p.victoryPoints}VP, ${Object.values(p.resources as Record<string,number>).reduce((a: number, b: number) => a + b, 0)} resources`).join(', ') ?? ''
             gameContext = [
               `🎲 Active Catan game: ${gameRow.id} (turn ${state.turn})`,
               `Current player: ${state.currentPlayer} — waiting for them to play.`,
-              `Scoreboard: ${players}`,
+              `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads | ${resStr}`,
+              `🏆 Scoreboard: ${scoreboard}`,
               'DO NOT create a new game. You are already in one.',
-              'Use think_aloud to trash talk about the other players while you wait.',
+              'Use think_aloud to strategize or trash talk the other players while you wait.',
             ].join('\n')
           }
         }
