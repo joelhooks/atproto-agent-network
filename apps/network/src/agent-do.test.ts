@@ -1751,6 +1751,65 @@ describe('AgentDO', () => {
     expect(types.has('agent.cycle.end')).toBe(true)
   })
 
+  it('alarm() emits a cycle summary event to the O11Y pipeline binding when present', async () => {
+    const { state, storage } = createState('agent-alarm-o11y-pipeline')
+    const pipeline = { send: vi.fn().mockResolvedValue(undefined) }
+    const { env } = createEnv({
+      O11Y_PIPELINE: pipeline,
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({
+        prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+      }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await agent.alarm()
+
+    expect(pipeline.send).toHaveBeenCalledTimes(1)
+
+    const call = pipeline.send.mock.calls[0]?.[0]
+    expect(Array.isArray(call)).toBe(true)
+    expect(call?.[0]).toMatchObject({
+      event_type: 'agent.cycle',
+      agent: 'did:cf:agent-alarm-o11y-pipeline',
+      mode: 'think',
+      toolCalls: 0,
+      errors: 0,
+    })
+    expect(typeof call?.[0]?.durationMs).toBe('number')
+
+    const nextAlarm = await storage.getAlarm()
+    expect(nextAlarm).not.toBeNull()
+  })
+
+  it('alarm() treats O11Y pipeline send failures as non-fatal', async () => {
+    const { state, storage } = createState('agent-alarm-o11y-pipeline-failure')
+    const pipeline = { send: vi.fn().mockRejectedValue(new Error('pipeline down')) }
+    const { env } = createEnv({
+      O11Y_PIPELINE: pipeline,
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({
+        prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+      }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await expect(agent.alarm()).resolves.toBeUndefined()
+
+    expect(pipeline.send).toHaveBeenCalledTimes(1)
+    expect(await storage.getAlarm()).not.toBeNull()
+  })
+
   it("alarm() rotates alarmMode think(5)→housekeeping(1)→reflection(1)→think", async () => {
     const { state, storage } = createState('agent-alarm-mode-rotation')
     const { env } = createEnv({
