@@ -1723,6 +1723,31 @@ describe('AgentDO', () => {
     expect(types.has('agent.cycle.end')).toBe(true)
   })
 
+  it("alarm() rotates alarmMode think(5)→housekeeping(1)→reflection(1)→think", async () => {
+    const { state, storage } = createState('agent-alarm-mode-rotation')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    // Quiet JSON logs; this test only asserts storage keys.
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const modes: string[] = []
+    for (let i = 0; i < 7; i += 1) {
+      await agent.alarm()
+      modes.push(String((await storage.get('alarmMode')) ?? ''))
+    }
+
+    expect(modes).toEqual(['think', 'think', 'think', 'think', 'housekeeping', 'reflection', 'think'])
+    expect(await storage.get('alarmModeCounter')).toBe(0)
+  })
+
   it('startLoop() sets loopRunning flag and schedules first alarm', async () => {
     const { state, storage } = createState('agent-start-loop')
     const { env } = createEnv({
