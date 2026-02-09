@@ -749,7 +749,7 @@ export class AgentDO extends DurableObject {
           // Strategic hints based on resources
           const canAffordSettlement = myRes && myRes.wood >= 1 && myRes.brick >= 1 && myRes.sheep >= 1 && myRes.wheat >= 1
           const canAffordRoad = myRes && myRes.wood >= 1 && myRes.brick >= 1
-          const surplus = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 6).map(([k]) => k) : []
+          const surplus = myRes ? Object.entries(myRes).filter(([, v]) => typeof v === 'number' && v >= 4).map(([k]) => k) : []
           const scarce = myRes ? ['wood','brick','sheep','wheat'].filter(r => (myRes[r] || 0) < 2) : []
 
           if (state.phase === 'setup' && isMyTurn) {
@@ -923,7 +923,10 @@ export class AgentDO extends DurableObject {
     truncated = toolCalls.length > selected.length
 
     // AUTO-PLAY SETUP PHASE: Handle initial settlement + road placement
-    if (this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
+    const hasGameTool = this.config?.enabledTools?.includes('game')
+    const hasDB = !!this.agentEnv?.DB
+    console.log('SETUP AUTO-PLAY guard:', { agent: this.config?.name, hasGameTool, hasDB })
+    if (hasGameTool && hasDB) {
       try {
         const agentName = this.config?.name ?? ''
         const setupRow = await this.agentEnv.DB
@@ -1085,7 +1088,9 @@ export class AgentDO extends DurableObject {
             //    Road costs 1 wood + 1 brick
             const needed = ['wood', 'brick', 'sheep', 'wheat']
             const low = needed.filter(x => (r[x] || 0) < 3) // "low" = less than 3
-            const surplus = Object.entries(r).filter(([res, count]) => typeof count === 'number' && count >= 6 && needed.includes(res))
+            // Trade ANY resource we have >= 4 of (enough for one 3:1 trade), not just needed ones
+            // This ensures ore and other surplus gets traded for useful resources
+            const surplus = Object.entries(r).filter(([, count]) => typeof count === 'number' && count >= 4)
             
             // Trade surplus for low resources (up to 3 trades per turn to keep it reasonable)
             let tradesThisTurn = 0
