@@ -326,3 +326,9 @@ Changes:
 Validation:
 - ✅ `pnpm typecheck && pnpm test`
 - ❌ Deploy attempt blocked: `wrangler deploy` failed with Cloudflare error `No index was found with name 'agent-memory'` (Vectorize binding validation).
+
+---
+[2026-02-09T21:15:06.130Z]
+Completed: D1 schema: generic games table for environment state
+Files: apps/network/schema.sql, apps/network/src/schema.test.ts, packages/core/src/d1-mock.ts
+Summary: Implemented GH Issue #110 by adding the missing `games` table to the D1 schema, adding a schema test that executes `schema.sql` in Miniflare D1 and validates the table/columns via `sqlite_master`, and updating the D1 mock to tolerate the `CREATE TABLE games` DDL. Validation `pnpm typecheck && pnpm test` passed. Prior failure pattern detected: `verification_rejected` (zero tool calls). Mitigation: ran the required `swarm memory find`, executed targeted tests first, then full validation, and kept changes strictly to the schema/test/mock files.
