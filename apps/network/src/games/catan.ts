@@ -393,6 +393,17 @@ export function executeAction(state: GameState, playerName: string, action: Game
       state.currentPlayer = state.players[nextIdx].name
       state.turn += 1
       addLog(state, playerName, 'end_turn', `Turn ${state.turn}`)
+
+      // Turn cap: after 300 turns, highest VP wins
+      const MAX_TURNS = 300
+      if (state.turn >= MAX_TURNS) {
+        const sorted = [...state.players].sort((a, b) => b.victoryPoints - a.victoryPoints)
+        state.phase = 'finished'
+        state.winner = sorted[0].name
+        addLog(state, sorted[0].name, 'game_over', `Turn cap reached (${MAX_TURNS}). ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`)
+        return { ok: true, events: [`Game over! Turn cap reached. ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`] }
+      }
+
       return { ok: true, events: [`Turn ended. Now ${state.currentPlayer}'s turn (turn ${state.turn})`] }
     }
 

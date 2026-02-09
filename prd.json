@@ -171,6 +171,68 @@
         "Safety limits enforced",
         "Tests for extension lifecycle"
       ]
+    },
+    {
+      "id": "story-mlepdwd0",
+      "title": "Wire environment hooks into agent alarm cycle",
+      "description": "GH Issue #71. Replace the Catan-specific touchpoints in agent.ts with generic environment hooks.\n\n1. **observe()** — After collecting inbox/events, iterate over agent's enabled environments via the registry in `apps/network/src/environments/`. Call `env.buildContext(ctx)` for each. Append returned context strings to observations.\n\n2. **act() assist mode** — After model tool execution, if no environment-specific action was taken, iterate enabled environments and call `env.getAutoPlayActions(ctx)`. Inject returned tool calls. The current inline D1 game query and assist injection should be delegated to the CatanEnvironment.\n\n3. **buildTools()** — Call `env.getTool(ctx)` for each enabled environment and merge into the tool set. The inline game tool definition should move to `environments/catan.ts`.\n\n4. Agent config: Add `enabledEnvironments?: string[]` to the agent config type. If present, only load those environments. This replaces checking for 'game' in enabledTools for Catan.\n\n5. Create an `EnvironmentContext` from the agent's state (name, did, DB, relay, broadcast function) and pass it to environment methods.\n\nThe result: agent.ts has ZERO Catan-specific code. All game logic lives in environments/catan.ts.\n\nIMPORTANT: The environment files already exist at `apps/network/src/environments/` — types.ts, registry.ts, catan.ts, builtins.ts. Use them. The current Catan game tool definition (~line 2100-2150 in agent.ts) and assist mode logic (~line 993-1080 in agent.ts) and think prompt game context (~line 730-800 in agent.ts) need to move into the CatanEnvironment class methods.",
+      "priority": 1,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && turbo typecheck && vitest run --passWithNoTests",
+      "acceptanceCriteria": [
+        "No Catan-specific code in agent.ts",
+        "observe delegates context building to environments",
+        "act assist mode delegates to environments",
+        "buildTools includes environment tools",
+        "enabledEnvironments config option works",
+        "All existing tests still pass"
+      ]
+    },
+    {
+      "id": "story-mlepe0v2",
+      "title": "Environment HTTP API + backward compat",
+      "description": "GH Issue #72. Update HTTP routing in `apps/network/src/index.ts` to support environments.\n\n1. `GET /environments` — list all environment instances. Supports query params: `?type=catan`, `?phase=playing`, `?player=grimlock`. Queries `games` table.\n2. `GET /environments/:id` — get specific environment instance with full state.\n3. `POST /environments` — create new environment instance. Body: `{ type: 'catan', players: ['slag', 'snarl'] }`. Delegates to the registered environment's creation logic.\n4. **Backward compat**: Keep existing `/games` and `/games/:id` routes working as aliases that filter to `type=catan`.\n5. Add environment type to the response objects.\n\nTests: verify /environments endpoints return correct data, verify /games still works.",
+      "priority": 2,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && turbo typecheck && vitest run --passWithNoTests",
+      "acceptanceCriteria": [
+        "GET /environments returns environment list",
+        "GET /environments/:id returns full state",
+        "Query params filter by type and phase",
+        "/games routes still work as aliases",
+        "At least 2 endpoint tests"
+      ]
+    },
+    {
+      "id": "story-mlepe7gy",
+      "title": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
+      "description": "GH Issue #73. Second environment plugin — BRP-inspired RPG dungeon crawl.\n\n1. Create `apps/network/src/games/rpg-engine.ts` — pure game logic (no network deps):\n   - d100 skill resolution (roll under skill value = success)\n   - 4 classes: Warrior (STR), Scout (DEX), Mage (INT), Healer (WIS)\n   - Combat: initiative by DEX, attack vs dodge opposed roll\n   - Experience: successful skill checks improve that skill (BRP-style)\n   - Dungeon: rooms with encounters (combat, trap, treasure, rest, puzzle)\n   - Party-based: agents form party, take turns choosing actions\n\n2. Create `apps/network/src/environments/rpg.ts` implementing AgentEnvironment interface from `environments/types.ts`:\n   - `type: 'rpg'`, `label: 'Dungeon Crawl'`\n   - `getTool()` — rpg tool with commands: create_character, explore, attack, cast_spell, use_skill, rest, status\n   - `buildContext()` — current room, party health, available actions\n   - `getAutoPlayActions()` — if in combat: attack. If exploring: move to next room.\n\n3. Register RPGEnvironment in `environments/builtins.ts`.\n4. Store RPG state in `games` table with a different type field.\n\nTests: at least 8 tests covering skill checks, combat, experience gain, character creation.",
+      "priority": 3,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && turbo typecheck && vitest run --passWithNoTests",
+      "acceptanceCriteria": [
+        "RPG engine handles d100 skill resolution",
+        "4 classes with distinct stat spreads",
+        "Combat system works with opposed rolls",
+        "Experience improves skills on success",
+        "RPGEnvironment implements AgentEnvironment",
+        "At least 8 tests for RPG engine"
+      ]
+    },
+    {
+      "id": "story-mlepebbr",
+      "title": "Dashboard: environment panel per agent",
+      "description": "GH Issue #74. Add environment state display to the dashboard at `packages/dashboard/src/index.html`.\n\nWhen viewing agent detail:\n1. Fetch `GET /environments?player={agentName}` to get active environments\n2. Show environment cards: type icon, label, phase, other players, VP/HP summary\n3. For Catan: show board summary (settlements, roads, resources, VP)\n4. For RPG: show character sheet (class, HP, skills, current room)\n5. Expandable detail view with full state\n\nThe dashboard is vanilla HTML/JS, no framework. Use fetch() and DOM manipulation.",
+      "priority": 4,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && turbo typecheck && vitest run --passWithNoTests",
+      "acceptanceCriteria": [
+        "Dashboard shows environment cards per agent",
+        "Catan state rendered with board summary",
+        "RPG state rendered with character sheet",
+        "Fetches from /environments API",
+        "Types pass"
+      ]
     }
   ],
   "metadata": {
