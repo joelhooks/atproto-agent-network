@@ -125,6 +125,13 @@ const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
 const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
+
+type AlarmErrorCategory = 'transient' | 'persistent' | 'game' | 'unknown'
+type AlarmBackoffState = { category: AlarmErrorCategory; streak: number }
+
+const TRANSIENT_BACKOFF_MS = [15_000, 30_000, 60_000] as const
+const PERSISTENT_BACKOFF_MS = [60_000, 120_000, 300_000] as const
+const GAME_BACKOFF_MS = 15_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
 const DEFAULT_MAX_COMPLETED_GOALS = 2
 
@@ -506,26 +513,31 @@ export class AgentDO extends DurableObject {
     const traceId = createTraceId()
 
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
+    const cycleErrors: Array<{ category: AlarmErrorCategory; phase: string; message: string }> = []
     let observations: Observations | null = null
     let thought: ThinkResult | null = null
     let acted: ActResult | null = null
     let hadError = false
 
+    let storedConfig: AgentConfig | null = null
     try {
-      const storedConfig = await this.ctx.storage.get<AgentConfig>('config')
+      const config = await this.ctx.storage.get<AgentConfig>('config')
+      storedConfig = config && typeof config === 'object' ? config : null
       if (storedConfig && typeof storedConfig.loopIntervalMs === 'number' && Number.isFinite(storedConfig.loopIntervalMs)) {
         intervalMs = storedConfig.loopIntervalMs
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO alarm failed to load config', { did: this.did, error: message })
+      const category: AlarmErrorCategory = 'persistent'
+      console.error('AgentDO alarm failed to load config', { did: this.did, category, error: message })
+      hadError = true
+      cycleErrors.push({ category, phase: 'config', message })
     }
 
     intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
 
     // Check for passive mode — external brain drives think/act
-    const storedConfigForMode = await this.ctx.storage.get<AgentConfig>('config')
-    const loopMode = (storedConfigForMode as any)?.loopMode ?? 'autonomous'
+    const loopMode = (storedConfig as any)?.loopMode ?? 'autonomous'
     const isPassive = loopMode === 'passive'
 
     try {
@@ -538,8 +550,10 @@ export class AgentDO extends DurableObject {
       await this.ctx.storage.put('lastObservations', observations)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO observe failed', { did: this.did, error: message })
+      const category = this.categorizeAlarmError(error, { phase: 'observe' })
+      console.error('AgentDO observe failed', { did: this.did, category, error: message })
       hadError = true
+      cycleErrors.push({ category, phase: 'observe', message })
       try {
         await this.broadcastLoopEvent({
           event_type: 'loop.error',
@@ -568,8 +582,10 @@ export class AgentDO extends DurableObject {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        console.error('AgentDO think failed', { did: this.did, error: message })
+        const category = this.categorizeAlarmError(error, { phase: 'think' })
+        console.error('AgentDO think failed', { did: this.did, category, error: message })
         hadError = true
+        cycleErrors.push({ category, phase: 'think', message })
         try {
           await this.broadcastLoopEvent({
             event_type: 'loop.error',
@@ -596,8 +612,10 @@ export class AgentDO extends DurableObject {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        console.error('AgentDO act failed', { did: this.did, error: message })
+        const category = this.categorizeAlarmError(error, { phase: 'act' })
+        console.error('AgentDO act failed', { did: this.did, category, error: message })
         hadError = true
+        cycleErrors.push({ category, phase: 'act', message })
         try {
           await this.broadcastLoopEvent({
             event_type: 'loop.error',
@@ -618,8 +636,23 @@ export class AgentDO extends DurableObject {
       try {
         acted = await this.act({ text: '', toolCalls: [] })
       } catch (error) {
-        console.error('AgentDO passive auto-play failed', { did: this.did, error: error instanceof Error ? error.message : String(error) })
+        const message = error instanceof Error ? error.message : String(error)
+        const category = this.categorizeAlarmError(error, { phase: 'act' })
+        console.error('AgentDO passive auto-play failed', { did: this.did, category, error: message })
+        hadError = true
+        cycleErrors.push({ category, phase: 'act', message })
       }
+    }
+
+    // Tool errors in act() are recorded as step failures (act() itself does not throw).
+    // Treat failed steps as an error signal for alarm scheduling.
+    if (acted?.steps?.some((s) => !s.ok)) {
+      hadError = true
+      const gameStepFailed = acted.steps.some((s) => s.name === 'game' && !s.ok)
+      const category: AlarmErrorCategory = gameStepFailed ? 'game' : 'persistent'
+      const firstFailure = acted.steps.find((s) => !s.ok)
+      const message = typeof (firstFailure as any)?.error === 'string' ? (firstFailure as any).error : 'tool_failed'
+      cycleErrors.push({ category, phase: 'act', message })
     }
 
     try {
@@ -631,7 +664,10 @@ export class AgentDO extends DurableObject {
       await this.reflect({ observations, thought, acted })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO reflect failed', { did: this.did, error: message })
+      const category = this.categorizeAlarmError(error, { phase: 'reflect' })
+      console.error('AgentDO reflect failed', { did: this.did, category, error: message })
+      hadError = true
+      cycleErrors.push({ category, phase: 'reflect', message })
       try {
         await this.broadcastLoopEvent({
           event_type: 'loop.error',
@@ -664,23 +700,42 @@ export class AgentDO extends DurableObject {
       // Continue: errors must not break the chain.
     }
 
-    // Exponential backoff on consecutive errors
+    // Tiered backoff on consecutive errors (by error category)
     try {
       let nextInterval = intervalMs
       if (hadError) {
-        const prev = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
-        const consecutiveErrors = prev + 1
-        await this.ctx.storage.put('consecutiveErrors', consecutiveErrors)
-        // Exponential backoff: base * 2^(errors-1), capped at 5 minutes
-        const backoffMs = Math.min(intervalMs * Math.pow(2, Math.min(consecutiveErrors - 1, 5)), 300_000)
+        const category = selectAlarmErrorCategory(cycleErrors)
+        const prev = (await this.ctx.storage.get<AlarmBackoffState>('errorBackoff')) ?? null
+        const streak = prev && prev.category === category ? prev.streak + 1 : 1
+        const backoffMs = computeTieredBackoffMs(category, streak)
         nextInterval = backoffMs
-        console.log('AgentDO backoff', { did: this.did, consecutiveErrors, backoffMs, normalInterval: intervalMs })
-        await this.ctx.storage.put('debug:lastError', { ts: Date.now(), consecutiveErrors, backoffMs })
+
+        await this.ctx.storage.put('errorBackoff', { category, streak })
+        await this.ctx.storage.put('consecutiveErrors', streak)
+
+        const lastError = cycleErrors.at(-1)
+        console.log('AgentDO backoff', {
+          did: this.did,
+          category,
+          streak,
+          backoffMs,
+          normalInterval: intervalMs,
+          phase: lastError?.phase,
+        })
+        await this.ctx.storage.put('debug:lastError', {
+          ts: Date.now(),
+          category,
+          streak,
+          backoffMs,
+          lastPhase: lastError?.phase ?? null,
+          lastMessage: lastError?.message ?? null,
+        })
       } else {
-        const prev = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
-        if (prev > 0) {
-          console.log('AgentDO error recovery', { did: this.did, previousErrors: prev })
+        const prev = await this.ctx.storage.get<AlarmBackoffState>('errorBackoff')
+        if (prev?.streak && prev.streak > 0) {
+          console.log('AgentDO error recovery', { did: this.did, previousCategory: prev.category, previousStreak: prev.streak })
         }
+        await this.ctx.storage.put('errorBackoff', { category: 'unknown', streak: 0 })
         await this.ctx.storage.put('consecutiveErrors', 0)
       }
 
@@ -690,7 +745,12 @@ export class AgentDO extends DurableObject {
           event_type: 'loop.sleep',
           trace_id: traceId,
           span_id: createSpanId(),
-          context: { intervalMs: nextInterval, nextAlarmAt: Date.now() + nextInterval, backoff: hadError },
+          context: {
+            intervalMs: nextInterval,
+            nextAlarmAt: Date.now() + nextInterval,
+            backoff: hadError,
+            errorCategory: hadError ? selectAlarmErrorCategory(cycleErrors) : null,
+          },
         })
       } catch {
         // ignore
@@ -3098,6 +3158,50 @@ export class AgentDO extends DurableObject {
     // injection from interfering with the next loop cycle's timing behavior.
     await this.rebuildAgentWrapper({ systemPromptOverride: `${base}${hint}`, toolsOverride: this.tools })
   }
+
+  private categorizeAlarmError(error: unknown, ctx: { phase: string }): AlarmErrorCategory {
+    const message = error instanceof Error ? error.message : String(error)
+    const normalized = message.toLowerCase()
+
+    // Game-context: errors explicitly coming from game actions should not stall the agent for long.
+    if (ctx.phase === 'act' && normalized.includes('game')) return 'game'
+
+    // Transient: timeouts, rate limits, temporary upstream failures.
+    if (normalized.includes('rate limit') || normalized.includes('too many requests') || normalized.includes('429')) {
+      return 'transient'
+    }
+    if (
+      normalized.includes('timeout') ||
+      normalized.includes('timed out') ||
+      normalized.includes('etimedout') ||
+      (error && typeof error === 'object' && (error as any).name === 'AbortError')
+    ) {
+      return 'transient'
+    }
+
+    // Persistent: config/infra issues tend to persist until human intervention.
+    if (normalized.includes('config')) return 'persistent'
+
+    // Default conservative behavior: treat unknown errors as persistent to avoid thrash.
+    return 'persistent'
+  }
+}
+
+function selectAlarmErrorCategory(
+  errors: Array<{ category: AlarmErrorCategory }>
+): AlarmErrorCategory {
+  if (errors.some((e) => e.category === 'persistent')) return 'persistent'
+  if (errors.some((e) => e.category === 'transient')) return 'transient'
+  if (errors.some((e) => e.category === 'game')) return 'game'
+  return 'unknown'
+}
+
+function computeTieredBackoffMs(category: AlarmErrorCategory, streak: number): number {
+  const i = Math.max(0, Math.floor(streak) - 1)
+  if (category === 'transient') return TRANSIENT_BACKOFF_MS[Math.min(i, TRANSIENT_BACKOFF_MS.length - 1)]!
+  if (category === 'persistent') return PERSISTENT_BACKOFF_MS[Math.min(i, PERSISTENT_BACKOFF_MS.length - 1)]!
+  if (category === 'game') return GAME_BACKOFF_MS
+  return PERSISTENT_BACKOFF_MS[0]
 }
 
 function isPiAgentMessage(value: unknown): value is PiAgentMessage {

@@ -1772,6 +1772,138 @@ describe('AgentDO', () => {
     expect(nextAlarm).not.toBeNull()
   })
 
+  it('tiered backoff: transient (rate limit/timeout) goes 15s→30s→60s (cap) and resets on success', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-01T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-backoff-transient')
+    const prompt = vi.fn()
+      .mockRejectedValueOnce(new Error('429 Too Many Requests (rate limit)'))
+      .mockRejectedValueOnce(new Error('rate limit'))
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockRejectedValueOnce(new Error('timed out'))
+      .mockResolvedValueOnce({ text: 'ok' })
+      .mockRejectedValueOnce(new Error('429 Too Many Requests'))
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Configure a short normal interval so backoff is distinguishable.
+    await agent.fetch(new Request('https://example/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loopIntervalMs: 5_000 }),
+    }))
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 15_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000 + 30_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 45_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 45_000 + 60_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 105_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 105_000 + 60_000)
+
+    // Success resets backoff; next tick uses normal interval (5s).
+    const tSuccess = t0.getTime() + 165_000
+    vi.setSystemTime(new Date(tSuccess))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(tSuccess + 5_000)
+
+    // Next transient error after success restarts at 15s.
+    vi.setSystemTime(new Date(tSuccess + 5_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(tSuccess + 5_000 + 15_000)
+
+    vi.useRealTimers()
+  })
+
+  it('tiered backoff: persistent (config/infra) goes 60s→120s→300s (cap)', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-02T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-backoff-persistent')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ text: 'ok' }) }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Make normal interval short; then force a persistent-style error by making observe() fail with config-ish wording.
+    await agent.fetch(new Request('https://example/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loopIntervalMs: 5_000 }),
+    }))
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    ;(agent as any).observe = vi.fn().mockRejectedValue(new Error('config invalid: missing model'))
+
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 60_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 60_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 60_000 + 120_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 180_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 180_000 + 300_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 480_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 480_000 + 300_000)
+
+    vi.useRealTimers()
+  })
+
+  it('tiered backoff: game-context errors cap at 15s (no ramp)', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-03T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-backoff-game')
+    const prompt = vi.fn()
+      .mockResolvedValue({ text: '', toolCalls: [{ name: 'game', arguments: {} }] })
+
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000)
+
+    vi.setSystemTime(new Date(t0.getTime() + 15_000))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000 + 15_000)
+
+    vi.useRealTimers()
+  })
+
   it('rejects loopIntervalMs < 5000', async () => {
     const { state } = createState('agent-min-interval')
     const { env } = createEnv({
