@@ -2747,6 +2747,42 @@ export class AgentDO extends DurableObject {
           throw new Error(`Unknown game command: ${command}`)
         },
       },
+      // RPG environment tool — dynamically loaded
+      (() => {
+        const agentName = this.config?.name ?? ''
+        const rpgCtx = { agentName, DB: env.DB, R2: env.BLOBS }
+        return {
+          name: 'rpg',
+          label: 'Dungeon Crawl',
+          description:
+            'BRP-inspired party dungeon crawl. Commands:\n' +
+            '- explore: Move to the next room\n' +
+            '- attack: Attack in combat\n' +
+            '- cast_spell: Cast a spell\n' +
+            '- use_skill: Attempt a skill check\n' +
+            '- rest: Recover HP/MP\n' +
+            '- status: Show game state\n',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: { type: 'string', enum: ['explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'status', 'create_character', 'new_game'], description: 'RPG command.' },
+              gameId: { type: 'string', description: 'Game ID (optional; defaults to active adventure).' },
+              klass: { type: 'string', enum: ['Warrior', 'Scout', 'Mage', 'Healer'], description: 'Class for create_character.' },
+              players: { type: 'array', items: { type: 'string' }, description: 'Players for new_game.' },
+            },
+            required: ['command'],
+          },
+          execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+            try {
+              const { rpgEnvironment } = await import('./environments/rpg')
+              const tool = rpgEnvironment.getTool(rpgCtx as any)
+              return tool.execute!(toolCallIdOrParams as string, maybeParams)
+            } catch (error) {
+              return { ok: false, error: error instanceof Error ? error.message : String(error) }
+            }
+          },
+        } as PiAgentTool
+      })(),
     ]
   }
   

@@ -510,21 +510,34 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/"
+    },
+    {
+      "id": "story-mlfedqnm",
+      "title": "Add AlarmMode enum and mode rotation to agent config",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: In `apps/network/src/agent.ts`, `AgentDO.alarm()` is the right place to persist long-lived loop state via `this.ctx.storage` before the `setAlarm()` scheduling block; storing `alarmMode` there makes it deterministic across hibernation/restarts and easy to assert via the existing `FakeStorage` in `apps/network/src/agent-do.test.ts`.\nGotcha: The stored `alarmMode` is the *next cycle’s* mode (written at the end of a cycle). If you assert rotation, read `storage.get('alarmMode')` after each `agent.alarm()` call; otherwise you’ll be off by one and the 7-cycle expectation won’t match.\nFiles Context: `apps/network/src/agent.ts` contains the Durable Object alarm loop and rescheduling logic; `apps/network/src/agent-do.test.ts` provides `FakeStorage`/helpers and is the canonical place to test alarm-cycle persistence behavior without real Cloudflare."
+    },
+    {
+      "id": "story-mlfedrp4",
+      "title": "Store ActionOutcome after each tool call in act()",
+      "status": "failed",
+      "filesModified": [
+        ".github/workflows/deploy.yml",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "[test_failure] • turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tes"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlepdwd0",
-      "storyTitle": "Wire environment hooks into agent alarm cycle",
-      "category": "unknown",
-      "error": "/bin/sh: 1: turbo: not found",
-      "toolNames": [
-        "ls -la",
-        "sed -n",
-        "/usr/bin/zsh -lc",
-        "rg -n"
-      ]
-    },
     {
       "storyId": "story-mlepdwd0",
       "storyTitle": "Wire environment hooks into agent alarm cycle",
@@ -747,6 +760,21 @@
         "swarm memory"
       ],
       "iterationNumber": 2
+    },
+    {
+      "storyId": "story-mlfedrp4",
+      "storyTitle": "Store ActionOutcome after each tool call in act()",
+      "category": "test_failure",
+      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |network| src/agent-do.test.ts > AgentDO > validates lexicon records passed to the remember tool\nAssertionError: promise resolved \"{ content: [ { …(2) } ], …(1) }\" instead of reje",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "ls -la",
+        "rg -n",
+        "sed -n",
+        "nl -ba",
+        "swarm memory"
+      ],
+      "iterationNumber": 3
     }
   ]
 }

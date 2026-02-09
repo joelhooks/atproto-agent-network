@@ -343,7 +343,7 @@
       "title": "Store ActionOutcome after each tool call in act()",
       "description": "GH Issue #91.\\n\\nIn apps/network/src/agent.ts, find the act() method (~line 1212). Inside the tool execution loop (where it iterates over thought.toolCalls), after each tool result is received:\\n\\n1. Define type ActionOutcome = { tool: string, success: boolean, timestamp: number, goalId?: string }\\n2. After each tool call completes, push an ActionOutcome to a rolling buffer\\n3. Store the buffer in DO storage: `await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))`\\n4. In the reflect phase (~search for 'reflect'), read the outcomes and include the last 5 in the reflection prompt so the agent can learn from recent actions\\n\\nAdd test: run alarm() with tool calls, verify actionOutcomes is stored in DO storage with correct tool names.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 28,
-    "lastIteration": "2026-02-09T18:36:16.556Z"
+    "totalIterations": 29,
+    "lastIteration": "2026-02-09T18:49:40.278Z"
   },
   "totalStories": 11
 }
