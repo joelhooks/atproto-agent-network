@@ -708,18 +708,34 @@ export class AgentDO extends DurableObject {
         progress: goal.progress,
       }))
 
+    const hasInbox = observations.inbox.length > 0
+    const hasEvents = observations.events.length > 0
+
     return [
-      'You are running an autonomous think/act/reflect loop.',
+      `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
+      this.config?.personality ? `Personality: ${this.config.personality}` : '',
       '',
       'Current goals:',
-      goals.length ? JSON.stringify(goals, null, 2) : '[]',
+      goals.length ? JSON.stringify(goals, null, 2) : '(no goals set)',
       '',
-      'Observations:',
+      'Observations this cycle:',
       JSON.stringify(observations, null, 2),
       '',
-      'Decide what to do next. If you need to use tools, include tool calls in your response.',
-      'If you want to update goals, include an updated `goals` array in your response.',
-    ].join('\n')
+      hasInbox ? [
+        '⚠️ You have UNREAD MESSAGES in your inbox. You MUST respond to them using the "message" tool.',
+        'For each message, compose a thoughtful reply and send it back to the sender.',
+      ].join('\n') : '',
+      hasEvents ? 'You have pending events to process.' : '',
+      '',
+      'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
+      '',
+      'INSTRUCTIONS:',
+      '1. If you have inbox messages, RESPOND to each one using the message tool.',
+      '2. If you have game-related messages, use the game tool to take your turn.',
+      '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
+      '4. Always use at least one tool per cycle. Do NOT just think — ACT.',
+      '5. If you want to update goals, include an updated `goals` array in your response.',
+    ].filter(Boolean).join('\n')
   }
 
   private normalizeThinkResult(result: unknown): ThinkResult {
@@ -762,7 +778,21 @@ export class AgentDO extends DurableObject {
 
     const prompt = this.buildThinkPrompt(observations)
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
-    return this.normalizeThinkResult(result)
+    const thought = this.normalizeThinkResult(result)
+
+    // Debug logging — what did the model return?
+    console.log('AgentDO think result', {
+      did: this.did,
+      name: this.config?.name,
+      inboxCount: observations.inbox.length,
+      eventsCount: observations.events.length,
+      hasToolCalls: !!thought.toolCalls?.length,
+      toolCallCount: thought.toolCalls?.length ?? 0,
+      toolCallNames: thought.toolCalls?.map(tc => tc.name) ?? [],
+      textPreview: String(thought.text ?? (thought as any).content ?? '').slice(0, 200),
+    })
+
+    return thought
   }
 
   private async act(thought: ThinkResult): Promise<ActResult> {
