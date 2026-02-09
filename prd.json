@@ -479,14 +479,14 @@
       "title": "Ralph autoplay: agents claim queued work items",
       "description": "GH Issue #111. Implement getAutoPlayActions() in ralph.ts: when no other env action was taken and there's an open work_items row, return a claim action. Query: SELECT * FROM work_items WHERE env_type='ralph' AND status='open' ORDER BY priority ASC LIMIT 1.\n\nFiles: apps/network/src/environments/ralph.ts, apps/network/src/agent.ts (if needed), agent-do.test.ts.\n\nCloses #111",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 45,
-    "lastIteration": "2026-02-09T21:43:09.586Z"
+    "totalIterations": 46,
+    "lastIteration": "2026-02-09T21:49:27.188Z"
   },
   "totalStories": 11
 }

@@ -389,3 +389,23 @@ Validation:
 
 Notes:
 - `.ralph-context.json` and `.ralph-iterations.jsonl` remain locally modified but were not touched/staged for this story (per repo rules).
+
+---
+[2026-02-09T21:49:27.189Z]
+Completed: Ralph autoplay: agents claim queued work items
+Files: apps/network/src/environments/ralph.ts, packages/core/src/d1-mock.ts, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Prior failure pattern detected: test_failure/build_error. Mitigation: wrote a failing unit test first, kept the SQL shape exactly as required, updated D1Mock to support `ORDER BY priority ASC` (to match production D1 behavior), and ran full validation (`pnpm typecheck && pnpm test`) before committing.
+
+Implemented Ralph autoplay claiming:
+- `ralphEnvironment.getAutoPlayActions(ctx)` now queries `work_items` for the next open Ralph item and returns a `ralph` tool call to `claim_work` that id.
+- Added a unit test proving lowest-priority (ASC) selection.
+- Updated `D1MockDatabase` to sort `work_items` by `priority ASC` when queries include that clause.
+
+Commits:
+- `test(network): cover Ralph autoplay work claim` (Closes #111)
+- `feat(network): autoplay claims Ralph work items` (Closes #111)
+
+Validation:
+- `pnpm typecheck && pnpm test` (pass)
+
+Note: `.ralph-context.json` and `.ralph-iterations.jsonl` show local diffs from Ralph tooling; they were not staged/committed for this story.
