@@ -137,7 +137,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const players = Array.isArray(params.players)
-            ? params.players.filter((p): p is string => typeof p === 'string' && p.trim())
+            ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
             : []
           if (players.length < 1) throw new Error('Need at least 1 player')
 

@@ -647,3 +647,16 @@ network:test: ERROR: command finished with error: command (/home/joel/Code/joelh
 Codex: Prior failure pattern detected: timeout/build_error. Mitigation: keep changes scoped, add a single focused test, and run `npx turbo test --filter=network` with adequate output limits; avoid running full typecheck/deploy in this story’s validation.
 
 Next I’m (1) running the required `swarm memory find` for this story topic, then (2) opening the relevant DO and factory files + the cloudflare-do skill, and (3) writing a failing debug-endpoint test before implementing the instrumentation.
+
+---
+[2026-02-09T06:31:33.559Z]
+Completed: RPG dungeon crawl environment — BRP engine + AgentEnvironment
+Files: apps/network/src/agent-factory.ts, apps/network/src/games/rpg-engine.test.ts, packages/core/src/d1-mock.ts, apps/network/src/environments/rpg.ts
+Summary: Implemented/finished the BRP-inspired RPG dungeon crawl environment.
+
+- RPG engine: ensured d100 roll-under skill checks, 4 distinct classes, DEX-based initiative, opposed attack-vs-dodge, skill improvement on success, and a dungeon containing combat/trap/treasure/rest/puzzle rooms. Added concrete room effects for rest/treasure/trap/puzzle.
+- RPG environment plugin: fixed a TS boolean predicate bug, imported missing `resolveSkillCheck`, and kept the tool interface aligned with the AgentEnvironment API.
+- Registration: RPGEnvironment is now registered as a built-in environment.
+- Storage/test infra: extended `D1MockDatabase` games handling to support optional `type` column and the 6-bind INSERT shape used by RPG rows.
+
+Validation: `npx turbo typecheck` and `npx vitest run --passWithNoTests` both passed.

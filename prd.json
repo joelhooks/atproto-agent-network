@@ -208,7 +208,7 @@
       "title": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
       "description": "GH Issue #73. Second environment plugin — BRP-inspired RPG dungeon crawl.\n\n1. Create `apps/network/src/games/rpg-engine.ts` — pure game logic (no network deps):\n   - d100 skill resolution (roll under skill value = success)\n   - 4 classes: Warrior (STR), Scout (DEX), Mage (INT), Healer (WIS)\n   - Combat: initiative by DEX, attack vs dodge opposed roll\n   - Experience: successful skill checks improve that skill (BRP-style)\n   - Dungeon: rooms with encounters (combat, trap, treasure, rest, puzzle)\n   - Party-based: agents form party, take turns choosing actions\n\n2. Create `apps/network/src/environments/rpg.ts` implementing AgentEnvironment interface from `environments/types.ts`:\n   - `type: 'rpg'`, `label: 'Dungeon Crawl'`\n   - `getTool()` — rpg tool with commands: create_character, explore, attack, cast_spell, use_skill, rest, status\n   - `buildContext()` — current room, party health, available actions\n   - `getAutoPlayActions()` — if in combat: attack. If exploring: move to next room.\n\n3. Register RPGEnvironment in `environments/builtins.ts`.\n4. Store RPG state in `games` table with a different type field.\n\nTests: at least 8 tests covering skill checks, combat, experience gain, character creation.",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo typecheck && npx vitest run --passWithNoTests",
       "acceptanceCriteria": [
         "RPG engine handles d100 skill resolution",
@@ -253,8 +253,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 16,
-    "lastIteration": "2026-02-09T06:12:32.363Z"
+    "totalIterations": 17,
+    "lastIteration": "2026-02-09T06:31:33.558Z"
   },
   "totalStories": 11
 }
