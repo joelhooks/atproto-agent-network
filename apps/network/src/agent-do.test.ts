@@ -2019,6 +2019,83 @@ describe('AgentDO', () => {
     expect(promptArg).toContain('seed-event')
   })
 
+  it('prunes completed goals to maxCompletedGoals and archives overflow in DO storage', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'No-op', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-goal-prune')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const now = Date.now()
+    const pending = {
+      id: 'goal-pending',
+      description: 'keep this pending',
+      priority: 1,
+      status: 'pending',
+      progress: 0,
+      createdAt: now - 10_000,
+    }
+    const inProgress = {
+      id: 'goal-progress',
+      description: 'keep this in progress',
+      priority: 1,
+      status: 'in_progress',
+      progress: 0.5,
+      createdAt: now - 9_000,
+    }
+    const completed = (id: string, description: string, completedAt: number) => ({
+      id,
+      description,
+      priority: 0,
+      status: 'completed' as const,
+      progress: 1,
+      createdAt: completedAt - 1_000,
+      completedAt,
+    })
+
+    const c1 = completed('goal-c1', 'archive me 1', now - 5_000)
+    const c2 = completed('goal-c2', 'archive me 2', now - 4_000)
+    const c3 = completed('goal-c3', 'archive me 3', now - 3_000)
+    const c4 = completed('goal-c4', 'keep completed 1', now - 2_000)
+    const c5 = completed('goal-c5', 'keep completed 2', now - 1_000)
+
+    await agent.fetch(
+      new Request('https://example/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maxCompletedGoals: 2,
+          goals: [pending, c1, c2, c3, c4, c5, inProgress],
+        }),
+      })
+    )
+
+    const storedConfig = await storage.get<{ goals?: Array<{ id?: unknown }> }>('config')
+    const storedGoalIds = Array.isArray(storedConfig?.goals) ? storedConfig!.goals.map((g) => g.id) : []
+    expect(storedGoalIds).toEqual(expect.arrayContaining(['goal-pending', 'goal-progress', 'goal-c4', 'goal-c5']))
+    expect(storedGoalIds).not.toEqual(expect.arrayContaining(['goal-c1', 'goal-c2', 'goal-c3']))
+
+    const archived = await storage.get<Array<{ id?: unknown }>>('goalsArchive')
+    const archivedIds = Array.isArray(archived) ? archived.map((g) => g.id) : []
+    expect(archivedIds).toEqual(expect.arrayContaining(['goal-c1', 'goal-c2', 'goal-c3']))
+    expect(archivedIds).not.toEqual(expect.arrayContaining(['goal-c4', 'goal-c5']))
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    const promptArg = promptFn.mock.calls[0]?.[0]
+    expect(String(promptArg)).toContain('keep completed 1')
+    expect(String(promptArg)).toContain('keep completed 2')
+    expect(String(promptArg)).not.toContain('archive me 1')
+    expect(String(promptArg)).not.toContain('archive me 2')
+    expect(String(promptArg)).not.toContain('archive me 3')
+  })
+
   it('alarm() executes tool calls returned by think() via act() with a max of 10 steps', async () => {
     const now = new Date().toISOString()
     const note = (summary: string) => ({

@@ -38,6 +38,7 @@ const AgentConfigCreateSchema = z
       .optional()
       .default(DEFAULT_AGENT_LOOP_INTERVAL_MS)
       .transform((value) => Math.max(MIN_AGENT_LOOP_INTERVAL_MS, value)),
+    maxCompletedGoals: z.number().int().min(0).optional(),
     goals: z.array(z.unknown()).optional().default([]),
     enabledTools: z.array(z.string()).optional().default([]),
   })

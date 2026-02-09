@@ -34,6 +34,9 @@ export interface AgentConfig {
   model: string
   fastModel: string
   loopIntervalMs: number
+  // Keep only the most recent N completed goals in the active config (and thus prompts).
+  // Older completed goals are archived in Durable Object storage to prevent prompt bloat.
+  maxCompletedGoals?: number
   goals: AgentGoal[]
   enabledTools: string[]
   // If present, only these environments are loaded. If absent, the runtime

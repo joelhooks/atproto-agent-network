@@ -126,6 +126,9 @@ const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
 const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
+const DEFAULT_MAX_COMPLETED_GOALS = 2
+
+const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
 const EXTENSION_PREFIX = 'extensions'
 const MAX_AGENT_EXTENSIONS = 10
@@ -399,18 +402,21 @@ export class AgentDO extends DurableObject {
         typeof input.loopIntervalMs === 'number' && Number.isFinite(input.loopIntervalMs)
           ? Math.max(MIN_AGENT_LOOP_INTERVAL_MS, input.loopIntervalMs)
           : base.loopIntervalMs,
+      maxCompletedGoals:
+        typeof input.maxCompletedGoals === 'number' && Number.isFinite(input.maxCompletedGoals)
+          ? this.normalizeMaxCompletedGoals(input.maxCompletedGoals)
+          : base.maxCompletedGoals,
       goals: Array.isArray(input.goals) ? (input.goals.filter((g) => g && typeof g === 'object') as AgentConfig['goals']) : base.goals,
       enabledTools: Array.isArray(input.enabledTools)
         ? input.enabledTools.filter((tool): tool is string => typeof tool === 'string')
         : base.enabledTools,
     }
 
-    this.config = next
-    await this.ctx.storage.put('config', next)
+    this.config = await this.pruneAndArchiveCompletedGoals(next)
 
     // Ensure the Pi wrapper uses the freshly stored config prompt/model.
     if (this.session) {
-      await this.rebuildAgentWrapper({ config: next })
+      await this.rebuildAgentWrapper({ config: this.config })
     }
 
     const loop = await this.startLoop()
@@ -431,7 +437,7 @@ export class AgentDO extends DurableObject {
       did: this.identity.did,
       createdAt: this.identity.createdAt,
       publicKeys: { encryption, signing },
-      config: next,
+      config: this.config,
       loop,
     })
   }
@@ -757,15 +763,14 @@ export class AgentDO extends DurableObject {
   }
 
   private async buildThinkPrompt(observations: Observations): Promise<string> {
-    const goals = (this.config?.goals ?? [])
-      .filter((goal) => goal && typeof goal === 'object')
-      .map((goal) => ({
-        id: goal.id,
-        description: goal.description,
-        priority: goal.priority,
-        status: goal.status,
-        progress: goal.progress,
-      }))
+    const maxCompleted = this.normalizeMaxCompletedGoals(this.config?.maxCompletedGoals)
+    const goals = this.selectGoalsForPrompt(this.config?.goals ?? [], maxCompleted).map((goal) => ({
+      id: goal.id,
+      description: goal.description,
+      priority: goal.priority,
+      status: goal.status,
+      progress: goal.progress,
+    }))
 
     const hasInbox = observations.inbox.length > 0
     const hasEvents = observations.events.length > 0
@@ -1195,8 +1200,9 @@ export class AgentDO extends DurableObject {
 
     // Persist goal updates if the model produced an updated goal list.
     if (this.config && input.thought?.goals && input.thought.goals.length > 0) {
-      this.config = { ...this.config, goals: structuredClone(input.thought.goals) }
-      await this.ctx.storage.put('config', this.config)
+      const next: AgentConfig = { ...this.config, goals: structuredClone(input.thought.goals) }
+      const pruned = await this.pruneAndArchiveCompletedGoals(next)
+      this.config = pruned
     }
 
     // Store a tiny summary for debugging (structured-cloneable).
@@ -1274,9 +1280,66 @@ export class AgentDO extends DurableObject {
       model: DEFAULT_AGENT_MODEL,
       fastModel: DEFAULT_AGENT_FAST_MODEL,
       loopIntervalMs: DEFAULT_AGENT_LOOP_INTERVAL_MS,
+      maxCompletedGoals: DEFAULT_MAX_COMPLETED_GOALS,
       goals: [],
       enabledTools: [],
     }
+  }
+
+  private normalizeMaxCompletedGoals(value: unknown): number {
+    const raw = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_MAX_COMPLETED_GOALS
+    return Math.max(0, Math.floor(raw))
+  }
+
+  private selectGoalsForPrompt(goals: AgentGoal[], maxCompleted: number): AgentGoal[] {
+    const normalized = Array.isArray(goals) ? goals.filter((g): g is AgentGoal => isAgentGoal(g)) : []
+    const active: AgentGoal[] = []
+    const completed: AgentGoal[] = []
+
+    for (const goal of normalized) {
+      if (goal.status === 'completed') completed.push(goal)
+      else active.push(goal)
+    }
+
+    completed.sort((a, b) => (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt))
+    return [...active, ...completed.slice(0, maxCompleted)]
+  }
+
+  private async pruneAndArchiveCompletedGoals(config: AgentConfig): Promise<AgentConfig> {
+    const maxCompleted = this.normalizeMaxCompletedGoals(config.maxCompletedGoals)
+    const normalized = Array.isArray(config.goals) ? config.goals.filter((g): g is AgentGoal => isAgentGoal(g)) : []
+
+    const active: AgentGoal[] = []
+    const completed: AgentGoal[] = []
+    for (const goal of normalized) {
+      if (goal.status === 'completed') completed.push(goal)
+      else active.push(goal)
+    }
+
+    completed.sort((a, b) => (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt))
+    const keptCompleted = completed.slice(0, maxCompleted)
+    const overflow = completed.slice(maxCompleted)
+
+    const nextGoals = [...active, ...keptCompleted]
+
+    if (overflow.length > 0) {
+      const existingRaw = await this.ctx.storage.get<unknown>(GOALS_ARCHIVE_STORAGE_KEY)
+      const existing = Array.isArray(existingRaw) ? existingRaw.filter((g): g is AgentGoal => isAgentGoal(g)) : []
+      const existingIds = new Set(existing.map((g) => g.id))
+      const merged = [...existing]
+      for (const goal of overflow) {
+        if (existingIds.has(goal.id)) continue
+        existingIds.add(goal.id)
+        merged.push(goal)
+      }
+      await this.ctx.storage.put(GOALS_ARCHIVE_STORAGE_KEY, merged)
+    }
+
+    // Always persist: callers expect passing config here updates stored config,
+    // with the only mutation being completed-goal pruning and maxCompletedGoals normalization.
+    const next: AgentConfig = { ...config, maxCompletedGoals: maxCompleted, goals: nextGoals }
+    await this.ctx.storage.put('config', next)
+    return next
   }
 
   private async loadOrCreateConfig(agentName?: string): Promise<AgentConfig> {
@@ -1290,10 +1353,11 @@ export class AgentDO extends DurableObject {
 
     const stored = await this.ctx.storage.get<AgentConfig>('config')
     if (stored) {
-      this.config = stored
-      if (agentName && stored.name !== agentName) {
-        this.config = { ...stored, name: agentName }
-        await this.ctx.storage.put('config', this.config)
+      const normalized = await this.pruneAndArchiveCompletedGoals(stored)
+      this.config = normalized
+      if (agentName && normalized.name !== agentName) {
+        const renamed = await this.pruneAndArchiveCompletedGoals({ ...normalized, name: agentName })
+        this.config = renamed
       }
       return this.config
     }
@@ -1340,6 +1404,9 @@ export class AgentDO extends DurableObject {
     if (typeof patch.loopIntervalMs === 'number' && Number.isFinite(patch.loopIntervalMs)) {
       next.loopIntervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, patch.loopIntervalMs)
     }
+    if (typeof patch.maxCompletedGoals === 'number' && Number.isFinite(patch.maxCompletedGoals)) {
+      next.maxCompletedGoals = this.normalizeMaxCompletedGoals(patch.maxCompletedGoals)
+    }
     if (Array.isArray(patch.goals)) {
       next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']
     }
@@ -1355,10 +1422,10 @@ export class AgentDO extends DurableObject {
       next.name = agentName
     }
 
-    this.config = next
-    await this.ctx.storage.put('config', next)
+    const pruned = await this.pruneAndArchiveCompletedGoals(next)
+    this.config = pruned
 
-    return Response.json(next)
+    return Response.json(pruned)
   }
 
   /**
@@ -1857,8 +1924,7 @@ export class AgentDO extends DurableObject {
           }
 
           const next: AgentConfig = { ...config, goals }
-          this.config = next
-          await this.ctx.storage.put('config', next)
+          this.config = await this.pruneAndArchiveCompletedGoals(next)
 
           return { content: toTextContent(`Updated goal ${updated?.id ?? ''}`.trim()), details: { goal: updated } }
         },
