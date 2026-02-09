@@ -375,7 +375,7 @@
       "title": "Track extension usage metrics in DO storage",
       "description": "GH Issue #92.\\n\\nIn apps/network/src/agent.ts, find where extensions are executed (search for 'write_extension' or 'executeExtension'). After an extension runs:\\n\\n1. Define type ExtensionMetrics = { name: string, totalCalls: number, successCalls: number, failedCalls: number, lastUsed: number }\\n2. After extension execution, read metrics from DO storage key `extensionMetrics:${name}`, increment counters, write back\\n3. In the GET /debug endpoint, include extension metrics in the response\\n\\nAdd test: execute an extension tool, verify extensionMetrics is stored with correct counts.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 32,
-    "lastIteration": "2026-02-09T19:26:28.570Z"
+    "totalIterations": 33,
+    "lastIteration": "2026-02-09T19:35:35.854Z"
   },
   "totalStories": 11
 }

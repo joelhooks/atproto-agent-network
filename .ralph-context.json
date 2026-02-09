@@ -565,6 +565,18 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `apps/network/src/agent.ts` already rotates `alarmMode` and persists it in DO storage; adding a `housekeeping` branch is safe as long as it still reaches the shared reschedule block. Using `loadOrCreateConfig()` inside housekeeping ensures the DO’s in-memory `this.config` stays consistent when mutating `config` in storage.\nGotcha: Housekeeping runs without calling the model, so any tests that assume a model call every alarm cycle (or assume backoff behavior immediately after a success) can break once `alarmMode` rotation introduces a housekeeping cycle between think/reflection.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.alarm()` (mode routing + rescheduling) and `runHousekeeping()` (goal/outcome pruning + logging). `apps/network/src/agent-do.test.ts` uses `FakeStorage` + direct `storage.put('alarmMode', ...)` to deterministically assert Durable Object alarm-mode behavior."
+    },
+    {
+      "id": "story-mlfedtxx",
+      "title": "Reflection mode — self-assessment from recent action outcomes",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already used `lastReflection` for a structured object written by `reflect()`. Reflection alarm mode needed to bypass the normal loop and use a new `runReflection()` that calls `PiAgentWrapper.prompt()` and uses `normalizeThinkResult()` to detect an optional `goals` array (then persists via `pruneAndArchiveCompletedGoals()`).\nGotcha: The DO storage key `lastReflection` is now type-polymorphic: normal cycles store an object in `reflect()`, while `alarmMode='reflection'` stores a string. Any future `/debug` or dashboard readers must tolerate both shapes. Also, for non-interactive deploys, `wrangler deploy` requires `CLOUDFLARE_API_TOKEN`; in this workspace the working token source was `secrets lease atproto-agents::cloudflare_api_key --raw` (the generic `cloudflare_api_token` belonged to a different account and failed D1 binding validation).\nFiles Context: `apps/network/src/agent.ts` contains AgentDO alarm-mode branching, action outcome storage, Pi prompt calls, and config/goal persistence (`pruneAndArchiveCompletedGoals()`). `apps/network/src/agent-do.test.ts` provides the Durable Object FakeStorage harness and alarm-mode unit tests (rotation/housekeeping/reflection)."
     }
   ],
   "failures": [

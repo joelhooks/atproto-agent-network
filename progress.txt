@@ -234,3 +234,13 @@ Ship + verify (STONE TABLET):
 - Reported via `openclaw system event ...` and stored hivemind learning.
 
 Note: `.ralph-context.json` and `.ralph-iterations.jsonl` are still dirty from earlier and were not staged/committed.
+
+---
+[2026-02-09T19:35:35.855Z]
+Completed: Track extension usage metrics in DO storage
+Files: apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, prd.json
+Summary: Implemented GH #92 extension activation metrics tracked in Durable Object storage and surfaced on `/debug`. Added `ExtensionMetrics` storage updates in `loadExtensionsIntoTools()` (success/failure + lastUsed) under keys `extensionMetrics:${name}` and added `/debug` response field `extensionMetrics`. Added unit test that executes an extension-provided tool and asserts metrics counters, plus updated the existing `/debug` test and FakeStorage to support `storage.list()`.
+
+Prior failure pattern detected: test_failure/build_error/verification_rejected. Mitigation: wrote a focused failing unit test first, kept changes scoped to the two story files, ran full `pnpm typecheck && pnpm test`, and also deployed + smoke-tested against real Cloudflare to avoid “verified locally only” regressions.
+
+Note: `git status` still shows pre-existing dirty files (`prd.json`, `.ralph-context.json`, `.ralph-iterations.jsonl`) that were not staged/committed.
