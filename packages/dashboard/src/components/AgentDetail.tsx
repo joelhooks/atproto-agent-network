@@ -29,7 +29,7 @@ export function AgentDetail({ agent, isAdmin }: AgentDetailProps) {
                 </Badge>
                 <span className="agent-detail-text" style={{ flex: 1 }}>{g.description}</span>
                 {typeof g.progress === 'number' && g.progress > 0 && (
-                  <span style={{ fontSize: '0.55rem', color: 'var(--accent)', flexShrink: 0 }}>{Math.round(g.progress * 100)}%</span>
+                  <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--accent)', flexShrink: 0 }}>{Math.round(g.progress * 100)}%</span>
                 )}
               </div>
             ))}
@@ -55,7 +55,7 @@ export function AgentDetail({ agent, isAdmin }: AgentDetailProps) {
             {loop.nextAlarm && (
               <div className="agent-detail-row">
                 <span className="label">Next</span>
-                <span className="value" style={{ fontSize: '0.6rem' }}>{new Date(loop.nextAlarm).toLocaleTimeString()}</span>
+                <span className="value">{new Date(loop.nextAlarm).toLocaleTimeString()}</span>
               </div>
             )}
           </div>
@@ -105,7 +105,7 @@ export function AgentDetail({ agent, isAdmin }: AgentDetailProps) {
               {envs.items.map(env => <EnvironmentCard key={env.id} env={env} agentName={agent.name} />)}
             </div>
           )}
-          {envs.error && <div style={{ color: 'var(--err)', fontSize: '0.6rem', marginTop: '0.25rem' }}>{envs.error}</div>}
+          {envs.error && <div style={{ color: 'var(--err)', fontSize: 'var(--fs-2xs)', marginTop: '0.25rem' }}>{envs.error}</div>}
         </div>
       )}
     </div>

@@ -10,7 +10,7 @@ export function Header({ connectionStatus, wsStatus }: HeaderProps) {
   return (
     <header className="header">
       <div className="header-brand">
-        <span style={{ fontSize: '1.5rem' }}>{'\uD83D\uDC1D'}</span>
+        <span style={{ fontSize: 'var(--fs-logo)' }}>{'\uD83D\uDC1D'}</span>
         <h1 className="header-logo">
           <span className="header-logo-accent">HIGH</span>
           <span className="header-logo-text">SWARM</span>

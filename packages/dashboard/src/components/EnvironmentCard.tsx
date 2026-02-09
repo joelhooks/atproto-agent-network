@@ -90,7 +90,7 @@ export function EnvironmentCard({ env, agentName }: { env: EnvironmentDetail; ag
         <span className="env-card-name">{envLabel(env.id, env.type)}</span>
         <Badge variant={env.phase === 'playing' ? 'accent' : 'dim'}>{env.phase}</Badge>
         <div style={{ flex: 1 }} />
-        {others.length > 0 && <span style={{ fontSize: '0.55rem', color: 'var(--dim)' }}>vs {others.join(', ')}</span>}
+        {others.length > 0 && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--dim)' }}>vs {others.join(', ')}</span>}
       </div>
       {env.type === 'catan' && stateObj ? <CatanSummary state={stateObj} agentName={agentName} /> :
        env.type === 'rpg' && stateObj ? <RpgSummary state={stateObj} agentName={agentName} /> :

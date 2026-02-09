@@ -3,7 +3,7 @@ export function Heartbeat({ active, className = '' }: { active: boolean; classNa
     <span
       className={`${active ? 'heartbeat-active' : 'heartbeat-idle'} ${className}`}
       title={active ? 'loop active' : 'loop idle'}
-      style={{ fontSize: '0.6rem', lineHeight: 1, flexShrink: 0 }}
+      style={{ fontSize: 'var(--fs-2xs)', lineHeight: 1, flexShrink: 0 }}
     >
       {active ? '\u25CF' : '\u25CB'}
     </span>
