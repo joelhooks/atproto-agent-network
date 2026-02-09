@@ -128,6 +128,7 @@ const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
 const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
 
 type AlarmErrorCategory = 'transient' | 'persistent' | 'game' | 'unknown'
+type AlarmIntervalReason = 'my_turn' | 'waiting' | 'default'
 type AlarmBackoffState = { category: AlarmErrorCategory; streak: number }
 
 const TRANSIENT_BACKOFF_MS = [15_000, 30_000, 60_000] as const
@@ -190,6 +191,7 @@ export class AgentDO extends DurableObject {
   private config: AgentConfig | null = null
   private session: StoredAgentSessionV1 | null = null
   private sessionId: string | null = null
+  private intervalReason: AlarmIntervalReason = 'default'
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env)
@@ -537,6 +539,7 @@ export class AgentDO extends DurableObject {
     })
 
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
+    this.intervalReason = 'default'
     const cycleErrors: Array<{ category: AlarmErrorCategory; phase: string; message: string }> = []
     let observations: Observations | null = null
     let thought: ThinkResult | null = null
@@ -747,6 +750,13 @@ export class AgentDO extends DurableObject {
 
     // Tiered backoff on consecutive errors (by error category)
     try {
+      const intervalReason = this.intervalReason as AlarmIntervalReason
+      if (intervalReason === 'my_turn') {
+        intervalMs = Math.min(intervalMs, 15_000)
+      } else if (intervalReason === 'waiting') {
+        intervalMs = Math.min(intervalMs, 45_000)
+      }
+
       let nextInterval = intervalMs
       let selectedCategory: AlarmErrorCategory | null = null
       let streak = 0
@@ -1094,6 +1104,14 @@ export class AgentDO extends DurableObject {
       } catch { /* non-fatal */ }
     }
 
+    if (gameContext.includes('🎮🎮🎮 IT IS YOUR TURN')) {
+      this.intervalReason = 'my_turn'
+    } else if (gameContext.includes('🎲 Active')) {
+      this.intervalReason = 'waiting'
+    } else {
+      this.intervalReason = 'default'
+    }
+
     return [
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
       this.config?.personality ? `Personality: ${this.config.personality}` : '',
@@ -1272,11 +1290,15 @@ export class AgentDO extends DurableObject {
                 .first<{ id: string; state: string }>()
             : null
 
+        const intervalReason: AlarmIntervalReason = myTurnRow ? 'my_turn' : activeGameRow ? 'waiting' : 'default'
+        this.intervalReason = intervalReason
+
         const safetyDebug = {
           agent: agentName,
           hasActiveGame: !!activeGameRow,
           gameId: activeGameRow?.id ?? null,
           isMyTurn: !!myTurnRow,
+          intervalReason,
           modelCalledGame: selected.some(c => c.name === 'game'),
           hasRollCall,
           modelToolCalls: selected.map(c => c.name === 'game' ? (c.arguments as any)?.gameAction?.type : c.name),

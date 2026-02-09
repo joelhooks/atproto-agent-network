@@ -319,7 +319,7 @@
       "title": "Adaptive alarm interval — faster when it's your turn in a game",
       "description": "In apps/network/src/agent.ts, the alarm() method sets intervalMs from config (~line 530). After the observe phase builds gameContext, we know if it's the agent's turn.\\n\\nAdd logic after the game context block (~line 1090):\\n1. If gameContext contains '🎮🎮🎮 IT IS YOUR TURN', set intervalMs = Math.min(intervalMs, 15000)\\n2. If gameContext contains '🎲 Active' (waiting for another player), set intervalMs = Math.min(intervalMs, 45000)\\n3. Store the interval reason in the autoPlay debug: `intervalReason: 'my_turn' | 'waiting' | 'default'`\\n\\nAdd a test: mock isMyTurn=true game state, verify alarm reschedules with 15s interval.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 25,
-    "lastIteration": "2026-02-09T17:53:58.136Z"
+    "totalIterations": 26,
+    "lastIteration": "2026-02-09T18:14:38.003Z"
   },
   "totalStories": 11
 }

@@ -77,3 +77,9 @@ Completed: Fix autoPlay — filter by game type and skip finished/abandoned game
 Files: apps/network/src/agent.ts, apps/network/src/environments/catan.ts, .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
 Summary: Starting story-mlfbhwfc: I’m going to (1) run the required `swarm memory find` for this story topic, then (2) add a failing unit test in `apps/network/src/agent-do.test.ts` proving finished/abandoned games don’t inject game context, and only then (3) patch `apps/network/src/agent.ts` for the query + debug field and run `pnpm typecheck && pnpm test` (in two steps to avoid timeouts).
 ⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-09T18:14:38.004Z]
+Completed: Adaptive alarm interval — faster when it's your turn in a game
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/logger.test.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, packages/dashboard/index.html, packages/dashboard/package.json, packages/dashboard/tsconfig.json, packages/dashboard/vite.config.ts, pnpm-lock.yaml
+Summary: Adaptive alarm interval behavior is already implemented in the working tree: gameContext-derived interval reason ('my_turn'/'waiting'/'default') is set after the gameContext block, alarm() clamps interval to 15s/45s accordingly, and autoPlay debug includes intervalReason. The unit test asserting 15s reschedule when it is the agent’s turn is present and passes. Validation succeeded: pnpm typecheck && pnpm test. Note: git status shows unexpected local modifications (including forbidden .ralph-* and progress.txt); I did not intentionally edit these in this session—tell me if you want a diff/revert/commit workflow.

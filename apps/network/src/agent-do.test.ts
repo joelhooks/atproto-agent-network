@@ -1943,6 +1943,60 @@ describe('AgentDO', () => {
     vi.useRealTimers()
   })
 
+  it("alarm() clamps interval to 15s when gameContext says it's your turn", async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-04T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-adaptive-interval')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok' })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+
+    // Disable tools so act() doesn't trigger the game safety-net injections; this test only cares about scheduling.
+    await agent.fetch(new Request(`https://example/agents/${agentName}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: agentName, enabledTools: [], loopIntervalMs: 120_000 }),
+    }))
+
+    await db
+      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(
+        'catan_test_1',
+        'catan',
+        agentName,
+        JSON.stringify({
+          type: 'catan',
+          turn: 3,
+          currentPlayer: agentName,
+          players: [
+            { name: agentName, victoryPoints: 0, resources: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 }, settlements: [], roads: [] },
+            { name: 'Bob', victoryPoints: 0, resources: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 }, settlements: [], roads: [] },
+          ],
+          board: { edges: [], vertices: [], hexes: [] },
+          log: [],
+        }),
+        'playing',
+        JSON.stringify([agentName, 'Bob'])
+      )
+      .run()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000)
+
+    vi.useRealTimers()
+  })
+
   it('rejects loopIntervalMs < 5000', async () => {
     const { state } = createState('agent-min-interval')
     const { env } = createEnv({
