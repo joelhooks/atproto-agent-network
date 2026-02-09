@@ -870,34 +870,44 @@ export class AgentDO extends DurableObject {
       const args = c.arguments as Record<string, unknown> | undefined
       return args?.command === 'action' && args?.gameAction && typeof args.gameAction === 'object'
     })
-    if (!hasGamePlayCall && this.config?.enabledTools?.includes('game')) {
-      const lastObs = await this.ctx.storage.get<Observations>('lastObservations')
-      const autoPlayDebug = {
-        agent: this.config?.name,
-        hasLastObs: !!lastObs,
-        inboxLen: lastObs?.inbox?.length ?? 0,
-        inboxTexts: lastObs?.inbox?.map((m: any) => (m?.record?.content?.text ?? m?.content?.text ?? '').slice(0, 80)) ?? [],
-        ts: Date.now(),
-      }
-      console.log('AUTO-PLAY check:', autoPlayDebug)
-      await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
-      const gameNotif = lastObs?.inbox?.find((m: any) => {
-        const text = m?.record?.content?.text ?? m?.content?.text ?? ''
-        return typeof text === 'string' && text.includes('your turn in Catan')
-      })
-      if (gameNotif) {
-        const text = (gameNotif as any)?.record?.content?.text ?? (gameNotif as any)?.content?.text ?? ''
-        const gameIdMatch = text.match(/catan_[a-z0-9]+/)
-        if (gameIdMatch) {
-          const gameId = gameIdMatch[0]
-          console.log('AUTO-PLAY: Injecting game actions for', { agent: this.config?.name, gameId })
-          // Inject roll_dice + end_turn (conservative: just advance the turn)
+    if (!hasGamePlayCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
+      // Check D1 directly for any active game where it's this agent's turn
+      try {
+        const agentName = this.config?.name ?? ''
+        const gameRow = await this.agentEnv.DB
+          .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?")
+          .bind(agentName)
+          .first<{ id: string; state: string }>()
+
+        const autoPlayDebug = {
+          agent: agentName,
+          hasActiveGame: !!gameRow,
+          gameId: gameRow?.id ?? null,
+          ts: Date.now(),
+        }
+        console.log('AUTO-PLAY check:', autoPlayDebug)
+        await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
+
+        if (gameRow) {
+          const gameId = gameRow.id
+          const state = JSON.parse(gameRow.state)
+          // Check if we already rolled this turn (look at lastRoll or log)
+          const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
+          console.log('AUTO-PLAY: Injecting game actions for', { agent: agentName, gameId, alreadyRolled })
+          
+          const actions: typeof selected = []
+          if (!alreadyRolled) {
+            actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
+          }
+          actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
+          
           selected = [
-            ...selected.filter(c => c.name !== 'think_aloud'), // drop think_aloud to make room
-            { name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } },
-            { name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } },
+            ...selected.filter(c => c.name !== 'think_aloud'),
+            ...actions,
           ].slice(0, maxSteps)
         }
+      } catch (err) {
+        console.error('AUTO-PLAY D1 query failed:', err instanceof Error ? err.message : String(err))
       }
     }
 
