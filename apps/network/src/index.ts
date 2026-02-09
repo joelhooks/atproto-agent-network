@@ -193,13 +193,15 @@ export default {
                       const agent = env.AGENTS.get(agentId)
 
                       const encodedName = encodeURIComponent(row.name)
-                      const [identityRes, configRes] = await Promise.all([
+                      const [identityRes, configRes, loopRes] = await Promise.all([
                         agent.fetch(new Request(`https://agent/agents/${encodedName}/identity`)),
                         agent.fetch(new Request(`https://agent/agents/${encodedName}/config`)),
+                        agent.fetch(new Request(`https://agent/agents/${encodedName}/loop/status`)),
                       ])
 
                       const identity = identityRes.ok ? await identityRes.json().catch(() => null) : null
                       const config = configRes.ok ? await configRes.json().catch(() => null) : null
+                      const loop = loopRes.ok ? await loopRes.json().catch(() => null) : null
 
                       return {
                         name: row.name,
@@ -211,6 +213,7 @@ export default {
                         publicKeys:
                           identity && typeof identity === 'object' && 'publicKeys' in identity ? (identity as any).publicKeys : undefined,
                         config: config ?? undefined,
+                        loop: loop ?? undefined,
                       }
                     } catch (error) {
                       const message = error instanceof Error ? error.message : String(error)
@@ -219,7 +222,16 @@ export default {
                   })
                 )
 
-                return Response.json({ agents })
+                const showAll = url.searchParams.get('all') === 'true'
+                const filtered = showAll
+                  ? agents
+                  : agents.filter((a) => {
+                      const loop = (a as any).loop
+                      // Keep agents whose loop is running OR whose status is unknown (no error hiding)
+                      return !loop || loop.loopRunning !== false
+                    })
+
+                return Response.json({ agents: filtered })
               }
 
               if (request.method !== 'POST') {
