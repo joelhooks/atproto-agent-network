@@ -57,6 +57,3 @@ invocation_logs = true
 enabled = true
 
 
-[[pipelines]]
-binding = "O11Y_PIPELINE"
-pipeline = "agent-o11y"
