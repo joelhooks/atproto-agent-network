@@ -991,16 +991,21 @@ export class AgentDO extends DurableObject {
       }
     }
 
-    // AUTO-PLAY: If the agent has a game turn but didn't call the game tool, inject game actions.
-    // This is the nuclear option for models that refuse to use the game tool despite explicit prompting.
+    // FALLBACK ONLY: If the model didn't call end_turn, inject roll_dice + end_turn to prevent stuck turns.
+    // The MODEL makes all strategic decisions (trade, build, etc). This just ensures turns always complete.
     const hasEndTurnCall = selected.some(c => {
       if (c.name !== 'game') return false
       const args = c.arguments as Record<string, unknown> | undefined
       const ga = args?.gameAction as Record<string, unknown> | undefined
       return args?.command === 'action' && ga?.type === 'end_turn'
     })
+    const hasRollCall = selected.some(c => {
+      if (c.name !== 'game') return false
+      const args = c.arguments as Record<string, unknown> | undefined
+      const ga = args?.gameAction as Record<string, unknown> | undefined
+      return args?.command === 'action' && ga?.type === 'roll_dice'
+    })
     if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
-      // Check D1 directly for any active game where it's this agent's turn
       try {
         const agentName = this.config?.name ?? ''
         const gameRow = await this.agentEnv.DB
@@ -1012,134 +1017,30 @@ export class AgentDO extends DurableObject {
           agent: agentName,
           hasActiveGame: !!gameRow,
           gameId: gameRow?.id ?? null,
+          modelCalledGame: selected.some(c => c.name === 'game'),
+          hasRollCall,
           ts: Date.now(),
         }
-        console.log('AUTO-PLAY check:', autoPlayDebug)
+        console.log('FALLBACK check:', autoPlayDebug)
         await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
 
         if (gameRow) {
           const gameId = gameRow.id
           const state = JSON.parse(gameRow.state)
-          // Check if we already rolled this turn (look at lastRoll or log)
           const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
-          console.log('AUTO-PLAY: Injecting game actions for', { agent: agentName, gameId, alreadyRolled })
-          
-          const actions: typeof selected = []
-          if (!alreadyRolled) {
-            actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
+
+          // Only inject roll_dice if model didn't roll and turn hasn't been rolled yet
+          if (!hasRollCall && !alreadyRolled) {
+            console.log('FALLBACK: Injecting roll_dice for', agentName)
+            selected.unshift({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
           }
 
-          // Smart auto-play: trade, build roads, build settlements
-          const me = state.players?.find((p: any) => p.name === agentName)
-          if (me?.resources) {
-            const r = me.resources as Record<string, number>
-            const allEdges = state.board?.edges || []
-            const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
-            const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
-            
-            // Get all vertices in our network (settlements + road endpoints)
-            const networkVertices = new Set<number>()
-            for (const v of (state.board?.vertices?.filter((v: any) => v.owner === agentName) || [])) networkVertices.add(v.id)
-            for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
-
-            // Helper: find a buildable settlement vertex (reachable + distance rule)
-            const findBuildableVertex = (): number | null => {
-              for (const vid of networkVertices) {
-                if (occupiedVertices.has(vid)) continue
-                const adjacentVerts = new Set<number>()
-                for (const e of allEdges) {
-                  if (e.vertices?.includes(vid)) {
-                    for (const av of e.vertices) if (av !== vid) adjacentVerts.add(av)
-                  }
-                }
-                if (![...adjacentVerts].some(av => occupiedVertices.has(av))) return vid
-              }
-              return null
-            }
-
-            // Helper: find a road edge that expands toward open territory
-            const findExpansionRoad = (): number | null => {
-              // Prefer edges leading AWAY from occupied vertices
-              let bestEdge: number | null = null
-              for (const edge of allEdges) {
-                if (edge.owner) continue
-                const [v1, v2] = edge.vertices || []
-                // Must connect to our network
-                if (!networkVertices.has(v1) && !networkVertices.has(v2)) continue
-                // Prefer edges where the far end isn't occupied
-                const farEnd = networkVertices.has(v1) ? v2 : v1
-                if (!occupiedVertices.has(farEnd)) {
-                  bestEdge = edge.id
-                  // Even better if far end satisfies distance rule (potential settlement spot)
-                  const adjacentVerts = new Set<number>()
-                  for (const e of allEdges) {
-                    if (e.vertices?.includes(farEnd)) {
-                      for (const av of e.vertices) if (av !== farEnd) adjacentVerts.add(av)
-                    }
-                  }
-                  if (![...adjacentVerts].some(av => occupiedVertices.has(av))) break // Perfect spot
-                }
-              }
-              return bestEdge
-            }
-
-            // 1. Bank trade: get resources we're low on using ones we have plenty of
-            //    Settlement costs 1 each of wood/brick/sheep/wheat
-            //    Road costs 1 wood + 1 brick
-            const needed = ['wood', 'brick', 'sheep', 'wheat']
-            const low = needed.filter(x => (r[x] || 0) < 3) // "low" = less than 3
-            // Trade ANY resource we have >= 4 of (enough for one 3:1 trade), not just needed ones
-            // This ensures ore and other surplus gets traded for useful resources
-            const surplus = Object.entries(r).filter(([, count]) => typeof count === 'number' && count >= 4)
-            
-            // Trade surplus for low resources (up to 3 trades per turn to keep it reasonable)
-            let tradesThisTurn = 0
-            for (const missing of low) {
-              if (tradesThisTurn >= 3) break
-              for (const [res, count] of surplus) {
-                if (res === missing) continue
-                if ((r[res] || 0) >= 3) { // Still have enough to trade
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing } } })
-                  tradesThisTurn++
-                  break
-                }
-              }
-            }
-
-            // 2. Try to build a settlement
-            const canAffordSettlement = r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1
-            const buildableVertex = canAffordSettlement ? findBuildableVertex() : null
-            
-            if (buildableVertex !== null) {
-              actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: buildableVertex } } })
-            }
-
-            // 3. Build roads — ALWAYS if we can afford it (expand network for future settlements)
-            //    Build up to 2 roads per turn if resources allow
-            const roadsBuilt = actions.filter(a => (a.arguments as any)?.gameAction?.type === 'build_road').length
-            for (let i = roadsBuilt; i < 2 && (r.wood || 0) >= 1 && (r.brick || 0) >= 1; i++) {
-              const roadEdge = findExpansionRoad()
-              if (roadEdge !== null) {
-                actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: roadEdge } } })
-                // Simulate resource deduction for next road check
-                r.wood = (r.wood || 0) - 1
-                r.brick = (r.brick || 0) - 1
-                // Add the new road's vertices to network for second road
-                const roadData = allEdges.find((e: any) => e.id === roadEdge)
-                if (roadData) for (const vid of roadData.vertices || []) networkVertices.add(vid)
-              } else break
-            }
-          }
-
-          actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
-          
-          selected = [
-            ...selected.filter(c => c.name !== 'think_aloud'),
-            ...actions,
-          ].slice(0, maxSteps)
+          // Always inject end_turn at the end — model's actions (trade/build) run first
+          console.log('FALLBACK: Injecting end_turn for', agentName)
+          selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
         }
       } catch (err) {
-        console.error('AUTO-PLAY D1 query failed:', err instanceof Error ? err.message : String(err))
+        console.error('FALLBACK D1 query failed:', err instanceof Error ? err.message : String(err))
       }
     }
 
