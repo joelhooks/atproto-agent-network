@@ -334,6 +334,22 @@ wrangler tail                   # View logs
 | Event type | `<domain>.<object>.<action>` | `agent.memory.store` |
 | Lexicon | `agent.<domain>.<type>` | `agent.comms.message` |
 
+## Deploy (TWO Workers!)
+
+**⚠️ This project has TWO independent Cloudflare Workers. Read `skills/deploy/SKILL.md` before deploying.**
+
+| Worker | Dir | URL |
+|--------|-----|-----|
+| network | `apps/network/` | `agent-network.joelhooks.workers.dev` |
+| dashboard | `packages/dashboard/` | `highswarm.com` |
+
+**Dashboard requires Vite rebuild before deploy** — `dist/` is gitignored:
+```bash
+cd packages/dashboard && npx vite build && npx wrangler deploy
+```
+
+Network deploys do NOT update the dashboard. Always deploy both when in doubt.
+
 ## Don't Do This
 
 - ❌ Store plaintext secrets or memories
