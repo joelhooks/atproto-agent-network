@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+afterEach(() => {
+  // Keep tests isolated: some stories stub global fetch.
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
@@ -1224,6 +1230,61 @@ describe('AgentDO', () => {
     expect(listResponse.status).toBe(200)
     await expect(listResponse.json()).resolves.toEqual({
       entries: [{ id, record: storedRecord }],
+    })
+  })
+
+  it('POSTs inbox messages to webhookUrl when configured (fire-and-forget)', async () => {
+    const { state } = createState('agent-inbox-webhook')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const webhookUrl = 'https://example.test/webhook'
+    const patch = await agent.fetch(
+      new Request('https://example/agents/webhooky/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl }),
+      })
+    )
+    expect(patch.status).toBe(200)
+
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:agent-inbox-webhook',
+      content: { kind: 'text', text: 'hello webhook' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const postResponse = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+    expect(postResponse.status).toBe(200)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0] as [unknown, unknown]
+    expect(url).toBe(webhookUrl)
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const body = (init as { body?: unknown }).body
+    expect(typeof body).toBe('string')
+    expect(JSON.parse(String(body))).toEqual({
+      type: 'inbox',
+      message: { ...message, priority: 3 },
     })
   })
 
