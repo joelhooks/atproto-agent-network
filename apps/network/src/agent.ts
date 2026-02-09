@@ -78,6 +78,8 @@ interface StoredAgentSessionV1 {
   branchPoints?: StoredAgentSessionBranchPoint[]
 }
 
+type AlarmMode = 'think' | 'housekeeping' | 'reflection'
+
 export interface ObservationEvent {
   ts: number
   type: string
@@ -515,6 +517,9 @@ export class AgentDO extends DurableObject {
       await this.initialize()
     }
 
+    const mode = (await this.ctx.storage.get<AlarmMode>('alarmMode')) ?? 'think'
+    const modeCounterRaw = (await this.ctx.storage.get<number>('alarmModeCounter')) ?? 0
+
     // Hot reload extensions at the start of the next alarm cycle after writes/removals.
     await this.maybeReloadExtensions()
     // Bootstrap hint for agents that haven't extended themselves yet.
@@ -743,6 +748,39 @@ export class AgentDO extends DurableObject {
       logger.error('agent.error', {
         span_id: createSpanId(),
         context: { phase: 'loopCount', category: 'unknown' },
+        error: toErrorDetails(error),
+      })
+      // Continue: errors must not break the chain.
+    }
+
+    // Alarm mode rotation. For now, all modes run the same observe→think→act→reflect cycle.
+    // This just persists a rotation state so later stories can add mode-specific behavior.
+    try {
+      const modeCounter =
+        typeof modeCounterRaw === 'number' && Number.isFinite(modeCounterRaw) ? modeCounterRaw : 0
+      let nextMode: AlarmMode = mode
+      let nextCounter = modeCounter
+
+      if (mode === 'think') {
+        nextCounter = modeCounter + 1
+        if (nextCounter >= 5) {
+          nextMode = 'housekeeping'
+        } else {
+          nextMode = 'think'
+        }
+      } else if (mode === 'housekeeping') {
+        nextMode = 'reflection'
+      } else {
+        nextMode = 'think'
+        nextCounter = 0
+      }
+
+      await this.ctx.storage.put('alarmMode', nextMode)
+      await this.ctx.storage.put('alarmModeCounter', nextCounter)
+    } catch (error) {
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'alarmMode', category: 'unknown' },
         error: toErrorDetails(error),
       })
       // Continue: errors must not break the chain.
