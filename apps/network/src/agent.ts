@@ -903,11 +903,15 @@ export class AgentDO extends DurableObject {
     let gameContext = ''
     if (this.agentEnv?.DB) {
       const agentName = this.config?.name ?? ''
+      const playerLike = agentName ? `%${JSON.stringify(agentName)}%` : null
       try {
-        const gameRow = await this.agentEnv.DB
-          .prepare("SELECT id, type, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
-          .bind(`%${agentName}%`)
-          .first<{ id: string; type?: string; state: string }>()
+        const gameRow =
+          playerLike
+            ? await this.agentEnv.DB
+                .prepare("SELECT id, type, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+                .bind(playerLike)
+                .first<{ id: string; type?: string; state: string }>()
+            : null
         if (gameRow) {
           const state = JSON.parse(gameRow.state)
           const gameType = gameRow.type ?? state.type ?? 'catan'
@@ -1246,15 +1250,33 @@ export class AgentDO extends DurableObject {
     if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
       try {
         const agentName = this.config?.name ?? ''
-        const gameRow = await this.agentEnv.DB
-          .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?")
-          .bind(agentName)
-          .first<{ id: string; state: string }>()
+        const playerLike = agentName ? `%${JSON.stringify(agentName)}%` : null
+
+        // "Active game" for UI/debug means: any setup/playing game where I'm a player (not only when it's my turn).
+        const activeGameRow =
+          playerLike
+            ? await this.agentEnv.DB
+                .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+                .bind(playerLike)
+                .first<{ id: string; state: string }>()
+            : null
+
+        // Safety net injections must only apply when it's my turn in a playing-phase game.
+        const myTurnRow =
+          playerLike
+            ? await this.agentEnv.DB
+                .prepare(
+                  "SELECT id, state FROM games WHERE phase = 'playing' AND players LIKE ? AND json_extract(state, '$.currentPlayer') = ? LIMIT 1"
+                )
+                .bind(playerLike, agentName)
+                .first<{ id: string; state: string }>()
+            : null
 
         const safetyDebug = {
           agent: agentName,
-          hasActiveGame: !!gameRow,
-          gameId: gameRow?.id ?? null,
+          hasActiveGame: !!activeGameRow,
+          gameId: activeGameRow?.id ?? null,
+          isMyTurn: !!myTurnRow,
           modelCalledGame: selected.some(c => c.name === 'game'),
           hasRollCall,
           modelToolCalls: selected.map(c => c.name === 'game' ? (c.arguments as any)?.gameAction?.type : c.name),
@@ -1263,9 +1285,9 @@ export class AgentDO extends DurableObject {
         console.log('SAFETY NET check:', safetyDebug)
         await this.ctx.storage.put('debug:autoPlay', safetyDebug)
 
-        if (gameRow) {
-          const gameId = gameRow.id
-          const state = JSON.parse(gameRow.state)
+        if (myTurnRow) {
+          const gameId = myTurnRow.id
+          const state = JSON.parse(myTurnRow.state)
           const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
 
           // Inject roll_dice only if model forgot AND hasn't rolled yet this turn
@@ -2408,9 +2430,14 @@ export class AgentDO extends DurableObject {
 
           if (command === 'new_game') {
             // Check if there's already an active game — block creating duplicates
-            const existingGame = await db.prepare(
-              "SELECT id FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1"
-            ).bind(`%${this.config?.name ?? ''}%`).first<{ id: string }>()
+            const playerName = this.config?.name ?? ''
+            const playerLike = playerName ? `%${JSON.stringify(playerName)}%` : null
+            const existingGame =
+              playerLike
+                ? await db.prepare(
+                    "SELECT id FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1"
+                  ).bind(playerLike).first<{ id: string }>()
+                : null
             if (existingGame) {
               return {
                 ok: false,

@@ -311,7 +311,7 @@
       "title": "Fix autoPlay — filter by game type and skip finished/abandoned games",
       "description": "In apps/network/src/agent.ts around line 908, the game detection query is:\\n  SELECT id, type, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ?\\n\\nProblem: It also needs to skip games with phase='finished' or 'abandoned' that linger. And the autoPlay safety debug (stored at debug:autoPlay around line 1245) doesn't record the game type.\\n\\nFix:\\n1. In the game query (~line 908), add `AND phase NOT IN ('finished', 'abandoned', 'cancelled')` (belt and suspenders with the existing IN clause)\\n2. In the autoPlay debug object (~line 1245), add `gameType` field from gameRow.type\\n3. Add a test in agent-do.test.ts: mock a finished game in DB, verify observe() does NOT inject game context\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 24,
-    "lastIteration": "2026-02-09T16:31:59.989Z"
+    "totalIterations": 25,
+    "lastIteration": "2026-02-09T17:53:58.136Z"
   },
   "totalStories": 11
 }
