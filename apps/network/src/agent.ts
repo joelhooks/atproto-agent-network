@@ -330,7 +330,8 @@ export class AgentDO extends DurableObject {
           case 'debug': {
             const lastThinkRaw = await this.ctx.storage.get('debug:lastThinkRaw')
             const lastOpenRouterReq = await this.ctx.storage.get('debug:lastOpenRouterReq')
-            return new Response(JSON.stringify({ lastThinkRaw, lastOpenRouterReq }, null, 2), {
+            const autoPlay = await this.ctx.storage.get('debug:autoPlay')
+            return new Response(JSON.stringify({ lastThinkRaw, lastOpenRouterReq, autoPlay }, null, 2), {
               headers: { 'Content-Type': 'application/json' },
             })
           }
@@ -871,6 +872,15 @@ export class AgentDO extends DurableObject {
     })
     if (!hasGamePlayCall && this.config?.enabledTools?.includes('game')) {
       const lastObs = await this.ctx.storage.get<Observations>('lastObservations')
+      const autoPlayDebug = {
+        agent: this.config?.name,
+        hasLastObs: !!lastObs,
+        inboxLen: lastObs?.inbox?.length ?? 0,
+        inboxTexts: lastObs?.inbox?.map((m: any) => (m?.record?.content?.text ?? m?.content?.text ?? '').slice(0, 80)) ?? [],
+        ts: Date.now(),
+      }
+      console.log('AUTO-PLAY check:', autoPlayDebug)
+      await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
       const gameNotif = lastObs?.inbox?.find((m: any) => {
         const text = m?.record?.content?.text ?? m?.content?.text ?? ''
         return typeof text === 'string' && text.includes('your turn in Catan')
