@@ -1,3 +1,11 @@
+/** Truncate a DID to first 8 chars of the hash for display */
+function truncateDidStr(did: string): string {
+  if (!did.startsWith('did:')) return did
+  const parts = did.split(':')
+  if (parts.length < 3) return did
+  return `${parts[0]}:${parts[1]}:${parts[2].slice(0, 8)}…`
+}
+
 export type ActivityKind =
   | 'memory'
   | 'message'
@@ -48,7 +56,8 @@ export function normalizeAgentEvent(
 
   const context = p.context && typeof p.context === 'object' && !Array.isArray(p.context) ? (p.context as Record<string, unknown>) : {}
 
-  const agent = opts?.agentNameHint ?? (typeof p.agent_did === 'string' ? p.agent_did : 'unknown')
+  const rawAgent = opts?.agentNameHint ?? (typeof p.agent_did === 'string' ? p.agent_did : 'unknown')
+  const agent = rawAgent.startsWith('did:') ? truncateDidStr(rawAgent) : rawAgent
 
   const isToolEvent =
     type.includes('.tool.') ||
@@ -179,8 +188,8 @@ export function summarizeLexiconRecord(record: unknown): {
   }
 
   if (type === 'agent.comms.message') {
-    const sender = typeof r.sender === 'string' ? r.sender : 'unknown'
-    const recipient = typeof r.recipient === 'string' ? r.recipient : 'unknown'
+    const sender = typeof r.sender === 'string' ? truncateDidStr(r.sender) : 'unknown'
+    const recipient = typeof r.recipient === 'string' ? truncateDidStr(r.recipient) : 'unknown'
     const createdAt = typeof r.createdAt === 'string' ? r.createdAt : undefined
     const content = r.content && typeof r.content === 'object' && !Array.isArray(r.content) ? (r.content as Record<string, unknown>) : {}
     const kind = typeof content.kind === 'string' ? content.kind : 'unknown'
@@ -203,8 +212,8 @@ export function summarizeLexiconRecord(record: unknown): {
   }
 
   if (type === 'agent.comms.task') {
-    const sender = typeof r.sender === 'string' ? r.sender : 'unknown'
-    const recipient = typeof r.recipient === 'string' ? r.recipient : 'unknown'
+    const sender = typeof r.sender === 'string' ? truncateDidStr(r.sender) : 'unknown'
+    const recipient = typeof r.recipient === 'string' ? truncateDidStr(r.recipient) : 'unknown'
     const task = typeof r.task === 'string' ? r.task : 'Task'
     const createdAt = typeof r.createdAt === 'string' ? r.createdAt : undefined
     return {
