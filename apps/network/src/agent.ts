@@ -548,6 +548,69 @@ export class AgentDO extends DurableObject {
     )
   }
 
+  private async runReflection(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+    if (!this.agent) {
+      throw new Error('Agent unavailable')
+    }
+
+    const isActionOutcome = (value: unknown): value is ActionOutcome => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      const rec = value as Record<string, unknown>
+      if (typeof rec.tool !== 'string' || rec.tool.length === 0) return false
+      if (typeof rec.success !== 'boolean') return false
+      if (typeof rec.timestamp !== 'number' || !Number.isFinite(rec.timestamp)) return false
+      if ('goalId' in rec && rec.goalId !== undefined && typeof rec.goalId !== 'string') return false
+      return true
+    }
+
+    const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+    const outcomes: ActionOutcome[] = Array.isArray(outcomesRaw) ? outcomesRaw.filter(isActionOutcome) : []
+    const lastTen = outcomes.slice(-10)
+
+    // Fresh prompt: reflection should not inherit potentially-poisoned loop chatter.
+    this.agent.resetConversation?.()
+
+    const prompt = [
+      'Review your last 10 actions. What patterns do you see? What should you do differently? Respond with updated goals if needed.',
+      '',
+      'Last 10 action outcomes:',
+      lastTen.length ? JSON.stringify(lastTen, null, 2) : '(no action outcomes recorded yet)',
+      '',
+      'If you want to update goals, include an updated `goals` array in your response.',
+    ].join('\n')
+
+    const result = await this.agent.prompt(prompt, { mode: 'loop.reflection' })
+    const normalized = this.normalizeThinkResult(result)
+
+    const reflectionText = (() => {
+      if (typeof result === 'string') return result.trim()
+      const text = (normalized as any)?.text
+      if (typeof text === 'string' && text.trim().length > 0) return text.trim()
+      const content = normalized.content
+      if (typeof content === 'string' && content.trim().length > 0) return content.trim()
+      try {
+        return JSON.stringify(result, null, 2)
+      } catch {
+        return String(result ?? '')
+      }
+    })()
+
+    if (normalized.goals && normalized.goals.length > 0) {
+      const config = await this.loadOrCreateConfig()
+      const next: AgentConfig = { ...config, goals: structuredClone(normalized.goals) }
+      this.config = await this.pruneAndArchiveCompletedGoals(next)
+    }
+
+    // Persist the session transcript so reflection prompts show up in /debug even though
+    // we skip the normal observe→think→act→reflect cycle.
+    await this.saveSession()
+
+    await this.ctx.storage.put('lastReflection', reflectionText)
+  }
+
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
     const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
     if (!running) {
@@ -638,6 +701,20 @@ export class AgentDO extends DurableObject {
         })
         hadError = true
         cycleErrors.push({ category, phase: 'housekeeping', message })
+      }
+    } else if (mode === 'reflection') {
+      try {
+        await this.runReflection()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const category = this.categorizeAlarmError(error, { phase: 'reflection' })
+        logger.error('agent.error', {
+          span_id: createSpanId(),
+          context: { phase: 'reflection', category },
+          error: toErrorDetails(error),
+        })
+        hadError = true
+        cycleErrors.push({ category, phase: 'reflection', message })
       }
     } else {
       try {

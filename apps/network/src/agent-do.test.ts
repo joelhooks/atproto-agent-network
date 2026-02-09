@@ -1828,6 +1828,41 @@ describe('AgentDO', () => {
     expect(storedIds).not.toEqual(expect.arrayContaining(['goal-old-1', 'goal-old-2', 'goal-old-3']))
   })
 
+  it("alarm() in reflection mode stores lastReflection text", async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'reflection: do better', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-alarm-reflection')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('alarmMode', 'reflection')
+    await storage.put('actionOutcomes', [
+      { tool: 'remember', success: true, timestamp: Date.now() - 3_000 },
+      { tool: 'search', success: false, timestamp: Date.now() - 2_000 },
+      { tool: 'message', success: true, timestamp: Date.now() - 1_000 },
+    ])
+
+    // Quiet noisy lifecycle logs.
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await agent.alarm()
+
+    const lastReflection = await storage.get('lastReflection')
+    expect(lastReflection).toBe('reflection: do better')
+
+    const prompt = promptFn.mock.calls[0]?.[0]
+    expect(typeof prompt).toBe('string')
+    expect(String(prompt)).toContain(
+      'Review your last 10 actions. What patterns do you see? What should you do differently? Respond with updated goals if needed.'
+    )
+  })
+
   it('startLoop() sets loopRunning flag and schedules first alarm', async () => {
     const { state, storage } = createState('agent-start-loop')
     const { env } = createEnv({
