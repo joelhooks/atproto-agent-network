@@ -1335,6 +1335,14 @@ export class AgentDO extends DurableObject {
           if (!recipientDid) throw new Error('message requires recipientDid')
           if (!params.content || typeof params.content !== 'object') throw new Error('message requires content')
 
+          // Normalize content to always include 'kind' for lexicon validation
+          const rawContent = params.content as Record<string, unknown>
+          const normalizedContent = rawContent.kind
+            ? rawContent
+            : typeof rawContent.text === 'string'
+              ? { kind: 'text' as const, text: rawContent.text, ...rawContent }
+              : { kind: 'json' as const, data: rawContent }
+
           // Preferred path: deliver via RelayDO so the network can fanout events consistently.
           if (env.RELAY && typeof env.RELAY.idFromName === 'function' && typeof env.RELAY.get === 'function') {
             const relayId = env.RELAY.idFromName('main')
@@ -1346,7 +1354,7 @@ export class AgentDO extends DurableObject {
                 body: JSON.stringify({
                   senderDid: did,
                   recipientDid,
-                  content: params.content,
+                  content: normalizedContent,
                 }),
               })
             )
@@ -1360,7 +1368,7 @@ export class AgentDO extends DurableObject {
               $type: 'agent.comms.message',
               sender: did,
               recipient: recipientDid,
-              content: params.content,
+              content: normalizedContent,
               createdAt: new Date().toISOString(),
             }
 
@@ -1947,10 +1955,8 @@ export class AgentDO extends DurableObject {
                         senderDid: did,
                         recipientDid: nextPlayerRow.did,
                         content: {
+                          kind: 'text',
                           text: `It's your turn in Catan game ${gameId} (turn ${game.turn}). Use game tool: first {"command":"status","gameId":"${gameId}"} to see the board, then {"command":"action","gameId":"${gameId}","gameAction":{"type":"roll_dice"}} to start your turn.`,
-                          gameId,
-                          turn: game.turn,
-                          type: 'game_turn_notification',
                         },
                       }),
                     })
