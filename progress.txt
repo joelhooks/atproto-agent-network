@@ -666,3 +666,24 @@ Validation: `npx turbo typecheck` and `npx vitest run --passWithNoTests` both pa
 Completed: Dashboard: environment panel per agent
 Files: apps/network/src/agent-factory.ts, packages/dashboard/index.html, packages/dashboard/src/environments.test.ts, packages/dashboard/src/environments.ts, packages/dashboard/src/main.ts
 Summary: Implemented the dashboard environment panel per agent: on agent-card expand, the dashboard fetches `GET /environments?player=<agent>` (admin auth), fetches per-environment details from `GET /environments/:id` for state, and renders environment cards with Catan board summary + RPG character sheet plus expandable full-state views. Added focused unit tests for card rendering and updated dashboard CSS.
+
+---
+[2026-02-09T15:08:12.702Z]
+Failed: Fix Vectorize embedding dimension mismatch (768 → 1024) [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:typecheck: 
+@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:typecheck: > ts
+Codex: 
+
+---
+[2026-02-09T15:27:03.781Z]
+Completed: Fix Vectorize embedding dimension mismatch (768 → 1024)
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/vectorize-dimensions.test.ts, apps/network/wrangler.toml, .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
+Summary: Prior failure pattern detected: timeout/build_error. Mitigation: run `pnpm typecheck` and `pnpm test` explicitly (not ad-hoc turbo filters), add a regression test first, then implement a minimal fix and re-run full validation.
+
+Fixed Vectorize 768→1024 mismatch by making `apps/network/src/agent.ts` select the Workers AI embedding model based on the Vectorize index dimensions (from `VECTORIZE_DIMENSIONS`, defaulting to 1024) instead of trusting `EMBEDDING_MODEL` when they disagree. Added/committed `EMBEDDING_MODEL=@cf/baai/bge-large-en-v1.5` and `VECTORIZE_DIMENSIONS=1024` to `apps/network/wrangler.toml`, plus a regression test for misconfigured env.
+
+Validation: `pnpm typecheck && pnpm test` passed. Deployed `apps/network` to prod and verified `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` passed. Commit includes `Closes #76`.

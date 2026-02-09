@@ -249,12 +249,92 @@
       "priority": 1,
       "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo test --filter=network"
+    },
+    {
+      "id": "story-mlfbgtwo",
+      "title": "Fix Vectorize embedding dimension mismatch (768 → 1024)",
+      "description": "The search tool returns VECTOR_QUERY_ERROR: expected 1024 dimensions, got 768. Switch embedding model to bge-large-en-v1.5 (1024D) or recreate index. Test dimensions match. Files: apps/network/src/agent.ts, apps/network/wrangler.toml. IMPORTANT: Include \"Closes #76\" in your commit message body.",
+      "priority": 1,
+      "passes": true,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbgyyr",
+      "title": "Goal lifecycle — prune completed goals, cap prompt bloat",
+      "description": "Agents accumulate completed goals forever (slag has 7, 5 completed). Max 2 recent completed in prompt, archive rest in DO storage. Add maxCompletedGoals config. Files: apps/network/src/agent.ts, apps/network/src/agent-factory.ts. IMPORTANT: Include \"Closes #77\" in your commit message body.",
+      "priority": 2,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbh5sv",
+      "title": "Enforce enabledTools strictly",
+      "description": "Filter tool definitions sent to OpenRouter to ONLY include tools in agent enabledTools config. Snarl called recall/search which aren't in its config. If enabledTools empty, expose all (backward compat). Files: apps/network/src/agent-factory.ts, apps/network/src/agent.ts. IMPORTANT: Include \"Closes #78\" in your commit message body.",
+      "priority": 3,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbhaur",
+      "title": "Smarter error backoff — tiered by error type",
+      "description": "Implement tiered backoff: transient (model timeout, rate limit) 15s→30s→60s cap. Persistent (config) 60s→120s→300s. Game-context 15s cap. Reset on success. Log error category. Files: apps/network/src/agent.ts. IMPORTANT: Include \"Closes #79\" in your commit message body.",
+      "priority": 4,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbhfmx",
+      "title": "Clear stale game state on completion",
+      "description": "When game ends, mark goals referencing that gameId as completed. Inject game-over observation. Next observe cycle should present clean slate. Files: apps/network/src/agent.ts, apps/network/src/catan/. IMPORTANT: Include \"Closes #80\" in your commit message body.",
+      "priority": 5,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbhk80",
+      "title": "Fix /games API — return all games",
+      "description": "/games returns empty array despite games existing in D1. Fix the list query. Include active and recently finished (24h). Add pagination. Files: apps/network/src/index.ts. IMPORTANT: Include \"Closes #81\" in your commit message body.",
+      "priority": 6,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbhphy",
+      "title": "Structured JSON logging for all agent lifecycle events",
+      "description": "Add structured console.log JSON events: agent.cycle.start/end, agent.tool.call/result, agent.error, agent.goal.update, agent.game.action/end, agent.model.fallback, agent.alarm.schedule. Create apps/network/src/logger.ts utility. Foundation for Cloudflare Pipelines. Files: apps/network/src/logger.ts (new), apps/network/src/agent-factory.ts, apps/network/src/agent.ts. IMPORTANT: Include \"Closes #82\" in your commit message body.",
+      "priority": 7,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbhwfc",
+      "title": "Fix autoPlay game detection",
+      "description": "Both agents show hasActiveGame=false despite active game. Fix game detection in observe/alarm cycle to reliably find games where agent is a player. Fix setup phase progression. Files: apps/network/src/agent.ts. IMPORTANT: Include \"Closes #83\" in your commit message body.",
+      "priority": 8,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbi0o4",
+      "title": "Adaptive loop interval — speed up during active games",
+      "description": "Implement adaptive alarm intervals: gameActiveIntervalMs (15s) when it's your turn, gameWaitingIntervalMs (45s) when waiting, default otherwise. Store reason in o11y. Files: apps/network/src/agent.ts. IMPORTANT: Include \"Closes #84\" in your commit message body.",
+      "priority": 9,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfbi54u",
+      "title": "Post-game summary — structured outcome logging + agent memory",
+      "description": "On game completion: generate structured summary {gameId, winner, turns, durationMs, players with VP/model}. Log as agent.game.summary event. Store in agent memory via remember tool. Files: apps/network/src/catan/, apps/network/src/agent.ts. IMPORTANT: Include \"Closes #85\" in your commit message body.",
+      "priority": 10,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 18,
-    "lastIteration": "2026-02-09T06:38:59.870Z"
+    "totalIterations": 19,
+    "lastIteration": "2026-02-09T15:27:03.780Z"
   },
   "totalStories": 11
 }
