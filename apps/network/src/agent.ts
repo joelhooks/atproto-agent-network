@@ -705,7 +705,7 @@ export class AgentDO extends DurableObject {
     }
   }
 
-  private buildThinkPrompt(observations: Observations): string {
+  private async buildThinkPrompt(observations: Observations): Promise<string> {
     const goals = (this.config?.goals ?? [])
       .filter((goal) => goal && typeof goal === 'object')
       .map((goal) => ({
@@ -719,6 +719,38 @@ export class AgentDO extends DurableObject {
     const hasInbox = observations.inbox.length > 0
     const hasEvents = observations.events.length > 0
 
+    // Game-aware context (query D1 for active games)
+    let gameContext = ''
+    if (this.agentEnv?.DB) {
+      const agentName = this.config?.name ?? ''
+      try {
+        const gameRow = await this.agentEnv.DB
+          .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
+          .bind(`%${agentName}%`)
+          .first<{ id: string; state: string }>()
+        if (gameRow) {
+          const state = JSON.parse(gameRow.state)
+          const isMyTurn = state.currentPlayer === agentName
+          if (isMyTurn) {
+            gameContext = [
+              `🎮🎮🎮 IT IS YOUR TURN in Catan game ${gameRow.id} (turn ${state.turn})!`,
+              `Use the game tool: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}}`,
+              `Then: {"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}}`,
+            ].join('\n')
+          } else {
+            const players = state.players?.map((p: any) => `${p.name}: ${p.victoryPoints}VP, ${Object.values(p.resources as Record<string,number>).reduce((a: number, b: number) => a + b, 0)} resources`).join(', ') ?? ''
+            gameContext = [
+              `🎲 Active Catan game: ${gameRow.id} (turn ${state.turn})`,
+              `Current player: ${state.currentPlayer} — waiting for them to play.`,
+              `Scoreboard: ${players}`,
+              'DO NOT create a new game. You are already in one.',
+              'Use think_aloud to trash talk about the other players while you wait.',
+            ].join('\n')
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
     return [
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
       this.config?.personality ? `Personality: ${this.config.personality}` : '',
@@ -729,34 +761,8 @@ export class AgentDO extends DurableObject {
       'Observations this cycle:',
       JSON.stringify(observations, null, 2),
       '',
-      // Separate game notifications from regular messages
-      (() => {
-        if (!hasInbox) return ''
-        const gameNotif = observations?.inbox?.find((m: any) => {
-          const text = m?.record?.content?.text ?? m?.content?.text ?? ''
-          return typeof text === 'string' && text.includes('your turn in Catan')
-        })
-        if (gameNotif) {
-          // Extract gameId from the notification text
-          const text = (gameNotif as any)?.record?.content?.text ?? (gameNotif as any)?.content?.text ?? ''
-          const gameIdMatch = text.match(/catan_[a-z0-9]+/)
-          const gameId = gameIdMatch ? gameIdMatch[0] : 'UNKNOWN'
-          return [
-            '',
-            `🎮🎮🎮 URGENT: IT IS YOUR TURN IN CATAN! Game: ${gameId}`,
-            'DO NOT reply to this message. DO NOT use think_aloud. USE THE GAME TOOL:',
-            '',
-            `STEP 1: {"name":"game","arguments":{"command":"action","gameId":"${gameId}","gameAction":{"type":"roll_dice"}}}`,
-            `STEP 2: {"name":"game","arguments":{"command":"action","gameId":"${gameId}","gameAction":{"type":"end_turn"}}}`,
-            '',
-            'You MUST call the game tool with these exact arguments. This is your #1 priority.',
-          ].join('\n')
-        }
-        // Regular (non-game) messages
-        return [
-          '⚠️ You have UNREAD MESSAGES in your inbox. RESPOND using the "message" tool.',
-        ].join('\n')
-      })(),
+      gameContext,
+      hasInbox ? '⚠️ You have UNREAD MESSAGES in your inbox. RESPOND using the "message" tool.' : '',
       hasEvents ? 'You have pending events to process.' : '',
       '',
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
@@ -812,7 +818,7 @@ export class AgentDO extends DurableObject {
     // Without this, 50+ cycles of no-tool-call history poisons the model.
     this.agent.resetConversation?.()
 
-    const prompt = this.buildThinkPrompt(observations)
+    const prompt = await this.buildThinkPrompt(observations)
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
 
     // Raw model output debug — store in DO for queryable diagnosis
@@ -1927,6 +1933,16 @@ export class AgentDO extends DurableObject {
           const db = env.DB
 
           if (command === 'new_game') {
+            // Check if there's already an active game — block creating duplicates
+            const existingGame = await db.prepare(
+              "SELECT id FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1"
+            ).bind(`%${this.config?.name ?? ''}%`).first<{ id: string }>()
+            if (existingGame) {
+              return {
+                ok: false,
+                error: `Already in active game ${existingGame.id}. Use {"command":"status","gameId":"${existingGame.id}"} to check state, or {"command":"action","gameId":"${existingGame.id}","gameAction":{"type":"roll_dice"}} if it's your turn.`,
+              }
+            }
             const { createGame } = await import('./games/catan')
             const players = Array.isArray(params.players)
               ? params.players.filter((p): p is string => typeof p === 'string')
