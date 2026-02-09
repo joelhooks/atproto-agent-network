@@ -423,7 +423,7 @@
       "title": "Party formation — join existing games instead of solo",
       "description": "**`apps/network/src/environments/rpg.ts`:**\n1. Add `join_game` command — gameId+klass, adds to party\n2. `new_game`: check for open RPG <3 players, suggest joining\n3. `buildContext()`: no active game → show joinable games\n4. `getAutoPlayActions()`: no game but joinable → return join_game\n\n**Tests:** join adds to party, new_game suggests joining",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -445,8 +445,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 38,
-    "lastIteration": "2026-02-09T20:30:03.931Z"
+    "totalIterations": 39,
+    "lastIteration": "2026-02-09T20:37:35.731Z"
   },
   "totalStories": 11
 }

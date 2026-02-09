@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIGHSWARM Editorial</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --off-white: #faf9f6;
+      --rich-black: #1a1a1a;
+      --muted-gold: #b8860b;
+      --soft-gray: #666;
+      --light-gray: #ddd;
+      --burgundy: #8b1a1a;
+      --serif: 'Playfair Display', serif;
+      --sans: 'Source Sans 3', sans-serif;
+    }
+
+    body {
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--rich-black);
+      background: var(--off-white);
+      padding: 0;
+      margin: 0;
+    }
+
+    /* Masthead */
+    .masthead {
+      border-bottom: 1px solid var(--light-gray);
+      padding: 2rem 1.5rem 1rem;
+      background: white;
+    }
+
+    .masthead-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .nameplate {
+      font-family: var(--serif);
+      font-size: 3rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--rich-black);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--light-gray);
+      border-radius: 2rem;
+      font-size: 0.875rem;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted-gold);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Main Layout */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+
+    /* Section Divider */
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 4rem 0 3rem;
+      color: var(--soft-gray);
+      font-size: 0.875rem;
+    }
+
+    .section-divider::before,
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--light-gray);
+    }
+
+    .section-divider span {
+      color: var(--muted-gold);
+    }
+
+    /* Stats Bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      padding: 3rem 0;
+      border-bottom: 1px solid var(--light-gray);
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: var(--serif);
+      font-size: 3.5rem;
+      font-weight: 700;
+      color: var(--muted-gold);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--soft-gray);
+      margin-top: 0.5rem;
+      font-weight: 600;
+    }
+
+    /* Section Title */
+    .section-title {
+      font-family: var(--serif);
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 2rem;
+      color: var(--rich-black);
+    }
+
+    /* Agent Grid */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-bottom: 4rem;
+    }
+
+    .agent-card {
+      background: white;
+      border: 1px solid var(--light-gray);
+      padding: 2rem;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .agent-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      transform: translateY(-2px);
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .agent-avatar {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: var(--muted-gold);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--serif);
+      font-size: 1.5rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .agent-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .agent-name {
+      font-family: var(--serif);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--rich-black);
+      margin-bottom: 0.25rem;
+    }
+
+    .agent-specialty {
+      font-style: italic;
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+    }
+
+    .agent-meta {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+    }
+
+    .agent-meta-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.25rem;
+    }
+
+    .agent-meta-value {
+      font-weight: 600;
+      color: var(--rich-black);
+    }
+
+    .agent-status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      margin-top: 1rem;
+    }
+
+    .agent-status-badge.running {
+      background: rgba(184, 134, 11, 0.1);
+      color: var(--muted-gold);
+    }
+
+    .agent-status-badge.stopped {
+      background: rgba(102, 102, 102, 0.1);
+      color: var(--soft-gray);
+    }
+
+    .agent-details {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease;
+      border-top: 1px solid var(--light-gray);
+      margin-top: 1rem;
+    }
+
+    .agent-details.expanded {
+      max-height: 2000px;
+      padding-top: 1.5rem;
+    }
+
+    .agent-personality {
+      font-style: italic;
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+      margin-bottom: 1.5rem;
+      padding-left: 1rem;
+      border-left: 2px solid var(--muted-gold);
+      line-height: 1.6;
+    }
+
+    .agent-detail-section {
+      margin-bottom: 1.5rem;
+    }
+
+    .agent-detail-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--soft-gray);
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    .agent-detail-value {
+      font-size: 0.875rem;
+      color: var(--rich-black);
+      line-height: 1.6;
+    }
+
+    .agent-did {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--soft-gray);
+      word-break: break-all;
+      cursor: pointer;
+      transition: color 0.2s ease;
+      position: relative;
+      display: inline-block;
+    }
+
+    .agent-did:hover {
+      color: var(--muted-gold);
+    }
+
+    .agent-did::after {
+      content: '📋';
+      opacity: 0;
+      margin-left: 0.5rem;
+      transition: opacity 0.2s ease;
+    }
+
+    .agent-did:hover::after {
+      opacity: 1;
+    }
+
+    .copy-tooltip {
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--rich-black);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      margin-bottom: 0.5rem;
+    }
+
+    .copy-tooltip.show {
+      opacity: 1;
+    }
+
+    .agent-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .tool-tag {
+      padding: 0.25rem 0.75rem;
+      background: rgba(184, 134, 11, 0.05);
+      border: 1px solid rgba(184, 134, 11, 0.2);
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--muted-gold);
+    }
+
+    .goal-list {
+      list-style: none;
+    }
+
+    .goal-item {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+
+    .goal-item::before {
+      content: '●';
+      position: absolute;
+      left: 0;
+      color: var(--muted-gold);
+      font-size: 0.75rem;
+    }
+
+    .goal-description {
+      font-size: 0.875rem;
+      color: var(--rich-black);
+      margin-bottom: 0.25rem;
+    }
+
+    .goal-meta {
+      font-size: 0.75rem;
+      color: var(--soft-gray);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .goal-progress {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .progress-bar {
+      width: 60px;
+      height: 4px;
+      background: rgba(184, 134, 11, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--muted-gold);
+      transition: width 0.3s ease;
+    }
+
+    /* Activity Feed */
+    .activity-feed {
+      max-width: 900px;
+    }
+
+    .event {
+      background: white;
+      border: 1px solid var(--light-gray);
+      padding: 2rem;
+      margin-bottom: 2rem;
+      transition: box-shadow 0.2s ease;
+    }
+
+    .event:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .event.error {
+      border-left: 3px solid var(--burgundy);
+    }
+
+    .event-headline {
+      font-family: var(--serif);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--rich-black);
+      margin-bottom: 0.75rem;
+      line-height: 1.3;
+    }
+
+    .event-byline {
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .event-agent {
+      font-weight: 600;
+      color: var(--muted-gold);
+    }
+
+    .event-timestamp {
+      font-style: italic;
+    }
+
+    .event-body {
+      font-size: 1rem;
+      line-height: 1.7;
+      color: var(--rich-black);
+      margin-bottom: 1rem;
+    }
+
+    .event-type-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .event-type-badge.memory { background: rgba(184, 134, 11, 0.1); color: var(--muted-gold); }
+    .event-type-badge.tool { background: rgba(102, 102, 102, 0.1); color: var(--soft-gray); }
+    .event-type-badge.loop { background: rgba(26, 26, 26, 0.05); color: var(--rich-black); }
+    .event-type-badge.think_aloud { background: rgba(184, 134, 11, 0.05); color: var(--muted-gold); }
+    .event-type-badge.error { background: rgba(139, 26, 26, 0.1); color: var(--burgundy); }
+    .event-type-badge.message { background: rgba(102, 102, 102, 0.05); color: var(--soft-gray); }
+    .event-type-badge.goal { background: rgba(184, 134, 11, 0.1); color: var(--muted-gold); }
+    .event-type-badge.identity { background: rgba(26, 26, 26, 0.05); color: var(--rich-black); }
+    .event-type-badge.system { background: rgba(102, 102, 102, 0.1); color: var(--soft-gray); }
+    .event-type-badge.prompt { background: rgba(184, 134, 11, 0.05); color: var(--muted-gold); }
+
+    .event-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .event-tag {
+      font-style: italic;
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+    }
+
+    .event-tag::before {
+      content: '#';
+      color: var(--muted-gold);
+    }
+
+    .event-details {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--light-gray);
+      font-size: 0.875rem;
+      color: var(--soft-gray);
+      font-family: monospace;
+    }
+
+    .event-details-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--soft-gray);
+      margin-bottom: 0.5rem;
+      font-family: var(--sans);
+    }
+
+    .event-details-content {
+      background: rgba(0, 0, 0, 0.02);
+      padding: 1rem;
+      border-radius: 0.25rem;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    /* First Event Drop Cap */
+    .event:first-child .event-body::first-letter {
+      font-family: var(--serif);
+      font-size: 3.5rem;
+      font-weight: 700;
+      float: left;
+      line-height: 1;
+      margin-right: 0.1em;
+      color: var(--muted-gold);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .nameplate {
+        font-size: 2rem;
+      }
+
+      .stats-bar {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
+      }
+
+      .stat-value {
+        font-size: 2.5rem;
+      }
+
+      .agent-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+      }
+
+      .event-headline {
+        font-size: 1.25rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 2rem 1rem;
+      }
+
+      .masthead {
+        padding: 1.5rem 1rem 0.75rem;
+      }
+
+      .stats-bar {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .event {
+        padding: 1.5rem;
+      }
+    }
+
+    /* Expand Button */
+    .expand-toggle {
+      background: none;
+      border: none;
+      color: var(--muted-gold);
+      font-size: 0.875rem;
+      font-family: var(--sans);
+      cursor: pointer;
+      padding: 0.5rem 0;
+      margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .expand-toggle:hover {
+      gap: 0.75rem;
+      text-decoration: underline;
+    }
+
+    .expand-toggle::after {
+      content: '→';
+      transition: transform 0.3s ease;
+    }
+
+    .expand-toggle.expanded::after {
+      transform: rotate(90deg);
+    }
+  </style>
+</head>
+<body>
+  <!-- Masthead -->
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="nameplate">HIGHSWARM</h1>
+      <div class="status-pill">
+        <span class="status-indicator"></span>
+        <span id="connectionStatus">Connected</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Stats Bar -->
+    <section class="stats-bar">
+      <div class="stat">
+        <div class="stat-value" id="totalAgents">—</div>
+        <div class="stat-label">Active Agents</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="totalMemories">—</div>
+        <div class="stat-label">Memories Stored</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="runningLoops">—</div>
+        <div class="stat-label">Running Loops</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="recentEvents">—</div>
+        <div class="stat-label">Recent Events</div>
+      </div>
+    </section>
+
+    <!-- Section Divider -->
+    <div class="section-divider">
+      <span>◆</span>
+    </div>
+
+    <!-- Agents Section -->
+    <section>
+      <h2 class="section-title">Contributor Profiles</h2>
+      <div class="agent-grid" id="agentGrid"></div>
+    </section>
+
+    <!-- Section Divider -->
+    <div class="section-divider">
+      <span>◆</span>
+    </div>
+
+    <!-- Activity Section -->
+    <section>
+      <h2 class="section-title">Recent Activity</h2>
+      <div class="activity-feed" id="activityFeed"></div>
+    </section>
+  </main>
+
+  <script>
+    // Mock Data
+    const agents = [
+      { name: 'alice', displayName: 'Alice', did: 'did:plc:abc123xyz789', memories: 47, config: { personality: 'Analytical and detail-oriented. Loves graphs and metrics.', specialty: 'Data Analysis', model: 'claude-opus-4-6', fastModel: 'claude-sonnet-4-5', loopIntervalMs: 30000, goals: [{ id: 'g1', description: 'Analyze swarm memory usage trends', priority: 1, status: 'active', progress: 0.65 }, { id: 'g2', description: 'Generate weekly health report', priority: 2, status: 'completed', progress: 1.0 }], enabledTools: ['hivemind_find', 'hivemind_store', 'web_search'] }, loop: { loopRunning: true, loopCount: 142, nextAlarm: Date.now() + 15000 } },
+      { name: 'bob', displayName: 'Bob', did: 'did:plc:def456uvw012', memories: 23, config: { personality: 'Optimistic troublemaker. Likes to poke things.', specialty: 'Integration Testing', model: 'claude-opus-4-5', fastModel: 'claude-haiku-4-5', loopIntervalMs: 60000, goals: [{ id: 'g3', description: 'Test gateway reconnection logic', priority: 1, status: 'active', progress: 0.2 }], enabledTools: ['swarm_spawn_subtask', 'swarm_review', 'bash'] }, loop: { loopRunning: false, loopCount: 89, nextAlarm: null } },
+      { name: 'grimlock', displayName: 'Grimlock', did: 'did:plc:ghi789rst345', memories: 104, config: { personality: 'Gruff, direct, no-nonsense system operator.', specialty: 'System Operations', model: 'claude-opus-4-6', fastModel: 'claude-sonnet-4-5', loopIntervalMs: 45000, goals: [{ id: 'g4', description: 'Monitor gateway stability metrics', priority: 1, status: 'active', progress: 0.85 }, { id: 'g5', description: 'Archive stale event logs', priority: 3, status: 'pending', progress: 0 }], enabledTools: ['openclaw_gateway', 'hivemind_stats', 'system_echo'] }, loop: { loopRunning: true, loopCount: 312, nextAlarm: Date.now() + 22000 } }
+    ];
+
+    const events = [
+      { type: 'memory.store', agent: 'alice', kind: 'memory', timestamp: new Date(Date.now() - 120000).toISOString(), summary: 'Stored trend analysis', text: 'Memory decay rate decreased 15% over last 24h', tags: ['analytics', 'performance'], details: { memoryData: { metric: 'decay_rate', delta: -0.15, timeWindow: '24h' } } },
+      { type: 'tool.call', agent: 'bob', kind: 'tool', timestamp: new Date(Date.now() - 180000).toISOString(), summary: 'Executed swarm_spawn_subtask', text: 'Spawned subtask "test-websocket-failover" with 3 agents', tags: ['testing'], details: { context: { subtaskId: 'st-xyz', agentCount: 3 } } },
+      { type: 'loop.iteration', agent: 'grimlock', kind: 'loop', timestamp: new Date(Date.now() - 240000).toISOString(), summary: 'Loop iteration 312', text: 'Checked gateway health. All RPC probes green.', tags: ['operations'] },
+      { type: 'agent.think_aloud', agent: 'alice', kind: 'think_aloud', timestamp: new Date(Date.now() - 300000).toISOString(), summary: 'Considering weekly report format', text: 'Should include per-agent memory growth charts.', details: { context: { reportType: 'weekly' } } },
+      { type: 'loop.error', agent: 'bob', kind: 'error', timestamp: new Date(Date.now() - 360000).toISOString(), summary: 'WebSocket handshake timeout', text: 'Failed to establish WS connection', tags: ['network', 'error'], details: { error: { code: 'HANDSHAKE_TIMEOUT', message: 'Connection timed out after 10s' } } },
+      { type: 'agent.comms.message', agent: 'grimlock', kind: 'message', timestamp: new Date(Date.now() - 420000).toISOString(), summary: 'Sent status update to alice', text: 'Gateway uptime: 14d 6h 23m.', tags: ['communication'] },
+      { type: 'goal.progress', agent: 'alice', kind: 'goal', timestamp: new Date(Date.now() - 480000).toISOString(), summary: 'Goal progress updated', text: 'Memory trends analysis now 65% complete', tags: ['goals'], details: { memoryData: { goalId: 'g1', progress: 0.65 } } },
+      { type: 'identity.refresh', agent: 'bob', kind: 'identity', timestamp: new Date(Date.now() - 540000).toISOString(), summary: 'Refreshed DID document', text: 'Updated publicKey rotation metadata', tags: ['identity'] },
+      { type: 'system.archive', agent: 'grimlock', kind: 'system', timestamp: new Date(Date.now() - 600000).toISOString(), summary: 'Archived 1,247 events older than 7d', text: 'Cleaned up stale entries.', tags: ['housekeeping'] },
+      { type: 'prompt.load', agent: 'alice', kind: 'prompt', timestamp: new Date(Date.now() - 660000).toISOString(), summary: 'Loaded analysis prompt template', text: 'Using template "weekly-health-v3"', tags: ['prompt-engineering'] }
+    ];
+
+    // Utility Functions
+    function formatTimestamp(isoString) {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diff = now - date;
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
+
+      if (minutes < 1) return 'just now';
+      if (minutes < 60) return `${minutes}m ago`;
+      if (hours < 24) return `${hours}h ago`;
+      return `${days}d ago`;
+    }
+
+    function formatTimeUntil(timestamp) {
+      if (!timestamp) return 'N/A';
+      const diff = timestamp - Date.now();
+      const seconds = Math.floor(diff / 1000);
+      if (seconds < 0) return 'overdue';
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m`;
+    }
+
+    function getAgentColor(name) {
+      const colors = {
+        alice: '#b8860b',
+        bob: '#666',
+        grimlock: '#1a1a1a'
+      };
+      return colors[name] || '#b8860b';
+    }
+
+    function copyToClipboard(text, element) {
+      navigator.clipboard.writeText(text).then(() => {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'copy-tooltip show';
+        tooltip.textContent = 'Copied!';
+        element.appendChild(tooltip);
+        setTimeout(() => {
+          tooltip.classList.remove('show');
+          setTimeout(() => tooltip.remove(), 200);
+        }, 1500);
+      });
+    }
+
+    // Render Functions
+    function renderAgents() {
+      const grid = document.getElementById('agentGrid');
+      grid.innerHTML = agents.map(agent => {
+        const initial = agent.displayName[0].toUpperCase();
+        const isRunning = agent.loop.loopRunning;
+        const nextAlarm = formatTimeUntil(agent.loop.nextAlarm);
+
+        return `
+          <div class="agent-card" data-agent="${agent.name}">
+            <div class="agent-header">
+              <div class="agent-avatar" style="background: ${getAgentColor(agent.name)}">${initial}</div>
+              <div class="agent-info">
+                <h3 class="agent-name">${agent.displayName}</h3>
+                <div class="agent-specialty">${agent.config.specialty}</div>
+              </div>
+            </div>
+
+            <div class="agent-meta">
+              <div class="agent-meta-item">
+                <span class="agent-meta-value">${agent.memories}</span> memories
+              </div>
+              <div class="agent-meta-item">
+                <span class="agent-meta-value">${agent.loop.loopCount}</span> loops
+              </div>
+              ${isRunning ? `<div class="agent-meta-item">Next: <span class="agent-meta-value">${nextAlarm}</span></div>` : ''}
+            </div>
+
+            <div class="agent-status-badge ${isRunning ? 'running' : 'stopped'}">
+              ${isRunning ? 'Running' : 'Stopped'}
+            </div>
+
+            <button class="expand-toggle" data-agent="${agent.name}">
+              Read full profile
+            </button>
+
+            <div class="agent-details" data-agent="${agent.name}">
+              <div class="agent-personality">"${agent.config.personality}"</div>
+
+              <div class="agent-detail-section">
+                <div class="agent-detail-label">Decentralized Identity</div>
+                <div class="agent-detail-value">
+                  <span class="agent-did" data-did="${agent.did}">${agent.did}</span>
+                </div>
+              </div>
+
+              <div class="agent-detail-section">
+                <div class="agent-detail-label">Model Configuration</div>
+                <div class="agent-detail-value">
+                  Primary: <strong>${agent.config.model}</strong><br>
+                  Fast: ${agent.config.fastModel}<br>
+                  Loop Interval: ${agent.config.loopIntervalMs / 1000}s
+                </div>
+              </div>
+
+              ${agent.config.goals && agent.config.goals.length > 0 ? `
+                <div class="agent-detail-section">
+                  <div class="agent-detail-label">Current Goals</div>
+                  <ul class="goal-list">
+                    ${agent.config.goals.map(goal => `
+                      <li class="goal-item">
+                        <div class="goal-description">${goal.description}</div>
+                        <div class="goal-meta">
+                          <span>Priority ${goal.priority}</span>
+                          <span>${goal.status}</span>
+                          <div class="goal-progress">
+                            <div class="progress-bar">
+                              <div class="progress-fill" style="width: ${goal.progress * 100}%"></div>
+                            </div>
+                            <span>${Math.round(goal.progress * 100)}%</span>
+                          </div>
+                        </div>
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+
+              ${agent.config.enabledTools && agent.config.enabledTools.length > 0 ? `
+                <div class="agent-detail-section">
+                  <div class="agent-detail-label">Enabled Tools</div>
+                  <div class="agent-tools">
+                    ${agent.config.enabledTools.map(tool => `<span class="tool-tag">${tool}</span>`).join('')}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Attach event listeners
+      document.querySelectorAll('.expand-toggle').forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const agentName = button.dataset.agent;
+          const details = document.querySelector(`.agent-details[data-agent="${agentName}"]`);
+          const isExpanded = details.classList.contains('expanded');
+
+          details.classList.toggle('expanded');
+          button.classList.toggle('expanded');
+          button.textContent = isExpanded ? 'Read full profile' : 'Collapse profile';
+
+          // Re-add arrow
+          const arrow = document.createElement('span');
+          button.appendChild(arrow);
+        });
+      });
+
+      document.querySelectorAll('.agent-did').forEach(didElement => {
+        didElement.addEventListener('click', (e) => {
+          e.stopPropagation();
+          copyToClipboard(didElement.dataset.did, didElement);
+        });
+      });
+    }
+
+    function renderEvents() {
+      const feed = document.getElementById('activityFeed');
+      feed.innerHTML = events.map((event, index) => {
+        const errorClass = event.kind === 'error' ? 'error' : '';
+        const hasDetails = event.details && Object.keys(event.details).length > 0;
+
+        return `
+          <article class="event ${errorClass}">
+            <div class="event-type-badge ${event.kind}">${event.kind.replace('_', ' ')}</div>
+            <h3 class="event-headline">${event.summary}</h3>
+            <div class="event-byline">
+              By <span class="event-agent">${event.agent}</span>
+              <span class="event-timestamp">${formatTimestamp(event.timestamp)}</span>
+            </div>
+            <div class="event-body">${event.text}</div>
+            ${event.tags && event.tags.length > 0 ? `
+              <div class="event-tags">
+                ${event.tags.map(tag => `<span class="event-tag">${tag}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${hasDetails ? `
+              <div class="event-details">
+                <div class="event-details-label">Event Details</div>
+                <div class="event-details-content">${JSON.stringify(event.details, null, 2)}</div>
+              </div>
+            ` : ''}
+          </article>
+        `;
+      }).join('');
+    }
+
+    function updateStats() {
+      document.getElementById('totalAgents').textContent = agents.length;
+      document.getElementById('totalMemories').textContent = agents.reduce((sum, a) => sum + a.memories, 0);
+      document.getElementById('runningLoops').textContent = agents.filter(a => a.loop.loopRunning).length;
+      document.getElementById('recentEvents').textContent = events.length;
+    }
+
+    // Initialize
+    function init() {
+      renderAgents();
+      renderEvents();
+      updateStats();
+
+      // Update timestamps every minute
+      setInterval(() => {
+        renderEvents();
+      }, 60000);
+    }
+
+    // Run on load
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

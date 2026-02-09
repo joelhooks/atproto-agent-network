@@ -67,6 +67,64 @@ function summarizeParty(game: RpgGameState): string {
     .join(' | ')
 }
 
+function pickJoinClass(game: RpgGameState): RpgClass {
+  const counts = new Map<RpgClass, number>([
+    ['Warrior', 0],
+    ['Scout', 0],
+    ['Mage', 0],
+    ['Healer', 0],
+  ])
+  for (const member of game.party) {
+    counts.set(member.klass, (counts.get(member.klass) ?? 0) + 1)
+  }
+
+  let best: RpgClass = 'Warrior'
+  let bestCount = Number.POSITIVE_INFINITY
+  for (const klass of ['Warrior', 'Scout', 'Mage', 'Healer'] as const) {
+    const count = counts.get(klass) ?? 0
+    if (count < bestCount) {
+      best = klass
+      bestCount = count
+    }
+  }
+  return best
+}
+
+async function findJoinableGamesForAgent(
+  ctx: EnvironmentContext,
+  input: { limit?: number }
+): Promise<Array<{ id: string; game: RpgGameState }>> {
+  const agentName = ctx.agentName.trim()
+  if (!agentName) return []
+
+  try {
+    const { results } = await ctx.db
+      .prepare("SELECT id, state FROM games WHERE type = 'rpg' AND phase = 'playing' ORDER BY updated_at DESC")
+      .all<GameRow>()
+
+    const joinable: Array<{ id: string; game: RpgGameState }> = []
+    const limit = Math.max(1, Math.min(20, Math.floor(input.limit ?? 5)))
+
+    for (const row of results) {
+      if (!row?.id || typeof row.state !== 'string') continue
+      try {
+        const game = JSON.parse(row.state) as RpgGameState
+        if (!game || game.type !== 'rpg') continue
+        if (Array.isArray(game.party) && game.party.some((p) => p?.name === agentName)) continue
+        if (!Array.isArray(game.party) || game.party.length >= 3) continue
+        joinable.push({ id: row.id, game })
+        if (joinable.length >= limit) break
+      } catch {
+        // ignore corrupt state rows
+      }
+    }
+
+    return joinable
+  } catch {
+    return []
+  }
+}
+
 function recomputeTurnOrder(game: RpgGameState): void {
   game.turnOrder = [...game.party].sort((a, b) => {
     const dex = b.stats.DEX - a.stats.DEX
@@ -89,6 +147,7 @@ export const rpgEnvironment: AgentEnvironment = {
       description:
         'BRP-inspired party dungeon crawl. Commands:\n' +
         '- new_game: Start an adventure (requires players array)\n' +
+        '- join_game: Join an open adventure (requires gameId + klass)\n' +
         '- create_character: Create/update your character (requires klass)\n' +
         '- explore: Move to the next room\n' +
         '- attack: Attack (in combat attacks first enemy; otherwise attacks a party member if defender provided)\n' +
@@ -101,7 +160,17 @@ export const rpgEnvironment: AgentEnvironment = {
         properties: {
           command: {
             type: 'string',
-            enum: ['new_game', 'create_character', 'explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'status'],
+            enum: [
+              'new_game',
+              'join_game',
+              'create_character',
+              'explore',
+              'attack',
+              'cast_spell',
+              'use_skill',
+              'rest',
+              'status',
+            ],
           },
           gameId: { type: 'string', description: 'Game ID (optional; defaults to your active adventure).' },
           players: { type: 'array', items: { type: 'string' }, description: 'Players for new_game.' },
@@ -117,6 +186,58 @@ export const rpgEnvironment: AgentEnvironment = {
         const command = typeof params.command === 'string' ? params.command : ''
         const db = ctx.db
         const dice = createDice()
+
+        if (command === 'join_game') {
+          const gameId = typeof params.gameId === 'string' ? params.gameId.trim() : ''
+          if (!gameId) throw new Error('gameId required for join_game')
+
+          const klass = typeof params.klass === 'string' ? (params.klass as RpgClass) : null
+          if (!klass || !['Warrior', 'Scout', 'Mage', 'Healer'].includes(klass)) {
+            throw new Error('klass required: Warrior | Scout | Mage | Healer')
+          }
+
+          const row = await db
+            .prepare("SELECT state FROM games WHERE id = ? AND type = 'rpg'")
+            .bind(gameId)
+            .first<{ state: string }>()
+
+          if (!row) throw new Error(`Adventure ${gameId} not found`)
+
+          const game = JSON.parse(row.state) as RpgGameState
+          if (game.phase !== 'playing') {
+            return { ok: false, error: `Adventure ${gameId} is not joinable (phase: ${game.phase})` }
+          }
+
+          if (!Array.isArray(game.party) || game.party.length >= 3) {
+            return { ok: false, error: `Adventure ${gameId} party is full` }
+          }
+
+          const agentName = ctx.agentName.trim() || 'unknown'
+          if (game.party.some((p) => p.name === agentName)) {
+            return { ok: false, error: `Already in active adventure ${gameId}.` }
+          }
+
+          const joined = createCharacter({ name: agentName, klass })
+          game.party.push(joined)
+          recomputeTurnOrder(game)
+
+          const players = game.party.map((p) => p.name)
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, players = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, JSON.stringify(players), gameId)
+            .run()
+
+          await ctx.broadcast({
+            event_type: 'environment.joined',
+            context: { environment: 'rpg', gameId, agent: agentName, klass },
+          })
+
+          return {
+            content: toTextContent(`Joined adventure: ${gameId} as ${agentName} the ${klass}\nParty: ${summarizeParty(game)}`),
+            details: { gameId, joined },
+          }
+        }
 
         if (command === 'new_game') {
           const agentName = ctx.agentName.trim()
@@ -140,6 +261,22 @@ export const rpgEnvironment: AgentEnvironment = {
             ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
             : []
           if (players.length < 1) throw new Error('Need at least 1 player')
+
+          // Prefer joining an open adventure when a solo new_game is requested.
+          if (players.length <= 1) {
+            const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+            if (joinable.length > 0) {
+              const lines: string[] = []
+              lines.push('Open adventures are looking for party members:')
+              for (const candidate of joinable) {
+                const recommended = pickJoinClass(candidate.game)
+                lines.push(
+                  `- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Join with {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`
+                )
+              }
+              return { ok: false, error: lines.join('\n') }
+            }
+          }
 
           const gameId = `rpg_${generateTid()}`
           const game = createGame({ id: gameId, players })
@@ -426,7 +563,19 @@ export const rpgEnvironment: AgentEnvironment = {
 
   async buildContext(ctx: EnvironmentContext): Promise<string[]> {
     const row = await findActiveGameForAgent(ctx)
-    if (!row) return []
+    if (!row) {
+      const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+      if (joinable.length === 0) return []
+
+      const lines: string[] = []
+      lines.push('🏰 Joinable Dungeon Crawls:')
+      for (const candidate of joinable) {
+        const recommended = pickJoinClass(candidate.game)
+        lines.push(`- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Current: ${candidate.game.currentPlayer}`)
+        lines.push(`  Join: {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`)
+      }
+      return lines.filter(Boolean)
+    }
 
     try {
       const game = JSON.parse(row.state) as RpgGameState
@@ -462,13 +611,23 @@ export const rpgEnvironment: AgentEnvironment = {
       if (call.name !== 'rpg') return false
       const args = normalizeToolCallArguments(call.arguments)
       const cmd = typeof args.command === 'string' ? args.command : ''
-      return ['explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'create_character'].includes(cmd)
+      return ['join_game', 'explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'create_character'].includes(cmd)
     })
   },
 
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
     const row = await findActiveGameWhereItsMyTurn(ctx)
-    if (!row) return []
+    if (!row) {
+      const active = await findActiveGameForAgent(ctx)
+      if (active) return []
+
+      const joinable = await findJoinableGamesForAgent(ctx, { limit: 1 })
+      if (joinable.length === 0) return []
+
+      const candidate = joinable[0]!
+      const klass = pickJoinClass(candidate.game)
+      return [{ name: 'rpg', arguments: { command: 'join_game', gameId: candidate.id, klass } }]
+    }
 
     try {
       const state = JSON.parse(row.state) as RpgGameState

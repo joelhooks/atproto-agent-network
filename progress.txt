@@ -288,3 +288,19 @@ Completed: Barrier rooms — class-gated progression
 Files: .claude/.worker-tracking/c91db41a/skills_use.marker, .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
 Summary: Starting story-mlfm68ug. First I’m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.
 ⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-09T20:37:35.732Z]
+Completed: Party formation — join existing games instead of solo
+Files: apps/network/wrangler.toml, .claude/.worker-tracking/c91db41a/swarmmail_init.marker, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, packages/core/src/d1-mock.ts
+Summary: Implemented RPG party formation: added `join_game`, made `new_game` suggest joining open (<3 player) RPGs, surfaced joinable games in `buildContext()` when the agent has no active game, and auto-joined via `getAutoPlayActions()` when joinables exist. Added tests for join + join-suggestion behavior and extended D1Mock to support updating `games.players` alongside `state` so membership detection works in tests and prod.
+
+Prior failure pattern detected: test_failure (Vectorize dimension mismatch log noise). Mitigation: avoided touching Vectorize/embeddings paths; kept changes scoped to RPG env + D1Mock, and validated with full `pnpm typecheck && pnpm test` to ensure no regressions.
+
+## Learnings
+### Technical Discovery
+`apps/network/src/environments/rpg.ts` uses `games.players LIKE '%agent%'` to detect membership, so a join flow must keep `games.players` in sync with `game.party` (stored inside `state`) or the agent will “join” but still fail `findActiveGameForAgent()`.
+### Gotcha for Next Iteration
+If you add any new `UPDATE games SET ...` shapes, `packages/core/src/d1-mock.ts` may need to recognize that SQL; otherwise environment/unit tests can pass locally for the wrong reason or fail with “Unsupported SQL in D1MockDatabase.run”.
+### Files Context
+`apps/network/src/environments/rpg.ts` defines the RPG tool commands + context/autoplay behavior. `apps/network/src/environments/rpg.test.ts` is the unit test harness using `D1MockDatabase`. `packages/core/src/d1-mock.ts` emulates D1 and must support whatever SQL shapes the environments use.

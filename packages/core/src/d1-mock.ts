@@ -181,6 +181,22 @@ export class D1MockDatabase {
       const now = new Date().toISOString()
 
       // UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?
+      if (
+        normalized.includes('state = ?') &&
+        normalized.includes('phase = ?') &&
+        normalized.includes('winner = ?') &&
+        normalized.includes('players = ?')
+      ) {
+        const [state, phase, winner, players] = params
+        existing.state = String(state ?? '')
+        existing.phase = String(phase ?? '')
+        existing.winner = winner == null ? null : String(winner)
+        existing.players = String(players ?? '[]')
+        existing.updated_at = now
+        this.games.set(id, existing)
+        return
+      }
+
       if (normalized.includes('state = ?') && normalized.includes('phase = ?') && normalized.includes('winner = ?')) {
         const [state, phase, winner] = params
         existing.state = String(state ?? '')

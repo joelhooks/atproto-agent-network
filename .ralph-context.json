@@ -642,6 +642,19 @@
         ".ralph-iterations.jsonl"
       ],
       "learnings": "{\"success\":false,\"summary\":\"Starting story-mlfm687r: I’m going to (1) run `swarm memory find` for the story topic per instructions, then (2) open existing `rpg-engine.ts`, `rpg.ts`, and `rpg-engine.test.ts` to understand current combat/state model, and (3) write failing tests for the four new abilities before implementing them and wiring new environment commands.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":fals"
+    },
+    {
+      "id": "story-mlfm68ug",
+      "title": "Barrier rooms — class-gated progression",
+      "status": "completed",
+      "filesModified": [
+        ".claude/.worker-tracking/c91db41a/skills_use.marker",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "{\"success\":true,\"summary\":\"Starting story-mlfm68ug. First I’m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     }
   ],
   "failures": [

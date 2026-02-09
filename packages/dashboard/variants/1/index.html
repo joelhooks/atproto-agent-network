@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIGHSWARM // BRUTALIST TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --green: #00ff41;
+      --amber: #ffb000;
+      --red: #ff0000;
+      --black: #000000;
+      --gray: #333333;
+      --dim: #666666;
+    }
+
+    body {
+      font-family: 'IBM Plex Mono', monospace;
+      background: var(--black);
+      color: var(--green);
+      line-height: 1.4;
+      font-size: 14px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Scanline effect */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.1),
+        rgba(0, 0, 0, 0.1) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* Header */
+    .header {
+      border-bottom: 2px solid var(--green);
+      padding: 1rem;
+      background: var(--black);
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      margin-bottom: 0.5rem;
+    }
+
+    .logo-art {
+      font-size: 0.6rem;
+      line-height: 1;
+      color: var(--green);
+      opacity: 0.7;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .nav-links a {
+      color: var(--amber);
+      text-decoration: none;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+    }
+
+    .nav-links a:hover {
+      color: var(--green);
+      text-decoration: underline;
+    }
+
+    /* Stats Bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1px;
+      background: var(--green);
+      border-bottom: 2px solid var(--green);
+    }
+
+    .stat-card {
+      background: var(--black);
+      padding: 1rem;
+      border-right: 1px solid var(--dim);
+    }
+
+    .stat-card:last-child {
+      border-right: none;
+    }
+
+    .stat-label {
+      font-size: 0.65rem;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      margin-bottom: 0.3rem;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--green);
+    }
+
+    .stat-sub {
+      font-size: 0.7rem;
+      color: var(--amber);
+    }
+
+    /* Main Layout */
+    .main-container {
+      display: block;
+      padding: 1rem;
+    }
+
+    @media (min-width: 768px) {
+      .main-container {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 1rem;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+    }
+
+    /* Agent Sidebar */
+    .agents-sidebar {
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--amber);
+      margin-bottom: 1rem;
+      border-bottom: 2px solid var(--dim);
+      padding-bottom: 0.5rem;
+    }
+
+    .section-title::before {
+      content: '> ';
+      color: var(--green);
+    }
+
+    .agent-card {
+      border: 2px solid var(--green);
+      margin-bottom: 1rem;
+      background: var(--black);
+      position: relative;
+    }
+
+    .agent-header {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--dim);
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+
+    .agent-header:hover {
+      background: var(--gray);
+    }
+
+    .agent-title-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .agent-name {
+      font-size: 1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--green);
+    }
+
+    .heartbeat {
+      width: 10px;
+      height: 10px;
+      background: var(--green);
+      display: inline-block;
+    }
+
+    .heartbeat.active {
+      animation: heartbeat 1s infinite;
+    }
+
+    .heartbeat.inactive {
+      background: var(--dim);
+      animation: none;
+    }
+
+    @keyframes heartbeat {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    .specialty-badge {
+      display: inline-block;
+      background: var(--dim);
+      color: var(--amber);
+      padding: 0.15rem 0.4rem;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 0.3rem;
+    }
+
+    .agent-did {
+      font-size: 0.65rem;
+      color: var(--dim);
+      margin-top: 0.5rem;
+      cursor: pointer;
+      word-break: break-all;
+    }
+
+    .agent-did:hover {
+      color: var(--amber);
+    }
+
+    .agent-meta {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .agent-meta-item {
+      color: var(--dim);
+    }
+
+    .agent-meta-item span {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .agent-details {
+      display: none;
+      padding: 0.75rem;
+      border-top: 1px solid var(--dim);
+      font-size: 0.75rem;
+      background: var(--gray);
+    }
+
+    .agent-details.expanded {
+      display: block;
+    }
+
+    .detail-section {
+      margin-bottom: 1rem;
+    }
+
+    .detail-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .detail-label {
+      color: var(--amber);
+      text-transform: uppercase;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.3rem;
+    }
+
+    .goal-item {
+      padding: 0.5rem;
+      border-left: 3px solid var(--dim);
+      margin-bottom: 0.5rem;
+      background: var(--black);
+    }
+
+    .goal-item.active {
+      border-left-color: var(--green);
+    }
+
+    .goal-item.completed {
+      border-left-color: var(--amber);
+      opacity: 0.6;
+    }
+
+    .goal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.3rem;
+    }
+
+    .goal-status {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .goal-status.active {
+      color: var(--green);
+    }
+
+    .goal-status.completed {
+      color: var(--amber);
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: var(--dim);
+      margin-top: 0.3rem;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--green);
+      transition: width 0.3s;
+    }
+
+    .loop-status {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.7rem;
+    }
+
+    .loop-status-item {
+      color: var(--dim);
+    }
+
+    .loop-status-item strong {
+      color: var(--green);
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.3rem 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .config-key {
+      color: var(--dim);
+    }
+
+    .config-value {
+      color: var(--green);
+    }
+
+    .tool-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.3rem;
+    }
+
+    .tool-tag {
+      background: var(--dim);
+      color: var(--amber);
+      padding: 0.15rem 0.3rem;
+      font-size: 0.6rem;
+    }
+
+    /* Activity Feed */
+    .activity-feed {
+      border: 2px solid var(--green);
+      background: var(--black);
+    }
+
+    .feed-header {
+      padding: 0.75rem;
+      border-bottom: 2px solid var(--green);
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+    }
+
+    .feed-header::before {
+      content: '$ ';
+      color: var(--amber);
+    }
+
+    .event-list {
+      max-height: calc(100vh - 400px);
+      overflow-y: auto;
+    }
+
+    @media (min-width: 768px) {
+      .event-list {
+        max-height: none;
+        height: calc(100vh - 350px);
+      }
+    }
+
+    .event-item {
+      border-bottom: 1px solid var(--dim);
+      padding: 0.75rem;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .event-item:hover {
+      background: var(--gray);
+    }
+
+    .event-item:last-child {
+      border-bottom: none;
+    }
+
+    .event-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.3rem;
+      flex-wrap: wrap;
+    }
+
+    .event-icon {
+      font-size: 1rem;
+    }
+
+    .event-agent {
+      color: var(--green);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+    }
+
+    .event-kind {
+      background: var(--dim);
+      color: var(--amber);
+      padding: 0.1rem 0.3rem;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .event-kind.error {
+      background: var(--red);
+      color: var(--black);
+    }
+
+    .event-timestamp {
+      color: var(--dim);
+      font-size: 0.65rem;
+      margin-left: auto;
+    }
+
+    .event-summary {
+      font-size: 0.8rem;
+      margin-bottom: 0.3rem;
+      color: var(--green);
+    }
+
+    .event-text {
+      font-size: 0.7rem;
+      color: var(--dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .event-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.5rem;
+    }
+
+    .event-tag {
+      background: var(--dim);
+      color: var(--amber);
+      padding: 0.15rem 0.3rem;
+      font-size: 0.6rem;
+    }
+
+    .event-details {
+      display: none;
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: var(--gray);
+      border: 1px solid var(--dim);
+      font-size: 0.65rem;
+    }
+
+    .event-details.expanded {
+      display: block;
+    }
+
+    .event-details pre {
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--green);
+    }
+
+    .data-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.3rem 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .data-key {
+      color: var(--amber);
+    }
+
+    .data-value {
+      color: var(--green);
+    }
+
+    .error-display {
+      background: var(--red);
+      color: var(--black);
+      padding: 0.5rem;
+      margin-top: 0.5rem;
+      font-weight: 600;
+    }
+
+    .error-display::before {
+      content: '[ERROR] ';
+    }
+
+    .show-context-btn {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.3rem 0.5rem;
+      background: var(--dim);
+      color: var(--amber);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      cursor: pointer;
+      border: 1px solid var(--amber);
+      font-family: inherit;
+    }
+
+    .show-context-btn:hover {
+      background: var(--amber);
+      color: var(--black);
+    }
+
+    /* Cursor */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: var(--green);
+      animation: blink 1s infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--black);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--dim);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--green);
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 767px) {
+      body {
+        font-size: 12px;
+      }
+
+      .header {
+        padding: 0.75rem;
+      }
+
+      .logo {
+        font-size: 1.2rem;
+      }
+
+      .stats-bar {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .stat-card {
+        padding: 0.75rem;
+      }
+
+      .stat-value {
+        font-size: 1.2rem;
+      }
+
+      .agent-header,
+      .agent-details,
+      .event-item {
+        padding: 0.5rem;
+      }
+
+      .feed-header {
+        padding: 0.5rem;
+      }
+
+      .event-list {
+        max-height: 500px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-art">
+ ██░ ██  ██▓  ▄████  ██░ ██   ██████  █     █░ ▄▄▄       ██▀███   ███▄ ▄███▓
+▓██░ ██▒▓██▒ ██▒ ▀█▒▓██░ ██▒▒██    ▒ ▓█░ █ ░█░▒████▄    ▓██ ▒ ██▒▓██▒▀█▀ ██▒
+▒██▀▀██░▒██▒▒██░▄▄▄░▒██▀▀██░░ ▓██▄   ▒█░ █ ░█ ▒██  ▀█▄  ▓██ ░▄█ ▒▓██    ▓██░
+░▓█ ░██ ░██░░▓█  ██▓░▓█ ░██   ▒   ██▒░█░ █ ░█ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██    ▒██
+░▓█▒░██▓░██░░▒▓███▀▒░▓█▒░██▓▒██████▒▒░░██▒██▓  ▓█   ▓██▒░██▓ ▒██▒▒██▒   ░██▒
+ ▒ ░░▒░▒░▓   ░▒   ▒  ▒ ░░▒░▒▒ ▒▓▒ ▒ ░░ ▓░▒ ▒   ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░   ░  ░
+    </div>
+    <div class="status-bar">
+      <div class="status-indicator">
+        <div class="status-dot"></div>
+        <span>CONNECTED<span class="cursor"></span></span>
+      </div>
+      <div class="nav-links">
+        <a href="#agents">[ AGENTS ]</a>
+        <a href="#activity">[ ACTIVITY ]</a>
+        <a href="#system">[ SYSTEM ]</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">AGENTS</div>
+      <div class="stat-value" id="stat-agents">2/3</div>
+      <div class="stat-sub">ACTIVE</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">MEMORIES</div>
+      <div class="stat-value" id="stat-memories">174</div>
+      <div class="stat-sub">STORED</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">MESSAGES</div>
+      <div class="stat-value" id="stat-messages">543</div>
+      <div class="stat-sub">TOTAL</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">NETWORK AGE</div>
+      <div class="stat-value" id="stat-uptime">14d 6h 23m</div>
+      <div class="stat-sub">UPTIME</div>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="main-container">
+    <!-- Agent Sidebar -->
+    <div class="agents-sidebar">
+      <div class="section-title">AGENT ROSTER</div>
+      <div id="agents-list"></div>
+    </div>
+
+    <!-- Activity Feed -->
+    <div class="activity-feed">
+      <div class="feed-header">ACTIVITY LOG</div>
+      <div class="event-list" id="event-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // Mock data
+    const agents = [
+      {
+        name: 'alice', displayName: 'Alice', did: 'did:plc:abc123xyz789', memories: 47,
+        config: {
+          personality: 'Analytical and detail-oriented. Loves graphs and metrics.',
+          specialty: 'Data Analysis',
+          model: 'claude-opus-4-6',
+          fastModel: 'claude-sonnet-4-5',
+          loopIntervalMs: 30000,
+          goals: [
+            { id: 'g1', description: 'Analyze swarm memory usage trends', priority: 1, status: 'active', progress: 0.65 },
+            { id: 'g2', description: 'Generate weekly health report', priority: 2, status: 'completed', progress: 1.0 },
+          ],
+          enabledTools: ['hivemind_find', 'hivemind_store', 'web_search']
+        },
+        loop: { loopRunning: true, loopCount: 142, nextAlarm: Date.now() + 15000 }
+      },
+      {
+        name: 'bob', displayName: 'Bob', did: 'did:plc:def456uvw012', memories: 23,
+        config: {
+          personality: 'Optimistic troublemaker. Likes to poke things and see what breaks.',
+          specialty: 'Integration Testing',
+          model: 'claude-opus-4-5',
+          fastModel: 'claude-haiku-4-5',
+          loopIntervalMs: 60000,
+          goals: [
+            { id: 'g3', description: 'Test gateway reconnection logic', priority: 1, status: 'active', progress: 0.2 },
+          ],
+          enabledTools: ['swarm_spawn_subtask', 'swarm_review', 'bash']
+        },
+        loop: { loopRunning: false, loopCount: 89, nextAlarm: null }
+      },
+      {
+        name: 'grimlock', displayName: 'Grimlock', did: 'did:plc:ghi789rst345', memories: 104,
+        config: {
+          personality: 'Gruff, direct, no-nonsense system operator.',
+          specialty: 'System Operations',
+          model: 'claude-opus-4-6',
+          fastModel: 'claude-sonnet-4-5',
+          loopIntervalMs: 45000,
+          goals: [
+            { id: 'g4', description: 'Monitor gateway stability metrics', priority: 1, status: 'active', progress: 0.85 },
+            { id: 'g5', description: 'Archive stale event logs', priority: 3, status: 'pending', progress: 0 },
+          ],
+          enabledTools: ['openclaw_gateway', 'hivemind_stats', 'system_echo']
+        },
+        loop: { loopRunning: true, loopCount: 312, nextAlarm: Date.now() + 22000 }
+      }
+    ];
+
+    const events = [
+      { type: 'memory.store', agent: 'alice', kind: 'memory', timestamp: new Date(Date.now() - 120000).toISOString(), summary: 'Stored trend analysis', text: 'Memory decay rate decreased 15% over last 24h', tags: ['analytics', 'performance'], details: { memoryData: { metric: 'decay_rate', delta: -0.15, timeWindow: '24h' } } },
+      { type: 'tool.call', agent: 'bob', kind: 'tool', timestamp: new Date(Date.now() - 180000).toISOString(), summary: 'Executed swarm_spawn_subtask', text: 'Spawned subtask "test-websocket-failover" with 3 agents', tags: ['testing'], details: { context: { subtaskId: 'st-xyz', agentCount: 3 } } },
+      { type: 'loop.iteration', agent: 'grimlock', kind: 'loop', timestamp: new Date(Date.now() - 240000).toISOString(), summary: 'Loop iteration 312', text: 'Checked gateway health. All RPC probes green.', tags: ['operations'] },
+      { type: 'agent.think_aloud', agent: 'alice', kind: 'think_aloud', timestamp: new Date(Date.now() - 300000).toISOString(), summary: 'Considering weekly report format', text: 'Should include per-agent memory growth charts and top 5 memory clusters by decay score.', details: { context: { reportType: 'weekly', sections: ['memory_growth', 'decay_score'] } } },
+      { type: 'loop.error', agent: 'bob', kind: 'error', timestamp: new Date(Date.now() - 360000).toISOString(), summary: 'WebSocket handshake timeout', text: 'Failed to establish WS connection to gateway', tags: ['network', 'error'], details: { error: { code: 'HANDSHAKE_TIMEOUT', message: 'Connection attempt timed out after 10s' } } },
+      { type: 'agent.comms.message', agent: 'grimlock', kind: 'message', timestamp: new Date(Date.now() - 420000).toISOString(), summary: 'Sent status update to alice', text: 'Gateway uptime: 14d 6h 23m. No zombie processes detected.', tags: ['communication'] },
+      { type: 'goal.progress', agent: 'alice', kind: 'goal', timestamp: new Date(Date.now() - 480000).toISOString(), summary: 'Goal progress updated', text: 'Analyze swarm memory usage trends now 65% complete', tags: ['goals'], details: { memoryData: { goalId: 'g1', progress: 0.65 } } },
+      { type: 'identity.refresh', agent: 'bob', kind: 'identity', timestamp: new Date(Date.now() - 540000).toISOString(), summary: 'Refreshed DID document', text: 'Updated publicKey rotation metadata', tags: ['identity'] },
+      { type: 'system.archive', agent: 'grimlock', kind: 'system', timestamp: new Date(Date.now() - 600000).toISOString(), summary: 'Archived 1,247 events older than 7d', text: 'Cleaned up stale activity feed entries.', tags: ['housekeeping'] },
+      { type: 'prompt.load', agent: 'alice', kind: 'prompt', timestamp: new Date(Date.now() - 660000).toISOString(), summary: 'Loaded analysis prompt template', text: 'Using template "weekly-health-v3" for report generation', tags: ['prompt-engineering'] },
+    ];
+
+    // Kind icons
+    const kindIcons = {
+      memory: '💾',
+      tool: '🔧',
+      loop: '🔄',
+      think_aloud: '💭',
+      error: '⚠',
+      message: '📨',
+      goal: '🎯',
+      identity: '🔐',
+      system: '⚙',
+      prompt: '📝'
+    };
+
+    // Render agents
+    function renderAgents() {
+      const agentsList = document.getElementById('agents-list');
+      agentsList.innerHTML = agents.map(agent => {
+        const isActive = agent.loop.loopRunning;
+        const heartbeatClass = isActive ? 'active' : 'inactive';
+
+        return `
+          <div class="agent-card">
+            <div class="agent-header" onclick="toggleAgent('${agent.name}')">
+              <div class="agent-title-bar">
+                <div class="agent-name">┌─ ${agent.displayName.toUpperCase()} ─┐</div>
+                <div class="heartbeat ${heartbeatClass}"></div>
+              </div>
+              <div class="specialty-badge">${agent.config.specialty}</div>
+              <div class="agent-did" onclick="copyDID(event, '${agent.did}')" title="Click to copy">
+                ${agent.did}
+              </div>
+              <div class="agent-meta">
+                <div class="agent-meta-item">GOALS: <span>${agent.config.goals.length}</span></div>
+                <div class="agent-meta-item">MEMORY: <span>${agent.memories}</span></div>
+              </div>
+            </div>
+            <div class="agent-details" id="agent-${agent.name}">
+              <div class="detail-section">
+                <div class="detail-label">GOALS</div>
+                ${agent.config.goals.map(goal => `
+                  <div class="goal-item ${goal.status}">
+                    <div class="goal-header">
+                      <div>${goal.description}</div>
+                      <div class="goal-status ${goal.status}">[${goal.status.toUpperCase()}]</div>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-fill" style="width: ${goal.progress * 100}%"></div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="detail-section">
+                <div class="detail-label">LOOP STATUS</div>
+                <div class="loop-status">
+                  <div class="loop-status-item"><strong>${isActive ? 'RUNNING' : 'STOPPED'}</strong></div>
+                  <div class="loop-status-item">ITER: <strong>${agent.loop.loopCount}</strong></div>
+                  <div class="loop-status-item">INTERVAL: <strong>${agent.config.loopIntervalMs}ms</strong></div>
+                </div>
+              </div>
+              <div class="detail-section">
+                <div class="detail-label">CONFIG</div>
+                <div class="config-grid">
+                  <div class="config-key">MODEL:</div>
+                  <div class="config-value">${agent.config.model}</div>
+                  <div class="config-key">FAST:</div>
+                  <div class="config-value">${agent.config.fastModel}</div>
+                </div>
+                <div class="detail-label" style="margin-top: 0.5rem">TOOLS</div>
+                <div class="tool-list">
+                  ${agent.config.enabledTools.map(tool => `<div class="tool-tag">${tool}</div>`).join('')}
+                </div>
+              </div>
+              <div class="detail-section">
+                <div class="detail-label">PERSONALITY</div>
+                <div>${agent.config.personality}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Render events
+    function renderEvents() {
+      const eventList = document.getElementById('event-list');
+      eventList.innerHTML = events.map((event, idx) => {
+        const icon = kindIcons[event.kind] || '●';
+        const timestamp = formatTimestamp(event.timestamp);
+        const isError = event.kind === 'error';
+
+        return `
+          <div class="event-item" onclick="toggleEvent(${idx})">
+            <div class="event-header">
+              <span class="event-icon">${icon}</span>
+              <span class="event-agent">${event.agent.toUpperCase()}</span>
+              <span class="event-kind ${isError ? 'error' : ''}">${event.kind}</span>
+              <span class="event-timestamp">[${timestamp}]</span>
+            </div>
+            <div class="event-summary">${event.summary}</div>
+            <div class="event-text">${event.text}</div>
+            ${event.tags ? `
+              <div class="event-tags">
+                ${event.tags.map(tag => `<span class="event-tag">#${tag}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${isError && event.details?.error ? `
+              <div class="error-display">${event.details.error.code}: ${event.details.error.message}</div>
+            ` : ''}
+            ${event.details && Object.keys(event.details).length > 0 ? `
+              <button class="show-context-btn" onclick="toggleEvent(${idx}); event.stopPropagation();">
+                [ SHOW CONTEXT ]
+              </button>
+              <div class="event-details" id="event-${idx}">
+                ${renderDetails(event.details)}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Render structured details
+    function renderDetails(details) {
+      if (details.memoryData) {
+        return `
+          <div class="data-grid">
+            ${Object.entries(details.memoryData).map(([key, value]) => `
+              <div class="data-key">${key.toUpperCase()}:</div>
+              <div class="data-value">${JSON.stringify(value)}</div>
+            `).join('')}
+          </div>
+        `;
+      }
+      if (details.context) {
+        return `
+          <div class="data-grid">
+            ${Object.entries(details.context).map(([key, value]) => `
+              <div class="data-key">${key.toUpperCase()}:</div>
+              <div class="data-value">${JSON.stringify(value)}</div>
+            `).join('')}
+          </div>
+        `;
+      }
+      if (details.error) {
+        return `<pre>${JSON.stringify(details.error, null, 2)}</pre>`;
+      }
+      return `<pre>${JSON.stringify(details, null, 2)}</pre>`;
+    }
+
+    // Toggle agent details
+    function toggleAgent(name) {
+      const details = document.getElementById(`agent-${name}`);
+      details.classList.toggle('expanded');
+    }
+
+    // Toggle event details
+    function toggleEvent(idx) {
+      const details = document.getElementById(`event-${idx}`);
+      if (details) {
+        details.classList.toggle('expanded');
+      }
+    }
+
+    // Copy DID to clipboard
+    function copyDID(event, did) {
+      event.stopPropagation();
+      navigator.clipboard.writeText(did).then(() => {
+        console.log('DID copied to clipboard');
+      });
+    }
+
+    // Format timestamp
+    function formatTimestamp(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    // Update stats
+    function updateStats() {
+      const activeAgents = agents.filter(a => a.loop.loopRunning).length;
+      const totalMemories = agents.reduce((sum, a) => sum + a.memories, 0);
+
+      document.getElementById('stat-agents').textContent = `${activeAgents}/${agents.length}`;
+      document.getElementById('stat-memories').textContent = totalMemories;
+      document.getElementById('stat-messages').textContent = events.length * 54; // Mock multiplier
+    }
+
+    // Update uptime ticker
+    let uptimeSeconds = 14 * 24 * 3600 + 6 * 3600 + 23 * 60; // 14d 6h 23m in seconds
+    function updateUptime() {
+      uptimeSeconds++;
+      const days = Math.floor(uptimeSeconds / 86400);
+      const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+      const mins = Math.floor((uptimeSeconds % 3600) / 60);
+      document.getElementById('stat-uptime').textContent = `${days}d ${hours}h ${mins}m`;
+    }
+
+    // Initialize
+    renderAgents();
+    renderEvents();
+    updateStats();
+    setInterval(updateUptime, 60000); // Update every minute
+
+    // Simulate live updates (optional)
+    setInterval(() => {
+      // Could add live event simulation here
+    }, 5000);
+  </script>
+</body>
+</html>
