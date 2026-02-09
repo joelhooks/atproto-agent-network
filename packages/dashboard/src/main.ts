@@ -681,7 +681,7 @@ async function pollAgents() {
     }
   }
 
-  const knownFallback = ['grimlock', 'scout']
+  const knownFallback = ['grimlock', 'swoop', 'sludge']
   const names = state.agents.size ? Array.from(state.agents.keys()) : knownFallback
 
   for (const name of names) {
