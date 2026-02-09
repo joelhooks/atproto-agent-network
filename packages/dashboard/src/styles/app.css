@@ -142,11 +142,11 @@ a:hover { text-decoration: underline; }
 .event-details-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.6rem;
+  gap: 5px;
+  font-size: 0.65rem;
   color: var(--color-text-dim);
   cursor: pointer;
-  padding: 3px 0;
+  padding: 4px 0;
   transition: color 0.12s;
   background: none;
   border: none;
@@ -155,7 +155,7 @@ a:hover { text-decoration: underline; }
 .event-details-toggle:hover { color: var(--color-accent); }
 .event-details-arrow {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   line-height: 1;
   transition: transform 0.15s;
 }
@@ -163,20 +163,45 @@ a:hover { text-decoration: underline; }
 /* JSON pre — scrollable, word-wrap on narrow viewports */
 .event-json-pre {
   font-family: var(--font-mono);
-  font-size: 0.52rem;
-  line-height: 1.55;
+  font-size: 0.6rem;
+  line-height: 1.6;
   color: var(--color-text-dim);
-  padding: 10px 12px;
+  padding: 12px 16px;
   margin: 0;
-  max-height: 200px;
+  max-height: 240px;
   overflow: auto;
   white-space: pre;           /* default: horizontal scroll */
   word-break: normal;
 }
 @media (max-width: 768px) {
   .event-json-pre {
+    font-size: 0.52rem;
+    padding: 10px 12px;
     white-space: pre-wrap;    /* mobile: wrap to avoid h-scroll */
     word-break: break-word;
+  }
+}
+
+/* Desktop: larger icon pills and rounded cards */
+@media (min-width: 1024px) {
+  .event-card {
+    border-radius: 12px;
+  }
+  .event-stripe {
+    width: 3.5px;
+    border-radius: 12px 0 0 12px;
+  }
+  .event-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+  .event-details-toggle {
+    font-size: 0.75rem;
+    gap: 6px;
+  }
+  .event-details-arrow {
+    font-size: 0.85rem;
   }
 }
 

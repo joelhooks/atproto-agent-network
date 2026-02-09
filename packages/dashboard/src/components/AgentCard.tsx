@@ -26,15 +26,15 @@ export function AgentCard({ agent, expanded, isAdmin, onToggle, onLoadEnvironmen
   return (
     <div className={expanded ? 'agent-card-expanded' : ''}>
       <Card expanded={expanded} onClick={handleToggle}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Heartbeat active={loopActive} />
-          <span className="font-semibold text-[0.8rem] text-text">{agent.displayName}</span>
+          <span className="font-semibold text-sm text-text">{agent.displayName}</span>
           <div className="flex-1" />
           {agent.config?.specialty && (
-            <Badge variant="dim" className="text-[0.55rem]">{agent.config.specialty}</Badge>
+            <Badge variant="dim" className="text-[0.6rem] lg:text-xs">{agent.config.specialty}</Badge>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-1.5 text-[0.65rem] text-text-dim min-w-0 overflow-hidden">
+        <div className="flex items-center gap-2 mt-2 text-xs text-text-dim min-w-0 overflow-hidden">
           {agent.did && (
             <span
               className="hover:text-accent cursor-pointer transition-colors truncate flex-shrink min-w-0"

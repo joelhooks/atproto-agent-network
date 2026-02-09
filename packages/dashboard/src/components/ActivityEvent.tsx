@@ -72,12 +72,12 @@ function MemoryDataDisplay({ data }: { data: Record<string, unknown> }) {
   if (entries.length === 0) return null
 
   return (
-    <div className="mt-2 rounded bg-surface-2/60 border border-border/50 px-3 py-2">
-      <div className="grid gap-y-1" style={{ gridTemplateColumns: 'auto 1fr' }}>
+    <div className="mt-2.5 lg:mt-3 rounded-lg bg-surface-2/60 border border-border/50 px-3 py-2 lg:px-4 lg:py-3">
+      <div className="grid gap-y-1.5 lg:gap-y-2" style={{ gridTemplateColumns: 'auto 1fr' }}>
         {entries.map(([key, val]) => (
           <div key={key} className="contents">
-            <span className="text-[0.58rem] text-text-dim pr-3 tabular-nums">{key.replace(/_/g, ' ')}</span>
-            <span className="text-[0.62rem] text-text break-words">{formatValue(val)}</span>
+            <span className="text-[0.62rem] lg:text-xs text-text-dim pr-4 tabular-nums">{key.replace(/_/g, ' ')}</span>
+            <span className="text-[0.66rem] lg:text-xs text-text break-words">{formatValue(val)}</span>
           </div>
         ))}
       </div>
@@ -119,37 +119,37 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
       {/* Left accent stripe */}
       <div className={`event-stripe ${isError ? 'event-stripe-error' : `event-stripe-${event.kind}`}`} />
 
-      <div className="flex items-start gap-3 p-3.5 sm:p-4">
+      <div className="flex items-start gap-3 lg:gap-4 p-3.5 sm:p-4 lg:p-5">
         {/* Icon */}
         <div className={`event-icon flex-shrink-0 ${isError ? 'text-red' : 'text-text-dim'}`}>
-          <Icon size={15} strokeWidth={1.8} />
+          <Icon size={16} strokeWidth={1.8} className="lg:w-[18px] lg:h-[18px]" />
         </div>
 
         {/* Content — single min-w-0 to enable text truncation */}
         <div className="min-w-0 flex-1">
           {/* Header row */}
-          <div className="flex items-baseline gap-2 flex-wrap mb-1">
-            <span className="text-accent text-[0.75rem] font-semibold">{event.agent}</span>
-            <Badge variant={kindVariants[event.kind]} className="text-[0.5rem]">{event.kind}</Badge>
-            <span className="text-text-dim text-[0.55rem] tabular-nums ml-auto">{formatTime(event.timestamp)}</span>
+          <div className="flex items-baseline gap-2 lg:gap-3 flex-wrap mb-1.5">
+            <span className="text-accent text-[0.8rem] lg:text-sm font-semibold">{event.agent}</span>
+            <Badge variant={kindVariants[event.kind]} className="text-[0.55rem] lg:text-xs">{event.kind}</Badge>
+            <span className="text-text-dim text-[0.6rem] lg:text-xs tabular-nums ml-auto">{formatTime(event.timestamp)}</span>
           </div>
 
           {/* Summary */}
-          <p className="text-[0.72rem] text-text leading-relaxed break-words">
-            {linkifyDids(truncate(displaySummary, 200), agents)}
+          <p className="text-[0.78rem] lg:text-sm text-text leading-relaxed break-words">
+            {linkifyDids(truncate(displaySummary, 300), agents)}
           </p>
 
           {/* Body text */}
           {displayText && (
-            <p className="text-[0.65rem] text-text-dim mt-2 leading-relaxed break-words whitespace-pre-wrap">
-              {linkifyDids(truncate(displayText, 500), agents)}
+            <p className="text-[0.7rem] lg:text-[0.8rem] text-text-dim mt-2 lg:mt-2.5 leading-relaxed break-words whitespace-pre-wrap">
+              {linkifyDids(truncate(displayText, 600), agents)}
             </p>
           )}
 
           {/* Tags */}
           {event.tags && event.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2.5">
-              {event.tags.map(tag => <Badge key={tag} variant="dim" className="text-[0.5rem]">{tag}</Badge>)}
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {event.tags.map(tag => <Badge key={tag} variant="dim" className="text-[0.55rem] lg:text-xs">{tag}</Badge>)}
             </div>
           )}
 
@@ -160,10 +160,10 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
 
           {/* Error */}
           {errorMessage && (
-            <div className="mt-2.5 rounded bg-red/8 border border-red/15 px-3 py-2">
-              <p className="text-red text-[0.65rem] break-words">
+            <div className="mt-3 rounded-lg bg-red/8 border border-red/15 px-3 py-2 lg:px-4 lg:py-2.5">
+              <p className="text-red text-[0.7rem] lg:text-xs break-words">
                 {errorCode && <span className="opacity-60 mr-1.5">[{errorCode}]</span>}
-                {truncate(errorMessage, 300)}
+                {truncate(errorMessage, 400)}
               </p>
             </div>
           )}
@@ -172,7 +172,7 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
           {hasDetails ? (
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="event-details-toggle mt-2.5"
+              className="event-details-toggle mt-3"
             >
               <span className="event-details-arrow" style={{ transform: showDetails ? 'rotate(90deg)' : undefined }}>›</span>
               {showDetails ? 'hide context' : 'show context'}
