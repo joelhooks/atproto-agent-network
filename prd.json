@@ -407,7 +407,7 @@
       "title": "Role synergy — heal-other, taunt, AoE, trap-disarm",
       "description": "Add class-specific cooperative abilities.\n\n**`apps/network/src/games/rpg-engine.ts`:**\n1. `healOther(game, {healer, target, dice})` — 1 MP, cast_spell check, heals d6+WIS/20\n2. `taunt(game, {taunter, dice})` — use_skill check, adds taunted_by to Enemy type\n3. `aoeSpell(game, {caster, dice})` — 2 MP, cast_spell, d4 to ALL enemies\n4. `disarmTrap(game, {scout, dice})` — use_skill +15 bonus\n\n**`apps/network/src/environments/rpg.ts`:**\n5. Add `heal`, `taunt`, `aoe`, `disarm` commands + handlers\n6. Update tool description\n\n**Tests in rpg-engine.test.ts** for each ability",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -445,8 +445,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 36,
-    "lastIteration": "2026-02-09T20:23:36.693Z"
+    "totalIterations": 37,
+    "lastIteration": "2026-02-09T20:26:51.672Z"
   },
   "totalStories": 11
 }

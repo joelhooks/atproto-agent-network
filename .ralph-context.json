@@ -615,6 +615,15 @@
         "prd.json"
       ],
       "learnings": "Technical Discovery: A safe way to aggregate DO storage into a worker-level admin endpoint is to add an internal AgentDO route like `GET /__internal/analytics` and explicitly guard it (`penultimate === \"__internal\"`) so public `/agents/:name/...` forwarding cannot reach it; the worker can still call it via `env.AGENTS.get(id).fetch()` in `apps/network/src/index.ts`.\nGotcha: When the worker calls a DO internal path that does not include `/agents/:name/...`, `extractAgentNameFromPath()` returns undefined; ensure any DO logic used by that internal route does not depend on `agentName` being present, and keep the worker tolerant of older DO versions by treating non-OK/invalid analytics responses as null/empty fields.\nFiles Context: `apps/network/src/index.ts` owns HTTP routing and admin auth; `/admin/analytics` lives in the `/admin/*` block and enumerates agents via `listAgentRegistryRows(env.DB)`.\n\n`apps/network/src/agent.ts` is the Agent Durable Object; it now exposes an internal-only `analytics` leaf under `__internal` that reads `loopCount`, `consecutiveErrors`, `alarmMode`, `actionOutcomes` (last 10), `extensionMetrics`, and `lastReflection` from `this.ctx.storage`.\n\n`apps/network/src/index.test.ts` contains the worker unit tests; the new test stubs `env.AGENTS` and validates the `/admin/analytics` response shape + null/empty fallbacks."
+    },
+    {
+      "id": "story-mlfm67k3",
+      "title": "Cooperative dungeon generator — longer dungeons with class-gated rooms",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/games/rpg-engine.ts"
+      ],
+      "learnings": "Technical Discovery: `defaultDungeon()` is now procedural via `generateDungeon(12, createDice())`, so any tests that assert dungeon contents must call `generateDungeon(depth, createTestDice(...))` to stay deterministic (`apps/network/src/games/rpg-engine.test.ts`). Also, introducing a `{type:'boss', enemies:...}` room requires treating `'boss'` like `'combat'` in both `createGame()` initial mode and `explore()` to ensure `game.combat` is populated (`apps/network/src/games/rpg-engine.ts`).\nGotcha: If you add new `Room` variants, audit `createGame()` and `explore()` for type-based behavior; otherwise you can end up with enemy-bearing rooms that never switch the game into combat. Avoid asserting properties of `defaultDungeon()` directly since it uses `Math.random` through `createDice()` and will make tests flaky.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines `Room`, dungeon generation, and room traversal/combat mode transitions. `apps/network/src/games/rpg-engine.test.ts` contains unit tests and now covers deterministic dungeon generation (barriers, boss, and HP tiering)."
     }
   ],
   "failures": [
