@@ -503,20 +503,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[test_failure] • turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tes"
+    },
+    {
+      "id": "story-mlfbi54u",
+      "title": "Post-game summary — log structured outcome when game finishes",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde37m4",
-      "storyTitle": "Self-extending agents (R2 extension storage)",
-      "category": "timeout",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atpro",
-      "toolNames": [
-        "sed -n",
-        "/usr/bin/zsh -lc",
-        "rg -n"
-      ]
-    },
     {
       "storyId": "story-mlepdwd0",
       "storyTitle": "Wire environment hooks into agent alarm cycle",
@@ -735,6 +731,22 @@
         "find packages/dashboard/src"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlfbi54u",
+      "storyTitle": "Post-game summary — log structured outcome when game finishes",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/dashboard:typecheck: > tsc --noEmit\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "sed -n",
+        "ls -la",
+        "rg --files",
+        "nl -ba",
+        "swarm memory"
+      ],
+      "iterationNumber": 2
     }
   ]
 }

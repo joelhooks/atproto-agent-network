@@ -125,3 +125,20 @@ Note: `git status` shows unrelated local modifications (including forbidden `.ra
 Use a phase-transition guard (`beforePhase !== 'finished' && afterPhase === 'finished'`) to avoid duplicate `game.completed` logs when replaying actions or re-running completion code paths.
 ### Files Context
 `apps/network/src/environments/catan.ts` and `apps/network/src/environments/rpg.ts` are the environment tool entrypoints where game state mutates and DB updates happen; `apps/network/src/environments/catan.test.ts` and `apps/network/src/environments/rpg.test.ts` are the right place to assert console JSON logging at completion without depending on broadcasts.
+
+---
+[2026-02-09T18:31:37.177Z]
+Failed: Post-game summary — log structured outcome when game finishes [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/dashboard:typecheck: 
+@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard
+@atproto-agent/
+Codex: Starting story-mlfbi54u. First step is to check hivemind for any prior context, then I’ll write failing tests that assert a `game.completed` JSON log line is emitted when each environment transitions to `phase: 'finished'` (Catan and RPG).
+
+---
+[2026-02-09T18:36:16.557Z]
+Completed: Add AlarmMode enum and mode rotation to agent config
+Files: apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Implemented AlarmMode rotation state for AgentDO alarm loop and added a TDD test covering the 7-cycle rotation. Validation (pnpm typecheck && pnpm test) passed. Two commits were created referencing Closes #87; unrelated local modifications remain in .ralph-* and progress.txt but were not committed.

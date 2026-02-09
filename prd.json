@@ -335,7 +335,7 @@
       "title": "Add AlarmMode enum and mode rotation to agent config",
       "description": "GH Issue #87.\\n\\nIn apps/network/src/agent.ts:\\n1. Add a type near the top: `type AlarmMode = 'think' | 'housekeeping' | 'reflection'`\\n2. In alarm() (~line 498), read current mode from DO storage: `const mode = await this.ctx.storage.get<AlarmMode>('alarmMode') ?? 'think'`\\n3. After the main cycle completes (before rescheduling the alarm, ~line 730), rotate mode:\\n   - If mode was 'think' for 5+ consecutive cycles, set next mode to 'housekeeping'\\n   - If mode was 'housekeeping', set next to 'reflection'\\n   - If mode was 'reflection', set next to 'think' and reset counter\\n   - Store: `await this.ctx.storage.put('alarmMode', nextMode)` and `await this.ctx.storage.put('alarmModeCounter', counter)`\\n4. For now, ALL modes still run the same observe→think→act→reflect cycle. Later stories will add mode-specific behavior.\\n\\nAdd test: run alarm() 7 times, verify mode rotates think(5)→housekeeping(1)→reflection(1)→think.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 27,
-    "lastIteration": "2026-02-09T18:31:05.023Z"
+    "totalIterations": 28,
+    "lastIteration": "2026-02-09T18:36:16.556Z"
   },
   "totalStories": 11
 }
