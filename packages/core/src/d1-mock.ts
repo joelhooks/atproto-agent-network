@@ -480,6 +480,12 @@ export class D1MockDatabase {
         if (prio !== 0) return prio
         return a.created_at.localeCompare(b.created_at)
       })
+    } else if (normalized.includes('order by priority asc')) {
+      rows = rows.sort((a, b) => {
+        const prio = a.priority - b.priority
+        if (prio !== 0) return prio
+        return a.created_at.localeCompare(b.created_at)
+      })
     } else if (normalized.includes('order by created_at asc')) {
       rows = rows.sort((a, b) => a.created_at.localeCompare(b.created_at))
     }

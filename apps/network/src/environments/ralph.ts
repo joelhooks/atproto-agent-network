@@ -314,7 +314,12 @@ export const ralphEnvironment: AgentEnvironment = {
     })
   },
 
-  getAutoPlayActions(): ToolCall[] {
-    return []
+  async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
+    const row = await ctx.db
+      .prepare("SELECT * FROM work_items WHERE env_type='ralph' AND status='open' ORDER BY priority ASC LIMIT 1")
+      .first<WorkItemRow>()
+    if (!row) return []
+
+    return [{ name: 'ralph', arguments: { command: 'claim_work', id: row.id } }]
   },
 }
