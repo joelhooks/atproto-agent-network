@@ -220,6 +220,14 @@ describe('rpgEnvironment', () => {
       const tool = rpgEnvironment.getTool(ctx as any)
       await tool.execute('toolcall-1', { command: 'explore', gameId })
 
+      expect(broadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: 'game.completed',
+          gameId,
+          type: 'rpg',
+        })
+      )
+
       const completedLine = logSpy.mock.calls
         .map((call) => String(call[0]))
         .find((line) => line.includes('"event_type":"game.completed"'))
@@ -233,5 +241,74 @@ describe('rpgEnvironment', () => {
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('grimlock auto-creates a new dungeon when there are no playing games', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+    }
+
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+    expect(calls).toEqual([{ name: 'rpg', arguments: { command: 'new_game', players: ['grimlock'] } }])
+  })
+
+  it('grimlock does not auto-create a dungeon if any playing game exists', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_someone_else_playing'
+    const game = createGame({ id: gameId, players: ['alice'] })
+    game.phase = 'playing'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+    expect(calls).toEqual([])
+  })
+
+  it('grimlock respects maxGamesPerDay when auto-creating dungeons', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+      maxGamesPerDay: 2,
+    }
+
+    for (let i = 0; i < 2; i++) {
+      const gameId = `rpg_test_finished_${i}`
+      const game = createGame({ id: gameId, players: ['grimlock'] })
+      game.phase = 'finished'
+      await db
+        .prepare(
+          "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        )
+        .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
+        .run()
+    }
+
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+    expect(calls).toEqual([])
   })
 })

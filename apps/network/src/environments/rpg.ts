@@ -31,6 +31,62 @@ function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
 
 type GameRow = { id: string; state: string; type?: string | null }
 
+function dayPrefixFromTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const s = value.trim()
+  if (s.length < 10) return null
+  return s.slice(0, 10)
+}
+
+function getMaxGamesPerDay(ctx: EnvironmentContext): number {
+  const raw = (ctx as any)?.maxGamesPerDay
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
+  if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  return 50
+}
+
+async function anyPlayingRpgGamesExist(ctx: EnvironmentContext): Promise<boolean> {
+  try {
+    const row = await ctx.db
+      .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase = 'playing' LIMIT 1")
+      .first<{ id: string }>()
+    return Boolean(row?.id)
+  } catch {
+    return false
+  }
+}
+
+async function countFinishedRpgGamesToday(ctx: EnvironmentContext): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10)
+  try {
+    const { results } = await ctx.db
+      .prepare("SELECT id, updated_at FROM games WHERE type = 'rpg' AND phase = 'finished'")
+      .all<{ id: string; updated_at: string }>()
+    return (results ?? []).filter((r) => dayPrefixFromTimestamp(r?.updated_at) === today).length
+  } catch {
+    return 0
+  }
+}
+
+async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: string; game: RpgGameState }): Promise<void> {
+  const { gameId, game } = input
+  const turns = typeof (game as any).turn === 'number' ? (game as any).turn : game.roomIndex + 1
+  const summary = {
+    gameId,
+    type: 'rpg' as const,
+    winner: (game as any).winner ?? null,
+    turns,
+    players: Array.isArray(game.party) ? game.party.map((p) => ({ name: p.name, vp: p.hp })) : [],
+  }
+
+  console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))
+  try {
+    await ctx.broadcast({ event_type: 'game.completed', ...summary })
+  } catch {
+    // best-effort
+  }
+}
+
 async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow | null> {
   const agentName = ctx.agentName.trim()
   if (!agentName) return null
@@ -423,15 +479,7 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            const turns = typeof (game as any).turn === 'number' ? (game as any).turn : game.roomIndex + 1
-            const summary = {
-              gameId,
-              type: 'rpg' as const,
-              winner: (game as any).winner ?? null,
-              turns,
-              players: Array.isArray(game.party) ? game.party.map((p) => ({ name: p.name, vp: p.hp })) : [],
-            }
-            console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))
+            await emitGameCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -448,6 +496,8 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.currentPlayer !== ctx.agentName.trim()) {
             return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
           }
+
+          const beforePhase = game.phase
 
           // In combat, attack the first enemy.
           if (game.mode === 'combat' && game.combat?.enemies?.length) {
@@ -506,6 +556,10 @@ export const rpgEnvironment: AgentEnvironment = {
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
                 .run()
 
+              if (beforePhase !== 'finished' && game.phase === 'finished') {
+                await emitGameCompleted(ctx, { gameId, game })
+              }
+
               // advance turn
               recomputeTurnOrder(game)
               const idx = Math.max(0, game.turnOrder.findIndex((p) => p.name === game.currentPlayer))
@@ -531,6 +585,10 @@ export const rpgEnvironment: AgentEnvironment = {
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
 
           return {
             content: toTextContent(`${result.detail}.\nParty: ${summarizeParty(game)}`),
@@ -696,6 +754,19 @@ export const rpgEnvironment: AgentEnvironment = {
     if (!row) {
       const active = await findActiveGameForAgent(ctx)
       if (active) return []
+
+      // Grimlock: when there are no playing games, auto-create a fresh dungeon.
+      const agentName = ctx.agentName.trim()
+      if (agentName === 'grimlock') {
+        const anyPlaying = await anyPlayingRpgGamesExist(ctx)
+        if (anyPlaying) return []
+
+        const maxGamesPerDay = getMaxGamesPerDay(ctx)
+        const finishedToday = await countFinishedRpgGamesToday(ctx)
+        if (finishedToday >= maxGamesPerDay) return []
+
+        return [{ name: 'rpg', arguments: { command: 'new_game', players: ['grimlock'] } }]
+      }
 
       const joinable = await findJoinableGamesForAgent(ctx, { limit: 1 })
       if (joinable.length === 0) return []
