@@ -778,6 +778,17 @@ export class AgentDO extends DurableObject {
 
     const prompt = this.buildThinkPrompt(observations)
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
+
+    // Raw model output debug
+    console.log('AgentDO think raw result', {
+      did: this.did,
+      name: this.config?.name,
+      resultType: typeof result,
+      hasToolCalls: !!(result as any)?.toolCalls?.length,
+      rawToolCalls: JSON.stringify((result as any)?.toolCalls ?? []).slice(0, 500),
+      rawText: String((result as any)?.text ?? '').slice(0, 300),
+    })
+
     const thought = this.normalizeThinkResult(result)
 
     // Debug logging — what did the model return?
