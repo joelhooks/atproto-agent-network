@@ -432,26 +432,27 @@
     {
       "id": "story-mlfbh5sv",
       "title": "Enforce enabledTools strictly",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent-factory.test.ts",
+        "apps/network/src/agent-factory.ts",
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: Prior failure pattern detected: build_error. Mitigation: run the requested validation commands explicitly (`pnpm typecheck` then `pnpm test`) and capture full output.\n\nTool exposure is enforced in two layers:\n- `apps/network/src/agent.ts` wraps the OpenRouter factory in `rebuildAgentWrapper()` to inject `initialState.enabledTools = config.enabledTools` so the DO’s persisted config drives tool exposure.\n- `apps/network/src/agent-factory.ts` filters tool definitions sent to OpenRouter to the allowlist when non-empty, and also refuses to execute tool calls for tools not in the allowlist (so hallucinated tool calls cannot run).\nGotcha: `swarm hive ...` is no longer a valid command; use `swarm cells ...` for the hive database. Also, don’t accidentally commit Ralph tracking files: `progress.txt`, `.ralph-context.json`, `.ralph-iterations.jsonl` are currently modified in the working tree and should stay out of commits unless explicitly requested.\nFiles Context: `apps/network/src/agent-factory.ts`: OpenRouter tool allowlisting (filter tool defs + block disabled tool execution).\n`apps/network/src/agent.ts`: Passes the agent’s persisted `config.enabledTools` down into the OpenRouter factory in `rebuildAgentWrapper()`.\n`apps/network/src/agent-factory.test.ts`: Unit coverage for tool exposure/back-compat + disabled tool execution.\n`apps/network/src/agent-do.test.ts`: DO-level regression test asserting the OpenRouter request only includes allowlisted tools when config.enabledTools is set."
+    },
+    {
+      "id": "story-mlfbhaur",
+      "title": "Smarter error backoff — tiered by error type",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -656,6 +657,25 @@
         "rg -n",
         "git diff",
         "swarm memory"
+      ]
+    },
+    {
+      "storyId": "story-mlfbhaur",
+      "storyTitle": "Smarter error backoff — tiered by error type",
+      "category": "verification_rejected",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": []
+    },
+    {
+      "storyId": "story-mlfbhaur",
+      "storyTitle": "Smarter error backoff — tiered by error type",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": [
+        "ls -la",
+        "/usr/bin/zsh -lc",
+        "nl -ba",
+        "rg -n"
       ]
     }
   ]

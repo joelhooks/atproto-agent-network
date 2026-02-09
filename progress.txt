@@ -723,3 +723,50 @@ Codex: Starting story story-mlfbh5sv: I’m going to inspect how tools are assem
 Completed: Enforce enabledTools strictly
 Files: apps/network/src/agent-do.test.ts, apps/network/src/agent-factory.test.ts, apps/network/src/agent-factory.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
 Summary: Enabled-tools enforcement for OpenRouter is already implemented and validated. OpenRouter tool definitions are filtered to `enabledTools` (non-empty allowlist) with backward-compat behavior (empty => expose all), and disabled tool calls are not executed even if the model requests them. Validation ran cleanly: `pnpm typecheck` and `pnpm test` both passed. Also stored a hivemind learning and emitted the required openclaw system event.
+
+---
+[2026-02-09T15:58:40.646Z]
+Failed: Smarter error backoff — tiered by error type [verification_rejected]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: Starting story-mlfbhaur: I’ll first look up existing backoff/alarm error handling in `apps/network/src/agent.ts`, then write a failing unit test in `apps/network/src/agent-do.test.ts` that asserts tiered delays by error category, implement the tiered backoff, and finish by running `pnpm typecheck && pnpm test` plus the required hivemind + openclaw events.
+
+---
+[2026-02-09T16:09:19.470Z]
+Failed: Smarter error backoff — tiered by error type [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: Starting story story-mlfbhaur by pulling existing backoff/error handling in apps/network/src/agent.ts, and checking hivemind for prior notes on tiered backoff before writing the first failing test.
+
+---
+[2026-02-09T16:14:39.978Z]
+Completed: Smarter error backoff — tiered by error type
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Prior failure pattern detected: build_error. Mitigation: ran the requested validation commands explicitly with full output capture (and let the repo’s pre-commit hooks run lint/typecheck/tests during commit) before deploying.
+
+Implemented tiered alarm backoff in `apps/network/src/agent.ts`: classify errors as `transient|persistent|game`, persist `{category, streak}` in DO storage (`errorBackoff`), compute backoff tiers (transient 15s→30s→60s cap; persistent 60s→120s→300s cap; game capped at 15s), reset backoff state on a clean cycle, and log the selected category.
+
+Added unit coverage in `apps/network/src/agent-do.test.ts` for transient/persistent/game tier behavior and reset-on-success.
+
+Validation:
+- `pnpm typecheck` passed
+- `pnpm test` passed
+
+Deploy + verify (STONE TABLET):
+- `cd apps/network && npx wrangler deploy` succeeded (prod URL: https://agent-network.joelhooks.workers.dev)
+- `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` passed
+
+Git:
+- Commit: `1c92361` (includes `Closes #79` in body)
+
+Ops:
+- Stored hivemind learning (`mem-3786d760e8964448`)
+- Sent `openclaw system event --mode now --text "Ralph: completed Smarter error backoff — tiered by error type"`

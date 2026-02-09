@@ -279,7 +279,7 @@
       "title": "Smarter error backoff — tiered by error type",
       "description": "Implement tiered backoff: transient (model timeout, rate limit) 15s→30s→60s cap. Persistent (config) 60s→120s→300s. Game-context 15s cap. Reset on success. Log error category. Files: apps/network/src/agent.ts. IMPORTANT: Include \"Closes #79\" in your commit message body.",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -333,8 +333,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 21,
-    "lastIteration": "2026-02-09T15:57:04.092Z"
+    "totalIterations": 22,
+    "lastIteration": "2026-02-09T16:14:39.977Z"
   },
   "totalStories": 11
 }
