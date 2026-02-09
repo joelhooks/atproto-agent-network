@@ -722,7 +722,8 @@ describe('AgentDO', () => {
   })
 
   it('recalls memories via semantic search when Vectorize is available, otherwise falls back to list+filter', async () => {
-    const aiRun = vi.fn().mockResolvedValue({ data: [[0.1, 0.2, 0.3]] })
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
     const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
     const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
 
@@ -786,7 +787,8 @@ describe('AgentDO', () => {
   })
 
   it('searches across the network via Vectorize (metadata-only)', async () => {
-    const aiRun = vi.fn().mockResolvedValue({ data: [[0.1, 0.2, 0.3]] })
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
     const vectorizeQuery = vi.fn().mockResolvedValue({
       matches: [
         {
@@ -821,6 +823,99 @@ describe('AgentDO', () => {
       collection: 'agent.memory.note',
     })
     expect(result.content[0]?.text).toContain('did:cf:agent-other/agent.memory.note/3jui7-test')
+  })
+
+  it('uses the configured embedding model for Vectorize (1024D) when searching', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state } = createState('agent-search-embedding-model')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const search = tools.find((t) => t.name === 'search')
+    expect(search).toBeTruthy()
+
+    await search!.execute('tc-search-embed-1', { query: 'note', limit: 1 })
+    expect(aiRun).toHaveBeenCalled()
+    expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/baai/bge-large-en-v1.5')
+  })
+
+  it('prefers an embedding model that matches VECTORIZE_DIMENSIONS over a misconfigured EMBEDDING_MODEL', async () => {
+    const embedding1024 = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const embedding768 = Array.from({ length: 768 }, (_, i) => i / 768)
+    const aiRun = vi.fn().mockImplementation((model: unknown) => {
+      if (model === '@cf/baai/bge-large-en-v1.5') return Promise.resolve({ data: [embedding1024] })
+      return Promise.resolve({ data: [embedding768] })
+    })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state } = createState('agent-search-embedding-model-misconfig')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery },
+      EMBEDDING_MODEL: '@cf/baai/bge-base-en-v1.5',
+      VECTORIZE_DIMENSIONS: '1024',
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const search = tools.find((t) => t.name === 'search')
+    expect(search).toBeTruthy()
+
+    await search!.execute('tc-search-embed-misconfig-1', { query: 'note', limit: 1 })
+    expect(aiRun).toHaveBeenCalled()
+    expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/baai/bge-large-en-v1.5')
+    expect(vectorizeQuery).toHaveBeenCalled()
+  })
+
+  it('guards Vectorize queries when embedding dimensions do not match the index (expected 1024)', async () => {
+    const embedding = Array.from({ length: 768 }, (_, i) => i / 768)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockImplementation((values: number[]) => {
+      if (values.length !== 1024) {
+        throw new Error(`VECTOR_QUERY_ERROR: expected 1024 dimensions, got ${values.length}`)
+      }
+      return Promise.resolve({ matches: [] })
+    })
+
+    const { state } = createState('agent-search-dim-guard')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const search = tools.find((t) => t.name === 'search')
+    expect(search).toBeTruthy()
+
+    const result = await search!.execute('tc-search-guard-1', { query: 'note', limit: 1 })
+    expect(vectorizeQuery).not.toHaveBeenCalled()
+    expect(result.details.matches).toEqual([])
   })
 
   it('delivers messages to another agent via the message tool (and emits to relay when available)', async () => {

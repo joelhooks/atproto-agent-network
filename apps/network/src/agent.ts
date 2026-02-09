@@ -37,6 +37,8 @@ interface AgentEnv {
   RELAY?: DurableObjectNamespace
   VECTORIZE?: VectorizeIndex
   AI?: Ai
+  EMBEDDING_MODEL?: string
+  VECTORIZE_DIMENSIONS?: string
   PI_AGENT_FACTORY?: PiAgentFactory
   PI_AGENT_MODEL?: unknown
   PI_SYSTEM_PROMPT?: string
@@ -128,6 +130,14 @@ const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protoc
 const EXTENSION_PREFIX = 'extensions'
 const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
+
+const DEFAULT_VECTORIZE_DIMENSIONS = 1024
+type WorkersAiModelName = Parameters<Ai['run']>[0]
+const DEFAULT_EMBEDDING_MODEL: WorkersAiModelName = '@cf/baai/bge-large-en-v1.5'
+const EMBEDDING_MODEL_DIMENSIONS: Partial<Record<WorkersAiModelName, number>> = {
+  '@cf/baai/bge-base-en-v1.5': 768,
+  '@cf/baai/bge-large-en-v1.5': 1024,
+}
 
 function extractAgentNameFromPath(pathname: string): string | undefined {
   const parts = pathname.split('/').filter(Boolean)
@@ -1485,14 +1495,51 @@ export class AgentDO extends DurableObject {
       return parts.join('\n')
     }
 
+    const getExpectedVectorizeDimensions = (): number => {
+      const raw = env.VECTORIZE_DIMENSIONS
+      if (typeof raw === 'string' && raw.trim().length > 0) {
+        const parsed = Number.parseInt(raw, 10)
+        if (Number.isFinite(parsed) && parsed > 0) return parsed
+      }
+      // Default to the deployed Vectorize index dimensions (not the embedding model),
+      // so misconfiguration can't accidentally send a wrong-length query vector.
+      return DEFAULT_VECTORIZE_DIMENSIONS
+    }
+
+    const selectEmbeddingModel = (expectedDims: number): WorkersAiModelName => {
+      const configured = typeof env.EMBEDDING_MODEL === 'string' ? env.EMBEDDING_MODEL.trim() : ''
+      const configuredModel =
+        configured && configured in EMBEDDING_MODEL_DIMENSIONS ? (configured as WorkersAiModelName) : null
+
+      if (configuredModel && EMBEDDING_MODEL_DIMENSIONS[configuredModel] === expectedDims) {
+        return configuredModel
+      }
+
+      const byDims = Object.entries(EMBEDDING_MODEL_DIMENSIONS).find(([, dims]) => dims === expectedDims)?.[0]
+      return (byDims ?? DEFAULT_EMBEDDING_MODEL) as WorkersAiModelName
+    }
+
     const embedText = async (text: string): Promise<number[] | null> => {
       if (!env.AI || typeof env.AI.run !== 'function') return null
       try {
-        // Default to a common Workers AI embedding model.
-        const result = (await env.AI.run('@cf/baai/bge-base-en-v1.5', { text: [text] })) as unknown
+        const expected = getExpectedVectorizeDimensions()
+        const model = selectEmbeddingModel(expected)
+        const result = (await env.AI.run(model, { text: [text] })) as unknown
         const data = (result as { data?: unknown })?.data
         const first = Array.isArray(data) ? data[0] : null
-        return Array.isArray(first) ? (first as number[]) : null
+        const embedding = Array.isArray(first) ? (first as number[]) : null
+        if (!embedding) return null
+
+        if (embedding.length !== expected) {
+          console.error('Vectorize embedding dimension mismatch', {
+            expected,
+            got: embedding.length,
+            model,
+          })
+          return null
+        }
+
+        return embedding
       } catch {
         return null
       }
@@ -1711,10 +1758,15 @@ export class AgentDO extends DurableObject {
           const embedding = await embedText(query)
           if (!embedding) return { content: toTextContent('Embedding unavailable.'), details: { matches: [] } }
 
-          const response = (await env.VECTORIZE.query(embedding, {
-            topK: limit,
-            returnMetadata: true,
-          })) as unknown
+          let response: unknown
+          try {
+            response = (await env.VECTORIZE.query(embedding, {
+              topK: limit,
+              returnMetadata: true,
+            })) as unknown
+          } catch {
+            return { content: toTextContent('Vectorize query failed.'), details: { matches: [] } }
+          }
 
           const matchesRaw = Array.isArray((response as { matches?: unknown }).matches)
             ? ((response as { matches: unknown[] }).matches as Array<any>)

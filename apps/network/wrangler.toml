@@ -8,6 +8,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 AI_GATEWAY_SLUG = "atproto-agent-network"
 OPENROUTER_MODEL_DEFAULT = "google/gemini-2.0-flash-001"
+EMBEDDING_MODEL = "@cf/baai/bge-large-en-v1.5"
+VECTORIZE_DIMENSIONS = "1024"
 
 # Durable Objects
 [[durable_objects.bindings]]
