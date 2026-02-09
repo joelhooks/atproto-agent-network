@@ -193,7 +193,7 @@
       "title": "Environment HTTP API + backward compat",
       "description": "GH Issue #72. Update HTTP routing in `apps/network/src/index.ts` to support environments.\n\n1. `GET /environments` — list all environment instances. Supports query params: `?type=catan`, `?phase=playing`, `?player=grimlock`. Queries `games` table.\n2. `GET /environments/:id` — get specific environment instance with full state.\n3. `POST /environments` — create new environment instance. Body: `{ type: 'catan', players: ['slag', 'snarl'] }`. Delegates to the registered environment's creation logic.\n4. **Backward compat**: Keep existing `/games` and `/games/:id` routes working as aliases that filter to `type=catan`.\n5. Add environment type to the response objects.\n\nTests: verify /environments endpoints return correct data, verify /games still works.",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo typecheck && npx vitest run --passWithNoTests",
       "acceptanceCriteria": [
         "GET /environments returns environment list",
@@ -237,8 +237,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 14,
-    "lastIteration": "2026-02-09T05:36:06.313Z"
+    "totalIterations": 15,
+    "lastIteration": "2026-02-09T05:52:53.213Z"
   },
   "totalStories": 11
 }

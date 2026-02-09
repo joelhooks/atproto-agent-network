@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
+import { createGame } from './games/catan'
 
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
@@ -683,5 +684,49 @@ describe('network worker environments API', () => {
         }),
       ])
     )
+  })
+
+  it('GET /games/:id only serves catan instances (alias compatibility)', async () => {
+    const db = new D1MockDatabase()
+
+    const catan = createGame('catan_1', ['grimlock', 'slag'])
+    await registerGame(db, {
+      id: catan.id,
+      hostAgent: 'grimlock',
+      phase: catan.phase,
+      players: ['grimlock', 'slag'],
+      state: catan as unknown as Record<string, unknown>,
+    })
+    await registerGame(db, {
+      id: 'rpg_1',
+      hostAgent: 'snarl',
+      phase: 'playing',
+      players: ['snarl', 'swoop'],
+      state: { id: 'rpg_1', phase: 'playing' },
+    })
+
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const nonCatanRes = await worker.fetch(
+      new Request('https://example.com/games/rpg_1', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(nonCatanRes.status).toBe(404)
+    await expect(nonCatanRes.json()).resolves.toMatchObject({ error: 'Game not found' })
+
+    const catanRes = await worker.fetch(
+      new Request('https://example.com/games/catan_1', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(catanRes.status).toBe(200)
+    await expect(catanRes.json()).resolves.toMatchObject({
+      id: 'catan_1',
+      type: 'catan',
+    })
   })
 })

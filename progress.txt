@@ -609,3 +609,9 @@ Codex:
 Completed: Wire environment hooks into agent alarm cycle
 Files: apps/network/src/agent-do.test.ts, apps/network/src/agent-factory.ts, apps/network/src/agent.ts, apps/network/src/environments/registry.test.ts
 Summary: Starting story-mlepdwd0 by pulling required context (PI-POC, O11Y, skills, env framework) and checking the swarm hive for any open work before writing the first failing test.
+
+---
+[2026-02-09T05:52:53.214Z]
+Completed: Environment HTTP API + backward compat
+Files: apps/network/src/index.test.ts, apps/network/src/index.ts, packages/core/src/d1-mock.ts
+Summary: Implemented strict backward-compat behavior for legacy /games/:id so it only serves Catan environments, and added endpoint coverage to prevent regressions. Deployed network Worker and verified live endpoints.

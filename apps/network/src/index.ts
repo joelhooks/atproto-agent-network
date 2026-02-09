@@ -548,6 +548,10 @@ export default {
             async () => {
               const gameId = normalizedPathname.split('/')[2]
               if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
+              // Backward compat: /games is a legacy alias for catan environments only.
+              if (!gameId.startsWith('catan_')) {
+                return Response.json({ error: 'Game not found' }, { status: 404 })
+              }
 
               // DELETE /games/:id — admin kill game (hard delete from D1)
               if (request.method === 'DELETE') {
