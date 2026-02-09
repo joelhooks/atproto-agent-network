@@ -409,3 +409,9 @@ Validation:
 - `pnpm typecheck && pnpm test` (pass)
 
 Note: `.ralph-context.json` and `.ralph-iterations.jsonl` show local diffs from Ralph tooling; they were not staged/committed for this story.
+
+---
+[2026-02-09T23:40:15.242Z]
+Completed: Auto-restart games on completion — Grimlock creates new coop dungeon
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json
+Summary: Implemented GH Issue #98 (story-mlft5kxr): when an RPG finishes, we now emit a `game.completed` event via `broadcast`, and Grimlock will auto-create a fresh coop dungeon when there are no playing RPG games, capped by `maxGamesPerDay` (default 50). Added unit tests covering event emission, Grimlock auto-create behavior, and the daily cap. Validation `pnpm typecheck && pnpm test` passed. Note: `prd.json` is still locally modified but was not staged/committed (per repo rules).

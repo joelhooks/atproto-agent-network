@@ -481,12 +481,44 @@
       "priority": 5,
       "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlft5kxr",
+      "title": "Auto-restart games on completion — Grimlock creates new coop dungeon",
+      "description": "GH Issue #98. When an RPG game finishes, Grimlock should auto-create a new coop dungeon.\n\nIMPLEMENTATION in apps/network/src/environments/rpg.ts:\n- In the RPG tool handler, after detecting game phase='finished' (or when explore() returns phase='finished'), emit a \"game complete\" event\n- Add a post-game hook: when the game finishes AND the agent is grimlock, auto-create a new game after a short delay\n- OR: in the autoplay/buildContext, if grimlock has no active game and there are no playing games, include a directive to create one\n\nSIMPLER APPROACH: In apps/network/src/agent.ts or rpg.ts buildContext(), detect \"no active playing games in D1\" and if agent is grimlock, add context saying \"No active dungeon. Create one with rpg new_game.\"\n\nAdd maxGamesPerDay config (default 50) — count finished games today in D1, stop creating if limit hit.\n\nFiles: apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg.test.ts\nValidation: pnpm typecheck && pnpm test\n\nCloses #98",
+      "priority": 1,
+      "passes": true,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlft5llk",
+      "title": "Grimlock inbox webhook bridge — POST messages to webhookUrl",
+      "description": "GH Issue #99. When /inbox receives a message and agent config has a webhookUrl field, POST the message payload to that URL. Fire-and-forget, no retries.\n\nFiles: apps/network/src/agent.ts (inbox handler), apps/network/src/agent-do.test.ts\n\nFind the inbox handler: grep -n 'inbox' apps/network/src/agent.ts\n\nAdd to AgentConfig type: webhookUrl?: string\n\nIn the inbox handler, after storing the message, check if config.webhookUrl is set. If so:\n```typescript\nif (this.config?.webhookUrl) {\n  fetch(this.config.webhookUrl, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ type: 'inbox', message: incomingMessage }),\n  }).catch(() => {}) // fire and forget\n}\n```\n\nTest: mock fetch, send inbox message with webhookUrl configured, assert fetch was called with correct payload.\n\nCloses #99",
+      "priority": 2,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlft5m7k",
+      "title": "Suppress think_aloud/recall during active game turns",
+      "description": "GH Issue #97. During active game turns (isMyTurn=true), remove think_aloud and recall from the tool definitions sent to the LLM so agents focus on game actions.\n\nFind where tools are filtered: grep -n 'enabledTools\\|toolDefinitions\\|buildTools' apps/network/src/agent.ts apps/network/src/agent-factory.ts\n\nIMPLEMENTATION: In the agent factory or tool-building step, when the agent has an active game and it's their turn, filter out think_aloud and recall from the tool list. They can still use remember.\n\nAdd o11y log when suppressing: { event_type: 'tools.gameplay_filter', suppressed: ['think_aloud', 'recall'] }\n\nFiles: apps/network/src/agent.ts or apps/network/src/agent-factory.ts, apps/network/src/agent-do.test.ts\nValidation: pnpm typecheck && pnpm test\n\nCloses #97",
+      "priority": 3,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlft5mua",
+      "title": "Tool router — remap game↔rpg calls based on active environment",
+      "description": "GH Issue #95. When an agent calls the wrong tool (game in RPG context or rpg in Catan context), remap it to the correct tool instead of failing.\n\nFind where tool calls are executed: grep -n 'executeTool\\|handleToolCall\\|toolCall' apps/network/src/agent.ts | head -20\n\nIMPLEMENTATION: Before executing a tool call, check the agent's active environment:\n- If active env is RPG and tool called is 'game' → remap to 'rpg'  \n- If active env is Catan and tool called is 'rpg' → remap to 'game'\n- Log the remap as o11y event: { event_type: 'agent.tool.misroute', from: 'game', to: 'rpg', env: 'rpg' }\n\nThis should be a simple if/else before the tool dispatch switch.\n\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\nValidation: pnpm typecheck && pnpm test\n\nCloses #95",
+      "priority": 4,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 46,
-    "lastIteration": "2026-02-09T21:49:27.188Z"
+    "totalIterations": 47,
+    "lastIteration": "2026-02-09T23:40:15.240Z"
   },
   "totalStories": 11
 }
