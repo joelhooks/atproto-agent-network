@@ -317,6 +317,16 @@ export class AgentDO extends DurableObject {
               () => this.handleConfig(request),
               { route: 'AgentDO.config', request }
             )
+          case 'observations':
+            return withErrorHandling(
+              () => this.handleGetObservations(request),
+              { route: 'AgentDO.observations', request }
+            )
+          case 'execute':
+            return withErrorHandling(
+              () => this.handleExternalExecute(request),
+              { route: 'AgentDO.execute', request }
+            )
           default:
             return new Response('Not found', { status: 404 })
         }
@@ -476,6 +486,11 @@ export class AgentDO extends DurableObject {
 
     intervalMs = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, intervalMs)
 
+    // Check for passive mode — external brain drives think/act
+    const storedConfigForMode = await this.ctx.storage.get<AgentConfig>('config')
+    const loopMode = (storedConfigForMode as any)?.loopMode ?? 'autonomous'
+    const isPassive = loopMode === 'passive'
+
     try {
       await this.broadcastLoopEvent({
         event_type: 'loop.observe',
@@ -502,58 +517,63 @@ export class AgentDO extends DurableObject {
       // Continue: observation errors must not break the chain.
     }
 
-    try {
-      if (observations) {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.think',
-          trace_id: traceId,
-          span_id: createSpanId(),
-        })
-        thought = await this.think(observations)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO think failed', { did: this.did, error: message })
+    // In passive mode, skip think/act — external brain handles those via API
+    if (!isPassive) {
       try {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.error',
-          trace_id: traceId,
-          span_id: createSpanId(),
-          outcome: 'error',
-          context: { phase: 'think' },
-          error: { code: 'think_failed', message, retryable: true },
-        })
-      } catch {
-        // ignore
+        if (observations) {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.think',
+            trace_id: traceId,
+            span_id: createSpanId(),
+          })
+          thought = await this.think(observations)
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error('AgentDO think failed', { did: this.did, error: message })
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.error',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            outcome: 'error',
+            context: { phase: 'think' },
+            error: { code: 'think_failed', message, retryable: true },
+          })
+        } catch {
+          // ignore
+        }
+        // Continue: think errors must not break the chain.
       }
-      // Continue: think errors must not break the chain.
-    }
 
-    try {
-      if (thought) {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.act',
-          trace_id: traceId,
-          span_id: createSpanId(),
-        })
-        acted = await this.act(thought)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO act failed', { did: this.did, error: message })
       try {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.error',
-          trace_id: traceId,
-          span_id: createSpanId(),
-          outcome: 'error',
-          context: { phase: 'act' },
-          error: { code: 'act_failed', message, retryable: true },
-        })
-      } catch {
-        // ignore
+        if (thought) {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.act',
+            trace_id: traceId,
+            span_id: createSpanId(),
+          })
+          acted = await this.act(thought)
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error('AgentDO act failed', { did: this.did, error: message })
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.error',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            outcome: 'error',
+            context: { phase: 'act' },
+            error: { code: 'act_failed', message, retryable: true },
+          })
+        } catch {
+          // ignore
+        }
+        // Continue: action errors must not break the chain.
       }
-      // Continue: action errors must not break the chain.
+    } else {
+      console.log('AgentDO passive mode — skipping think/act, awaiting external brain', { did: this.did })
     }
 
     try {
@@ -968,6 +988,9 @@ export class AgentDO extends DurableObject {
     if (Array.isArray(patch.enabledTools)) {
       next.enabledTools = patch.enabledTools.filter((tool): tool is string => typeof tool === 'string')
     }
+    if (patch.loopMode === 'passive' || patch.loopMode === 'autonomous') {
+      (next as any).loopMode = patch.loopMode
+    }
 
     // Name is derived from the DO binding (via /agents/:name/*) and should remain stable.
     if (agentName) {
@@ -978,6 +1001,105 @@ export class AgentDO extends DurableObject {
     await this.ctx.storage.put('config', next)
 
     return Response.json(next)
+  }
+
+  /**
+   * GET /agents/:name/observations
+   * Returns the last collected observations for the external brain to process.
+   */
+  private async handleGetObservations(_request: Request): Promise<Response> {
+    if (_request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    // Return last observations + config context for the external brain
+    const lastObservations = await this.ctx.storage.get<Observations>('lastObservations')
+    const config = await this.ctx.storage.get<AgentConfig>('config')
+    const loopCount = await this.ctx.storage.get<number>('loopCount') ?? 0
+
+    // Also do a fresh observe() to get the latest state
+    let freshObservations: Observations | null = null
+    try {
+      freshObservations = await this.observe()
+      await this.ctx.storage.put('lastObservations', freshObservations)
+    } catch {
+      // Fall back to cached
+    }
+
+    return Response.json({
+      observations: freshObservations ?? lastObservations ?? null,
+      config: config ? {
+        name: config.name,
+        personality: config.personality,
+        specialty: config.specialty,
+        goals: config.goals,
+        enabledTools: config.enabledTools,
+        loopIntervalMs: config.loopIntervalMs,
+      } : null,
+      loopCount,
+      did: this.did,
+    })
+  }
+
+  /**
+   * POST /agents/:name/execute
+   * Accepts tool calls from the external brain and executes them.
+   * Body: { toolCalls: [{ name: string, arguments?: object }], reflection?: string }
+   */
+  private async handleExternalExecute(request: Request): Promise<Response> {
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null
+    if (!body || typeof body !== 'object') {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const toolCalls = Array.isArray(body.toolCalls) ? body.toolCalls : []
+    const reflection = typeof body.reflection === 'string' ? body.reflection : undefined
+
+    // Build a ThinkResult and run it through act()
+    const thought: ThinkResult = {
+      text: reflection ?? '',
+      toolCalls: toolCalls.map((tc: any) => ({
+        name: String(tc.name ?? ''),
+        arguments: tc.arguments ?? {},
+      })),
+    }
+
+    let acted: ActResult | null = null
+    try {
+      acted = await this.act(thought)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return Response.json({ error: `Act failed: ${message}` }, { status: 500 })
+    }
+
+    // Optionally reflect
+    if (reflection) {
+      try {
+        const observations = await this.ctx.storage.get<Observations>('lastObservations')
+        await this.reflect({ observations: observations ?? null, thought, acted })
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    return Response.json({
+      ok: true,
+      steps: acted?.steps ?? [],
+      truncated: acted?.truncated ?? false,
+      timedOut: acted?.timedOut ?? false,
+    })
   }
 
   private buildTools(): PiAgentTool[] {
