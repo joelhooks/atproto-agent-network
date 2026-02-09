@@ -779,7 +779,7 @@ export class AgentDO extends DurableObject {
               ...strategyHints,
               ``,
               `📋 TURN ORDER: 1) Roll dice  2) Trade/Build (as many as you can afford!)  3) End turn`,
-              `🎯 GOAL: First to 5 VP wins! Each settlement = 1VP. Build roads to reach new settlement spots.`,
+              `🎯 GOAL: First to 10 VP wins! Each settlement = 1VP. Build roads to reach new settlement spots.`,
               ``,
               `⚠️⚠️⚠️ YOU MUST USE command:"action" — NOT command:"status"! Status is read-only and wastes your turn!`,
               ``,
@@ -2097,7 +2097,7 @@ export class AgentDO extends DurableObject {
           '- {"type":"end_turn"} — End your turn\n\n' +
           'SETUP PHASE: Each player places 2 settlements + 2 roads. Place settlement first, then road adjacent to it.\n' +
           'TURN ORDER: roll_dice → build/trade → end_turn\n' +
-          'WIN: First to 5 victory points (1 per settlement).',
+          'WIN: First to 10 victory points (1 per settlement).',
         parameters: {
           type: 'object',
           properties: {

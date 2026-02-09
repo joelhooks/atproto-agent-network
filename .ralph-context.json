@@ -348,16 +348,19 @@
         "apps/network/src/agent.ts"
       ],
       "learnings": "Technical Discovery: Prior failure pattern detected: timeout. Mitigation: run validation in two explicit steps (pnpm typecheck then pnpm test) with sufficient tool wait time; current runs complete quickly due to Turbo cache.\n\nSelf-extension is implemented directly in AgentDO (apps/network/src/agent.ts):\n- Tools: write_extension/list_extensions/remove_extension store/list/delete modules under R2 keys extensions/{agentName}/{extensionName}.js.\n- Loader: loadExtensionsIntoTools() lists R2 prefix, validates source (<=50KB, blocks eval/new Function), dynamic-imports via a data:text/javascript;base64 URL, and calls exported activate({registerTool}) to append PiAgentTool entries.\n- Hot reload: write/remove set ctx.storage extensionsReloadNeeded=true; alarm()/prompt/websocket call maybeReloadExtensions() to rebuild the PiAgentWrapper and pick up changes.\n- Bootstrap: maybeInjectSelfExtensionHint() appends a one-time system prompt hint if no extensions exist.\nGotcha: The repo is dirty in forbidden-to-edit tracking files (progress.txt, .ralph-context.json, .ralph-iterations.jsonl). They appear to be auto-appended by the Ralph runner; avoid committing these changes. Decide whether to revert them or keep them uncommitted before opening a PR/merging.\n\nAlso note: extension loading relies on runtime dynamic import of a data: URL; if a future runtime/bundler change blocks data URL imports, extensions will fail to load and only warn-log (console.warn) per extension key.\nFiles Context: apps/network/src/agent.ts: Implements extension key naming, validation, R2 list/get/put/delete, dynamic module load via data URL, tool registration API, alarm-cycle hot reload flag, and first-loop self-extension hint injection.\napps/network/src/agent-do.test.ts: Adds a FakeR2Bucket and tests for write_extension persistence + reload flag, initialize-time loading/activation, alarm-cycle hot reload, list/remove behavior, and safety limits (max 10, max 50KB, eval blocked)."
+    },
+    {
+      "id": "story-mlepdwd0",
+      "title": "Wire environment hooks into agent alarm cycle",
+      "status": "failed",
+      "filesModified": [
+        "apps/network/src/games/catan.ts",
+        "prd.json"
+      ],
+      "learnings": "[unknown] /bin/sh: 1: turbo: not found"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "test_failure",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2057",
       "storyTitle": "Pi session persistence in DO storage",
@@ -528,6 +531,18 @@
       "category": "timeout",
       "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atpro",
       "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n"
+      ]
+    },
+    {
+      "storyId": "story-mlepdwd0",
+      "storyTitle": "Wire environment hooks into agent alarm cycle",
+      "category": "unknown",
+      "error": "/bin/sh: 1: turbo: not found",
+      "toolNames": [
+        "ls -la",
         "sed -n",
         "/usr/bin/zsh -lc",
         "rg -n"

@@ -1,7 +1,7 @@
 /**
  * Agents of Catan — Simplified Catan for AI agents
  * 
- * 7-hex board, 3 players, 5 VP to win.
+ * Standard 19-hex board, 2-4 players, 10 VP to win.
  * Trading is the star mechanic.
  */
 
@@ -73,8 +73,17 @@ export interface GameLogEntry {
 
 // ─── Board Generation ────────────────────────────────────────────────
 
-const RESOURCE_TYPES: HexType[] = ['wood', 'brick', 'sheep', 'wheat', 'ore', 'wheat', 'desert']
-const DICE_NUMBERS = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12]
+// Standard Catan: 19 hexes (4 wood, 3 brick, 4 sheep, 4 wheat, 3 ore, 1 desert)
+const RESOURCE_TYPES: HexType[] = [
+  'wood', 'wood', 'wood', 'wood',
+  'brick', 'brick', 'brick',
+  'sheep', 'sheep', 'sheep', 'sheep',
+  'wheat', 'wheat', 'wheat', 'wheat',
+  'ore', 'ore', 'ore',
+  'desert',
+]
+// Standard number tokens (no 7 — that's robber)
+const DICE_NUMBERS = [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12]
 
 // 7-hex flower pattern: center + 6 surrounding
 // Each hex has vertices shared with neighbors
@@ -113,53 +122,103 @@ function generateBoard(): { hexes: Hex[]; vertices: Vertex[]; edges: Edge[] } {
     diceNumber: type === 'desert' ? null : numbers[numIdx++] ?? null,
   }))
 
-  // Vertex adjacency to hexes (which hexes touch each vertex)
-  // 7-hex flower: center (0) surrounded by 1-6
-  // 12 outer vertices + 6 inner vertices = 18 vertices
-  const vertexHexMap: number[][] = [
-    // Outer ring vertices (0-11)
-    [1],    // v0 - top of hex 1
-    [1, 2], // v1 - between hex 1,2
-    [2],    // v2 - right of hex 2
-    [2, 3], // v3 - between hex 2,3
-    [3],    // v4 - bottom-right of hex 3
-    [3, 4], // v5 - between hex 3,4
-    [4],    // v6 - bottom of hex 4
-    [4, 5], // v7 - between hex 4,5
-    [5],    // v8 - left of hex 5
-    [5, 6], // v9 - between hex 5,6
-    [6],    // v10 - top-left of hex 6
-    [6, 1], // v11 - between hex 6,1
-    // Inner ring vertices (12-17) - each touches center + 2 surrounding
-    [0, 1, 2], // v12 - between center, hex 1, hex 2
-    [0, 2, 3], // v13 - between center, hex 2, hex 3
-    [0, 3, 4], // v14 - between center, hex 3, hex 4
-    [0, 4, 5], // v15 - between center, hex 4, hex 5
-    [0, 5, 6], // v16 - between center, hex 5, hex 6
-    [0, 6, 1], // v17 - between center, hex 6, hex 1
+  // Standard Catan board: 19 hexes arranged in rows of 3-4-5-4-3
+  // 54 vertices, 72 edges
+  // Hex layout (row by row):
+  //   Row 0: hexes 0,1,2       (3 hexes)
+  //   Row 1: hexes 3,4,5,6     (4 hexes)
+  //   Row 2: hexes 7,8,9,10,11 (5 hexes)
+  //   Row 3: hexes 12,13,14,15 (4 hexes)
+  //   Row 4: hexes 16,17,18    (3 hexes)
+  //
+  // Each hex has 6 vertices. We deduplicate shared vertices.
+  // Using axial coordinates to generate topology programmatically.
+
+  const hexCoords: [number, number][] = [
+    // Row 0 (q=-1..1, r=-2)
+    [-1,-2], [0,-2], [1,-2],
+    // Row 1 (q=-2..1, r=-1)
+    [-2,-1], [-1,-1], [0,-1], [1,-1],
+    // Row 2 (q=-2..2, r=0)
+    [-2,0], [-1,0], [0,0], [1,0], [2,0],
+    // Row 3 (q=-1..2, r=1)
+    [-1,1], [0,1], [1,1], [2,1],
+    // Row 4 (q=0..2, r=2)
+    [0,2], [1,2], [2,2],
   ]
 
-  const vertices: Vertex[] = vertexHexMap.map((hexIds, id) => ({
-    id,
-    hexIds,
+  // For each hex at axial (q,r), its 6 corner vertices in fractional cube coords.
+  // We use a string key to deduplicate vertices shared between hexes.
+  const vertexMap = new Map<string, { id: number; hexIds: number[] }>()
+  let nextVertexId = 0
+
+  // Hex corner offsets (flat-top hex): 6 corners at 60° intervals
+  // Using 3x scaled integer coords to avoid floats
+  // For axial (q,r), center in pixel-ish coords: cx = q*3, cy = r*3 + q*1.5 (approx)
+  // But for vertex dedup we use a canonical key based on the three hex coords that share each vertex.
+  // Each vertex is shared by up to 3 hexes. We key by sorted adjacent hex indices.
+
+  // Alternative simpler approach: define vertex positions relative to hex centers
+  // and round to a grid. Each hex corner at direction d (0-5) for hex h:
+  // vertexKey = canonical sorted triple of (hex, direction)
+
+  // Simplest correct approach: enumerate all hex-corner pairs and merge by position.
+  // Vertex position for hex (q,r) corner d:
+  //   Using doubled coordinates for exact integer math
+  //   Hex center: col = 2*q + r, row = 2*r
+  //   Corner offsets (flat-top):
+  //     d=0: (1, -1)  d=1: (2, 0)  d=2: (1, 1)
+  //     d=3: (-1, 1)  d=4: (-2, 0) d=5: (-1, -1)
+  const cornerOffsets: [number, number][] = [
+    [1, -1], [2, 0], [1, 1], [-1, 1], [-2, 0], [-1, -1],
+  ]
+
+  for (let h = 0; h < hexCoords.length; h++) {
+    const [q, r] = hexCoords[h]
+    const col = 2 * q + r
+    const row = 2 * r
+    for (let d = 0; d < 6; d++) {
+      const vc = col + cornerOffsets[d][0]
+      const vr = row + cornerOffsets[d][1]
+      const key = `${vc},${vr}`
+      if (!vertexMap.has(key)) {
+        vertexMap.set(key, { id: nextVertexId++, hexIds: [] })
+      }
+      vertexMap.get(key)!.hexIds.push(h)
+    }
+  }
+
+  const vertices: Vertex[] = Array.from(vertexMap.values()).map(v => ({
+    id: v.id,
+    hexIds: v.hexIds,
     owner: null,
   }))
 
-  // Edges connect adjacent vertices
-  const edgePairs: [number, number][] = [
-    // Outer ring
-    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6],
-    [6, 7], [7, 8], [8, 9], [9, 10], [10, 11], [11, 0],
-    // Spokes (outer to inner)
-    [0, 17], [1, 12], [2, 12], [3, 13], [4, 13], [5, 14],
-    [6, 14], [7, 15], [8, 15], [9, 16], [10, 16], [11, 17],
-    // Inner ring
-    [12, 13], [13, 14], [14, 15], [15, 16], [16, 17], [17, 12],
-  ]
+  // Build edges: two vertices are connected if they are adjacent corners of the same hex
+  const edgeSet = new Set<string>()
+  const edgePairs: [number, number][] = []
 
-  const edges: Edge[] = edgePairs.map((vertices, id) => ({
+  for (let h = 0; h < hexCoords.length; h++) {
+    const [q, r] = hexCoords[h]
+    const col = 2 * q + r
+    const row = 2 * r
+    for (let d = 0; d < 6; d++) {
+      const d2 = (d + 1) % 6
+      const k1 = `${col + cornerOffsets[d][0]},${row + cornerOffsets[d][1]}`
+      const k2 = `${col + cornerOffsets[d2][0]},${row + cornerOffsets[d2][1]}`
+      const v1 = vertexMap.get(k1)!.id
+      const v2 = vertexMap.get(k2)!.id
+      const eKey = v1 < v2 ? `${v1}-${v2}` : `${v2}-${v1}`
+      if (!edgeSet.has(eKey)) {
+        edgeSet.add(eKey)
+        edgePairs.push([v1, v2])
+      }
+    }
+  }
+
+  const edges: Edge[] = edgePairs.map((verts, id) => ({
     id,
-    vertices,
+    vertices: verts,
     owner: null,
   }))
 
@@ -352,7 +411,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
       player.settlements.push(action.vertexId)
       player.victoryPoints += 1
       addLog(state, playerName, 'build_settlement', `Built settlement at vertex ${action.vertexId}`)
-      if (player.victoryPoints >= 5) {
+      if (player.victoryPoints >= 10) {
         state.phase = 'finished'
         state.winner = playerName
         return { ok: true, events: [`Built settlement at vertex ${action.vertexId}`, `${playerName} wins with ${player.victoryPoints} VP!`], gameOver: true }

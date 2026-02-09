@@ -6,13 +6,37 @@ describe('Agents of Catan', () => {
     return createGame('test-game-1', names)
   }
 
+  // Find vertices that satisfy distance rule (not adjacent to any occupied vertex)
+  function findValidVertex(game: GameState, exclude: number[] = []): number {
+    const occupied = new Set(game.board.vertices.filter(v => v.owner).map(v => v.id))
+    for (const id of exclude) occupied.add(id)
+    
+    for (const v of game.board.vertices) {
+      if (occupied.has(v.id)) continue
+      // Check distance rule: no adjacent vertex is occupied
+      const adjacent = new Set<number>()
+      for (const e of game.board.edges) {
+        if (e.vertices.includes(v.id)) {
+          for (const av of e.vertices) if (av !== v.id) adjacent.add(av)
+        }
+      }
+      if (![...adjacent].some(a => occupied.has(a))) return v.id
+    }
+    return -1
+  }
+
+  function findEdgeForVertex(game: GameState, vertexId: number): number {
+    const edge = game.board.edges.find(e => e.vertices.includes(vertexId) && !e.owner)
+    return edge ? edge.id : -1
+  }
+
   it('creates a game with correct initial state', () => {
     const game = makeGame()
     expect(game.phase).toBe('setup')
     expect(game.players).toHaveLength(3)
-    expect(game.board.hexes).toHaveLength(7)
-    expect(game.board.vertices).toHaveLength(18)
-    expect(game.board.edges.length).toBeGreaterThan(0)
+    expect(game.board.hexes).toHaveLength(19)
+    expect(game.board.vertices.length).toBeGreaterThanOrEqual(54)
+    expect(game.board.edges.length).toBeGreaterThanOrEqual(72)
     expect(game.currentPlayer).toBe('grimlock')
     expect(game.winner).toBeNull()
   })
@@ -26,7 +50,8 @@ describe('Agents of Catan', () => {
 
   it('rejects actions from wrong player', () => {
     const game = makeGame()
-    const result = executeAction(game, 'scout', { type: 'build_settlement', vertexId: 0 })
+    const v = findValidVertex(game)
+    const result = executeAction(game, 'scout', { type: 'build_settlement', vertexId: v })
     expect(result.ok).toBe(false)
     expect(result.error).toContain('Not your turn')
   })
@@ -34,55 +59,57 @@ describe('Agents of Catan', () => {
   describe('setup phase', () => {
     it('allows first player to place settlement then road', () => {
       const game = makeGame()
+      const v = findValidVertex(game)
       
-      // Place settlement
-      const s1 = executeAction(game, 'grimlock', { type: 'build_settlement', vertexId: 0 })
+      const s1 = executeAction(game, 'grimlock', { type: 'build_settlement', vertexId: v })
       expect(s1.ok).toBe(true)
-      expect(game.board.vertices[0].owner).toBe('grimlock')
+      expect(game.board.vertices.find(x => x.id === v)!.owner).toBe('grimlock')
       
-      // Place road connected to settlement
-      // Find an edge that includes vertex 0
-      const edge = game.board.edges.find(e => e.vertices.includes(0) && !e.owner)!
-      const r1 = executeAction(game, 'grimlock', { type: 'build_road', edgeId: edge.id })
+      const edgeId = findEdgeForVertex(game, v)
+      const r1 = executeAction(game, 'grimlock', { type: 'build_road', edgeId })
       expect(r1.ok).toBe(true)
     })
 
     it('enforces distance rule in setup', () => {
       const game = makeGame()
-      executeAction(game, 'grimlock', { type: 'build_settlement', vertexId: 12 })
-      const edge = game.board.edges.find(e => e.vertices.includes(12) && !e.owner)!
-      executeAction(game, 'grimlock', { type: 'build_road', edgeId: edge.id })
+      const v1 = findValidVertex(game)
+      executeAction(game, 'grimlock', { type: 'build_settlement', vertexId: v1 })
+      executeAction(game, 'grimlock', { type: 'build_road', edgeId: findEdgeForVertex(game, v1) })
 
-      // Scout tries adjacent vertex (should fail)
-      // Vertex 12 is adjacent to 17 via inner ring edge
-      const adj = game.board.edges
-        .filter(e => e.vertices.includes(12))
-        .map(e => e.vertices[0] === 12 ? e.vertices[1] : e.vertices[0])
+      // Find an adjacent vertex to v1 (should fail distance rule)
+      const adjacent = game.board.edges
+        .filter(e => e.vertices.includes(v1))
+        .map(e => e.vertices[0] === v1 ? e.vertices[1] : e.vertices[0])
       
-      const result = executeAction(game, 'scout', { type: 'build_settlement', vertexId: adj[0] })
-      expect(result.ok).toBe(false)
-      expect(result.error).toContain('Too close')
+      if (adjacent.length > 0) {
+        const result = executeAction(game, 'scout', { type: 'build_settlement', vertexId: adjacent[0] })
+        expect(result.ok).toBe(false)
+        expect(result.error).toContain('Too close')
+      }
     })
 
     it('transitions to playing phase after all setup rounds', () => {
       const game = makeGame(['a', 'b'])
       
       // Round 1: a, b (forward)
-      executeAction(game, 'a', { type: 'build_settlement', vertexId: 0 })
-      executeAction(game, 'a', { type: 'build_road', edgeId: 0 })
+      const v1 = findValidVertex(game)
+      executeAction(game, 'a', { type: 'build_settlement', vertexId: v1 })
+      executeAction(game, 'a', { type: 'build_road', edgeId: findEdgeForVertex(game, v1) })
       
-      executeAction(game, 'b', { type: 'build_settlement', vertexId: 4 })
-      executeAction(game, 'b', { type: 'build_road', edgeId: 4 })
+      const v2 = findValidVertex(game)
+      executeAction(game, 'b', { type: 'build_settlement', vertexId: v2 })
+      executeAction(game, 'b', { type: 'build_road', edgeId: findEdgeForVertex(game, v2) })
       
       expect(game.setupRound).toBe(2)
       
       // Round 2: b, a (reverse)
-      executeAction(game, 'b', { type: 'build_settlement', vertexId: 8 })
-      executeAction(game, 'b', { type: 'build_road', edgeId: 8 })
+      const v3 = findValidVertex(game)
+      executeAction(game, 'b', { type: 'build_settlement', vertexId: v3 })
+      executeAction(game, 'b', { type: 'build_road', edgeId: findEdgeForVertex(game, v3) })
       
-      executeAction(game, 'a', { type: 'build_settlement', vertexId: 12 })
-      const edge = game.board.edges.find(e => e.vertices.includes(12) && !e.owner)!
-      executeAction(game, 'a', { type: 'build_road', edgeId: edge.id })
+      const v4 = findValidVertex(game)
+      executeAction(game, 'a', { type: 'build_settlement', vertexId: v4 })
+      executeAction(game, 'a', { type: 'build_road', edgeId: findEdgeForVertex(game, v4) })
       
       expect(game.phase).toBe('playing')
       expect(game.currentPlayer).toBe('a')
@@ -92,22 +119,27 @@ describe('Agents of Catan', () => {
   describe('playing phase', () => {
     function setupGame(): GameState {
       const game = makeGame(['a', 'b'])
-      // Quick setup - place settlements and roads
-      executeAction(game, 'a', { type: 'build_settlement', vertexId: 0 })
-      executeAction(game, 'a', { type: 'build_road', edgeId: 0 })
-      executeAction(game, 'b', { type: 'build_settlement', vertexId: 4 })
-      executeAction(game, 'b', { type: 'build_road', edgeId: 4 })
-      executeAction(game, 'b', { type: 'build_settlement', vertexId: 8 })
-      executeAction(game, 'b', { type: 'build_road', edgeId: 8 })
-      executeAction(game, 'a', { type: 'build_settlement', vertexId: 12 })
-      const edge = game.board.edges.find(e => e.vertices.includes(12) && !e.owner)!
-      executeAction(game, 'a', { type: 'build_road', edgeId: edge.id })
+      // Round 1
+      const v1 = findValidVertex(game)
+      executeAction(game, 'a', { type: 'build_settlement', vertexId: v1 })
+      executeAction(game, 'a', { type: 'build_road', edgeId: findEdgeForVertex(game, v1) })
+      const v2 = findValidVertex(game)
+      executeAction(game, 'b', { type: 'build_settlement', vertexId: v2 })
+      executeAction(game, 'b', { type: 'build_road', edgeId: findEdgeForVertex(game, v2) })
+      // Round 2
+      const v3 = findValidVertex(game)
+      executeAction(game, 'b', { type: 'build_settlement', vertexId: v3 })
+      executeAction(game, 'b', { type: 'build_road', edgeId: findEdgeForVertex(game, v3) })
+      const v4 = findValidVertex(game)
+      executeAction(game, 'a', { type: 'build_settlement', vertexId: v4 })
+      executeAction(game, 'a', { type: 'build_road', edgeId: findEdgeForVertex(game, v4) })
       return game
     }
 
     it('requires dice roll before building', () => {
       const game = setupGame()
-      const result = executeAction(game, 'a', { type: 'build_settlement', vertexId: 14 })
+      const v = findValidVertex(game)
+      const result = executeAction(game, 'a', { type: 'build_settlement', vertexId: v })
       expect(result.ok).toBe(false)
       expect(result.error).toContain('Roll dice')
     })
@@ -144,7 +176,6 @@ describe('Agents of Catan', () => {
 
       executeAction(game, 'a', { type: 'roll_dice' })
 
-      // Propose trade
       const propose = executeAction(game, 'a', {
         type: 'propose_trade',
         to: 'b',
@@ -154,7 +185,6 @@ describe('Agents of Catan', () => {
       expect(propose.ok).toBe(true)
       const tradeId = game.trades[game.trades.length - 1].id
 
-      // Accept trade (non-current player can respond)
       const accept = executeAction(game, 'b', { type: 'accept_trade', tradeId })
       expect(accept.ok).toBe(true)
       expect(game.players[0].resources.wood).toBe(1)

@@ -585,3 +585,9 @@ Codex: Starting story #58. First I’m going to load PI-POC.md, docs/O11Y.md, th
 Completed: Self-extending agents (R2 extension storage)
 Files: packages/dashboard/index.html, packages/dashboard/src/activity.test.ts, packages/dashboard/src/activity.ts, packages/dashboard/src/index-html.test.ts, packages/dashboard/src/main.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
 Summary: Story #58 is already implemented in the workspace and passes the requested validation. AgentDO now supports R2-backed self-extending Pi extensions (write/list/remove + load on init + alarm-cycle hot reload + safety limits + first-loop hint), with unit tests covering the full extension lifecycle. Note: the git worktree currently shows unexpected modifications to repo-tracking files (.ralph-context.json, .ralph-iterations.jsonl, progress.txt) in addition to the story files; I did not revert anything and did not create a commit so you can decide how to handle those meta-file diffs.
+
+---
+[2026-02-09T05:05:00.503Z]
+Failed: Wire environment hooks into agent alarm cycle [unknown]
+Validation: /bin/sh: 1: turbo: not found
+Codex: Found existing environment framework under `apps/network/src/environments/` including `EnvironmentContext` and a full `catanEnvironment` implementation (tool + context + autoplay). Next I’m inspecting `apps/network/src/agent.ts` to identify the remaining hardcoded Catan prompt/tool/assist logic we need to delete and replace with calls into the environment registry, then I’ll write a failing test covering the new delegation behavior.
