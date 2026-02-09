@@ -360,28 +360,43 @@
         "apps/network/src/environments/registry.test.ts"
       ],
       "learnings": "{\"success\":true,\"summary\":\"Starting story-mlepdwd0 by pulling required context (PI-POC, O11Y, skills, env framework) and checking the swarm hive for any open work before writing the first failing test.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlepe0v2",
+      "title": "Environment HTTP API + backward compat",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "packages/core/src/d1-mock.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/index.ts` already routes `/environments` and stores all environment instances in the shared `games` table with the environment `type` inferred from the `id` prefix (e.g. `catan_...`). The legacy `/games/:id` handler always renders via `apps/network/src/games/catan.ts` (renderBoard/generateGameSummary), so non-catan rows will throw and become 500s unless filtered.\nGotcha: If you add new environment types that also write to the `games` table, you must keep legacy aliases (`/games*`) constrained to `catan_` IDs; otherwise `/games/:id` will attempt to interpret arbitrary `state` as a Catan `GameState` and crash. Add a test that inserts a non-catan row and asserts `/games/:id` returns 404 (not 500).\nFiles Context: `apps/network/src/index.ts` is the worker router (HTTP API + legacy aliases). `apps/network/src/index.test.ts` contains worker endpoint tests and helper `registerGame()` used to seed the mock D1 `games` table. `apps/network/src/games/catan.ts` is the Catan renderer used by the legacy `/games/:id` detail route."
+    },
+    {
+      "id": "story-mlepe7gy",
+      "title": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[type_error] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n@atproto-agent/network:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-"
+    },
+    {
+      "id": "story-mlerh2h4",
+      "title": "Stalemate detection — end Catan games early when stuck",
+      "status": "failed",
+      "filesModified": [
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-factory.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "[unknown] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n  x No package found with name 'network' in workspace"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2anm",
-      "storyTitle": "Alarm-driven Pi agent loop",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "sed -n",
-        "node -e"
-      ]
-    },
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/dashboard:typecheck: cache hit, replaying logs 60584eaf65b81a5c\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joe",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -555,6 +570,26 @@
         "rg -n",
         "npx vitest"
       ]
+    },
+    {
+      "storyId": "story-mlepe7gy",
+      "storyTitle": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
+      "category": "type_error",
+      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n@atproto-agent/network:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\n@atproto-agent/network#typecheck: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/no",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "ls -la",
+        "rg -n",
+        "(rg -n"
+      ]
+    },
+    {
+      "storyId": "story-mlerh2h4",
+      "storyTitle": "Stalemate detection — end Catan games early when stuck",
+      "category": "unknown",
+      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n  x No package found with name 'network' in workspace",
+      "toolNames": []
     }
   ]
 }

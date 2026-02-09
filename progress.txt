@@ -615,3 +615,19 @@ Summary: Starting story-mlepdwd0 by pulling required context (PI-POC, O11Y, skil
 Completed: Environment HTTP API + backward compat
 Files: apps/network/src/index.test.ts, apps/network/src/index.ts, packages/core/src/d1-mock.ts
 Summary: Implemented strict backward-compat behavior for legacy /games/:id so it only serves Catan environments, and added endpoint coverage to prevent regressions. Deployed network Worker and verified live endpoints.
+
+---
+[2026-02-09T06:03:31.647Z]
+Failed: RPG dungeon crawl environment — BRP engine + AgentEnvironment [type_error]
+Validation: npm warn Unknown project config "confirmModulesPurge". This will stop working in the next major version of npm.
+• turbo 2.8.3
+@atproto-agent/network:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-
+Codex: Prior failure pattern detected: build_error/timeouts. Mitigation: use `npx turbo` (not bare `turbo`), keep tests deterministic (seeded RNG), and run typecheck/tests in separate commands with longer wait times to avoid truncated/timeout output. Next I’m pulling the existing environment + games table patterns so the RPG engine plugs in cleanly.
+
+---
+[2026-02-09T06:04:13.506Z]
+Failed: Stalemate detection — end Catan games early when stuck [unknown]
+Validation: npm warn Unknown project config "confirmModulesPurge". This will stop working in the next major version of npm.
+• turbo 2.8.3
+  x No package found with name 'network' in workspace
+Codex: Starting story-mlerh2h4: I’m going to (1) run the required `swarm memory find` for this story topic, (2) write failing integration tests in `apps/network/src/games/__tests__/catan.test.ts`, then (3) implement stalemate tracking in `apps/network/src/games/catan.ts`, and finally (4) run `npx turbo test --filter=network` for validation.

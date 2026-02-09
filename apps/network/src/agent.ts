@@ -331,7 +331,15 @@ export class AgentDO extends DurableObject {
             const lastThinkRaw = await this.ctx.storage.get('debug:lastThinkRaw')
             const lastOpenRouterReq = await this.ctx.storage.get('debug:lastOpenRouterReq')
             const autoPlay = await this.ctx.storage.get('debug:autoPlay')
-            return new Response(JSON.stringify({ lastThinkRaw, lastOpenRouterReq, autoPlay }, null, 2), {
+            const loopTranscript = await this.ctx.storage.get('debug:loopTranscript')
+            const lastPrompt = await this.ctx.storage.get('debug:lastPrompt')
+            return new Response(JSON.stringify({
+              lastThinkRaw,
+              lastOpenRouterReq,
+              autoPlay,
+              loopTranscript,
+              lastPrompt,
+            }, null, 2), {
               headers: { 'Content-Type': 'application/json' },
             })
           }
@@ -980,6 +988,23 @@ export class AgentDO extends DurableObject {
     }
     console.log('AgentDO think raw result', debugInfo)
     await this.ctx.storage.put('debug:lastThinkRaw', debugInfo)
+
+    // O11y: store agentic loop transcript + prompt snapshot from factory
+    const o11y = (this.agent as any)?._o11y
+    if (o11y?.lastTranscript) {
+      await this.ctx.storage.put('debug:loopTranscript', o11y.lastTranscript)
+    }
+    if (o11y?.lastPromptMessages) {
+      // Truncate prompt to ~100KB but always keep system + last 3 messages
+      const msgs = o11y.lastPromptMessages as Array<{ role: string; content?: string }>
+      const serialized = JSON.stringify(msgs)
+      if (serialized.length > 100_000 && msgs.length > 4) {
+        const truncated = [msgs[0], ...msgs.slice(-3)]
+        await this.ctx.storage.put('debug:lastPrompt', truncated)
+      } else {
+        await this.ctx.storage.put('debug:lastPrompt', msgs)
+      }
+    }
 
     const thought = this.normalizeThinkResult(result)
 

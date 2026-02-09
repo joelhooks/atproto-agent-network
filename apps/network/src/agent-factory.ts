@@ -31,6 +31,25 @@ interface OpenRouterToolDef {
 // Pi philosophy: agent decides when it's done, timeout is the only limit
 const TOOL_LOOP_TIMEOUT_MS = 25_000
 
+/** A single step in the agentic tool loop — for o11y */
+export interface LoopStep {
+  step: number
+  timestamp: number
+  durationMs: number
+  modelResponse?: { role: string; content?: string; toolCalls?: Array<{ name: string; arguments: unknown }> }
+  toolResults?: Array<{ name: string; durationMs: number; resultPreview: string }>
+}
+
+/** Full transcript of an agentic loop run */
+export interface LoopTranscript {
+  steps: LoopStep[]
+  totalDurationMs: number
+  totalSteps: number
+  totalToolCalls: number
+  model: string
+  startedAt: number
+}
+
 /**
  * Creates a PiAgentLike implementation backed by OpenRouter with agentic tool loops.
  * Model calls tools → sees results → decides next action → loops until done.
@@ -127,7 +146,13 @@ export function createOpenRouterAgentFactory(
       }
     }
 
-    return {
+    // O11y state — accessible via (agent as any)._o11y
+    const _o11y: { lastTranscript: LoopTranscript | null; lastPromptMessages: OpenRouterMessage[] | null } = {
+      lastTranscript: null,
+      lastPromptMessages: null,
+    }
+
+    return Object.assign({
       state: { messages: [] },
 
       resetConversation() {
@@ -146,12 +171,16 @@ export function createOpenRouterAgentFactory(
           ? [messages[0], ...messages.slice(-MAX_HISTORY)]
           : [...messages]
 
+        // Snapshot the prompt for o11y (deep copy to freeze state)
+        _o11y.lastPromptMessages = workingMessages.map(m => ({ ...m }))
+
         // Accumulate all tool calls across the loop
         const allToolCalls: Array<{ id: string; name: string; arguments: unknown }> = []
         let finalText = ''
         let finalModel = modelId
         let totalUsage = { input: 0, output: 0, totalTokens: 0 }
         let steps = 0
+        const transcript: LoopStep[] = []
 
         // Agentic tool loop — model calls tools, sees results, decides next action
         while (true) {
@@ -161,7 +190,9 @@ export function createOpenRouterAgentFactory(
           }
 
           steps++
+          const stepStart = Date.now()
           const result = await callModel(workingMessages, maxTokens)
+          const modelDuration = Date.now() - stepStart
 
           // Track conversation
           workingMessages.push(result.message)
@@ -175,8 +206,22 @@ export function createOpenRouterAgentFactory(
             totalUsage.totalTokens += result.usage.totalTokens
           }
 
+          const loopStep: LoopStep = {
+            step: steps,
+            timestamp: stepStart,
+            durationMs: modelDuration,
+            modelResponse: {
+              role: 'assistant',
+              content: result.text || undefined,
+              toolCalls: result.toolCalls.length > 0
+                ? result.toolCalls.map(tc => ({ name: tc.name, arguments: tc.arguments }))
+                : undefined,
+            },
+          }
+
           // No tool calls = model is done
           if (result.toolCalls.length === 0) {
+            transcript.push(loopStep)
             console.log('Tool loop complete (no more tool calls)', { steps, totalToolCalls: allToolCalls.length })
             break
           }
@@ -189,13 +234,14 @@ export function createOpenRouterAgentFactory(
             elapsed: Date.now() - startedAt,
           })
 
-          // Execute each tool call and feed results back
+          // Execute each tool call and feed results back, with per-tool timing
+          const toolResults: LoopStep['toolResults'] = []
           for (const tc of result.toolCalls) {
             const tool = tools.find(t => t.name === tc.name)
             let toolResult: string
+            const toolStart = Date.now()
 
             if (!tool?.execute) {
-              // No execute handler — return the tool call info for act() to handle
               toolResult = JSON.stringify({ pending: true, name: tc.name, arguments: tc.arguments })
             } else {
               try {
@@ -206,6 +252,12 @@ export function createOpenRouterAgentFactory(
               }
             }
 
+            toolResults.push({
+              name: tc.name,
+              durationMs: Date.now() - toolStart,
+              resultPreview: toolResult.slice(0, 500),
+            })
+
             const toolMsg: OpenRouterMessage = {
               role: 'tool',
               content: toolResult,
@@ -214,6 +266,22 @@ export function createOpenRouterAgentFactory(
             workingMessages.push(toolMsg)
             messages.push(toolMsg)
           }
+
+          loopStep.durationMs = Date.now() - stepStart // include tool execution time
+          loopStep.toolResults = toolResults
+          transcript.push(loopStep)
+        }
+
+        const totalDuration = Date.now() - startedAt
+
+        // Store transcript for o11y
+        _o11y.lastTranscript = {
+          steps: transcript,
+          totalDurationMs: totalDuration,
+          totalSteps: steps,
+          totalToolCalls: allToolCalls.length,
+          model: finalModel,
+          startedAt,
         }
 
         console.log('OpenRouter agentic prompt complete', {
@@ -221,7 +289,7 @@ export function createOpenRouterAgentFactory(
           steps,
           totalToolCalls: allToolCalls.length,
           toolNames: allToolCalls.map(tc => tc.name),
-          elapsed: Date.now() - startedAt,
+          elapsed: totalDuration,
         })
 
         return {
@@ -231,6 +299,6 @@ export function createOpenRouterAgentFactory(
           usage: totalUsage.totalTokens > 0 ? totalUsage : undefined,
         }
       },
-    }
+    }, { _o11y }) as any
   }
 }
