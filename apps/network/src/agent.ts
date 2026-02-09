@@ -29,6 +29,7 @@ import { validateLexiconRecord } from '../../../packages/core/src/validation'
 import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../../packages/core/src/types'
 
 import { withErrorHandling } from './http-errors'
+import { createLogger, toErrorDetails } from './logger'
 
 interface AgentEnv {
   AGENTS?: DurableObjectNamespace
@@ -497,7 +498,14 @@ export class AgentDO extends DurableObject {
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
     const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
     if (!running) {
-      console.log('AgentDO alarm fired while loop stopped', { did: this.did })
+      // Keep this log structured so Pipelines can filter it out as a non-cycle event.
+      logEvent({
+        event_type: 'agent.cycle.skipped',
+        level: 'info',
+        component: 'agent-do',
+        did: this.did,
+        context: { reason: 'loop_stopped' },
+      })
       return
     }
 
@@ -511,6 +519,22 @@ export class AgentDO extends DurableObject {
     await this.maybeInjectSelfExtensionHint()
 
     const traceId = createTraceId()
+    const sessionId = await this.getOrCreateSessionId()
+    const logger = createLogger({
+      component: 'agent-do',
+      did: this.did,
+      session_id: sessionId,
+      trace_id: traceId,
+    })
+    const cycleStartedAt = Date.now()
+    logger.info('agent.cycle.start', {
+      span_id: createSpanId(),
+      context: {
+        phase: 'alarm',
+        isRetry: alarmInfo?.isRetry ?? false,
+        retryCount: alarmInfo?.retryCount ?? 0,
+      },
+    })
 
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
     const cycleErrors: Array<{ category: AlarmErrorCategory; phase: string; message: string }> = []
@@ -529,7 +553,11 @@ export class AgentDO extends DurableObject {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const category: AlarmErrorCategory = 'persistent'
-      console.error('AgentDO alarm failed to load config', { did: this.did, category, error: message })
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'config.load', category },
+        error: toErrorDetails(error),
+      })
       hadError = true
       cycleErrors.push({ category, phase: 'config', message })
     }
@@ -551,7 +579,11 @@ export class AgentDO extends DurableObject {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const category = this.categorizeAlarmError(error, { phase: 'observe' })
-      console.error('AgentDO observe failed', { did: this.did, category, error: message })
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'observe', category },
+        error: toErrorDetails(error),
+      })
       hadError = true
       cycleErrors.push({ category, phase: 'observe', message })
       try {
@@ -583,7 +615,11 @@ export class AgentDO extends DurableObject {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'think' })
-        console.error('AgentDO think failed', { did: this.did, category, error: message })
+        logger.error('agent.error', {
+          span_id: createSpanId(),
+          context: { phase: 'think', category },
+          error: toErrorDetails(error),
+        })
         hadError = true
         cycleErrors.push({ category, phase: 'think', message })
         try {
@@ -608,12 +644,16 @@ export class AgentDO extends DurableObject {
             trace_id: traceId,
             span_id: createSpanId(),
           })
-          acted = await this.act(thought)
+          acted = await this.act(thought, { traceId })
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'act' })
-        console.error('AgentDO act failed', { did: this.did, category, error: message })
+        logger.error('agent.error', {
+          span_id: createSpanId(),
+          context: { phase: 'act', category },
+          error: toErrorDetails(error),
+        })
         hadError = true
         cycleErrors.push({ category, phase: 'act', message })
         try {
@@ -634,11 +674,15 @@ export class AgentDO extends DurableObject {
       // Passive mode: skip think (no model calls) but still run act() for auto-play
       // Auto-play is pure deterministic logic — no API costs
       try {
-        acted = await this.act({ text: '', toolCalls: [] })
+        acted = await this.act({ text: '', toolCalls: [] }, { traceId })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'act' })
-        console.error('AgentDO passive auto-play failed', { did: this.did, category, error: message })
+        logger.error('agent.error', {
+          span_id: createSpanId(),
+          context: { phase: 'act.passive', category },
+          error: toErrorDetails(error),
+        })
         hadError = true
         cycleErrors.push({ category, phase: 'act', message })
       }
@@ -665,7 +709,11 @@ export class AgentDO extends DurableObject {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const category = this.categorizeAlarmError(error, { phase: 'reflect' })
-      console.error('AgentDO reflect failed', { did: this.did, category, error: message })
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'reflect', category },
+        error: toErrorDetails(error),
+      })
       hadError = true
       cycleErrors.push({ category, phase: 'reflect', message })
       try {
@@ -687,41 +735,33 @@ export class AgentDO extends DurableObject {
       const current = await this.ctx.storage.get<number>('loopCount')
       const next = (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1
       await this.ctx.storage.put('loopCount', next)
-
-      console.log('AgentDO alarm tick', {
-        did: this.did,
-        loopCount: next,
-        isRetry: alarmInfo?.isRetry ?? false,
-        retryCount: alarmInfo?.retryCount ?? 0,
-      })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO alarm tick error', { did: this.did, error: message })
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'loopCount', category: 'unknown' },
+        error: toErrorDetails(error),
+      })
       // Continue: errors must not break the chain.
     }
 
     // Tiered backoff on consecutive errors (by error category)
     try {
       let nextInterval = intervalMs
+      let selectedCategory: AlarmErrorCategory | null = null
+      let streak = 0
       if (hadError) {
         const category = selectAlarmErrorCategory(cycleErrors)
         const prev = (await this.ctx.storage.get<AlarmBackoffState>('errorBackoff')) ?? null
-        const streak = prev && prev.category === category ? prev.streak + 1 : 1
+        streak = prev && prev.category === category ? prev.streak + 1 : 1
         const backoffMs = computeTieredBackoffMs(category, streak)
         nextInterval = backoffMs
+        selectedCategory = category
 
         await this.ctx.storage.put('errorBackoff', { category, streak })
         await this.ctx.storage.put('consecutiveErrors', streak)
 
         const lastError = cycleErrors.at(-1)
-        console.log('AgentDO backoff', {
-          did: this.did,
-          category,
-          streak,
-          backoffMs,
-          normalInterval: intervalMs,
-          phase: lastError?.phase,
-        })
         await this.ctx.storage.put('debug:lastError', {
           ts: Date.now(),
           category,
@@ -732,14 +772,23 @@ export class AgentDO extends DurableObject {
         })
       } else {
         const prev = await this.ctx.storage.get<AlarmBackoffState>('errorBackoff')
-        if (prev?.streak && prev.streak > 0) {
-          console.log('AgentDO error recovery', { did: this.did, previousCategory: prev.category, previousStreak: prev.streak })
-        }
         await this.ctx.storage.put('errorBackoff', { category: 'unknown', streak: 0 })
         await this.ctx.storage.put('consecutiveErrors', 0)
       }
 
-      await this.ctx.storage.setAlarm(Date.now() + nextInterval)
+      const scheduledAt = Date.now()
+      const nextAlarmAt = scheduledAt + nextInterval
+      await this.ctx.storage.setAlarm(nextAlarmAt)
+      logger.info('agent.alarm.schedule', {
+        span_id: createSpanId(),
+        context: {
+          nextAlarmAt,
+          intervalMs: nextInterval,
+          backoff: hadError,
+          category: selectedCategory,
+          streak: selectedCategory ? streak : 0,
+        },
+      })
       try {
         await this.broadcastLoopEvent({
           event_type: 'loop.sleep',
@@ -757,8 +806,23 @@ export class AgentDO extends DurableObject {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error('AgentDO alarm reschedule error', { did: this.did, error: message })
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'alarm.schedule', category: 'unknown' },
+        error: toErrorDetails(error),
+      })
       // Don't throw: keep retries under our control.
+    } finally {
+      logger.info('agent.cycle.end', {
+        span_id: createSpanId(),
+        context: {
+          phase: 'alarm',
+          durationMs: Date.now() - cycleStartedAt,
+          hadError,
+          errorCategory: hadError ? selectAlarmErrorCategory(cycleErrors) : null,
+          errors: cycleErrors.slice(0, 5),
+        },
+      })
     }
   }
 
@@ -841,11 +905,29 @@ export class AgentDO extends DurableObject {
       const agentName = this.config?.name ?? ''
       try {
         const gameRow = await this.agentEnv.DB
-          .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+          .prepare("SELECT id, type, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
           .bind(`%${agentName}%`)
-          .first<{ id: string; state: string }>()
+          .first<{ id: string; type?: string; state: string }>()
         if (gameRow) {
           const state = JSON.parse(gameRow.state)
+          const gameType = gameRow.type ?? state.type ?? 'catan'
+
+          // Non-Catan games: provide minimal context, let the environment tool handle specifics
+          if (gameType !== 'catan') {
+            const isMyTurn = state.currentPlayer === agentName
+            const partyMember = state.party?.find((p: any) => p.name === agentName)
+            const room = state.dungeon?.[state.roomIndex ?? 0]
+            gameContext = [
+              isMyTurn
+                ? `🎮🎮🎮 IT IS YOUR TURN in ${gameType.toUpperCase()} adventure ${gameRow.id}!`
+                : `🎲 Active ${gameType.toUpperCase()} adventure: ${gameRow.id} — waiting for ${state.currentPlayer}.`,
+              partyMember ? `You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})` : '',
+              room ? `Current room: ${room.description} (type: ${room.type})` : '',
+              ``,
+              isMyTurn ? `Use the game tool to act: game({"command":"explore","gameId":"${gameRow.id}"}) or game({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
+              `DO NOT create a new game.`,
+            ].filter(Boolean).join('\n')
+          } else {
           const isMyTurn = state.currentPlayer === agentName
           // Build rich game context for the model
           const me = state.players?.find((p: any) => p.name === agentName)
@@ -1003,6 +1085,7 @@ export class AgentDO extends DurableObject {
               'Use think_aloud to strategize or trash talk the other players while you wait.',
             ].join('\n')
           }
+          } // close: else (catan branch)
         }
       } catch { /* non-fatal */ }
     }
