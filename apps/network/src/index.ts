@@ -12,6 +12,8 @@ import { createDid } from '../../../packages/core/src/identity'
 
 import { requireAdminBearerAuth } from './auth'
 import { applyCorsHeaders, corsPreflightResponse } from './cors'
+import './environments/builtins'
+import { getEnvironment } from './environments'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
@@ -40,6 +42,11 @@ const AgentConfigCreateSchema = z
     enabledTools: z.array(z.string()).optional().default([]),
   })
   .passthrough()
+
+const EnvironmentCreateSchema = z.object({
+  type: z.string().trim().min(1, 'type is required'),
+  players: z.array(z.string().trim().min(1)).min(2, 'at least 2 players are required'),
+})
 
 export interface Env {
   AGENTS: DurableObjectNamespace
@@ -106,6 +113,22 @@ async function listAgentRegistryRows(db: D1Database): Promise<AgentRegistryRow[]
     .prepare('SELECT name, did, created_at FROM agents')
     .all<AgentRegistryRow>()
   return result.results ?? []
+}
+
+function inferEnvironmentTypeFromId(id: string): string {
+  const idx = id.indexOf('_')
+  if (idx <= 0) return 'unknown'
+  return id.slice(0, idx)
+}
+
+function safeJsonParseArray(value: unknown): string[] {
+  if (typeof value !== 'string' || !value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 export default {
@@ -339,18 +362,180 @@ export default {
           )
         }
 
+        // Environments (backed by shared D1 games table)
+        if (normalizedPathname === '/environments') {
+          return withErrorHandling(
+            async () => {
+              if (request.method === 'GET') {
+                const type = url.searchParams.get('type')?.trim()
+                const phase = url.searchParams.get('phase')?.trim()
+                const player = url.searchParams.get('player')?.trim()
+
+                const sqlParts = [
+                  'SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE 1=1',
+                ]
+                const binds: unknown[] = []
+
+                if (type) {
+                  sqlParts.push('AND id LIKE ?')
+                  binds.push(`${type}_%`)
+                }
+                if (phase) {
+                  sqlParts.push('AND phase = ?')
+                  binds.push(phase)
+                }
+                if (player) {
+                  sqlParts.push('AND players LIKE ?')
+                  binds.push(`%${player}%`)
+                }
+
+                sqlParts.push('ORDER BY updated_at DESC LIMIT 20')
+
+                const rows = await env.DB.prepare(sqlParts.join(' ')).bind(...binds).all()
+                const environments = (rows.results ?? []).map((r: any) => ({
+                  id: r.id,
+                  type: inferEnvironmentTypeFromId(String(r.id)),
+                  hostAgent: r.host_agent,
+                  phase: r.phase,
+                  players: safeJsonParseArray(r.players),
+                  winner: r.winner ?? null,
+                  createdAt: r.created_at,
+                  updatedAt: r.updated_at,
+                }))
+
+                return Response.json({ environments })
+              }
+
+              if (request.method !== 'POST') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const validated = await validateRequestJson(request, EnvironmentCreateSchema, {
+                invalidBodyError: 'Invalid environment create request',
+              })
+              if (!validated.ok) return validated.response
+
+              const { type, players } = validated.data
+              const environment = getEnvironment(type)
+              if (!environment) {
+                return Response.json({ error: `Unknown environment type: ${type}` }, { status: 404 })
+              }
+
+              const hostAgent = players[0] ?? 'unknown'
+              const hostDidRow = await env.DB.prepare('SELECT did FROM agents WHERE name = ?')
+                .bind(hostAgent)
+                .first<{ did: string }>()
+                .catch(() => null)
+              const hostDid = hostDidRow?.did ?? `did:cf:${hostAgent}`
+
+              const relayId = env.RELAY.idFromName('main')
+              const relay = env.RELAY.get(relayId)
+
+              const tool = environment.getTool({
+                agentName: hostAgent,
+                agentDid: hostDid,
+                db: env.DB,
+                relay,
+                broadcast: async () => {},
+              })
+
+              if (typeof tool.execute !== 'function') {
+                return Response.json(
+                  { error: `Environment type ${type} does not support creation` },
+                  { status: 501 }
+                )
+              }
+
+              const result = await tool.execute('http', { command: 'new_game', players })
+              const details = (result as any)?.details as Record<string, unknown> | undefined
+              const id = typeof details?.gameId === 'string' ? details.gameId : null
+              if (!id) {
+                return Response.json({ error: 'Environment create failed' }, { status: 502 })
+              }
+
+              const row = await env.DB
+                .prepare('SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE id = ?')
+                .bind(id)
+                .first()
+
+              if (!row) {
+                return Response.json({
+                  id,
+                  type,
+                  hostAgent,
+                  players,
+                })
+              }
+
+              return Response.json({
+                id: (row as any).id,
+                type,
+                hostAgent: (row as any).host_agent,
+                phase: (row as any).phase,
+                players: safeJsonParseArray((row as any).players),
+                winner: (row as any).winner ?? null,
+                createdAt: (row as any).created_at,
+                updatedAt: (row as any).updated_at,
+              })
+            },
+            { route: 'network.environments', request }
+          )
+        }
+
+        if (normalizedPathname.startsWith('/environments/')) {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+              const envId = normalizedPathname.split('/')[2]
+              if (!envId) return Response.json({ error: 'Environment ID required' }, { status: 400 })
+
+              const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(envId).first()
+              if (!row) return Response.json({ error: 'Environment not found' }, { status: 404 })
+
+              let state: unknown = null
+              try {
+                state = JSON.parse((row as any).state)
+              } catch {
+                state = (row as any).state
+              }
+
+              return Response.json({
+                id: (row as any).id,
+                type: inferEnvironmentTypeFromId(String((row as any).id)),
+                hostAgent: (row as any).host_agent,
+                phase: (row as any).phase,
+                players: safeJsonParseArray((row as any).players),
+                winner: (row as any).winner ?? null,
+                createdAt: (row as any).created_at,
+                updatedAt: (row as any).updated_at,
+                state,
+              })
+            },
+            { route: 'network.environments.detail', request }
+          )
+        }
+
         // Games (shared D1 state)
         if (normalizedPathname === '/games') {
           return withErrorHandling(
             async () => {
-              const active = url.searchParams.get('all') === 'true' ? '' : " AND phase NOT IN ('finished', 'abandoned', 'setup')"
-              const rows = await env.DB.prepare(
-                `SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE 1=1${active} ORDER BY updated_at DESC LIMIT 20`
-              ).all()
+              const showAll = url.searchParams.get('all') === 'true'
+              const sqlParts = [
+                'SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE id LIKE ?',
+              ]
+              const binds: unknown[] = ['catan_%']
+              if (!showAll) {
+                sqlParts.push("AND phase NOT IN ('finished', 'abandoned', 'setup')")
+              }
+              sqlParts.push('ORDER BY updated_at DESC LIMIT 20')
+
+              const rows = await env.DB.prepare(sqlParts.join(' ')).bind(...binds).all()
               return Response.json({
                 games: (rows.results ?? []).map((r: any) => ({
                   ...r,
                   players: r.players ? JSON.parse(r.players) : [],
+                  type: 'catan',
                 })),
               })
             },
@@ -364,9 +549,9 @@ export default {
               const gameId = normalizedPathname.split('/')[2]
               if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
 
-              // DELETE /games/:id — admin kill game
+              // DELETE /games/:id — admin kill game (hard delete from D1)
               if (request.method === 'DELETE') {
-                await env.DB.prepare("UPDATE games SET phase = 'finished', winner = 'cancelled' WHERE id = ?").bind(gameId).run()
+                await env.DB.prepare("DELETE FROM games WHERE id = ?").bind(gameId).run()
                 return Response.json({ ok: true, message: `Game ${gameId} cancelled` })
               }
 
@@ -376,6 +561,7 @@ export default {
               const { renderBoard, generateGameSummary } = await import('./games/catan')
               return Response.json({
                 id: game.id,
+                type: 'catan',
                 phase: game.phase,
                 turn: game.turn,
                 currentPlayer: game.currentPlayer,

@@ -26,6 +26,17 @@ export interface AgentRow {
   created_at: string
 }
 
+export interface GameRow {
+  id: string
+  host_agent: string
+  state: string
+  phase: string
+  players: string
+  winner?: string | null
+  created_at: string
+  updated_at: string
+}
+
 interface Condition {
   column: keyof RecordRow
   value: unknown
@@ -39,6 +50,13 @@ interface SharedCondition {
 interface AgentCondition {
   column: keyof AgentRow
   value: unknown
+}
+
+interface GameCondition {
+  kind: 'eq' | 'like' | 'in' | 'not_in' | 'json_current_player'
+  column?: keyof GameRow
+  values?: string[]
+  value?: unknown
 }
 
 export class D1MockStatement {
@@ -74,6 +92,7 @@ export class D1MockDatabase {
   readonly records = new Map<string, RecordRow>()
   readonly sharedRecords = new Map<string, SharedRecordRow>()
   readonly agents = new Map<string, AgentRow>()
+  readonly games = new Map<string, GameRow>()
   private sharedAutoIncrement = 0
 
   prepare(sql: string): D1MockStatement {
@@ -110,6 +129,61 @@ export class D1MockDatabase {
         }
       }
       return
+    }
+
+    if (normalized.startsWith('insert into games')) {
+      const [id, hostAgent, state, phase, players] = params
+      const key = String(id)
+      const now = new Date().toISOString()
+
+      this.games.set(key, {
+        id: key,
+        host_agent: String(hostAgent ?? ''),
+        state: String(state ?? ''),
+        phase: String(phase ?? ''),
+        players: String(players ?? '[]'),
+        winner: null,
+        created_at: now,
+        updated_at: now,
+      })
+      return
+    }
+
+    if (normalized.startsWith('update games set')) {
+      const whereClause = extractWhereClause(normalized)
+      if (!whereClause) {
+        throw new Error(`Unsupported update statement (missing where): ${normalized}`)
+      }
+
+      // Only support updates scoped to a single game id.
+      const idParamIndex = params.length - 1
+      const id = String(params[idParamIndex])
+      const existing = this.games.get(id)
+      if (!existing) return
+
+      const now = new Date().toISOString()
+
+      // UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?
+      if (normalized.includes('state = ?') && normalized.includes('phase = ?') && normalized.includes('winner = ?')) {
+        const [state, phase, winner] = params
+        existing.state = String(state ?? '')
+        existing.phase = String(phase ?? '')
+        existing.winner = winner == null ? null : String(winner)
+        existing.updated_at = now
+        this.games.set(id, existing)
+        return
+      }
+
+      // UPDATE games SET phase = 'finished', winner = 'cancelled' WHERE id = ?
+      if (normalized.includes("phase = 'finished'") && normalized.includes("winner = 'cancelled'")) {
+        existing.phase = 'finished'
+        existing.winner = 'cancelled'
+        existing.updated_at = now
+        this.games.set(id, existing)
+        return
+      }
+
+      throw new Error(`Unsupported SQL in D1MockDatabase.run: ${normalized}`)
     }
 
     if (normalized.startsWith('insert into records')) {
@@ -178,6 +252,11 @@ export class D1MockDatabase {
       return { results: rows as T[] }
     }
 
+    if (normalized.startsWith('select') && normalized.includes('from games')) {
+      const rows = this.filterGames(normalized, params)
+      return { results: rows as T[] }
+    }
+
     if (normalized.startsWith('select') && normalized.includes('from records')) {
       const rows = this.filterRecords(normalized, params)
       return { results: rows as T[] }
@@ -225,6 +304,45 @@ export class D1MockDatabase {
     return Array.from(this.agents.values()).filter((row) =>
       conditions.every((condition) => matchAgentCondition(row, condition))
     )
+  }
+
+  private filterGames(normalized: string, params: unknown[]): any[] {
+    const whereClause = extractWhereClause(normalized)
+    const { conditions, usedParams } = parseGameConditions(whereClause ?? '', params)
+
+    let rows = Array.from(this.games.values()).filter((row) =>
+      conditions.every((condition) => matchGameCondition(row, condition))
+    )
+
+    if (normalized.includes('order by updated_at desc')) {
+      rows = rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    }
+
+    const limitMatch = normalized.match(/\s+limit\s+(\d+)\s*$/)
+    if (limitMatch) {
+      const limit = Number(limitMatch[1])
+      if (Number.isFinite(limit) && limit >= 0) rows = rows.slice(0, limit)
+    }
+
+    // Projection based on SELECT list, so callers see the expected columns.
+    const projection = extractSelectColumns(normalized, 'games')
+    if (projection === '*') return rows as unknown as any[]
+
+    const projected = rows.map((row) => {
+      const out: Record<string, unknown> = {}
+      for (const col of projection) {
+        out[col] = (row as any)[col]
+      }
+      return out
+    })
+
+    // If a query uses more params than we consumed, it's likely a SQL shape we don't support.
+    if (usedParams !== params.length && whereClause) {
+      // best-effort: allow extra params for unsupported clauses rather than silently misbehaving
+      // (tests should pin the supported shapes).
+    }
+
+    return projected
   }
 
   private applyUpdate(normalized: string, params: unknown[]): void {
@@ -384,6 +502,142 @@ function parseAgentConditions(clause: string, params: unknown[]): AgentCondition
 function matchAgentCondition(row: AgentRow, condition: AgentCondition): boolean {
   const { column, value } = condition
   return row[column] === value
+}
+
+function parseGameConditions(clause: string, params: unknown[]): { conditions: GameCondition[]; usedParams: number } {
+  const trimmed = clause.trim()
+  if (!trimmed) return { conditions: [], usedParams: 0 }
+
+  const parts = trimmed.split(' and ').map((part) => part.trim())
+  const conditions: GameCondition[] = []
+  let index = 0
+
+  for (const part of parts) {
+    if (!part || part === '1=1') continue
+
+    // phase not in ('finished', 'abandoned', 'setup')
+    const notInMatch = part.match(/^(\w+)\s+not\s+in\s+\(([^)]+)\)$/)
+    if (notInMatch) {
+      const column = notInMatch[1] as keyof GameRow
+      const values = notInMatch[2]
+        .split(',')
+        .map((v) => v.trim().replace(/^'(.*)'$/, '$1'))
+        .filter(Boolean)
+      conditions.push({ kind: 'not_in', column, values })
+      continue
+    }
+
+    // phase in ('playing', 'setup')
+    const inMatch = part.match(/^(\w+)\s+in\s+\(([^)]+)\)$/)
+    if (inMatch) {
+      const column = inMatch[1] as keyof GameRow
+      const values = inMatch[2]
+        .split(',')
+        .map((v) => v.trim().replace(/^'(.*)'$/, '$1'))
+        .filter(Boolean)
+      conditions.push({ kind: 'in', column, values })
+      continue
+    }
+
+    // json_extract(state, '$.currentPlayer') = ?
+    if (part.startsWith("json_extract(state, '$.currentplayer') = ?")) {
+      const value = params[index]
+      index += 1
+      conditions.push({ kind: 'json_current_player', value })
+      continue
+    }
+
+    // players like ?
+    const likeMatch = part.match(/^(\w+)\s+like\s+\?$/)
+    if (likeMatch) {
+      const column = likeMatch[1] as keyof GameRow
+      const value = params[index]
+      index += 1
+      conditions.push({ kind: 'like', column, value })
+      continue
+    }
+
+    // phase = 'playing'
+    const eqLiteralMatch = part.match(/^(\w+)\s*=\s*'(.*)'$/)
+    if (eqLiteralMatch) {
+      const column = eqLiteralMatch[1] as keyof GameRow
+      const value = eqLiteralMatch[2]
+      conditions.push({ kind: 'eq', column, value })
+      continue
+    }
+
+    // column = ?
+    const eqMatch = part.match(/^(\w+)\s*=\s*\?$/)
+    if (eqMatch) {
+      const column = eqMatch[1] as keyof GameRow
+      const value = params[index]
+      index += 1
+      conditions.push({ kind: 'eq', column, value })
+      continue
+    }
+
+    throw new Error(`Unsupported where clause: ${part}`)
+  }
+
+  return { conditions, usedParams: index }
+}
+
+function sqlLike(haystack: string, pattern: string): boolean {
+  // Minimal LIKE support for %wildcards used in this repo.
+  if (pattern === '%') return true
+  const startsWithWildcard = pattern.startsWith('%')
+  const endsWithWildcard = pattern.endsWith('%')
+  const needle = pattern.replace(/%/g, '')
+
+  if (!startsWithWildcard && !endsWithWildcard) return haystack === pattern
+  if (startsWithWildcard && endsWithWildcard) return haystack.includes(needle)
+  if (startsWithWildcard) return haystack.endsWith(needle)
+  return haystack.startsWith(needle)
+}
+
+function matchGameCondition(row: GameRow, condition: GameCondition): boolean {
+  if (condition.kind === 'json_current_player') {
+    try {
+      const parsed = JSON.parse(row.state) as any
+      return String(parsed?.currentPlayer ?? '') === String(condition.value ?? '')
+    } catch {
+      return false
+    }
+  }
+
+  const column = condition.column
+  if (!column) return true
+
+  const value = (row as any)[column]
+
+  if (condition.kind === 'eq') {
+    return value === condition.value
+  }
+
+  if (condition.kind === 'like') {
+    return sqlLike(String(value ?? ''), String(condition.value ?? ''))
+  }
+
+  if (condition.kind === 'in') {
+    return condition.values?.includes(String(value ?? '')) ?? false
+  }
+
+  if (condition.kind === 'not_in') {
+    return !(condition.values?.includes(String(value ?? '')) ?? false)
+  }
+
+  return true
+}
+
+function extractSelectColumns(normalized: string, table: string): '*' | string[] {
+  const match = normalized.match(new RegExp(`^select\\s+(.+?)\\s+from\\s+${table}\\b`))
+  if (!match) return '*'
+  const list = match[1].trim()
+  if (list === '*') return '*'
+  return list
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean)
 }
 
 function asBytes(value: unknown, label: string): Uint8Array {

@@ -49,6 +49,40 @@ async function registerAgent(db: D1MockDatabase, input: { name: string; did: str
     .run()
 }
 
+async function registerGame(
+  db: D1MockDatabase,
+  input: {
+    id: string
+    hostAgent: string
+    phase: string
+    players: string[]
+    state?: Record<string, unknown>
+    winner?: string | null
+  }
+) {
+  const state = input.state ?? { id: input.id, phase: input.phase, players: input.players }
+
+  await db
+    .prepare(
+      "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+    )
+    .bind(
+      input.id,
+      input.hostAgent,
+      JSON.stringify(state),
+      input.phase,
+      JSON.stringify(input.players)
+    )
+    .run()
+
+  if (typeof input.winner !== 'undefined') {
+    await db
+      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(JSON.stringify(state), input.phase, input.winner, input.id)
+      .run()
+  }
+}
+
 describe('network worker lexicon validation', () => {
   it('rejects requests without a bearer token before routing', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
@@ -554,5 +588,100 @@ describe('network worker health endpoint', () => {
       missing: expect.any(Array),
     })
     expect(body.missing).toEqual(expect.arrayContaining(['AGENTS', 'ADMIN_TOKEN']))
+  })
+})
+
+describe('network worker environments API', () => {
+  it('GET /environments lists instances and supports type/phase/player filters', async () => {
+    const db = new D1MockDatabase()
+
+    await registerGame(db, {
+      id: 'catan_1',
+      hostAgent: 'grimlock',
+      phase: 'playing',
+      players: ['grimlock', 'slag'],
+      state: { id: 'catan_1', phase: 'playing', currentPlayer: 'grimlock' },
+    })
+    await registerGame(db, {
+      id: 'rpg_1',
+      hostAgent: 'snarl',
+      phase: 'playing',
+      players: ['snarl', 'swoop'],
+      state: { id: 'rpg_1', phase: 'playing' },
+    })
+    await registerGame(db, {
+      id: 'catan_2',
+      hostAgent: 'grimlock',
+      phase: 'finished',
+      players: ['grimlock', 'snarl'],
+      winner: 'grimlock',
+      state: { id: 'catan_2', phase: 'finished', winner: 'grimlock' },
+    })
+
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/environments?type=catan&phase=playing&player=grimlock', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({
+      environments: [
+        expect.objectContaining({
+          id: 'catan_1',
+          type: 'catan',
+          phase: 'playing',
+          hostAgent: 'grimlock',
+          players: ['grimlock', 'slag'],
+        }),
+      ],
+    })
+  })
+
+  it('POST /environments creates a new instance and /games stays a catan alias', async () => {
+    const db = new D1MockDatabase()
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const createRes = await worker.fetch(
+      new Request('https://example.com/environments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ type: 'catan', players: ['slag', 'snarl'] }),
+      }),
+      env
+    )
+
+    expect(createRes.status).toBe(200)
+    const created = await createRes.json()
+    expect(created).toMatchObject({
+      type: 'catan',
+      players: ['slag', 'snarl'],
+    })
+    expect(typeof created.id).toBe('string')
+    expect(created.id).toMatch(/^catan_/)
+
+    const gamesRes = await worker.fetch(
+      new Request('https://example.com/games?all=true', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(gamesRes.status).toBe(200)
+    const games = await gamesRes.json()
+    expect(games.games).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.id,
+          type: 'catan',
+        }),
+      ])
+    )
   })
 })
