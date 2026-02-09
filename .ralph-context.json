@@ -589,6 +589,17 @@
         "prd.json"
       ],
       "learnings": "Technical Discovery: `apps/network/src/agent.ts` executes extensions during agent rebuild in `loadExtensionsIntoTools()` by dynamic-importing the R2 module and calling `activate(agent)`. This is the correct choke point to record per-extension activation metrics in DO storage (`extensionMetrics:${name}`) without needing to modify Pi’s tool execution internals. Exposing metrics on `/debug` is easiest via `ctx.storage.list({ prefix: 'extensionMetrics:' })`.\nGotcha: Extension activation can happen more than once (initial `initialize()` and any later `rebuildAgentWrapper()` via `extensionsReloadNeeded`), so `totalCalls` will increment on each activation attempt. If you add more `/debug` fields backed by DO storage listing, ensure the test harness `FakeStorage` implements the corresponding storage APIs (at minimum `list({ prefix })`) or `/debug` tests will throw at runtime.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO implementation: `/debug` endpoint wiring, extension load path (`loadExtensionsIntoTools()`), and DO storage usage. `apps/network/src/agent-do.test.ts` contains the DO unit tests and the `FakeStorage` harness used to simulate `ctx.storage` behavior (now including `list()`)."
+    },
+    {
+      "id": "story-mlfedv85",
+      "title": "Add Cloudflare Pipeline binding for o11y event streaming",
+      "status": "completed",
+      "filesModified": [
+        "packages/dashboard/src/activity.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: Cloudflare Pipelines bindings can be treated as an optional env object with a single `send(events: unknown[]): Promise<void>` method. In `apps/network/src/agent.ts`, the safest place to emit a per-cycle summary is the `AgentDO.alarm()` scheduling block’s `finally`, so it runs after the cycle regardless of backoff/scheduling outcomes, and failures must be swallowed to keep the loop reliable.\nGotcha: `wrangler deploy` fails if referenced bindings don’t exist in the target Cloudflare account: missing Vectorize index names and missing Pipeline/Stream resources will hard-error deploy (even though the Worker code/tests are fine). For this story specifically, ensure `agent-o11y` is created via `wrangler pipelines create agent-o11y` in the same account you deploy to, and that the Vectorize index exists before attempting live verification.\nFiles Context: `apps/network/src/agent.ts` contains the `AgentEnv` interface, the `sendO11yEvent()` helper, and the `AgentDO.alarm()` loop where the `agent.cycle` summary is emitted. `apps/network/wrangler.toml` defines the `[[pipelines]]` binding (`O11Y_PIPELINE` -> `agent-o11y`). `apps/network/src/agent-do.test.ts` is the main DO test harness and now includes mocks asserting the pipeline send behavior."
     }
   ],
   "failures": [

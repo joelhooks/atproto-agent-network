@@ -209,7 +209,9 @@ export default {
         const isAgentReadRoute =
           normalizedPathname.startsWith('/agents/') &&
           request.method === 'GET' &&
-          !isLoopStatusRoute
+          !isLoopStatusRoute &&
+          // Internal DO endpoints should never be reachable through the public agent forwarding route.
+          !normalizedPathname.includes('/__internal/')
         
         if (!isAgentReadRoute) {
           const auth = requireAdminBearerAuth(request, env)

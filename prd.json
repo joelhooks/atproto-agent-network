@@ -391,14 +391,14 @@
       "title": "Admin analytics endpoint — GET /admin/analytics with cycle stats",
       "description": "GH Issue #94.\\n\\nAdd a new admin endpoint that returns agent analytics from DO storage (not R2/Parquet yet — that comes after Pipelines are live).\\n\\n1. In apps/network/src/index.ts, add route `GET /admin/analytics` (behind admin auth)\\n2. For each agent DO, read: loopCount, consecutiveErrors, alarmMode, actionOutcomes (last 10), extensionMetrics, lastReflection\\n3. Return JSON: { agents: [{ name, loopCount, errors, mode, recentActions: [...], extensions: [...] }] }\\n4. If the DO values don't exist yet (features not deployed), return null/empty for those fields\\n\\nAdd a test in the appropriate test file: call GET /admin/analytics, verify it returns the expected shape.\\n\\nFiles: apps/network/src/index.ts, apps/network/src/index.test.ts (or agent-factory.test.ts)\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 34,
-    "lastIteration": "2026-02-09T19:44:10.463Z"
+    "totalIterations": 35,
+    "lastIteration": "2026-02-09T19:54:36.264Z"
   },
   "totalStories": 11
 }

@@ -250,3 +250,11 @@ Note: `git status` still shows pre-existing dirty files (`prd.json`, `.ralph-con
 Completed: Add Cloudflare Pipeline binding for o11y event streaming
 Files: packages/dashboard/src/activity.ts, .ralph-context.json, .ralph-iterations.jsonl
 Summary: Implemented GH #93 (story-mlfedv85): added Cloudflare Pipelines binding `O11Y_PIPELINE` to `apps/network/wrangler.toml`, extended `AgentEnv` in `apps/network/src/agent.ts`, added `sendO11yEvent()` helper (non-fatal try/catch), and emit an `agent.cycle` summary event at the end of `AgentDO.alarm()`. Added unit tests mocking the pipeline binding in `apps/network/src/agent-do.test.ts`. Ran `pnpm typecheck && pnpm test` successfully. Attempted `wrangler deploy` but deploy is blocked in the target CF account(s) due to missing referenced resources (Vectorize index and/or Pipeline/Stream); did not create any resources per story constraints.
+
+---
+[2026-02-09T19:54:36.265Z]
+Completed: Admin analytics endpoint — GET /admin/analytics with cycle stats
+Files: apps/network/src/agent.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/wrangler.toml, .ralph-context.json, .ralph-iterations.jsonl, prd.json
+Summary: Prior failure pattern detected: test_failure/build_error. Mitigation: added a focused failing unit test first, implemented the minimal endpoint/internal DO surface to satisfy the story, and ran the full requested validation (`pnpm typecheck && pnpm test`).
+
+Implemented `GET /admin/analytics` (admin auth) in `apps/network/src/index.ts`, listing registered agents from D1 and aggregating per-agent loop analytics by calling each AgentDO’s internal `GET /__internal/analytics`. Added internal-only analytics handler in `apps/network/src/agent.ts` (guarded so it can’t be reached via public `/agents/:name/...` forwarding). Added a unit test in `apps/network/src/index.test.ts` verifying the response shape and null/empty fallbacks when fields are missing.

@@ -969,3 +969,31 @@ describe('admin analytics endpoint', () => {
     })
   })
 })
+
+describe('agent internal endpoints', () => {
+  it('requires admin auth for GET /agents/:name/__internal/analytics (should not be publicly readable)', async () => {
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+
+    const agentFetch = vi.fn(async (req: Request) => {
+      const url = new URL(req.url)
+      if (url.pathname.endsWith('/__internal/analytics')) {
+        return Response.json({ loopCount: 123 })
+      }
+      return new Response('ok')
+    })
+
+    const env = createHealthEnv({
+      DB: db,
+      AGENTS: createAgentNamespace(agentFetch),
+    })
+
+    const { default: worker } = await import('./index')
+
+    const res = await worker.fetch(new Request('https://example.com/agents/alice/__internal/analytics'), env)
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: 'Unauthorized' })
+    expect(agentFetch).not.toHaveBeenCalled()
+  })
+})
