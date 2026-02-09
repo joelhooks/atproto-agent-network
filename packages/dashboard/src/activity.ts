@@ -140,6 +140,54 @@ export function normalizeAgentEvent(
   return { type, agent, kind, summary, timestamp, details }
 }
 
+function tryParseJson(s: string): Record<string, unknown> | null {
+  if (!s.startsWith('{') && !s.startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(s)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch { return null }
+}
+
+function humanizeMemoryNote(
+  rawSummary: string,
+  rawText: string | undefined
+): { summary: string; text: string | undefined; jsonData: Record<string, unknown> | null } {
+  const summaryJson = tryParseJson(rawSummary)
+  const textJson = rawText ? tryParseJson(rawText) : null
+
+  // If summary is JSON, build a human-readable summary from its fields
+  if (summaryJson) {
+    const obj = summaryJson
+    const type = typeof obj.type === 'string' ? obj.type : null
+    const action = typeof obj.action === 'string' ? obj.action : null
+    const result = typeof obj.result === 'string' ? obj.result : null
+    const note = typeof obj.note === 'string' ? obj.note : null
+    const decision = typeof obj.decision === 'string' ? obj.decision : null
+    const gameId = typeof obj.gameId === 'string' ? obj.gameId : null
+
+    // Build a human summary from known fields
+    const parts: string[] = []
+    if (type) parts.push(type.replace(/_/g, ' '))
+    if (action) parts.push(action.replace(/_/g, ' '))
+    if (result) parts.push(`(${result})`)
+    if (gameId) parts.push(`#${gameId.split('_').pop()}`)
+    const summary = parts.length > 0 ? parts.join(' ') : rawSummary
+
+    // Use note/decision as text, or format remaining fields
+    const text = note ?? decision ?? undefined
+
+    return { summary, text, jsonData: obj }
+  }
+
+  // If text is JSON but summary is human-readable, keep summary, extract note from text
+  if (textJson && !summaryJson) {
+    const note = typeof textJson.note === 'string' ? textJson.note : undefined
+    return { summary: rawSummary, text: note ?? rawText, jsonData: textJson }
+  }
+
+  return { summary: rawSummary, text: rawText, jsonData: null }
+}
+
 export function summarizeLexiconRecord(record: unknown): {
   kind: ActivityKind
   summary: string
@@ -155,11 +203,15 @@ export function summarizeLexiconRecord(record: unknown): {
   const type = typeof r.$type === 'string' ? r.$type : 'unknown'
 
   if (type === 'agent.memory.note') {
-    const summary = typeof r.summary === 'string' ? r.summary : 'Memory note'
-    const text = typeof r.text === 'string' ? r.text : undefined
+    const rawSummary = typeof r.summary === 'string' ? r.summary : 'Memory note'
+    const rawText = typeof r.text === 'string' ? r.text : undefined
     const tags = Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === 'string') : undefined
     const timestamp = typeof r.createdAt === 'string' ? r.createdAt : undefined
-    return { kind: 'memory', summary, text, tags, timestamp, details: { $type: type } }
+
+    // If summary looks like JSON, try to extract something human-readable
+    const { summary, text, jsonData } = humanizeMemoryNote(rawSummary, rawText)
+
+    return { kind: 'memory', summary, text, tags, timestamp, details: { $type: type, ...(jsonData ? { memoryData: jsonData } : {}) } }
   }
 
   if (type === 'agent.memory.decision') {

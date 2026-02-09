@@ -42,6 +42,33 @@ const kindVariants: Record<ActivityKind, 'default' | 'accent' | 'success' | 'err
   error: 'error',
 }
 
+// Skip keys that are already shown elsewhere or are noise
+const HIDDEN_KEYS = new Set(['type', 'note', 'decision', '$type', 'createdAt', 'updatedAt'])
+
+function MemoryDataDisplay({ data }: { data: Record<string, unknown> }) {
+  const entries = Object.entries(data).filter(([k]) => !HIDDEN_KEYS.has(k))
+  if (entries.length === 0) return null
+
+  return (
+    <div className="mt-2 rounded bg-surface-2/60 border border-border/50 px-3 py-2">
+      <div className="grid gap-y-1" style={{ gridTemplateColumns: 'auto 1fr' }}>
+        {entries.map(([key, val]) => {
+          const display = typeof val === 'string' ? val
+            : typeof val === 'number' ? String(val)
+            : typeof val === 'boolean' ? (val ? 'yes' : 'no')
+            : JSON.stringify(val)
+          return (
+            <div key={key} className="contents">
+              <span className="text-[0.58rem] text-text-dim pr-3 tabular-nums">{key.replace(/_/g, ' ')}</span>
+              <span className="text-[0.62rem] text-text break-words">{display}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function linkifyDids(text: string, agents: Map<string, AgentCardState>): string {
   return text.replace(/did:[a-z]+:[a-zA-Z0-9._:%-]+/g, (did) => resolveDidToName(did, agents))
 }
@@ -50,6 +77,7 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
   const [showDetails, setShowDetails] = useState(false)
   const Icon = kindIcons[event.kind] ?? Cog
   const details = event.details
+  const memoryData = details?.memoryData as Record<string, unknown> | undefined
   const hasDetails = Boolean(details && (details.context || details.error))
   const context = details?.context
   const rawError = details?.error
@@ -96,6 +124,11 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
             <div className="flex flex-wrap gap-1 mt-2.5">
               {event.tags.map(tag => <Badge key={tag} variant="dim" className="text-[0.5rem]">{tag}</Badge>)}
             </div>
+          )}
+
+          {/* Structured memory data */}
+          {memoryData && (
+            <MemoryDataDisplay data={memoryData} />
           )}
 
           {/* Error */}
