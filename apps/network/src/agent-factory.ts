@@ -81,19 +81,13 @@ export function createOpenRouterAgentFactory(
       : []
     // Backward compat: if enabledTools is empty or missing, expose all tools.
     const allowlist = enabledToolsAllowlist.length > 0 ? new Set(enabledToolsAllowlist) : null
-    const exposedTools = allowlist ? tools.filter((t) => allowlist.has(t.name)) : tools
-    const messages: OpenRouterMessage[] = [{ role: 'system', content: systemPrompt }]
+    const baseExposedTools = allowlist ? tools.filter((t) => allowlist.has(t.name)) : tools
 
-    function buildToolDefs(): OpenRouterToolDef[] {
-      return exposedTools.map((tool) => ({
-        type: 'function' as const,
-        function: {
-          name: tool.name,
-          description: tool.description ?? `Tool: ${tool.name}`,
-          parameters: (tool.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>,
-        },
-      }))
-    }
+    // Mutable runtime tool policy hook:
+    // AgentDO can set `agent.state.suppressedTools = ['think_aloud', 'recall']` before a prompt
+    // (e.g. during active gameplay turns) to keep the model focused on actions.
+    const state: { messages: unknown[]; suppressedTools?: unknown } = { messages: [] }
+    const messages: OpenRouterMessage[] = [{ role: 'system', content: systemPrompt }]
 
     const baseUrl = getOpenRouterViaAiGatewayBaseUrl(env)
 
@@ -107,7 +101,24 @@ export function createOpenRouterAgentFactory(
     }
 
     async function callModelOnce(msgs: OpenRouterMessage[], maxTokens: number, useModel: string): Promise<CallModelResult> {
-      const toolDefs = buildToolDefs()
+      const suppressedRaw = state.suppressedTools
+      const suppressed = Array.isArray(suppressedRaw)
+        ? suppressedRaw.filter((t): t is string => typeof t === 'string' && t.length > 0)
+        : []
+      const suppressedSet = suppressed.length > 0 ? new Set(suppressed) : null
+
+      const effectiveTools = suppressedSet
+        ? baseExposedTools.filter((t) => !suppressedSet.has(t.name))
+        : baseExposedTools
+
+      const toolDefs: OpenRouterToolDef[] = effectiveTools.map((tool) => ({
+        type: 'function' as const,
+        function: {
+          name: tool.name,
+          description: tool.description ?? `Tool: ${tool.name}`,
+          parameters: (tool.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+        },
+      }))
       const body: Record<string, unknown> = {
         model: useModel,
         messages: msgs,
@@ -202,7 +213,7 @@ export function createOpenRouterAgentFactory(
     }
 
     return Object.assign({
-      state: { messages: [] },
+      state,
 
       resetConversation() {
         messages.length = 1
@@ -288,7 +299,17 @@ export function createOpenRouterAgentFactory(
           // Execute each tool call and feed results back, with per-tool timing
           const toolResults: LoopStep['toolResults'] = []
           for (const tc of result.toolCalls) {
-            const tool = exposedTools.find(t => t.name === tc.name)
+            const suppressedRaw = state.suppressedTools
+            const suppressed = Array.isArray(suppressedRaw)
+              ? suppressedRaw.filter((t): t is string => typeof t === 'string' && t.length > 0)
+              : []
+            const suppressedSet = suppressed.length > 0 ? new Set(suppressed) : null
+
+            const effectiveTools = suppressedSet
+              ? baseExposedTools.filter((t) => !suppressedSet.has(t.name))
+              : baseExposedTools
+
+            const tool = effectiveTools.find(t => t.name === tc.name)
             let toolResult: string
             const toolStart = Date.now()
 

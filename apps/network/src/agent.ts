@@ -1302,6 +1302,33 @@ export class AgentDO extends DurableObject {
     this.agent.resetConversation?.()
 
     const prompt = await this.buildThinkPrompt(observations)
+
+    // Gameplay focus: during active game turns, suppress "think_aloud" + "recall"
+    // from the tool definitions sent to the LLM so it prioritizes game actions.
+    // (Tool execution is also guarded in the OpenRouter factory based on state.)
+    const suppressGameplayTools = this.intervalReason === 'my_turn'
+    const suppressed = suppressGameplayTools ? ['think_aloud', 'recall'] : []
+    try {
+      await this.agent.initialize()
+      const inner = this.agent.getAgent() as any
+      if (inner?.state && typeof inner.state === 'object') {
+        inner.state.suppressedTools = suppressed
+      }
+    } catch {
+      // Non-fatal: custom factories used in tests may not support stateful tool policy.
+    }
+
+    if (suppressGameplayTools) {
+      logEvent({
+        level: 'info',
+        event_type: 'tools.gameplay_filter',
+        component: 'agent-do',
+        did: this.did,
+        session_id: await this.getOrCreateSessionId(),
+        suppressed,
+      })
+    }
+
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
 
     // Raw model output debug — store in DO for queryable diagnosis
