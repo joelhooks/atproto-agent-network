@@ -124,6 +124,8 @@ interface ActResult {
   timedOut: boolean
 }
 
+type ActionOutcome = { tool: string; success: boolean; timestamp: number; goalId?: string }
+
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
@@ -947,6 +949,26 @@ export class AgentDO extends DurableObject {
     const hasInbox = observations.inbox.length > 0
     const hasEvents = observations.events.length > 0
 
+    const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+    const outcomes: ActionOutcome[] = Array.isArray(outcomesRaw)
+      ? outcomesRaw.filter((o): o is ActionOutcome => {
+          if (!o || typeof o !== 'object' || Array.isArray(o)) return false
+          const rec = o as Record<string, unknown>
+          return (
+            typeof rec.tool === 'string' &&
+            typeof rec.success === 'boolean' &&
+            typeof rec.timestamp === 'number' &&
+            Number.isFinite(rec.timestamp)
+          )
+        })
+      : []
+    const recentOutcomes = outcomes.slice(-5)
+    const recentOutcomesText = recentOutcomes.length
+      ? recentOutcomes
+          .map((o) => `- ${o.tool}: ${o.success ? 'ok' : 'failed'}${o.goalId ? ` (goal ${o.goalId})` : ''}`)
+          .join('\n')
+      : '(none)'
+
     // Game-aware context (query D1 for active games)
     let gameContext = ''
     if (this.agentEnv?.DB) {
@@ -1157,6 +1179,9 @@ export class AgentDO extends DurableObject {
       'Current goals:',
       goals.length ? JSON.stringify(goals, null, 2) : '(no goals set)',
       '',
+      'Recent action outcomes (last 5 tool calls):',
+      recentOutcomesText,
+      '',
       'Observations this cycle:',
       JSON.stringify(observations, null, 2),
       '',
@@ -1283,6 +1308,37 @@ export class AgentDO extends DurableObject {
     let truncated = false
     let timedOut = false
 
+    const isActionOutcome = (value: unknown): value is ActionOutcome => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      const rec = value as Record<string, unknown>
+      if (typeof rec.tool !== 'string' || rec.tool.length === 0) return false
+      if (typeof rec.success !== 'boolean') return false
+      if (typeof rec.timestamp !== 'number' || !Number.isFinite(rec.timestamp)) return false
+      if ('goalId' in rec && rec.goalId !== undefined && typeof rec.goalId !== 'string') return false
+      return true
+    }
+
+    const extractGoalId = (toolName: string, args: unknown, result: unknown): string | undefined => {
+      if (toolName !== 'set_goal') return undefined
+      const a = args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : null
+      const id = a && typeof a.id === 'string' ? a.id : a && typeof a.goalId === 'string' ? a.goalId : null
+      if (id) return id
+
+      const details = result && typeof result === 'object' && !Array.isArray(result)
+        ? (result as { details?: unknown }).details
+        : null
+      if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
+      const goal = (details as { goal?: unknown }).goal
+      if (!goal || typeof goal !== 'object' || Array.isArray(goal)) return undefined
+      const rid = (goal as { id?: unknown }).id
+      return typeof rid === 'string' && rid.length > 0 ? rid : undefined
+    }
+
+    const storedOutcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+    const outcomes: ActionOutcome[] = Array.isArray(storedOutcomesRaw)
+      ? storedOutcomesRaw.filter(isActionOutcome)
+      : []
+
     let selected = toolCalls.slice(0, maxSteps)
     truncated = toolCalls.length > selected.length
 
@@ -1375,17 +1431,26 @@ export class AgentDO extends DurableObject {
       // Skip tool calls already executed in the agentic factory loop
       if ((call as any)._executed) {
         steps.push({ name, ok: true, result: { _executed_in_factory: true }, durationMs: 0 })
+        outcomes.push({ tool: name, success: true, timestamp: Date.now() })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
       if (allowlist && !allowlist.has(name)) {
         steps.push({ name, ok: false, error: 'Tool not enabled' })
+        outcomes.push({ tool: name, success: false, timestamp: Date.now() })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
       const tool = this.tools.find((t) => t.name === name)
       if (!tool || typeof tool.execute !== 'function') {
         steps.push({ name, ok: false, error: 'Tool not found' })
+        outcomes.push({ tool: name, success: false, timestamp: Date.now() })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
@@ -1399,12 +1464,28 @@ export class AgentDO extends DurableObject {
           `Tool timed out: ${name}`
         )
         steps.push({ name, ok: true, result, durationMs: Date.now() - stepStart })
+        outcomes.push({
+          tool: name,
+          success: true,
+          timestamp: Date.now(),
+          goalId: extractGoalId(name, call.arguments, result),
+        })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (message.toLowerCase().includes('timed out')) {
           timedOut = true
         }
         steps.push({ name, ok: false, error: message, durationMs: Date.now() - stepStart })
+        outcomes.push({
+          tool: name,
+          success: false,
+          timestamp: Date.now(),
+          goalId: extractGoalId(name, call.arguments, null),
+        })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
       }
     }
 
@@ -1431,9 +1512,25 @@ export class AgentDO extends DurableObject {
     }
 
     // Store a tiny summary for debugging (structured-cloneable).
+    const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
+    const outcomes: ActionOutcome[] = Array.isArray(outcomesRaw)
+      ? outcomesRaw.filter((o): o is ActionOutcome => {
+          if (!o || typeof o !== 'object' || Array.isArray(o)) return false
+          const rec = o as Record<string, unknown>
+          return (
+            typeof rec.tool === 'string' &&
+            typeof rec.success === 'boolean' &&
+            typeof rec.timestamp === 'number' &&
+            Number.isFinite(rec.timestamp)
+          )
+        })
+      : []
+    const recentOutcomes = outcomes.slice(-5)
+
     await this.ctx.storage.put('lastReflection', {
       at: Date.now(),
       did: this.did,
+      recentActionOutcomes: recentOutcomes,
       acted: input.acted
         ? {
             steps: input.acted.steps.map((s) => ({ name: s.name, ok: s.ok })),
@@ -1872,11 +1969,22 @@ export class AgentDO extends DurableObject {
           if (!record || typeof record !== 'object') {
             throw new Error('remember requires a record object')
           }
-          const validated = validateLexiconRecord(record)
+          let validated = validateLexiconRecord(record)
           if (!validated.ok) {
-            const error = new Error('Invalid lexicon record')
-            ;(error as Error & { issues?: unknown }).issues = validated.issues
-            throw error
+            // Auto-wrap freeform records as MemoryNote so agents don't need to know the lexicon schema
+            const wrapped = {
+              $type: 'agent.memory.note' as const,
+              summary: typeof (record as any).summary === 'string' ? (record as any).summary
+                : typeof (record as any).text === 'string' ? (record as any).text
+                : JSON.stringify(record).slice(0, 200),
+              text: JSON.stringify(record),
+              tags: Array.isArray((record as any).tags) ? (record as any).tags : [],
+              createdAt: new Date().toISOString(),
+            }
+            validated = validateLexiconRecord(wrapped)
+            if (!validated.ok) {
+              throw new Error('Invalid lexicon record: ' + JSON.stringify(validated.issues))
+            }
           }
 
           const id = await memory.store(validated.value)
@@ -2532,6 +2640,16 @@ export class AgentDO extends DurableObject {
 
           const gameId = typeof params.gameId === 'string' ? params.gameId : ''
           if (!gameId) throw new Error('gameId required')
+
+          // Route non-Catan games to their correct tool with a clear error
+          const typeRow = await db.prepare('SELECT type FROM games WHERE id = ?').bind(gameId).first<{ type?: string }>()
+          if (typeRow?.type && typeRow.type !== 'catan') {
+            return {
+              ok: false,
+              error: `Game ${gameId} is a ${typeRow.type} game, NOT Catan. Use the ${typeRow.type} tool instead: ${typeRow.type}({"command":"${command}","gameId":"${gameId}"})`,
+            }
+          }
+
           const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
           if (!row) throw new Error(`Game ${gameId} not found — check the game ID`)
           const game = JSON.parse(row.state)

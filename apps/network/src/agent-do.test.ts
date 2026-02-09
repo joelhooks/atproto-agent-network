@@ -672,8 +672,9 @@ describe('AgentDO', () => {
       createdAt: new Date().toISOString(),
     }
 
-    await expect(rememberTool!.execute!('tc-1', { record: invalidRecord })).rejects.toThrow()
-    expect(db.records.size).toBe(0)
+    // Auto-wrapping converts invalid records to MemoryNote, so this should succeed now
+    const result = await rememberTool!.execute!('tc-1', { record: invalidRecord })
+    expect(result).toBeTruthy()
   })
 
   it('stores the parsed lexicon record (defaults applied) from the remember tool', async () => {
@@ -2622,6 +2623,38 @@ describe('AgentDO', () => {
     // Loop count incremented
     const count = await storage.get<number>('loopCount')
     expect(count).toBe(1)
+  })
+
+  it('stores actionOutcomes in DO storage after each tool call in act()', async () => {
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Run a couple tools.',
+      toolCalls: [
+        { name: 'think_aloud', arguments: { message: 'planning...' } },
+        { name: 'set_goal', arguments: { action: 'add', goal: { description: 'Ship the feature', priority: 1 } } },
+      ],
+    })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-action-outcomes')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await agent.alarm()
+
+    const outcomes = await storage.get<any>('actionOutcomes')
+    expect(Array.isArray(outcomes)).toBe(true)
+    expect(outcomes).toHaveLength(2)
+    expect(outcomes[0]).toMatchObject({ tool: 'think_aloud', success: true })
+    expect(outcomes[1]).toMatchObject({ tool: 'set_goal', success: true })
+    expect(typeof outcomes[0]?.timestamp).toBe('number')
+    expect(typeof outcomes[1]?.timestamp).toBe('number')
   })
 
   it.skip('act() assist mode runs environment autoplay actions when the model did not take an environment action', async () => {
