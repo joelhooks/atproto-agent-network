@@ -363,6 +363,13 @@ export default {
             async () => {
               const gameId = normalizedPathname.split('/')[2]
               if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
+
+              // DELETE /games/:id — admin kill game
+              if (request.method === 'DELETE') {
+                await env.DB.prepare("UPDATE games SET phase = 'finished', winner = 'cancelled' WHERE id = ?").bind(gameId).run()
+                return Response.json({ ok: true, message: `Game ${gameId} cancelled` })
+              }
+
               const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(gameId).first()
               if (!row) return Response.json({ error: 'Game not found' }, { status: 404 })
               const game = JSON.parse((row as any).state)
