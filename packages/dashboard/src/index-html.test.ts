@@ -9,7 +9,7 @@ describe('dashboard index.html wiring', () => {
 
     // This is the actual app logic (agent cards, activity feed, WS parsing).
     expect(html).toContain('type="module"')
-    expect(html).toContain('src="/src/main.ts"')
+    expect(html).toContain('src="/src/main.tsx"')
 
     // The legacy inline implementation had hard-coded known agents and its own fetch loop.
     expect(html).not.toContain('KNOWN_AGENTS')
