@@ -9,6 +9,8 @@ import {
   explore,
   resolveSkillCheck,
   rollD100,
+  soloMultiplier,
+  partyWipe,
   type RpgClass,
 } from './rpg-engine'
 
@@ -26,6 +28,13 @@ function makeDiceFromD100(rolls: number[]) {
 }
 
 describe('rpg-engine', () => {
+  it('soloMultiplier scales danger for smaller parties', () => {
+    expect(soloMultiplier(1)).toBe(2.0)
+    expect(soloMultiplier(2)).toBe(1.5)
+    expect(soloMultiplier(3)).toBe(1.0)
+    expect(soloMultiplier(4)).toBe(1.0)
+  })
+
   it('rollD100 returns 1..100', () => {
     const dice = createTestDice({ d100: () => 1, d: () => 1 })
     expect(rollD100(dice)).toBe(1)
@@ -122,6 +131,59 @@ describe('rpg-engine', () => {
     explore(game, { dice })
     expect(game.roomIndex).toBe(1)
     expect(game.mode).toBe('combat')
+  })
+
+  it('traps deal double damage when solo', () => {
+    const dice = makeDiceFromD100([100]) // force fail on trap use_skill
+    const solo = createCharacter({ name: 'alice', klass: 'Warrior' })
+    solo.skills.use_skill = 1
+    solo.hp = 10
+
+    const game = createGame({
+      id: 'rpg_trap_solo',
+      players: [solo],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'trap', description: 'click' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+
+    const before = game.party[0]!.hp
+    explore(game, { dice })
+    expect(game.party[0]!.hp).toBe(before - 4) // base 2 * soloMultiplier(1)=2.0
+  })
+
+  it('partyWipe finishes the adventure when everyone hits 0 HP', () => {
+    const solo = createCharacter({ name: 'alice', klass: 'Warrior' })
+    solo.hp = 0
+
+    const game = createGame({ id: 'rpg_wipe', players: [solo] })
+    expect(partyWipe(game)).toBe(true)
+    expect(game.phase).toBe('finished')
+    expect(game.mode).toBe('finished')
+  })
+
+  it('damage events trigger party wipe when the party is downed', () => {
+    const dice = makeDiceFromD100([100]) // force trap fail
+    const solo = createCharacter({ name: 'alice', klass: 'Warrior' })
+    solo.skills.use_skill = 1
+    solo.hp = 3
+
+    const game = createGame({
+      id: 'rpg_wipe_trap',
+      players: [solo],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'trap', description: 'click' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+
+    explore(game, { dice }) // trap deals 4, wipes
+    expect(game.party[0]!.hp).toBe(0)
+    expect(game.phase).toBe('finished')
+    expect(game.mode).toBe('finished')
   })
 
   it('default dungeon includes all encounter types (combat, trap, treasure, rest, puzzle)', () => {

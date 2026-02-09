@@ -8,7 +8,9 @@ import {
   createDice,
   createGame,
   explore,
+  partyWipe,
   resolveSkillCheck,
+  soloMultiplier,
   type RpgClass,
   type RpgGameState,
 } from '../games/rpg-engine'
@@ -444,7 +446,25 @@ export const rpgEnvironment: AgentEnvironment = {
                 text = `The ${enemy.name} avoids your attack.`
               }
 
-              if (game.combat.enemies.every((e) => e.hp <= 0)) {
+              if (enemy.hp > 0 && game.phase === 'playing') {
+                const counterAtk = resolveSkillCheck({ skill: enemy.attack, dice })
+                const counterDod = resolveSkillCheck({ skill: attacker.skills.dodge, dice })
+                const atkMargin = counterAtk.success ? enemy.attack - counterAtk.roll : -Infinity
+                const dodMargin = counterDod.success ? attacker.skills.dodge - counterDod.roll : -Infinity
+                const counterHit = counterAtk.success && (!counterDod.success || atkMargin > dodMargin)
+
+                if (counterHit) {
+                  const raw = dice.d(6)
+                  const dmg = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
+                  attacker.hp = Math.max(0, attacker.hp - dmg)
+                  text += `\nThe ${enemy.name} counter-attacks for ${dmg}. (HP ${attacker.hp}/${attacker.maxHp})`
+                  partyWipe(game)
+                } else {
+                  text += `\nThe ${enemy.name} counter-attacks but misses.`
+                }
+              }
+
+              if (game.phase === 'playing' && game.combat?.enemies?.every((e) => e.hp <= 0)) {
                 game.mode = 'exploring'
                 game.combat = undefined
                 text += '\nCombat ends.'

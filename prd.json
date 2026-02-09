@@ -431,7 +431,7 @@
       "title": "Solo penalty — double damage when alone",
       "description": "**`apps/network/src/games/rpg-engine.ts`:**\n1. `soloMultiplier(partySize)` — 1p:2.0, 2p:1.5, 3+:1.0\n2. Trap damage × soloMultiplier in explore()\n3. `partyWipe(game)` — all hp<=0 → finished\n4. Call partyWipe after damage events\n\n**`apps/network/src/environments/rpg.ts`:**\n5. Combat: enemy counter-attacks, damage × soloMultiplier\n\n**Tests:** multiplier values, solo double damage, party wipe",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -445,8 +445,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 39,
-    "lastIteration": "2026-02-09T20:37:35.731Z"
+    "totalIterations": 40,
+    "lastIteration": "2026-02-09T20:45:01.096Z"
   },
   "totalStories": 11
 }

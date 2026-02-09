@@ -80,6 +80,24 @@ export type RpgGameState = {
   log: Array<{ at: number; who: string; what: string }>
 }
 
+export function soloMultiplier(partySize: number): number {
+  const size = Number.isFinite(partySize) ? Math.floor(partySize) : 0
+  if (size <= 1) return 2.0
+  if (size === 2) return 1.5
+  return 1.0
+}
+
+export function partyWipe(game: RpgGameState): boolean {
+  if (!Array.isArray(game.party) || game.party.length === 0) return false
+  const wiped = game.party.every((p) => (p?.hp ?? 0) <= 0)
+  if (!wiped) return false
+
+  game.phase = 'finished'
+  game.mode = 'finished'
+  game.combat = undefined
+  return true
+}
+
 function clampSkill(value: number): number {
   if (!Number.isFinite(value)) return 1
   return Math.max(1, Math.min(100, Math.floor(value)))
@@ -335,6 +353,7 @@ export function attack(
   if (hit) {
     const damage = input.dice.d(6) + Math.floor(attacker.stats.STR / 25)
     applyDamage(defender, damage)
+    partyWipe(game)
     attacker.skills.attack = atk.nextSkill
     game.log.push({ at: Date.now(), who: attacker.name, what: `hit ${defender.name} for ${damage}` })
     return { ok: true, hit: true, detail: 'hit' }
@@ -394,7 +413,8 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
         if (check.success) {
           actor.skills.use_skill = check.nextSkill
         } else {
-          applyDamage(actor, 2)
+          applyDamage(actor, 2 * soloMultiplier(game.party.length))
+          partyWipe(game)
         }
       }
     }

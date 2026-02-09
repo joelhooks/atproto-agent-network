@@ -304,3 +304,9 @@ Prior failure pattern detected: test_failure (Vectorize dimension mismatch log n
 If you add any new `UPDATE games SET ...` shapes, `packages/core/src/d1-mock.ts` may need to recognize that SQL; otherwise environment/unit tests can pass locally for the wrong reason or fail with “Unsupported SQL in D1MockDatabase.run”.
 ### Files Context
 `apps/network/src/environments/rpg.ts` defines the RPG tool commands + context/autoplay behavior. `apps/network/src/environments/rpg.test.ts` is the unit test harness using `D1MockDatabase`. `packages/core/src/d1-mock.ts` emulates D1 and must support whatever SQL shapes the environments use.
+
+---
+[2026-02-09T20:45:01.098Z]
+Completed: Solo penalty — double damage when alone
+Files: apps/network/wrangler.toml, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts
+Summary: Implemented solo danger scaling + party wipe for RPG. Added `soloMultiplier()` and `partyWipe()` to the engine, applied multiplier to trap damage, and ensured wipe is triggered after damage events. Added enemy counter-attacks in combat (environment layer) with damage scaled by soloMultiplier. Wrote unit tests for multiplier values, solo double-damage, wipe behavior, and combat counter-attack scaling. Validation `pnpm typecheck && pnpm test` passes. Prior failure pattern detected: test_failure/build_error. Mitigation: kept changes tightly scoped to RPG engine/environment + deterministic tests (mocked Math.random), and ran full validation to avoid unrelated Vectorize/index noise regressions.
