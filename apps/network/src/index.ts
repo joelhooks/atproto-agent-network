@@ -339,6 +339,50 @@ export default {
           )
         }
 
+        // Games (shared D1 state)
+        if (normalizedPathname === '/games') {
+          return withErrorHandling(
+            async () => {
+              const active = url.searchParams.get('all') === 'true' ? '' : " AND phase != 'finished'"
+              const rows = await env.DB.prepare(
+                `SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE 1=1${active} ORDER BY updated_at DESC LIMIT 20`
+              ).all()
+              return Response.json({
+                games: (rows.results ?? []).map((r: any) => ({
+                  ...r,
+                  players: r.players ? JSON.parse(r.players) : [],
+                })),
+              })
+            },
+            { route: 'network.games', request }
+          )
+        }
+
+        if (normalizedPathname.startsWith('/games/')) {
+          return withErrorHandling(
+            async () => {
+              const gameId = normalizedPathname.split('/')[2]
+              if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
+              const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(gameId).first()
+              if (!row) return Response.json({ error: 'Game not found' }, { status: 404 })
+              const game = JSON.parse((row as any).state)
+              const { renderBoard, generateGameSummary } = await import('./games/catan')
+              return Response.json({
+                id: game.id,
+                phase: game.phase,
+                turn: game.turn,
+                currentPlayer: game.currentPlayer,
+                players: game.players?.map((p: any) => ({ name: p.name, victoryPoints: p.victoryPoints, resources: p.resources })),
+                winner: game.winner,
+                log: game.log?.slice(-20),
+                board: renderBoard(game),
+                summary: generateGameSummary(game),
+              })
+            },
+            { route: 'network.games.detail', request }
+          )
+        }
+
         // Admin
         if (normalizedPathname.startsWith('/admin/')) {
           return withErrorHandling(

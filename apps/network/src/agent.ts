@@ -1789,25 +1789,48 @@ export class AgentDO extends DurableObject {
         name: 'game',
         label: 'Agents of Catan',
         description:
-          'Play Agents of Catan — a simplified Catan board game for AI agents. ' +
-          'Actions: new_game (start a game with player names), action (take a game action), ' +
-          'status (view current board state), summary (get game summary for publishing).',
+          'Play Agents of Catan — a simplified board game. Commands:\n' +
+          '- new_game: Start a game. Requires "players" array of agent names.\n' +
+          '- status: View board state. Requires "gameId".\n' +
+          '- action: Take a game action. Requires "gameId" and "gameAction".\n' +
+          '- summary: Get narrative summary. Requires "gameId".\n\n' +
+          'GAME ACTIONS (pass as "gameAction" object):\n' +
+          '- {"type":"roll_dice"} — Roll dice at start of your turn\n' +
+          '- {"type":"build_settlement","vertexId":NUMBER} — Build settlement on a vertex (0-20)\n' +
+          '- {"type":"build_road","edgeId":NUMBER} — Build road on an edge (0-29)\n' +
+          '- {"type":"bank_trade","offering":"wood","requesting":"ore"} — Trade 3:1 with bank\n' +
+          '- {"type":"end_turn"} — End your turn\n\n' +
+          'SETUP PHASE: Each player places 2 settlements + 2 roads. Place settlement first, then road adjacent to it.\n' +
+          'TURN ORDER: roll_dice → build/trade → end_turn\n' +
+          'WIN: First to 5 victory points (1 per settlement).',
         parameters: {
           type: 'object',
           properties: {
             command: {
               type: 'string',
               enum: ['new_game', 'action', 'status', 'summary'],
-              description: 'Game command to execute.',
+              description: 'Game command: new_game, action, status, or summary.',
             },
-            gameId: { type: 'string', description: 'Game ID (for action/status/summary).' },
+            gameId: { type: 'string', description: 'Game ID (required for action/status/summary).' },
             players: {
               type: 'array', items: { type: 'string' },
-              description: 'Player names for new_game.',
+              description: 'Player names for new_game (e.g. ["grimlock","swoop","sludge"]).',
             },
             gameAction: {
               type: 'object',
-              description: 'Game action object (for action command). See Agents of Catan rules.',
+              description:
+                'Game action object. MUST include "type" field. Valid types: ' +
+                'roll_dice, build_settlement (needs vertexId:number), build_road (needs edgeId:number), ' +
+                'bank_trade (needs offering:string, requesting:string), end_turn. ' +
+                'Example: {"type":"build_settlement","vertexId":3}',
+              properties: {
+                type: { type: 'string', enum: ['roll_dice', 'build_settlement', 'build_road', 'bank_trade', 'end_turn'] },
+                vertexId: { type: 'number', description: 'Vertex ID (0-20) for build_settlement.' },
+                edgeId: { type: 'number', description: 'Edge ID (0-29) for build_road.' },
+                offering: { type: 'string', description: 'Resource to give for bank_trade.' },
+                requesting: { type: 'string', description: 'Resource to receive for bank_trade.' },
+              },
+              required: ['type'],
             },
           },
           required: ['command'],
@@ -1818,7 +1841,9 @@ export class AgentDO extends DurableObject {
           }>(toolCallIdOrParams, maybeParams)
 
           const command = typeof params.command === 'string' ? params.command : ''
-          const storage = this.ctx.storage
+
+          // Games are stored in D1 (shared across all agents)
+          const db = env.DB
 
           if (command === 'new_game') {
             const { createGame } = await import('./games/catan')
@@ -1828,18 +1853,30 @@ export class AgentDO extends DurableObject {
             if (players.length < 2) throw new Error('Need at least 2 player names')
             const gameId = `catan_${generateTid()}`
             const game = createGame(gameId, players)
-            await storage.put(`game:${gameId}`, game)
+            const hostAgent = this.config?.name ?? 'unknown'
+            await db.prepare(
+              'INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
+            ).bind(gameId, hostAgent, JSON.stringify(game), game.phase, JSON.stringify(players)).run()
             const { renderBoard } = await import('./games/catan')
+
+            await broadcastLoopEvent({
+              event_type: 'game.created',
+              trace_id: createTraceId(),
+              span_id: createSpanId(),
+              context: { gameId, host: hostAgent, players, phase: game.phase },
+            })
+
             return {
-              content: toTextContent(`Game created: ${gameId}\n\n${renderBoard(game)}`),
-              details: { gameId, players, phase: game.phase },
+              content: toTextContent(`Game created: ${gameId}\nPlayers: ${players.join(', ')}\nHost: ${hostAgent}\n\n${renderBoard(game)}`),
+              details: { gameId, players, phase: game.phase, host: hostAgent },
             }
           }
 
           const gameId = typeof params.gameId === 'string' ? params.gameId : ''
           if (!gameId) throw new Error('gameId required')
-          const game = await storage.get<any>(`game:${gameId}`)
-          if (!game) throw new Error(`Game ${gameId} not found`)
+          const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+          if (!row) throw new Error(`Game ${gameId} not found — check the game ID`)
+          const game = JSON.parse(row.state)
 
           if (command === 'status') {
             const { renderBoard } = await import('./games/catan')
@@ -1860,15 +1897,36 @@ export class AgentDO extends DurableObject {
           if (command === 'action') {
             const { executeAction, renderBoard } = await import('./games/catan')
             const action = params.gameAction as any
-            if (!action || typeof action !== 'object') throw new Error('gameAction required')
+            if (!action || typeof action !== 'object') throw new Error('gameAction required — pass {"type":"roll_dice"} or {"type":"build_settlement","vertexId":N}')
+            if (!action.type) throw new Error('gameAction.type required — valid types: roll_dice, build_settlement, build_road, bank_trade, end_turn')
             const playerName = this.config?.name ?? 'unknown'
             const result = executeAction(game, playerName, action)
-            await storage.put(`game:${gameId}`, game)
+            await db.prepare(
+              'UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime(\'now\') WHERE id = ?'
+            ).bind(JSON.stringify(game), game.phase, game.winner ?? null, gameId).run()
+
+            // Broadcast game events through WebSocket for observability
+            const traceId = createTraceId()
+            if (result.ok) {
+              await broadcastLoopEvent({
+                event_type: 'game.action',
+                trace_id: traceId,
+                span_id: createSpanId(),
+                context: { gameId, player: playerName, action: action.type, events: result.events, phase: game.phase, turn: game.turn },
+              })
+            } else {
+              await broadcastLoopEvent({
+                event_type: 'game.error',
+                trace_id: traceId,
+                span_id: createSpanId(),
+                context: { gameId, player: playerName, action, error: result.error, phase: game.phase, turn: game.turn, currentPlayer: game.currentPlayer },
+              })
+            }
 
             if (result.gameOver) {
               await broadcastLoopEvent({
                 event_type: 'game.finished',
-                trace_id: createTraceId(),
+                trace_id: traceId,
                 span_id: createSpanId(),
                 context: { gameId, winner: game.winner, turns: game.turn },
               })
