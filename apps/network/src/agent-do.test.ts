@@ -280,6 +280,22 @@ describe('AgentDO', () => {
     })
   })
 
+  it('includes extension tools in the default enabledTools config', async () => {
+    const { state } = createState('agent-default-tools')
+    const { env } = createEnv()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(new Request('https://example/config'))
+    const body = (await response.json()) as { enabledTools?: unknown }
+
+    expect(Array.isArray(body.enabledTools)).toBe(true)
+    expect(body.enabledTools).toEqual(
+      expect.arrayContaining(['write_extension', 'list_extensions', 'remove_extension'])
+    )
+  })
+
   it('registers with the relay public key directory', async () => {
     const { state } = createState('agent-register')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
@@ -370,7 +386,7 @@ describe('AgentDO', () => {
     expect(prompt).toHaveBeenCalledWith('hello', { temperature: 0 })
     expect(body).toEqual({ content: 'ok' })
     expect(toolNames).toEqual(
-      expect.arrayContaining(['remember', 'recall', 'message', 'search', 'set_goal', 'think_aloud'])
+      expect.arrayContaining(['remember', 'recall', 'message', 'notify', 'search', 'set_goal', 'think_aloud'])
     )
   })
 
@@ -1285,8 +1301,8 @@ describe('AgentDO', () => {
       fastModel: 'google/gemini-2.0-flash-001',
       loopIntervalMs: 60000,
       goals: [],
-      enabledTools: [],
     })
+    expect(config1.enabledTools).toEqual(expect.arrayContaining(['remember']))
     expect(typeof config1.personality).toBe('string')
     expect(typeof config1.specialty).toBe('string')
 

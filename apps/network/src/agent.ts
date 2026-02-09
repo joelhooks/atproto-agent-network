@@ -1190,6 +1190,9 @@ export class AgentDO extends DurableObject {
       hasEvents ? 'You have pending events to process.' : '',
       '',
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
+      (this.config?.enabledTools ?? []).includes('write_extension')
+        ? 'You can create extensions with write_extension to add new capabilities.'
+        : '',
       '',
       'INSTRUCTIONS:',
       '1. If you see a 🎮 GAME TURN notification above, use the appropriate game tool FIRST (rpg for RPG adventures, game for Catan). Do NOT use message or think_aloud.',
@@ -1197,6 +1200,7 @@ export class AgentDO extends DurableObject {
       '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
       '4. Always use at least one tool per cycle. Do NOT just think — ACT.',
       '5. If you want to update goals, include an updated `goals` array in your response.',
+      '6. If you encounter errors, bugs, or stuck situations, use notify({"to":"grimlock","text":"description","level":"error"}) to report them.',
     ].filter(Boolean).join('\n')
   }
 
@@ -1604,7 +1608,21 @@ export class AgentDO extends DurableObject {
       loopIntervalMs: DEFAULT_AGENT_LOOP_INTERVAL_MS,
       maxCompletedGoals: DEFAULT_MAX_COMPLETED_GOALS,
       goals: [],
-      enabledTools: [],
+      enabledTools: [
+        'remember',
+        'recall',
+        'message',
+        'notify',
+        'search',
+        'set_goal',
+        'think_aloud',
+        'game',
+        'rpg',
+        'publish',
+        'write_extension',
+        'list_extensions',
+        'remove_extension',
+      ],
     }
   }
 
@@ -2054,6 +2072,70 @@ export class AgentDO extends DurableObject {
             ? results.map((r) => `- ${r.id}`).join('\n')
             : 'No matches.'
           return { content: toTextContent(summary), details: { results } }
+        },
+      },
+      {
+        name: 'notify',
+        label: 'Notify',
+        description:
+          'Send a notification to another agent by name. Use this to report errors, ask for help, or share important discoveries. ' +
+          'Example: notify({"to":"grimlock","text":"RPG dungeon is stuck — goblin HP bug","level":"error"})',
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'Agent name to notify (e.g. "grimlock", "slag", "snarl", "swoop").' },
+            text: { type: 'string', description: 'Notification message — be specific about what happened.' },
+            level: { type: 'string', enum: ['info', 'warning', 'error'], description: 'Severity level. Use error for bugs/crashes, warning for stuck situations, info for discoveries.' },
+          },
+          required: ['to', 'text'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ to?: unknown; text?: unknown; level?: unknown }>(toolCallIdOrParams, maybeParams)
+          const targetName = typeof params.to === 'string' ? params.to.trim() : ''
+          const text = typeof params.text === 'string' ? params.text : ''
+          const level = typeof params.level === 'string' ? params.level : 'info'
+          if (!targetName) throw new Error('notify requires "to" (agent name)')
+          if (!text) throw new Error('notify requires "text" (message)')
+
+          const senderName = this.config?.name ?? 'unknown'
+
+          // Resolve agent name to DID via the AGENTS namespace
+          const agents = env.AGENTS
+          if (!agents || typeof agents.idFromName !== 'function') {
+            throw new Error('AGENTS binding unavailable')
+          }
+
+          // Deliver via inbox
+          const targetId = agents.idFromName(targetName)
+          const targetStub = agents.get(targetId)
+          const record = {
+            $type: 'agent.comms.message',
+            sender: did,
+            senderName,
+            recipient: targetName,
+            content: { kind: 'notification', level, text, from: senderName },
+            createdAt: new Date().toISOString(),
+          }
+          const resp = await targetStub.fetch(
+            new Request('https://agent/inbox', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ record }),
+            })
+          )
+          if (!resp.ok) {
+            const errText = await resp.text().catch(() => '')
+            throw new Error(`Notify failed (${resp.status}): ${errText}`)
+          }
+
+          await broadcastLoopEvent({
+            event_type: 'agent.notify',
+            trace_id: createTraceId(),
+            span_id: createSpanId(),
+            context: { from: senderName, to: targetName, level, text: text.slice(0, 200) },
+          })
+
+          return { content: toTextContent(`Notified ${targetName}: ${text.slice(0, 100)}`), details: { to: targetName, level } }
         },
       },
       {
