@@ -15,6 +15,7 @@ import { withErrorHandling } from './http-errors'
 
 type RelayEnv = {
   AGENTS: DurableObjectNamespace
+  DB?: D1Database
 }
 
 interface Subscription {
@@ -136,9 +137,23 @@ export class RelayDO extends DurableObject {
       createdAt: new Date().toISOString(),
     }
 
-    const agentName = recipientDid.startsWith('did:cf:')
-      ? recipientDid.slice('did:cf:'.length)
-      : recipientDid
+    // Resolve DID → agent name via D1 registry (DOs are keyed by name, not DID hash)
+    let agentName: string
+    if (this.relayEnv.DB) {
+      const row = await this.relayEnv.DB.prepare('SELECT name FROM agents WHERE did = ?').bind(recipientDid).first<{ name: string }>()
+      if (row) {
+        agentName = row.name
+      } else {
+        // Fallback: try using DID hash as name (legacy behavior)
+        agentName = recipientDid.startsWith('did:cf:')
+          ? recipientDid.slice('did:cf:'.length)
+          : recipientDid
+      }
+    } else {
+      agentName = recipientDid.startsWith('did:cf:')
+        ? recipientDid.slice('did:cf:'.length)
+        : recipientDid
+    }
 
     const agents = this.relayEnv.AGENTS
     const agentId = agents.idFromName(agentName)
