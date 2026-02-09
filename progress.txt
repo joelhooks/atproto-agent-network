@@ -268,3 +268,9 @@ Summary: Prior failure pattern detected: test_failure/build_error. Mitigation: a
 Implemented `GET /admin/analytics` aggregation support and tightened auth so internal DO endpoints aren’t accidentally exposed via the public GET `/agents/:name/...` forwarding route. Added a regression test ensuring `/agents/:name/__internal/analytics` requires admin auth (401) and does not forward to the agent DO.
 
 Validation: `pnpm typecheck && pnpm test`
+
+---
+[2026-02-09T20:23:36.694Z]
+Completed: Cooperative dungeon generator — longer dungeons with class-gated rooms
+Files: apps/network/src/games/rpg-engine.ts
+Summary: Implemented `generateDungeon(depth, dice)` and replaced the static `defaultDungeon()` with a procedural 12-room generator including 4 class barriers and a final boss room; updated combat handling so boss rooms enter combat; added deterministic tests for room count, barrier coverage, boss placement, and HP scaling. Validation passed (`pnpm typecheck && pnpm test`).

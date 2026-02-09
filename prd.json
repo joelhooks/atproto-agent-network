@@ -393,12 +393,60 @@
       "priority": 18,
       "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm67k3",
+      "title": "Cooperative dungeon generator — longer dungeons with class-gated rooms",
+      "description": "Replace `defaultDungeon()` in `apps/network/src/games/rpg-engine.ts` with `generateDungeon(depth: number)` that creates 10-15 room procedural dungeons.\n\n**New room types to add to Room union (lines 58-63):**\n- `{ type: 'boss'; description: string; enemies: Enemy[] }` — high-HP boss\n- `{ type: 'barrier'; description: string; requiredClass: RpgClass }` — class-gated\n\n**Add `generateDungeon(depth, dice)` function:**\n- Creates `depth` rooms (default 12)\n- 4 barriers (one per class) spread throughout\n- Boss in final room (30+ HP enemy)\n- Mix of combat/trap/treasure/rest/puzzle between barriers\n- Scale enemy HP: early 6-8, mid 10-14, boss 30+\n- Update `defaultDungeon()` to call `generateDungeon(12, createDice())`\n- Export generateDungeon\n\n**Tests in `rpg-engine.test.ts`:** room count, all 4 barriers present, boss last room, HP scaling\n\nCloses #100",
+      "priority": 1,
+      "passes": true,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm687r",
+      "title": "Role synergy — heal-other, taunt, AoE, trap-disarm",
+      "description": "Add class-specific cooperative abilities.\n\n**`apps/network/src/games/rpg-engine.ts`:**\n1. `healOther(game, {healer, target, dice})` — 1 MP, cast_spell check, heals d6+WIS/20\n2. `taunt(game, {taunter, dice})` — use_skill check, adds taunted_by to Enemy type\n3. `aoeSpell(game, {caster, dice})` — 2 MP, cast_spell, d4 to ALL enemies\n4. `disarmTrap(game, {scout, dice})` — use_skill +15 bonus\n\n**`apps/network/src/environments/rpg.ts`:**\n5. Add `heal`, `taunt`, `aoe`, `disarm` commands + handlers\n6. Update tool description\n\n**Tests in rpg-engine.test.ts** for each ability",
+      "priority": 2,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm68ug",
+      "title": "Barrier rooms — class-gated progression",
+      "description": "Barriers block progression without the required class.\n\n**`apps/network/src/games/rpg-engine.ts`:**\n1. `explore()`: barrier rooms check party for matching klass, set mode='blocked' if missing\n2. Add 'blocked' to RpgMode\n3. `resolveBarrier(game)` export — checks if barrier clearable, resets to exploring\n\n**`apps/network/src/environments/rpg.ts`:**\n4. `create_character`: call resolveBarrier after adding\n5. `buildContext()`: blocked → \"⛔ BLOCKED: requires {class}. Message other agents!\"\n6. `getAutoPlayActions()`: empty when blocked\n\n**Tests:** blocks without class, resolves when class joins",
+      "priority": 3,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm69gm",
+      "title": "Party formation — join existing games instead of solo",
+      "description": "**`apps/network/src/environments/rpg.ts`:**\n1. Add `join_game` command — gameId+klass, adds to party\n2. `new_game`: check for open RPG <3 players, suggest joining\n3. `buildContext()`: no active game → show joinable games\n4. `getAutoPlayActions()`: no game but joinable → return join_game\n\n**Tests:** join adds to party, new_game suggests joining",
+      "priority": 4,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm6a4e",
+      "title": "Solo penalty — double damage when alone",
+      "description": "**`apps/network/src/games/rpg-engine.ts`:**\n1. `soloMultiplier(partySize)` — 1p:2.0, 2p:1.5, 3+:1.0\n2. Trap damage × soloMultiplier in explore()\n3. `partyWipe(game)` — all hp<=0 → finished\n4. Call partyWipe after damage events\n\n**`apps/network/src/environments/rpg.ts`:**\n5. Combat: enemy counter-attacks, damage × soloMultiplier\n\n**Tests:** multiplier values, solo double damage, party wipe",
+      "priority": 5,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfm6apo",
+      "title": "Cooperation prompts — teach agents to work together",
+      "description": "**`apps/network/src/agent.ts`:**\n1. In buildThinkPrompt RPG section, add COOPERATION RULES: never solo, join parties, healers heal, warriors taunt, scouts disarm, mages AoE\n2. Blocked mode: \"URGENT: Recruit {requiredClass} via message tool\"\n\n**Tests in agent-do.test.ts:** cooperation rules in prompt, blocked adds recruitment msg",
+      "priority": 6,
+      "passes": false,
+      "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 35,
-    "lastIteration": "2026-02-09T19:56:47.520Z"
+    "totalIterations": 36,
+    "lastIteration": "2026-02-09T20:23:36.693Z"
   },
   "totalStories": 11
 }
