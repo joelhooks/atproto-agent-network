@@ -11,6 +11,10 @@ import {
   rollD100,
   soloMultiplier,
   partyWipe,
+  healOther,
+  taunt,
+  aoeSpell,
+  disarmTrap,
   type RpgClass,
 } from './rpg-engine'
 
@@ -281,5 +285,208 @@ describe('rpg-engine', () => {
     expect(bAfter).toBeGreaterThan(bBefore)
     expect(aAfter).toBeLessThanOrEqual(a.maxHp)
     expect(bAfter).toBeLessThanOrEqual(b.maxHp)
+  })
+
+  // --- Role Synergy Tests ---
+
+  describe('healOther', () => {
+    function makePartyGame() {
+      const healer = createCharacter({ name: 'healer', klass: 'Healer' })
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      warrior.hp = 1
+      const game = createGame({
+        id: 'rpg_heal',
+        players: [healer, warrior],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+      return game
+    }
+
+    it('healer restores HP to ally', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 3 })
+      const result = healOther(game, 'healer', 'warrior', dice)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.amount).toBe(13) // 10 + 3
+        expect(result.healed).toBe('warrior')
+      }
+      const w = game.party.find((p) => p.name === 'warrior')!
+      expect(w.hp).toBe(Math.min(w.maxHp, 1 + 13))
+    })
+
+    it('wrong class gets rejected', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 3 })
+      const result = healOther(game, 'warrior', 'healer', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('requires_healer')
+    })
+
+    it('solo player gets rejected', () => {
+      const healer = createCharacter({ name: 'healer', klass: 'Healer' })
+      const game = createGame({
+        id: 'rpg_solo',
+        players: [healer],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+      const dice = createTestDice({ d100: () => 50, d: () => 3 })
+      const result = healOther(game, 'healer', 'healer', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('need_party')
+    })
+
+    it('costs 5 MP', () => {
+      const game = makePartyGame()
+      const healer = game.party.find((p) => p.name === 'healer')!
+      const mpBefore = healer.mp
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      healOther(game, 'healer', 'warrior', dice)
+      expect(healer.mp).toBe(mpBefore - 5)
+    })
+  })
+
+  describe('taunt', () => {
+    function makePartyGame() {
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      const mage = createCharacter({ name: 'mage', klass: 'Mage' })
+      return createGame({
+        id: 'rpg_taunt',
+        players: [warrior, mage],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+    }
+
+    it('warrior can taunt', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const result = taunt(game, 'warrior', dice)
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.taunting).toBe(true)
+      const w = game.party.find((p) => p.name === 'warrior')! as any
+      expect(w.taunting).toBe(true)
+    })
+
+    it('wrong class gets rejected', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const result = taunt(game, 'mage', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('requires_warrior')
+    })
+
+    it('solo player gets rejected', () => {
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      const game = createGame({
+        id: 'rpg_solo',
+        players: [warrior],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const result = taunt(game, 'warrior', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('need_party')
+    })
+  })
+
+  describe('aoeSpell', () => {
+    function makePartyGame() {
+      const mage = createCharacter({ name: 'mage', klass: 'Mage' })
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      const game = createGame({
+        id: 'rpg_aoe',
+        players: [mage, warrior],
+        dungeon: [
+          { type: 'combat', description: 'Goblins!', enemies: [
+            { name: 'Goblin A', hp: 20, DEX: 40, attack: 30, dodge: 20 },
+            { name: 'Goblin B', hp: 20, DEX: 40, attack: 30, dodge: 20 },
+          ]},
+        ],
+      })
+      return game
+    }
+
+    it('mage deals damage to all enemies', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 4 }) // 8+4=12 per enemy
+      const result = aoeSpell(game, 'mage', dice)
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.totalDamage).toBe(24) // 12 * 2
+      for (const e of game.combat!.enemies) {
+        expect(e.hp).toBe(8) // 20 - 12
+      }
+    })
+
+    it('wrong class gets rejected', () => {
+      const game = makePartyGame()
+      const dice = createTestDice({ d100: () => 50, d: () => 4 })
+      const result = aoeSpell(game, 'warrior', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('requires_mage')
+    })
+
+    it('solo player gets rejected', () => {
+      const mage = createCharacter({ name: 'mage', klass: 'Mage' })
+      const game = createGame({
+        id: 'rpg_solo',
+        players: [mage],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+      const dice = createTestDice({ d100: () => 50, d: () => 4 })
+      const result = aoeSpell(game, 'mage', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('need_party')
+    })
+
+    it('costs 8 MP', () => {
+      const game = makePartyGame()
+      const mage = game.party.find((p) => p.name === 'mage')!
+      const mpBefore = mage.mp
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      aoeSpell(game, 'mage', dice)
+      expect(mage.mp).toBe(mpBefore - 8)
+    })
+  })
+
+  describe('disarmTrap', () => {
+    function makePartyGame() {
+      const scout = createCharacter({ name: 'scout', klass: 'Scout' })
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      return createGame({
+        id: 'rpg_disarm',
+        players: [scout, warrior],
+        dungeon: [{ type: 'trap', description: 'A pressure plate.' }],
+      })
+    }
+
+    it('scout disarms trap with +30 bonus (auto-success on high skill)', () => {
+      const game = makePartyGame()
+      // Scout use_skill is ~50. +30 = 80. Roll 70 <= 80 → success
+      const dice = makeDiceFromD100([70])
+      const result = disarmTrap(game, 'scout', dice)
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.disarmed).toBe(true)
+    })
+
+    it('wrong class gets rejected', () => {
+      const game = makePartyGame()
+      const dice = makeDiceFromD100([50])
+      const result = disarmTrap(game, 'warrior', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('requires_scout')
+    })
+
+    it('solo player gets rejected', () => {
+      const scout = createCharacter({ name: 'scout', klass: 'Scout' })
+      const game = createGame({
+        id: 'rpg_solo',
+        players: [scout],
+        dungeon: [{ type: 'rest', description: 'start' }],
+      })
+      const dice = makeDiceFromD100([50])
+      const result = disarmTrap(game, 'scout', dice)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('need_party')
+    })
   })
 })

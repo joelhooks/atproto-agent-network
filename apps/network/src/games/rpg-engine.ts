@@ -324,7 +324,7 @@ export function createGame(input: {
   }
 }
 
-function findCharacter(game: RpgGameState, name: string): Character | undefined {
+export function findCharacter(game: RpgGameState, name: string): Character | undefined {
   return game.party.find((p) => p.name === name)
 }
 
@@ -430,4 +430,103 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
 
   game.log.push({ at: Date.now(), who: game.currentPlayer, what: `explore: ${room.type}` })
   return { ok: true, room }
+}
+
+// --- Role Synergy: Cooperative abilities (require partySize > 1) ---
+
+type SynergyError = { ok: false; reason: string }
+
+function validateSynergy(
+  game: RpgGameState,
+  characterName: string,
+  requiredClass: RpgClass,
+): { ok: true; character: Character } | SynergyError {
+  if (game.party.length <= 1) return { ok: false, reason: 'need_party' }
+  const character = findCharacter(game, characterName)
+  if (!character) return { ok: false, reason: 'character_not_found' }
+  if (character.klass !== requiredClass) return { ok: false, reason: `requires_${requiredClass.toLowerCase()}` }
+  return { ok: true, character }
+}
+
+export function healOther(
+  game: RpgGameState,
+  healerName: string,
+  targetName: string,
+  dice: Dice,
+): { ok: true; healed: string; amount: number } | SynergyError {
+  const check = validateSynergy(game, healerName, 'Healer')
+  if (!check.ok) return check
+
+  const healer = check.character
+  if (healer.mp < 5) return { ok: false, reason: 'not_enough_mp' }
+
+  const target = findCharacter(game, targetName)
+  if (!target) return { ok: false, reason: 'target_not_found' }
+  if (target.name === healer.name) return { ok: false, reason: 'cannot_heal_self' }
+
+  healer.mp -= 5
+  const amount = 10 + dice.d(6)
+  target.hp = Math.min(target.maxHp, target.hp + amount)
+
+  game.log.push({ at: Date.now(), who: healerName, what: `healed ${targetName} for ${amount}` })
+  return { ok: true, healed: targetName, amount }
+}
+
+export function taunt(
+  game: RpgGameState,
+  warriorName: string,
+  dice: Dice,
+): { ok: true; taunting: boolean } | SynergyError {
+  const check = validateSynergy(game, warriorName, 'Warrior')
+  if (!check.ok) return check
+
+  const warrior = check.character as Character & { taunting?: boolean }
+  warrior.taunting = true
+
+  game.log.push({ at: Date.now(), who: warriorName, what: 'taunting enemies' })
+  return { ok: true, taunting: true }
+}
+
+export function aoeSpell(
+  game: RpgGameState,
+  mageName: string,
+  dice: Dice,
+): { ok: true; totalDamage: number } | SynergyError {
+  const check = validateSynergy(game, mageName, 'Mage')
+  if (!check.ok) return check
+
+  const mage = check.character
+  if (mage.mp < 8) return { ok: false, reason: 'not_enough_mp' }
+
+  mage.mp -= 8
+  const enemies = game.combat?.enemies ?? []
+  let totalDamage = 0
+
+  for (const enemy of enemies) {
+    const damage = 8 + dice.d(8)
+    applyDamage(enemy, damage)
+    totalDamage += damage
+  }
+
+  game.log.push({ at: Date.now(), who: mageName, what: `aoe spell for ${totalDamage} total damage` })
+  return { ok: true, totalDamage }
+}
+
+export function disarmTrap(
+  game: RpgGameState,
+  rogueName: string,
+  dice: Dice,
+): { ok: true; disarmed: boolean } | SynergyError {
+  const check = validateSynergy(game, rogueName, 'Scout')
+  if (!check.ok) return check
+
+  const rogue = check.character
+  const boostedSkill = Math.min(100, rogue.skills.use_skill + 30)
+  const result = resolveSkillCheck({ skill: boostedSkill, dice })
+  if (result.success) {
+    rogue.skills.use_skill = Math.min(100, rogue.skills.use_skill + 1)
+  }
+
+  game.log.push({ at: Date.now(), who: rogueName, what: `disarmed trap (skill ${boostedSkill})` })
+  return { ok: true, disarmed: result.success }
 }

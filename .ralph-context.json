@@ -668,6 +668,22 @@
         "apps/network/src/games/rpg-engine.ts"
       ],
       "learnings": "Technical Discovery: `apps/network/src/environments/rpg.ts` uses `createDice()` with `Math.random`, so combat flow (player attack + enemy dodge + counterattack rolls + d6 damage) can be made fully deterministic in tests by mocking `Math.random` with a fixed sequence; this enabled reliable assertions around `soloMultiplier()` and `partyWipe()` without changing the engine RNG API.\nGotcha: If `partyWipe()` is called inside combat resolution, it clears `game.combat`; any subsequent logic that assumes `game.combat.enemies` exists must be guarded (use optional chaining / phase checks) or it will throw at runtime.\nFiles Context: `apps/network/src/games/rpg-engine.ts` holds core state transitions (explore/attack) and now exports `soloMultiplier()` + `partyWipe()` for consistent wipe handling. `apps/network/src/environments/rpg.ts` is where enemy combat behavior lives (including the new counter-attack) and must apply multipliers at the environment layer for enemy damage. The corresponding tests live in `apps/network/src/games/rpg-engine.test.ts` and `apps/network/src/environments/rpg.test.ts`."
+    },
+    {
+      "id": "story-mlfm6apo",
+      "title": "Cooperation prompts — teach agents to work together",
+      "status": "completed",
+      "filesModified": [
+        "packages/dashboard/package.json",
+        ".github/ISSUE_TEMPLATE/epic.md",
+        ".github/ISSUE_TEMPLATE/task.md",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` non-catan gameContext is built via an array + `.filter(Boolean).join('\\n')`, so empty-string separators never survive; if you need “sections” in the prompt, inject a single multi-line string (e.g. the RPG `COOPERATION RULES` block) rather than relying on `''` entries for spacing.\nGotcha: Production deploy can fail even when tests pass if Cloudflare bindings referenced in `apps/network/wrangler.toml` don’t exist (here: Vectorize index `agent-memory`). Also, different secrets/tokens may have Workers permissions but not Vectorize permissions; use a token with both, or ensure the index exists before deploying.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.buildThinkPrompt()` which renders the RPG/Catan gameContext and loop instructions. `apps/network/src/agent-do.test.ts` exercises alarm-driven think prompting by inserting rows into `D1MockDatabase`’s `games` table and asserting on the prompt string passed to the mocked Pi agent."
     }
   ],
   "failures": [

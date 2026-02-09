@@ -878,7 +878,7 @@ describe('network worker environments API', () => {
       env
     )
     expect(nonCatanRes.status).toBe(404)
-    await expect(nonCatanRes.json()).resolves.toMatchObject({ error: 'Game not found' })
+    await expect(nonCatanRes.json()).resolves.toMatchObject({ error: 'Use /environments/:id for non-catan games' })
 
     const catanRes = await worker.fetch(
       new Request('https://example.com/games/catan_1', {

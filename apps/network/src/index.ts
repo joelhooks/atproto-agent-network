@@ -657,15 +657,15 @@ export default {
             async () => {
               const gameId = normalizedPathname.split('/')[2]
               if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
-              // Backward compat: /games is a legacy alias for catan environments only.
-              if (!gameId.startsWith('catan_')) {
-                return Response.json({ error: 'Game not found' }, { status: 404 })
-              }
-
-              // DELETE /games/:id — admin kill game (hard delete from D1)
+                            // DELETE /games/:id — admin kill game (hard delete from D1, any type)
               if (request.method === 'DELETE') {
                 await env.DB.prepare("DELETE FROM games WHERE id = ?").bind(gameId).run()
                 return Response.json({ ok: true, message: `Game ${gameId} cancelled` })
+              }
+
+              // Backward compat: /games/:id GET is a legacy alias for catan environments only.
+              if (!gameId.startsWith('catan_')) {
+                return Response.json({ error: 'Use /environments/:id for non-catan games' }, { status: 404 })
               }
 
               const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(gameId).first()
