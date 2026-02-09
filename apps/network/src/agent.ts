@@ -738,7 +738,7 @@ export class AgentDO extends DurableObject {
       '',
       'INSTRUCTIONS:',
       '1. If you have inbox messages, RESPOND to each one using the message tool.',
-      '2. If you have game-related messages, use the game tool to take your turn.',
+      '2. If you have game turn notifications (type: game_turn_notification), use the game tool IMMEDIATELY: first check status, then roll_dice, then build/trade if possible, then end_turn.',
       '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
       '4. Always use at least one tool per cycle. Do NOT just think — ACT.',
       '5. If you want to update goals, include an updated `goals` array in your response.',
@@ -1930,6 +1930,35 @@ export class AgentDO extends DurableObject {
                 span_id: createSpanId(),
                 context: { gameId, winner: game.winner, turns: game.turn },
               })
+            }
+
+            // Auto-notify next player when turn changes (triggers interrupt-driven wake)
+            if (result.ok && game.currentPlayer && game.currentPlayer !== playerName && !result.gameOver) {
+              try {
+                const nextPlayerRow = await db.prepare('SELECT did FROM agents WHERE name = ?').bind(game.currentPlayer).first<{ did: string }>()
+                if (nextPlayerRow?.did && env.RELAY) {
+                  const relayId = env.RELAY.idFromName('main')
+                  const relay = env.RELAY.get(relayId)
+                  await relay.fetch(
+                    new Request('https://relay/relay/message', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        senderDid: did,
+                        recipientDid: nextPlayerRow.did,
+                        content: {
+                          text: `It's your turn in Catan game ${gameId} (turn ${game.turn}). Use game tool: first {"command":"status","gameId":"${gameId}"} to see the board, then {"command":"action","gameId":"${gameId}","gameAction":{"type":"roll_dice"}} to start your turn.`,
+                          gameId,
+                          turn: game.turn,
+                          type: 'game_turn_notification',
+                        },
+                      }),
+                    })
+                  )
+                }
+              } catch {
+                // Best-effort notification — don't fail the action
+              }
             }
 
             return {
