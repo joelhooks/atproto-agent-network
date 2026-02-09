@@ -1729,6 +1729,107 @@ export class AgentDO extends DurableObject {
           }
         },
       },
+      {
+        name: 'game',
+        label: 'Agents of Catan',
+        description:
+          'Play Agents of Catan — a simplified Catan board game for AI agents. ' +
+          'Actions: new_game (start a game with player names), action (take a game action), ' +
+          'status (view current board state), summary (get game summary for publishing).',
+        parameters: {
+          type: 'object',
+          properties: {
+            command: {
+              type: 'string',
+              enum: ['new_game', 'action', 'status', 'summary'],
+              description: 'Game command to execute.',
+            },
+            gameId: { type: 'string', description: 'Game ID (for action/status/summary).' },
+            players: {
+              type: 'array', items: { type: 'string' },
+              description: 'Player names for new_game.',
+            },
+            gameAction: {
+              type: 'object',
+              description: 'Game action object (for action command). See Agents of Catan rules.',
+            },
+          },
+          required: ['command'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{
+            command?: unknown; gameId?: unknown; players?: unknown; gameAction?: unknown
+          }>(toolCallIdOrParams, maybeParams)
+
+          const command = typeof params.command === 'string' ? params.command : ''
+          const storage = this.ctx.storage
+
+          if (command === 'new_game') {
+            const { createGame } = await import('./games/catan')
+            const players = Array.isArray(params.players)
+              ? params.players.filter((p): p is string => typeof p === 'string')
+              : []
+            if (players.length < 2) throw new Error('Need at least 2 player names')
+            const gameId = `catan_${generateTid()}`
+            const game = createGame(gameId, players)
+            await storage.put(`game:${gameId}`, game)
+            const { renderBoard } = await import('./games/catan')
+            return {
+              content: toTextContent(`Game created: ${gameId}\n\n${renderBoard(game)}`),
+              details: { gameId, players, phase: game.phase },
+            }
+          }
+
+          const gameId = typeof params.gameId === 'string' ? params.gameId : ''
+          if (!gameId) throw new Error('gameId required')
+          const game = await storage.get<any>(`game:${gameId}`)
+          if (!game) throw new Error(`Game ${gameId} not found`)
+
+          if (command === 'status') {
+            const { renderBoard } = await import('./games/catan')
+            return {
+              content: toTextContent(renderBoard(game)),
+              details: { gameId, phase: game.phase, turn: game.turn, currentPlayer: game.currentPlayer },
+            }
+          }
+
+          if (command === 'summary') {
+            const { generateGameSummary } = await import('./games/catan')
+            return {
+              content: toTextContent(generateGameSummary(game)),
+              details: { gameId },
+            }
+          }
+
+          if (command === 'action') {
+            const { executeAction, renderBoard } = await import('./games/catan')
+            const action = params.gameAction as any
+            if (!action || typeof action !== 'object') throw new Error('gameAction required')
+            const playerName = this.config?.name ?? 'unknown'
+            const result = executeAction(game, playerName, action)
+            await storage.put(`game:${gameId}`, game)
+
+            if (result.gameOver) {
+              await broadcastLoopEvent({
+                event_type: 'game.finished',
+                trace_id: createTraceId(),
+                span_id: createSpanId(),
+                context: { gameId, winner: game.winner, turns: game.turn },
+              })
+            }
+
+            return {
+              content: toTextContent(
+                (result.ok ? result.events.join('\n') : `Error: ${result.error}`) +
+                '\n\n' + renderBoard(game)
+              ),
+              details: { ok: result.ok, error: result.error, events: result.events, gameOver: result.gameOver },
+            }
+          }
+
+          throw new Error(`Unknown game command: ${command}`)
+        },
+      },
     ]
   }
   
