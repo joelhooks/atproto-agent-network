@@ -36,6 +36,9 @@ export interface AgentConfig {
   loopIntervalMs: number
   goals: AgentGoal[]
   enabledTools: string[]
+  // If present, only these environments are loaded. If absent, the runtime
+  // may load all registered environments (see apps/network agent wiring).
+  enabledEnvironments?: string[]
 }
 
 export interface EncryptedRecord {
