@@ -28,7 +28,7 @@ export function StatsBar({ agentCount, activeCount, memories, messages, networkB
   ]
 
   return (
-    <div className="grid grid-cols-4 border-b border-border">
+    <div className="stats-bar grid grid-cols-4 border-b border-border">
       {cells.map(cell => (
         <div key={cell.label} className="px-4 py-2.5 text-center border-r border-border last:border-r-0">
           <div className="text-accent font-semibold text-sm tabular-nums">{cell.value}</div>

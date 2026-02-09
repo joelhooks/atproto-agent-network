@@ -95,14 +95,19 @@ a:hover { text-decoration: underline; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-dim); }
 
+/* Mobile-first: stack everything vertically */
 @media (max-width: 768px) {
   .dashboard-grid {
-    grid-template-columns: 1fr !important;
+    display: flex !important;
+    flex-direction: column !important;
     min-height: auto !important;
   }
   .agents-sidebar {
     max-height: none !important;
     overflow-y: visible !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.75rem !important;
   }
   .agents-list-grid {
     display: grid !important;
@@ -118,6 +123,13 @@ a:hover { text-decoration: underline; }
   .feed-scroll {
     max-height: none !important;
     overflow-y: visible !important;
+    padding: 0.75rem !important;
+  }
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .header-nav {
+    display: none !important;
   }
 }
 
@@ -125,4 +137,12 @@ a:hover { text-decoration: underline; }
   .agents-list-grid {
     grid-template-columns: 1fr !important;
   }
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Prevent iOS tap highlight */
+@media (pointer: coarse) {
+  * { -webkit-tap-highlight-color: transparent; }
 }

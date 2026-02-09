@@ -43,8 +43,8 @@ function AppContent() {
         messages={stats.messages}
         networkBirthday={networkBirthday}
       />
-      <main className="dashboard-grid flex-1 grid grid-cols-[320px_1fr] min-h-0">
-        <aside className="agents-sidebar border-r border-border overflow-y-auto p-3 flex flex-col gap-2" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+      <main className="dashboard-grid flex-1 grid grid-cols-[320px_1fr] min-h-0 overflow-hidden">
+        <aside className="agents-sidebar border-r border-border overflow-y-auto p-3 flex flex-col gap-2 max-h-[calc(100vh-140px)]">
           <div className="flex items-center justify-between mb-1">
             <span className="text-text-dim text-[0.7rem] uppercase tracking-widest">Agents</span>
             <span className="text-text-dim text-[0.65rem]">{agentCount}</span>
@@ -67,7 +67,7 @@ function AppContent() {
             )}
           </div>
         </aside>
-        <section className="feed-scroll overflow-y-auto p-4" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+        <section className="feed-scroll overflow-y-auto p-4 max-h-[calc(100vh-140px)]">
           <ActivityFeed events={events} agents={agents} />
         </section>
       </main>
