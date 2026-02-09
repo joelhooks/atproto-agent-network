@@ -1556,10 +1556,16 @@ export class AgentDO extends DurableObject {
           const filePath = `src/content/garden/${slug}.md`
           const encodedContent = btoa(unescape(encodeURIComponent(fullContent)))
 
+          const ghHeaders = {
+            Authorization: `Bearer ${githubToken}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'HighSwarm-Agent-Network/1.0',
+          }
+
           // Check if file already exists (for updates)
           const existingRes = await fetch(
             `https://api.github.com/repos/skillrecordings/grimlock/contents/${filePath}`,
-            { headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github.v3+json' } }
+            { headers: ghHeaders }
           )
           const existingSha = existingRes.ok
             ? ((await existingRes.json()) as any)?.sha
@@ -1577,8 +1583,7 @@ export class AgentDO extends DurableObject {
             {
               method: 'PUT',
               headers: {
-                Authorization: `Bearer ${githubToken}`,
-                Accept: 'application/vnd.github.v3+json',
+                ...ghHeaders,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(commitBody),
