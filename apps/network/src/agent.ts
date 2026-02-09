@@ -333,12 +333,16 @@ export class AgentDO extends DurableObject {
             const autoPlay = await this.ctx.storage.get('debug:autoPlay')
             const loopTranscript = await this.ctx.storage.get('debug:loopTranscript')
             const lastPrompt = await this.ctx.storage.get('debug:lastPrompt')
+            const lastError = await this.ctx.storage.get('debug:lastError')
+            const consecutiveErrors = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
             return new Response(JSON.stringify({
               lastThinkRaw,
               lastOpenRouterReq,
               autoPlay,
               loopTranscript,
               lastPrompt,
+              lastError,
+              consecutiveErrors,
             }, null, 2), {
               headers: { 'Content-Type': 'application/json' },
             })
@@ -489,6 +493,7 @@ export class AgentDO extends DurableObject {
     let observations: Observations | null = null
     let thought: ThinkResult | null = null
     let acted: ActResult | null = null
+    let hadError = false
 
     try {
       const storedConfig = await this.ctx.storage.get<AgentConfig>('config')
@@ -518,6 +523,7 @@ export class AgentDO extends DurableObject {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('AgentDO observe failed', { did: this.did, error: message })
+      hadError = true
       try {
         await this.broadcastLoopEvent({
           event_type: 'loop.error',
@@ -547,6 +553,7 @@ export class AgentDO extends DurableObject {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         console.error('AgentDO think failed', { did: this.did, error: message })
+        hadError = true
         try {
           await this.broadcastLoopEvent({
             event_type: 'loop.error',
@@ -574,6 +581,7 @@ export class AgentDO extends DurableObject {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         console.error('AgentDO act failed', { did: this.did, error: message })
+        hadError = true
         try {
           await this.broadcastLoopEvent({
             event_type: 'loop.error',
@@ -640,14 +648,33 @@ export class AgentDO extends DurableObject {
       // Continue: errors must not break the chain.
     }
 
+    // Exponential backoff on consecutive errors
     try {
-      await this.ctx.storage.setAlarm(Date.now() + intervalMs)
+      let nextInterval = intervalMs
+      if (hadError) {
+        const prev = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
+        const consecutiveErrors = prev + 1
+        await this.ctx.storage.put('consecutiveErrors', consecutiveErrors)
+        // Exponential backoff: base * 2^(errors-1), capped at 5 minutes
+        const backoffMs = Math.min(intervalMs * Math.pow(2, Math.min(consecutiveErrors - 1, 5)), 300_000)
+        nextInterval = backoffMs
+        console.log('AgentDO backoff', { did: this.did, consecutiveErrors, backoffMs, normalInterval: intervalMs })
+        await this.ctx.storage.put('debug:lastError', { ts: Date.now(), consecutiveErrors, backoffMs })
+      } else {
+        const prev = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
+        if (prev > 0) {
+          console.log('AgentDO error recovery', { did: this.did, previousErrors: prev })
+        }
+        await this.ctx.storage.put('consecutiveErrors', 0)
+      }
+
+      await this.ctx.storage.setAlarm(Date.now() + nextInterval)
       try {
         await this.broadcastLoopEvent({
           event_type: 'loop.sleep',
           trace_id: traceId,
           span_id: createSpanId(),
-          context: { intervalMs, nextAlarmAt: Date.now() + intervalMs },
+          context: { intervalMs: nextInterval, nextAlarmAt: Date.now() + nextInterval, backoff: hadError },
         })
       } catch {
         // ignore

@@ -382,18 +382,18 @@
     {
       "id": "story-mlerh2h4",
       "title": "Stalemate detection — end Catan games early when stuck",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [
-        "apps/network/src/index.test.ts",
-        "apps/network/src/index.ts",
-        "prd.json",
-        "progress.txt",
-        ".ralph-context.json",
-        ".ralph-iterations.jsonl",
-        "apps/network/src/agent-factory.ts",
-        "apps/network/src/agent.ts"
+        "apps/network/package.json",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/catan.ts",
+        "apps/network/src/games/catan.test.ts",
+        "apps/network/src/games/catan.ts",
+        "apps/network/vitest.config.ts",
+        "packages/agent/src/agent.ts",
+        "prd.json"
       ],
-      "learnings": "[unknown] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n  x No package found with name 'network' in workspace"
+      "learnings": "Technical Discovery: In `apps/network/src/games/catan.ts`, using `state.log` to detect whether `build_settlement`/`build_road` occurred on the just-ended turn avoids off-by-one semantics: `end_turn` can set `staleTurns = 0` when a build happened in that turn, otherwise increment and trigger stalemate at the threshold. Also, emitting `stalemate: true` on the `ActionResult` and passing it through `apps/network/src/environments/catan.ts` (tool `details` + `game.finished` broadcast context) is the simplest way to inform agents/dashboard of the end condition.\nGotcha: Prior failure pattern detected: `unknown` (Turbo filter couldn’t find `network`). Mitigation applied: `apps/network/package.json` is now named `network`, so `npx turbo test --filter=network` works. Also, Catan tests that call `roll_dice` are inherently flaky because `distributeResources()` depends on a randomized board/dice; avoid `roll_dice` in tests that assert exact resource totals (e.g. bank/trade). Separate note: `pnpm -C apps/network typecheck` currently fails due to pre-existing errors in `apps/network/src/environments/rpg.ts`; I did not address those in this story.\nFiles Context: `apps/network/src/games/catan.ts`: game state + reducer; added `staleTurns`, stalemate threshold check in `end_turn`, and `stalemate` on game-over result.\n`apps/network/src/games/catan.test.ts`: added stalemate tests and de-flaked existing bank/trade tests by removing unnecessary `roll_dice` calls.\n`apps/network/src/environments/catan.ts`: plumbs `stalemate` through tool response details and `game.finished` event context.\n`apps/network/package.json` + `apps/network/vitest.config.ts`: renamed package/test label to `network` to satisfy the story’s validation command filter."
     }
   ],
   "failures": [

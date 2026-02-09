@@ -239,7 +239,7 @@
       "title": "Stalemate detection — end Catan games early when stuck",
       "description": "Add stalemate detection to the Catan game engine. If no player has built anything (settlement or road) for N consecutive turns (suggest N=20), end the game early with the current point leader as winner.\n\nImplementation:\n1. Add `staleTurns` counter to game state (incremented on end_turn, reset to 0 when any player builds a settlement or road)\n2. In the `end_turn` action handler in `apps/network/src/games/catan.ts`, check if `staleTurns >= STALEMATE_THRESHOLD` (20). If so, set phase='finished', determine winner by highest points, set `winner` field.\n3. Add a `stalemate` field to the game-over result so agents/dashboard know it ended by stalemate vs normal victory.\n4. Write integration tests: game with forced stalemate scenario triggers early end, counter resets on build.\n\nFiles: `apps/network/src/games/catan.ts`, `apps/network/src/games/__tests__/catan.test.ts`",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && npx turbo test --filter=network"
     },
     {
@@ -253,8 +253,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 15,
-    "lastIteration": "2026-02-09T05:52:53.213Z"
+    "totalIterations": 16,
+    "lastIteration": "2026-02-09T06:12:32.363Z"
   },
   "totalStories": 11
 }
