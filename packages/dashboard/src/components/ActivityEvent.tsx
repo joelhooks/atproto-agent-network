@@ -2,18 +2,31 @@ import { useState } from 'react'
 import type { DashboardActivityEvent, ActivityKind, AgentCardState } from '../lib/types'
 import { formatTime, truncate, resolveDidToName } from '../lib/formatters'
 import { Badge } from './ui/Badge'
+import {
+  Brain,
+  MessageSquare,
+  Fingerprint,
+  FileText,
+  Wrench,
+  CloudLightning,
+  Target,
+  RefreshCw,
+  Cog,
+  AlertTriangle,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const kindIcons: Record<ActivityKind, string> = {
-  memory: '🧠',
-  message: '💬',
-  identity: '🪪',
-  prompt: '📝',
-  tool: '🔧',
-  think_aloud: '💭',
-  goal: '🎯',
-  loop: '🔄',
-  system: '⚙️',
-  error: '❌',
+const kindIcons: Record<ActivityKind, LucideIcon> = {
+  memory: Brain,
+  message: MessageSquare,
+  identity: Fingerprint,
+  prompt: FileText,
+  tool: Wrench,
+  think_aloud: CloudLightning,
+  goal: Target,
+  loop: RefreshCw,
+  system: Cog,
+  error: AlertTriangle,
 }
 
 const kindVariants: Record<ActivityKind, 'default' | 'accent' | 'success' | 'error' | 'dim'> = {
@@ -35,7 +48,7 @@ function linkifyDids(text: string, agents: Map<string, AgentCardState>): string 
 
 export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent; agents: Map<string, AgentCardState> }) {
   const [showDetails, setShowDetails] = useState(false)
-  const icon = kindIcons[event.kind] ?? '⚙️'
+  const Icon = kindIcons[event.kind] ?? Cog
   const details = event.details
   const hasDetails = Boolean(details && (details.context || details.error))
   const context = details?.context
@@ -44,46 +57,75 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
   const errorMessage = errorObj && typeof errorObj.message === 'string' ? errorObj.message : null
   const errorCode = errorObj && typeof errorObj.code === 'string' ? errorObj.code : null
 
+  const isError = event.kind === 'error'
+
   return (
-    <div className="bg-surface border border-border rounded-lg p-3 sm:p-3.5 hover:border-border/80 transition-colors animate-fadeInUp overflow-hidden">
-      <div className="flex items-start gap-2.5">
-        <div className="w-7 h-7 rounded bg-surface-2 flex items-center justify-center text-[0.75rem] flex-shrink-0 mt-0.5">
-          {icon}
+    <div className={`event-card group ${isError ? 'event-card-error' : ''}`}>
+      {/* Left accent stripe */}
+      <div className={`event-stripe ${isError ? 'event-stripe-error' : `event-stripe-${event.kind}`}`} />
+
+      <div className="flex items-start gap-3 p-3.5 sm:p-4">
+        {/* Icon */}
+        <div className={`event-icon flex-shrink-0 ${isError ? 'text-red' : 'text-text-dim'}`}>
+          <Icon size={15} strokeWidth={1.8} />
         </div>
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            <span className="text-accent text-[0.7rem] font-semibold truncate max-w-[120px] sm:max-w-none">{event.agent}</span>
+
+        {/* Content — single min-w-0 to enable text truncation */}
+        <div className="min-w-0 flex-1">
+          {/* Header row */}
+          <div className="flex items-baseline gap-2 flex-wrap mb-1">
+            <span className="text-accent text-[0.75rem] font-semibold">{event.agent}</span>
             <Badge variant={kindVariants[event.kind]} className="text-[0.5rem]">{event.kind}</Badge>
-            <span className="text-text-dim text-[0.55rem] ml-auto flex-shrink-0 tabular-nums">{formatTime(event.timestamp)}</span>
+            <span className="text-text-dim text-[0.55rem] tabular-nums ml-auto">{formatTime(event.timestamp)}</span>
           </div>
-          <div className="text-[0.7rem] text-text mt-1 leading-snug break-words overflow-wrap-anywhere">
+
+          {/* Summary */}
+          <p className="text-[0.72rem] text-text leading-relaxed break-words">
             {linkifyDids(truncate(event.summary, 200), agents)}
-          </div>
+          </p>
+
+          {/* Body text */}
           {event.text && (
-            <div className="text-[0.65rem] text-text-dim mt-1.5 leading-relaxed whitespace-pre-wrap break-words overflow-hidden">
+            <p className="text-[0.65rem] text-text-dim mt-2 leading-relaxed break-words whitespace-pre-wrap">
               {linkifyDids(truncate(event.text, 500), agents)}
-            </div>
+            </p>
           )}
+
+          {/* Tags */}
           {event.tags && event.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="flex flex-wrap gap-1 mt-2.5">
               {event.tags.map(tag => <Badge key={tag} variant="dim" className="text-[0.5rem]">{tag}</Badge>)}
             </div>
           )}
+
+          {/* Error */}
           {errorMessage && (
-            <div className="text-red text-[0.6rem] mt-1.5 bg-red/5 rounded px-2 py-1.5 break-words overflow-hidden">
-              {errorCode && <span className="text-red/70 mr-1">[{errorCode}]</span>}
-              {truncate(errorMessage, 300)}
+            <div className="mt-2.5 rounded bg-red/8 border border-red/15 px-3 py-2">
+              <p className="text-red text-[0.65rem] break-words">
+                {errorCode && <span className="opacity-60 mr-1.5">[{errorCode}]</span>}
+                {truncate(errorMessage, 300)}
+              </p>
             </div>
           )}
+
+          {/* Details toggle */}
           {hasDetails ? (
-            <button onClick={() => setShowDetails(!showDetails)} className="text-[0.6rem] text-accent mt-2 hover:underline py-0.5">
-              {showDetails ? '▾ hide details' : '▸ show details'}
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="event-details-toggle mt-2.5"
+            >
+              <span className="event-details-arrow" style={{ transform: showDetails ? 'rotate(90deg)' : undefined }}>›</span>
+              {showDetails ? 'hide context' : 'show context'}
             </button>
           ) : null}
+
+          {/* Details JSON */}
           {showDetails && context != null ? (
-            <pre className="text-[0.5rem] text-text-dim mt-1.5 bg-surface-2 rounded p-2.5 overflow-x-auto overflow-y-auto max-h-48 whitespace-pre-wrap break-all">
-              {JSON.stringify(context, null, 2)}
-            </pre>
+            <div className="mt-2 rounded-lg bg-bg border border-border">
+              <pre className="event-json-pre">
+                {JSON.stringify(context, null, 2)}
+              </pre>
+            </div>
           ) : null}
         </div>
       </div>

@@ -90,8 +90,94 @@ a:hover { text-decoration: underline; }
   animation: fadeInUp 0.3s ease-out;
 }
 
-.overflow-wrap-anywhere {
-  overflow-wrap: anywhere;
+/* ── Activity Event Cards ─────────────────────────── */
+
+.event-card {
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;           /* contains stripe + content */
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.event-card:hover {
+  border-color: oklch(0.30 0.03 280);
+  box-shadow: 0 2px 12px oklch(0 0 0 / 0.25);
+}
+.event-card-error {
+  border-color: oklch(0.35 0.10 25);
+  background: oklch(0.12 0.03 25);
+}
+
+/* Left accent stripe — 3px, flush left */
+.event-stripe {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 10px 0 0 10px;
+  background: var(--color-border);
+}
+.event-stripe-memory   { background: var(--color-accent); }
+.event-stripe-message  { background: var(--color-blue); }
+.event-stripe-tool     { background: var(--color-purple); }
+.event-stripe-goal     { background: var(--color-accent); }
+.event-stripe-loop     { background: var(--color-text-dim); }
+.event-stripe-error    { background: var(--color-red); }
+.event-stripe-think_aloud { background: oklch(0.55 0.08 280); }
+
+/* Icon pill */
+.event-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--color-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  margin-top: 1px;
+}
+
+/* Details toggle */
+.event-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6rem;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  padding: 3px 0;
+  transition: color 0.12s;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+.event-details-toggle:hover { color: var(--color-accent); }
+.event-details-arrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+/* JSON pre — scrollable, word-wrap on narrow viewports */
+.event-json-pre {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  line-height: 1.55;
+  color: var(--color-text-dim);
+  padding: 10px 12px;
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre;           /* default: horizontal scroll */
+  word-break: normal;
+}
+@media (max-width: 768px) {
+  .event-json-pre {
+    white-space: pre-wrap;    /* mobile: wrap to avoid h-scroll */
+    word-break: break-word;
+  }
 }
 
 ::-webkit-scrollbar { width: 6px; }

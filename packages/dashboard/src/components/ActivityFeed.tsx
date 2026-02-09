@@ -21,7 +21,7 @@ export function ActivityFeed({ events, agents }: ActivityFeedProps) {
           Waiting for events...
         </div>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           {events.map((ev, i) => (
             <ActivityEvent key={`${ev.agent}:${ev.type}:${ev.timestamp}:${i}`} event={ev} agents={agents} />
           ))}
