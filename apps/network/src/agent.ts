@@ -1190,7 +1190,9 @@ export class AgentDO extends DurableObject {
       hasEvents ? 'You have pending events to process.' : '',
       '',
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
-      (this.config?.enabledTools ?? []).includes('write_extension')
+      ((this.config?.enabledTools ?? []).includes('write_extension') ||
+        (this.config?.enabledTools ?? []).includes('list_extensions') ||
+        (this.config?.enabledTools ?? []).includes('remove_extension'))
         ? 'You can create extensions with write_extension to add new capabilities.'
         : '',
       '',

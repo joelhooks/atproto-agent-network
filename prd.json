@@ -351,7 +351,7 @@
       "title": "Add extension tools to all agents' default enabledTools",
       "description": "GH Issue #90.\\n\\nIn apps/network/src/agent.ts, find where enabledTools is read from config (~search for 'enabledTools'). There should be a default list.\\n\\n1. Add 'write_extension', 'list_extensions', 'remove_extension' to the default enabledTools array (alongside game, think_aloud, remember, recall, message, etc.)\\n2. In the system prompt builder (~line 1100), if extension tools are enabled, append a short hint: 'You can create extensions with write_extension to add new capabilities.'\\n3. Verify the extension tools already have implementations (search for 'write_extension' in agent.ts) — they should exist from previous work. If not, skip this and just add to defaults.\\n\\nAdd test: create agent with default config, verify enabledTools includes write_extension.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 29,
-    "lastIteration": "2026-02-09T18:49:40.278Z"
+    "totalIterations": 30,
+    "lastIteration": "2026-02-09T19:01:17.745Z"
   },
   "totalStories": 11
 }

@@ -526,31 +526,29 @@
     {
       "id": "story-mlfedrp4",
       "title": "Store ActionOutcome after each tool call in act()",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [
-        ".github/workflows/deploy.yml",
+        "packages/dashboard/index.html",
+        "packages/dashboard/src/App.tsx",
+        "packages/dashboard/src/components/Header.tsx",
+        "packages/dashboard/src/components/StatsBar.tsx",
+        "packages/dashboard/src/styles/app.css",
         ".ralph-context.json",
         ".ralph-iterations.jsonl",
-        "apps/network/src/agent-do.test.ts",
-        "apps/network/src/agent.ts"
+        "apps/network/src/agent.ts",
+        "progress.txt"
       ],
-      "learnings": "[test_failure] • turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tes"
+      "learnings": "Technical Discovery: `actionOutcomes` is persisted in DO storage and should be read via a type guard (`unknown` -> `ActionOutcome[]`) to tolerate older/invalid stored values; keeping outcomes structured-cloneable (no tool result blobs) makes it safe to embed into prompts/debug state. See `apps/network/src/agent.ts` (`ActionOutcome`, `buildThinkPrompt()`, `act()`, `reflect()`).\nGotcha: Prior failure pattern detected: test_failure (Vectorize dimension mismatch log noise). Mitigation: the ActionOutcome test uses only local tools (`think_aloud`, `set_goal`) so it doesn’t touch Vectorize/embeddings; if you add tests that exercise `recall`/Vectorize, ensure embedding dims/model are explicitly mocked to avoid flaky dimension mismatches.\nFiles Context: `apps/network/src/agent.ts`: AgentDO loop stages; `buildThinkPrompt()` now surfaces recent tool outcomes; `act()` persists `actionOutcomes` after each tool step; `reflect()` stores `recentActionOutcomes` in `lastReflection`. `apps/network/src/agent-do.test.ts`: AgentDO alarm-cycle tests, including the `actionOutcomes` persistence assertion."
+    },
+    {
+      "id": "story-mlfedsg1",
+      "title": "Add extension tools to all agents' default enabledTools",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlepdwd0",
-      "storyTitle": "Wire environment hooks into agent alarm cycle",
-      "category": "test_failure",
-      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnpm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts > AgentDO > agent.ts contains no Catan-specific code (delegated to environments/catan.ts)\nAssertionError: expected '/**\\n * agent durable object\\n * \\n *…' not to contain 'cata",
-      "toolNames": [
-        "sed -n",
-        "ls -la",
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "npx vitest"
-      ]
-    },
     {
       "storyId": "story-mlepe7gy",
       "storyTitle": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
@@ -775,6 +773,22 @@
         "swarm memory"
       ],
       "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlfedsg1",
+      "storyTitle": "Add extension tools to all agents' default enabledTools",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "swarm memory",
+        "rg -n",
+        "nl -ba",
+        "openclaw system",
+        "git show"
+      ],
+      "iterationNumber": 5
     }
   ]
 }
