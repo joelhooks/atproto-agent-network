@@ -2750,7 +2750,7 @@ export class AgentDO extends DurableObject {
       // RPG environment tool — dynamically loaded
       (() => {
         const agentName = this.config?.name ?? ''
-        const rpgCtx = { agentName, DB: env.DB, R2: env.BLOBS }
+        const rpgCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent }
         return {
           name: 'rpg',
           label: 'Dungeon Crawl',
