@@ -687,3 +687,22 @@ Summary: Prior failure pattern detected: timeout/build_error. Mitigation: run `p
 Fixed Vectorize 768→1024 mismatch by making `apps/network/src/agent.ts` select the Workers AI embedding model based on the Vectorize index dimensions (from `VECTORIZE_DIMENSIONS`, defaulting to 1024) instead of trusting `EMBEDDING_MODEL` when they disagree. Added/committed `EMBEDDING_MODEL=@cf/baai/bge-large-en-v1.5` and `VECTORIZE_DIMENSIONS=1024` to `apps/network/wrangler.toml`, plus a regression test for misconfigured env.
 
 Validation: `pnpm typecheck && pnpm test` passed. Deployed `apps/network` to prod and verified `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` passed. Commit includes `Closes #76`.
+
+---
+[2026-02-09T15:37:51.571Z]
+Failed: Goal lifecycle — prune completed goals, cap prompt bloat [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/dashboard:typecheck: 
+@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard
+@atproto-agent/
+Codex: Collecting required workspace context (AGENTS.md, PI-POC.md, docs/O11Y.md, cloudflare-do skill) and checking the hive + existing memories before writing the first failing test for goal pruning.
+
+---
+[2026-02-09T15:42:02.883Z]
+Completed: Goal lifecycle — prune completed goals, cap prompt bloat
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/index.ts, packages/core/src/types.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Story already implemented in commit `6d7d510 feat(network): prune completed goals` (includes `Closes #77`). Completed-goal prompt bloat is capped via `AgentConfig.maxCompletedGoals` (default 2): overflow completed goals are pruned from `config.goals` and appended to DO storage under `goalsArchive`. Validation ran and passed: `pnpm typecheck` and `pnpm test`. Also stored a hivemind learning and emitted the required openclaw system event.
+
+Prior failure pattern detected: build_error. Mitigation: run the requested validation commands explicitly (`pnpm typecheck` then `pnpm test`) and capture full output (no ad-hoc partial runs).

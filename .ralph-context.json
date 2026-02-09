@@ -413,16 +413,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
+    },
+    {
+      "id": "story-mlfbgyyr",
+      "title": "Goal lifecycle — prune completed goals, cap prompt bloat",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:build: cache hit, replaying logs 21e04a2cf6032d32\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-netwo",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -619,6 +619,21 @@
         "rg -n",
         "nl -ba",
         "swarm memory"
+      ]
+    },
+    {
+      "storyId": "story-mlfbgyyr",
+      "storyTitle": "Goal lifecycle — prune completed goals, cap prompt bloat",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/dashboard:typecheck: > tsc --noEmit\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agen",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "ls -la",
+        "rg -n",
+        "swarm memory",
+        "secrets exec",
+        "secrets lease"
       ]
     }
   ]

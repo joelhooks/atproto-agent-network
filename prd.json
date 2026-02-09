@@ -263,7 +263,7 @@
       "title": "Goal lifecycle — prune completed goals, cap prompt bloat",
       "description": "Agents accumulate completed goals forever (slag has 7, 5 completed). Max 2 recent completed in prompt, archive rest in DO storage. Add maxCompletedGoals config. Files: apps/network/src/agent.ts, apps/network/src/agent-factory.ts. IMPORTANT: Include \"Closes #77\" in your commit message body.",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -333,8 +333,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 19,
-    "lastIteration": "2026-02-09T15:27:03.780Z"
+    "totalIterations": 20,
+    "lastIteration": "2026-02-09T15:42:02.882Z"
   },
   "totalStories": 11
 }
