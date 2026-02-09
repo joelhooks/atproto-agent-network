@@ -913,74 +913,103 @@ export class AgentDO extends DurableObject {
             actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
           }
 
-          // Smart auto-play: check resources and build/trade before ending turn
+          // Smart auto-play: trade, build roads, build settlements
           const me = state.players?.find((p: any) => p.name === agentName)
           if (me?.resources) {
             const r = me.resources as Record<string, number>
-            const hasSettlement = r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1
+            const allEdges = state.board?.edges || []
+            const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
+            const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
+            
+            // Get all vertices in our network (settlements + road endpoints)
+            const networkVertices = new Set<number>()
+            for (const v of (state.board?.vertices?.filter((v: any) => v.owner === agentName) || [])) networkVertices.add(v.id)
+            for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
 
-            if (hasSettlement) {
-              // Find a valid vertex to build on — must be adjacent to our roads, not occupied, distance rule
-              const myRoads = state.board?.edges?.filter((e: any) => e.owner === agentName) || []
-              const mySettlements = new Set((state.board?.vertices?.filter((v: any) => v.owner === agentName) || []).map((v: any) => v.id))
-              const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
-              
-              // Get vertices connected to our roads
-              const reachableVertices = new Set<number>()
-              for (const road of myRoads) {
-                for (const vid of road.vertices || []) {
-                  reachableVertices.add(vid)
-                }
-              }
-
-              // Find buildable vertex: reachable, not occupied, no adjacent settlement (distance rule)
-              const allEdges = state.board?.edges || []
-              for (const vid of reachableVertices) {
+            // Helper: find a buildable settlement vertex (reachable + distance rule)
+            const findBuildableVertex = (): number | null => {
+              for (const vid of networkVertices) {
                 if (occupiedVertices.has(vid)) continue
-                // Distance rule: no settlement on adjacent vertices
                 const adjacentVerts = new Set<number>()
                 for (const e of allEdges) {
                   if (e.vertices?.includes(vid)) {
                     for (const av of e.vertices) if (av !== vid) adjacentVerts.add(av)
                   }
                 }
-                const tooClose = [...adjacentVerts].some(av => occupiedVertices.has(av))
-                if (!tooClose) {
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: vid } } })
-                  break
-                }
+                if (![...adjacentVerts].some(av => occupiedVertices.has(av))) return vid
               }
-            } else if (r.wood >= 1 && r.brick >= 1) {
-              // Build a road toward unoccupied vertices
-              const myRoads = state.board?.edges?.filter((e: any) => e.owner === agentName) || []
-              const myVertices = new Set<number>()
-              for (const road of myRoads) {
-                for (const vid of road.vertices || []) myVertices.add(vid)
-              }
-              const mySettlements = (state.board?.vertices?.filter((v: any) => v.owner === agentName) || []).map((v: any) => v.id)
-              for (const sv of mySettlements) myVertices.add(sv)
+              return null
+            }
 
-              // Find an unowned edge adjacent to our network
-              for (const edge of (state.board?.edges || [])) {
+            // Helper: find a road edge that expands toward open territory
+            const findExpansionRoad = (): number | null => {
+              // Prefer edges leading AWAY from occupied vertices
+              let bestEdge: number | null = null
+              for (const edge of allEdges) {
                 if (edge.owner) continue
                 const [v1, v2] = edge.vertices || []
-                if (myVertices.has(v1) || myVertices.has(v2)) {
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: edge.id } } })
+                // Must connect to our network
+                if (!networkVertices.has(v1) && !networkVertices.has(v2)) continue
+                // Prefer edges where the far end isn't occupied
+                const farEnd = networkVertices.has(v1) ? v2 : v1
+                if (!occupiedVertices.has(farEnd)) {
+                  bestEdge = edge.id
+                  // Even better if far end satisfies distance rule (potential settlement spot)
+                  const adjacentVerts = new Set<number>()
+                  for (const e of allEdges) {
+                    if (e.vertices?.includes(farEnd)) {
+                      for (const av of e.vertices) if (av !== farEnd) adjacentVerts.add(av)
+                    }
+                  }
+                  if (![...adjacentVerts].some(av => occupiedVertices.has(av))) break // Perfect spot
+                }
+              }
+              return bestEdge
+            }
+
+            // 1. Bank trade: get resources we're low on using ones we have plenty of
+            //    Settlement costs 1 each of wood/brick/sheep/wheat
+            //    Road costs 1 wood + 1 brick
+            const needed = ['wood', 'brick', 'sheep', 'wheat']
+            const low = needed.filter(x => (r[x] || 0) < 3) // "low" = less than 3
+            const surplus = Object.entries(r).filter(([res, count]) => typeof count === 'number' && count >= 6 && needed.includes(res))
+            
+            // Trade surplus for low resources (up to 3 trades per turn to keep it reasonable)
+            let tradesThisTurn = 0
+            for (const missing of low) {
+              if (tradesThisTurn >= 3) break
+              for (const [res, count] of surplus) {
+                if (res === missing) continue
+                if ((r[res] || 0) >= 3) { // Still have enough to trade
+                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing } } })
+                  tradesThisTurn++
                   break
                 }
               }
             }
 
-            // Bank trade if we have 4+ of something and are missing a key resource
-            const needed = ['wood', 'brick', 'sheep', 'wheat']
-            const missing = needed.filter(x => (r[x] || 0) === 0)
-            if (missing.length > 0) {
-              for (const [res, count] of Object.entries(r)) {
-                if (typeof count === 'number' && count >= 4 && needed.includes(res)) {
-                  actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing[0] } } })
-                  break
-                }
-              }
+            // 2. Try to build a settlement
+            const canAffordSettlement = r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1
+            const buildableVertex = canAffordSettlement ? findBuildableVertex() : null
+            
+            if (buildableVertex !== null) {
+              actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: buildableVertex } } })
+            }
+
+            // 3. Build roads — ALWAYS if we can afford it (expand network for future settlements)
+            //    Build up to 2 roads per turn if resources allow
+            const roadsBuilt = actions.filter(a => (a.arguments as any)?.gameAction?.type === 'build_road').length
+            for (let i = roadsBuilt; i < 2 && (r.wood || 0) >= 1 && (r.brick || 0) >= 1; i++) {
+              const roadEdge = findExpansionRoad()
+              if (roadEdge !== null) {
+                actions.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: roadEdge } } })
+                // Simulate resource deduction for next road check
+                r.wood = (r.wood || 0) - 1
+                r.brick = (r.brick || 0) - 1
+                // Add the new road's vertices to network for second road
+                const roadData = allEdges.find((e: any) => e.id === roadEdge)
+                if (roadData) for (const vid of roadData.vertices || []) networkVertices.add(vid)
+              } else break
             }
           }
 
