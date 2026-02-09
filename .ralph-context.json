@@ -556,9 +556,15 @@
     {
       "id": "story-mlfedt6k",
       "title": "Housekeeping mode — prune old goals and stale memories",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already rotates `alarmMode` and persists it in DO storage; adding a `housekeeping` branch is safe as long as it still reaches the shared reschedule block. Using `loadOrCreateConfig()` inside housekeeping ensures the DO’s in-memory `this.config` stays consistent when mutating `config` in storage.\nGotcha: Housekeeping runs without calling the model, so any tests that assume a model call every alarm cycle (or assume backoff behavior immediately after a success) can break once `alarmMode` rotation introduces a housekeeping cycle between think/reflection.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.alarm()` (mode routing + rescheduling) and `runHousekeeping()` (goal/outcome pruning + logging). `apps/network/src/agent-do.test.ts` uses `FakeStorage` + direct `storage.put('alarmMode', ...)` to deterministically assert Durable Object alarm-mode behavior."
     }
   ],
   "failures": [
