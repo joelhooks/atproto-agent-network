@@ -24,35 +24,35 @@ export function AgentCard({ agent, expanded, isAdmin, onToggle, onLoadEnvironmen
   const activeGoals = agent.config?.goals?.filter(g => g.status === 'active')?.length ?? 0
 
   return (
-    <div className={expanded ? 'agent-card-expanded' : ''}>
+    <div className={expanded ? 'agent-card-expanded-wrap' : ''}>
       <Card expanded={expanded} onClick={handleToggle}>
-        <div className="flex items-center gap-2.5">
+        <div className="agent-card-header">
           <Heartbeat active={loopActive} />
-          <span className="font-semibold text-sm text-text">{agent.displayName}</span>
-          <div className="flex-1" />
+          <span className="agent-card-name">{agent.displayName}</span>
+          <div style={{ flex: 1 }} />
           {agent.config?.specialty && (
-            <Badge variant="dim" className="text-[0.6rem] lg:text-xs">{agent.config.specialty}</Badge>
+            <Badge variant="dim">{agent.config.specialty}</Badge>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-2 text-xs text-text-dim min-w-0 overflow-hidden">
+        <div className="agent-card-meta">
           {agent.did && (
             <span
-              className="hover:text-accent cursor-pointer transition-colors truncate flex-shrink min-w-0"
+              className="agent-card-did"
               onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(agent.did!) }}
               title={agent.did}
             >
               {truncateDid(agent.did)}
             </span>
           )}
-          <div className="flex-1" />
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div style={{ flex: 1 }} />
+          <div className="agent-card-stats">
             {goalCount > 0 && <span>{activeGoals}/{goalCount} goals</span>}
             {typeof agent.memories === 'number' && <span>{agent.memories} mem</span>}
           </div>
         </div>
       </Card>
       {expanded && (
-        <div className="mt-1 animate-fadeInUp">
+        <div className="animate-fadeInUp">
           <AgentDetail agent={agent} isAdmin={isAdmin} />
         </div>
       )}

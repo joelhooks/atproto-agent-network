@@ -42,7 +42,6 @@ const kindVariants: Record<ActivityKind, 'default' | 'accent' | 'success' | 'err
   error: 'error',
 }
 
-// Skip keys already shown in summary/text or that are pure noise
 const HIDDEN_KEYS = new Set([
   'type', 'note', 'decision', 'message', 'description', 'summary', 'reason',
   'text', 'rationale', 'detail', 'comment', 'observation',
@@ -53,9 +52,8 @@ function formatValue(val: unknown): string {
   if (typeof val === 'string') return val
   if (typeof val === 'number') return String(val)
   if (typeof val === 'boolean') return val ? 'yes' : 'no'
-  if (val === null || val === undefined) return '—'
+  if (val === null || val === undefined) return '\u2014'
   if (Array.isArray(val)) return val.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(', ')
-  // Nested objects: flatten simple ones, stringify complex ones
   if (typeof val === 'object') {
     const obj = val as Record<string, unknown>
     const flat = Object.entries(obj)
@@ -72,12 +70,12 @@ function MemoryDataDisplay({ data }: { data: Record<string, unknown> }) {
   if (entries.length === 0) return null
 
   return (
-    <div className="mt-2.5 lg:mt-3 rounded-lg bg-surface-2/60 border border-border/50 px-3 py-2 lg:px-4 lg:py-3">
-      <div className="grid gap-y-1.5 lg:gap-y-2" style={{ gridTemplateColumns: 'auto 1fr' }}>
+    <div className="memory-data">
+      <div className="memory-data-grid">
         {entries.map(([key, val]) => (
-          <div key={key} className="contents">
-            <span className="text-[0.62rem] lg:text-xs text-text-dim pr-4 tabular-nums">{key.replace(/_/g, ' ')}</span>
-            <span className="text-[0.66rem] lg:text-xs text-text break-words">{formatValue(val)}</span>
+          <div key={key} style={{ display: 'contents' }}>
+            <span className="memory-data-key">{key.replace(/_/g, ' ')}</span>
+            <span className="memory-data-value">{formatValue(val)}</span>
           </div>
         ))}
       </div>
@@ -89,7 +87,6 @@ function linkifyDids(text: string, agents: Map<string, AgentCardState>): string 
   return text.replace(/did:[a-z]+:[a-zA-Z0-9._:%-]+/g, (did) => resolveDidToName(did, agents))
 }
 
-/** If a string looks like raw JSON, suppress it */
 function sanitizeDisplay(s: string | undefined): string | undefined {
   if (!s) return s
   const trimmed = s.trimStart()
@@ -102,7 +99,6 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
   const Icon = kindIcons[event.kind] ?? Cog
   const details = event.details
   const memoryData = details?.memoryData as Record<string, unknown> | undefined
-  // Last-mile defense: never render raw JSON in summary or text
   const displaySummary = sanitizeDisplay(event.summary) ?? event.kind
   const displayText = sanitizeDisplay(event.text)
   const hasDetails = Boolean(details && (details.context || details.error))
@@ -115,73 +111,62 @@ export function ActivityEvent({ event, agents }: { event: DashboardActivityEvent
   const isError = event.kind === 'error'
 
   return (
-    <div className={`event-card group ${isError ? 'event-card-error' : ''}`}>
-      {/* Left accent stripe */}
+    <div className={`event-card ${isError ? 'event-card-error' : ''}`}>
       <div className={`event-stripe ${isError ? 'event-stripe-error' : `event-stripe-${event.kind}`}`} />
 
-      <div className="flex items-start gap-3 lg:gap-4 p-3.5 sm:p-4 lg:p-5">
-        {/* Icon */}
-        <div className={`event-icon flex-shrink-0 ${isError ? 'text-red' : 'text-text-dim'}`}>
-          <Icon size={16} strokeWidth={1.8} className="lg:w-[18px] lg:h-[18px]" />
+      <div className="event-content">
+        <div className={`event-icon`} style={isError ? { color: 'var(--err)' } : { color: 'var(--dim)' }}>
+          <Icon size={16} strokeWidth={1.8} />
         </div>
 
-        {/* Content — single min-w-0 to enable text truncation */}
-        <div className="min-w-0 flex-1">
-          {/* Header row */}
-          <div className="flex items-baseline gap-2 lg:gap-3 flex-wrap mb-1.5">
-            <span className="text-accent text-[0.8rem] lg:text-sm font-semibold">{event.agent}</span>
-            <Badge variant={kindVariants[event.kind]} className="text-[0.55rem] lg:text-xs">{event.kind}</Badge>
-            <span className="text-text-dim text-[0.6rem] lg:text-xs tabular-nums ml-auto">{formatTime(event.timestamp)}</span>
+        <div className="event-body">
+          <div className="event-header">
+            <span className="event-agent">{event.agent}</span>
+            <Badge variant={kindVariants[event.kind]}>{event.kind}</Badge>
+            <span className="event-time">{formatTime(event.timestamp)}</span>
           </div>
 
-          {/* Summary */}
-          <p className="text-[0.78rem] lg:text-sm text-text leading-relaxed break-words">
+          <p className="event-summary">
             {linkifyDids(truncate(displaySummary, 300), agents)}
           </p>
 
-          {/* Body text */}
           {displayText && (
-            <p className="text-[0.7rem] lg:text-[0.8rem] text-text-dim mt-2 lg:mt-2.5 leading-relaxed break-words whitespace-pre-wrap">
+            <p className="event-text">
               {linkifyDids(truncate(displayText, 600), agents)}
             </p>
           )}
 
-          {/* Tags */}
           {event.tags && event.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {event.tags.map(tag => <Badge key={tag} variant="dim" className="text-[0.55rem] lg:text-xs">{tag}</Badge>)}
+            <div className="event-tags">
+              {event.tags.map(tag => <Badge key={tag} variant="dim">{tag}</Badge>)}
             </div>
           )}
 
-          {/* Structured memory data */}
           {memoryData && (
             <MemoryDataDisplay data={memoryData} />
           )}
 
-          {/* Error */}
           {errorMessage && (
-            <div className="mt-3 rounded-lg bg-red/8 border border-red/15 px-3 py-2 lg:px-4 lg:py-2.5">
-              <p className="text-red text-[0.7rem] lg:text-xs break-words">
-                {errorCode && <span className="opacity-60 mr-1.5">[{errorCode}]</span>}
+            <div className="event-error-box">
+              <p className="event-error-text">
+                {errorCode && <span className="event-error-code">[{errorCode}]</span>}
                 {truncate(errorMessage, 400)}
               </p>
             </div>
           )}
 
-          {/* Details toggle */}
           {hasDetails ? (
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="event-details-toggle mt-3"
+              className="event-details-toggle"
             >
-              <span className="event-details-arrow" style={{ transform: showDetails ? 'rotate(90deg)' : undefined }}>›</span>
+              <span className="event-details-arrow" style={{ transform: showDetails ? 'rotate(90deg)' : undefined }}>{'\u203A'}</span>
               {showDetails ? 'hide context' : 'show context'}
             </button>
           ) : null}
 
-          {/* Details JSON */}
           {showDetails && context != null ? (
-            <div className="mt-2 rounded-lg bg-bg border border-border">
+            <div className="event-context-box">
               <pre className="event-json-pre">
                 {JSON.stringify(context, null, 2)}
               </pre>

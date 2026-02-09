@@ -4,9 +4,9 @@ import { Badge } from './ui/Badge'
 
 function envIcon(type: string): string {
   switch (type) {
-    case 'catan': return '🧱'
-    case 'rpg': return '🗡'
-    default: return '🌐'
+    case 'catan': return '\uD83E\uDDF1'
+    case 'rpg': return '\uD83D\uDDE1'
+    default: return '\uD83C\uDF10'
   }
 }
 
@@ -33,13 +33,13 @@ function CatanSummary({ state, agentName }: { state: Record<string, unknown>; ag
   const resLine = ['wood', 'brick', 'sheep', 'wheat', 'ore'].map(r => `${r}:${safeNum((res as any)[r]) ?? 0}`).join(' ')
 
   return (
-    <div className="text-[0.6rem] text-text-dim">
-      <div className="mb-1">VP {vp} | settle {settlements} | roads {roads}</div>
-      <div className="font-mono">{resLine}</div>
+    <div className="env-summary">
+      <div style={{ marginBottom: '0.25rem' }}>VP {vp} | settle {settlements} | roads {roads}</div>
+      <div>{resLine}</div>
       {players.length > 1 && (
-        <div className="mt-1.5 flex flex-col gap-0.5">
+        <div style={{ marginTop: '0.375rem', display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
           {players.map((p, i) => (
-            <div key={i} className="flex justify-between">
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>{String(p.name ?? 'unknown')}</span>
               <span>VP {safeNum(p.victoryPoints) ?? 0}</span>
             </div>
@@ -62,12 +62,12 @@ function RpgSummary({ state, agentName }: { state: Record<string, unknown>; agen
   const roomType = room ? String(room.type ?? 'unknown') : 'unknown'
 
   return (
-    <div className="text-[0.6rem] text-text-dim">
+    <div className="env-summary">
       <div>{klass} | HP {hp}/{maxHp} | room: {roomType}</div>
       {party.length > 1 && (
-        <div className="mt-1.5 flex flex-col gap-0.5">
+        <div style={{ marginTop: '0.375rem', display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
           {party.map((p, i) => (
-            <div key={i} className="flex justify-between">
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>{String(p.name ?? 'unknown')} ({String(p.klass ?? '?')})</span>
               <span>HP {safeNum(p.hp) ?? 0}/{safeNum(p.maxHp) ?? 0}</span>
             </div>
@@ -84,23 +84,23 @@ export function EnvironmentCard({ env, agentName }: { env: EnvironmentDetail; ag
   const others = env.players.filter(p => p !== agentName)
 
   return (
-    <div className="bg-surface-2 border border-border rounded p-2">
-      <div className="flex items-center gap-2 mb-1">
+    <div className="env-card">
+      <div className="env-card-header">
         <span>{envIcon(env.type)}</span>
-        <span className="text-[0.7rem] font-semibold text-text">{envLabel(env.id, env.type)}</span>
-        <Badge variant={env.phase === 'playing' ? 'accent' : 'dim'} className="text-[0.5rem]">{env.phase}</Badge>
-        <div className="flex-1" />
-        {others.length > 0 && <span className="text-[0.55rem] text-text-dim">vs {others.join(', ')}</span>}
+        <span className="env-card-name">{envLabel(env.id, env.type)}</span>
+        <Badge variant={env.phase === 'playing' ? 'accent' : 'dim'}>{env.phase}</Badge>
+        <div style={{ flex: 1 }} />
+        {others.length > 0 && <span style={{ fontSize: '0.55rem', color: 'var(--dim)' }}>vs {others.join(', ')}</span>}
       </div>
       {env.type === 'catan' && stateObj ? <CatanSummary state={stateObj} agentName={agentName} /> :
        env.type === 'rpg' && stateObj ? <RpgSummary state={stateObj} agentName={agentName} /> :
-       stateObj ? <div className="text-[0.6rem] text-text-dim">State available</div> : null}
+       stateObj ? <div className="env-summary">State available</div> : null}
       {stateObj && (
-        <button onClick={() => setShowRaw(!showRaw)} className="text-[0.55rem] text-accent mt-1 hover:underline">
+        <button onClick={() => setShowRaw(!showRaw)} className="env-raw-toggle">
           {showRaw ? 'hide' : 'show'} raw state
         </button>
       )}
-      {showRaw && <pre className="text-[0.5rem] text-text-dim mt-1 overflow-x-auto max-h-40 overflow-y-auto">{JSON.stringify(env.state, null, 2)}</pre>}
+      {showRaw && <pre className="env-raw-pre">{JSON.stringify(env.state, null, 2)}</pre>}
     </div>
   )
 }

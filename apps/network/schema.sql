@@ -41,16 +41,3 @@ CREATE TABLE agents (
 CREATE INDEX idx_agents_created_at ON agents(created_at);
 
 CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);
-
--- Generic games table for environment state (RPG, Catan, etc.)
-CREATE TABLE IF NOT EXISTS games (
-  id TEXT PRIMARY KEY,
-  type TEXT,
-  host_agent TEXT,
-  state TEXT,
-  phase TEXT,
-  players TEXT,
-  winner TEXT,
-  created_at TEXT,
-  updated_at TEXT
-);

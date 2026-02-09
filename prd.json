@@ -443,41 +443,41 @@
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
-      "id": "story-mlfnwx08",
+      "id": "story-mlfo24tb",
       "title": "D1 schema: generic games table for environment state",
-      "description": "GH Issue #110. Add CREATE TABLE IF NOT EXISTS games to apps/network/schema.sql with columns: id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT. This table likely already exists in production D1 but schema.sql doesn't define it — fix that.\n\nWAYPOINTS:\n- apps/network/schema.sql — add the CREATE TABLE statement\n- apps/network/src/schema.test.ts — add test asserting table exists with correct columns\n- packages/core/src/d1-mock.ts — ensure mock creates this table\n\nTDD:\n1. RED: add test in schema.test.ts that queries sqlite_master for 'games' table and asserts columns\n2. GREEN: add CREATE TABLE to schema.sql\n3. Ensure d1-mock.ts creates the table so all existing tests still pass\n\nDO NOT modify agent.ts, rpg.ts, catan.ts, or any environment files. Schema only.\n\nCloses #110",
+      "description": "GH Issue #110. ONLY touch these 3 files — nothing else:\n\nFILE 1: apps/network/schema.sql — Add this EXACT SQL at the end:\nCREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);\n\nFILE 2: apps/network/src/schema.test.ts — Add a test that the 'games' table exists with the correct columns. Follow existing patterns in this file.\n\nFILE 3: packages/core/src/d1-mock.ts — Add the same CREATE TABLE statement to the mock DB init so tests use it.\n\nCRITICAL: Do NOT touch ANY other files. No dashboard, no rpg-engine, no index.ts, no CSS, no HTML. THREE FILES ONLY: schema.sql, schema.test.ts, d1-mock.ts.\n\nCloses #110",
       "priority": 1,
       "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
-      "id": "story-mlfnwxoe",
+      "id": "story-mlfo25hl",
       "title": "Environment runtime: drive context + autoplay via AgentEnvironment registry",
-      "description": "GH Issue #109. Refactor AgentDO so environment-specific logic is NOT hardcoded in agent.ts.\n\nCURRENT STATE: agent.ts has hardcoded Catan safety-net and RPG tool wrappers. Find them with:\n  rg -n \"SAFETY NET\" apps/network/src/agent.ts\n  rg -n \"catan\\|rpg\" apps/network/src/agent.ts -i\n\nGOAL: AgentDO must call environment hooks from the registry:\n- buildContext() for environment-specific prompt context\n- isActionTaken() to detect if environment tool was called\n- getAutoPlayActions() for safety-net / auto-play injection\n\nWAYPOINTS:\n- apps/network/src/environments/types.ts — the AgentEnvironment contract\n- apps/network/src/environments/registry.ts — getEnvironment()\n- apps/network/src/environments/catan.ts, rpg.ts — reference implementations\n- apps/network/src/agent.ts — refactor target (observe/think/act loop)\n\nTDD:\n1. RED: add tests in agent-do.test.ts proving AgentDO calls environment buildContext/isActionTaken/getAutoPlayActions hooks\n2. GREEN: refactor agent.ts to use registry-based dispatch instead of hardcoded branching\n3. REFACTOR: remove all environment-specific if/else from agent.ts, keep behavior equivalent\n\nCRITICAL: All 217+ existing tests must still pass. This is a REFACTOR — behavior must be identical.\n\nCloses #109",
+      "description": "GH Issue #109. Refactor AgentDO so environment-specific logic is NOT hardcoded in agent.ts.\n\nFind hardcoded env logic: rg -n \"SAFETY NET\" apps/network/src/agent.ts\n\nReplace with registry dispatch: AgentDO calls environment hooks from registry (buildContext, isActionTaken, getAutoPlayActions) instead of if/else branching.\n\nFiles to modify: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts, apps/network/src/environments/types.ts (if needed)\n\nThis is a REFACTOR — behavior must be identical. All 217+ existing tests must pass.\n\nCloses #109",
       "priority": 2,
       "passes": false,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
-      "id": "story-mlfnwybi",
+      "id": "story-mlfo266m",
       "title": "RalphEnvironment: skeleton environment + tool + tests",
-      "description": "GH Issue #112. Add RalphEnvironment as an AgentEnvironment plugin.\n\nNEW FILES:\n- apps/network/src/environments/ralph.ts\n- apps/network/src/environments/ralph.test.ts\n\nMODIFY:\n- apps/network/src/environments/builtins.ts — register ralphEnvironment\n\nIMPLEMENTATION:\n1. ralphEnvironment implements AgentEnvironment from types.ts\n2. Tool name: 'ralph' with commands: 'help', 'status'\n3. buildContext() returns stable context string about ralph capabilities\n4. isActionTaken(toolCalls) returns true if any call is to 'ralph' tool\n5. getAutoPlayActions() returns [] (no autoplay yet — that's #111)\n\nREFERENCE: Look at rpg.ts and catan.ts for the pattern.\n\nTDD:\n1. RED: tests in ralph.test.ts for registry lookup, tool help/status, buildContext, isActionTaken\n2. GREEN: implement ralph.ts + register in builtins.ts\n\nCloses #112",
+      "description": "GH Issue #112. New files: apps/network/src/environments/ralph.ts, apps/network/src/environments/ralph.test.ts. Modify: apps/network/src/environments/builtins.ts.\n\nImplement AgentEnvironment for 'ralph' type. Tool 'ralph' with commands 'help' and 'status'. Register in builtins.ts. Tests for registry lookup, tool commands, buildContext, isActionTaken.\n\nReference: rpg.ts and catan.ts for the pattern.\n\nCloses #112",
       "priority": 3,
       "passes": false,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
-      "id": "story-mlfnwz05",
+      "id": "story-mlfo26t9",
       "title": "Ralph backlog: generic work_items queue + ralph tool commands",
-      "description": "GH Issue #113. Add generic work_items D1 table and ralph tool subcommands.\n\nSCHEMA (apps/network/schema.sql):\nCREATE TABLE IF NOT EXISTS work_items (\n  id TEXT PRIMARY KEY,\n  env_type TEXT NOT NULL,\n  env_id TEXT,\n  status TEXT NOT NULL DEFAULT 'open',\n  priority INTEGER NOT NULL DEFAULT 0,\n  title TEXT NOT NULL,\n  payload_json TEXT NOT NULL DEFAULT '{}',\n  claimed_by_did TEXT,\n  claimed_at TEXT,\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n);\n\nALSO update packages/core/src/d1-mock.ts to create this table.\n\nTOOL COMMANDS (extend ralph tool in apps/network/src/environments/ralph.ts):\n- propose_work { title, priority?, payload } → INSERT with status='open'\n- claim_work { id } → UPDATE status='claimed', set claimed_by_did + claimed_at (idempotent for same claimant)\n- submit_result { id, status: 'done'|'failed', payload } → UPDATE status\n- status { id? } → if id: item details; if no id: queue summary (counts by status)\n\nGenerate IDs with createTid() from @atproto-agent/core.\n\nTDD:\n1. RED: tests for propose/claim/submit/status flows in ralph.test.ts\n2. GREEN: implement schema + tool commands\n\nCloses #113",
+      "description": "GH Issue #113. Add work_items table to schema.sql and d1-mock.ts:\nCREATE TABLE IF NOT EXISTS work_items (id TEXT PRIMARY KEY, env_type TEXT NOT NULL, env_id TEXT, status TEXT NOT NULL DEFAULT 'open', priority INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', claimed_by_did TEXT, claimed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n\nExtend ralph tool in ralph.ts with commands: propose_work, claim_work, submit_result, status.\n\nTests in ralph.test.ts for propose/claim/submit/status flows.\n\nCloses #113",
       "priority": 4,
       "passes": false,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
-      "id": "story-mlfnwzoo",
+      "id": "story-mlfo27gl",
       "title": "Ralph autoplay: agents claim queued work items",
-      "description": "GH Issue #111. When ralph environment is enabled and no other environment action was taken this cycle, getAutoPlayActions() should return a claim action for the highest-priority open work item.\n\nMODIFY:\n- apps/network/src/environments/ralph.ts — implement getAutoPlayActions()\n- apps/network/src/agent.ts — ensure autoplay actions from ralph are injected (should already work if #109 landed correctly)\n\nLOGIC:\n1. Query D1: SELECT * FROM work_items WHERE env_type='ralph' AND status='open' ORDER BY priority ASC LIMIT 1\n2. If found: return autoplay action that claims it (same as claim_work tool call)\n3. If not found: return []\n4. If another environment action was taken this cycle: return [] (don't starve other envs)\n\nEVENTS: On claim, emit websocket event + structured log with work_id, title, claimant DID, timestamp.\n\nTDD:\n1. RED: test that getAutoPlayActions returns claim when open work exists and no other action taken\n2. RED: test that it returns [] when another env action was taken\n3. GREEN: implement\n\nCloses #111",
+      "description": "GH Issue #111. Implement getAutoPlayActions() in ralph.ts: when no other env action was taken and there's an open work_items row, return a claim action. Query: SELECT * FROM work_items WHERE env_type='ralph' AND status='open' ORDER BY priority ASC LIMIT 1.\n\nFiles: apps/network/src/environments/ralph.ts, apps/network/src/agent.ts (if needed), agent-do.test.ts.\n\nCloses #111",
       "priority": 5,
       "passes": false,
       "validationCommand": "pnpm typecheck && pnpm test"
@@ -486,7 +486,7 @@
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
     "totalIterations": 42,
-    "lastIteration": "2026-02-09T21:15:06.128Z"
+    "lastIteration": "2026-02-09T21:18:38.809Z"
   },
   "totalStories": 11
 }

@@ -38,6 +38,10 @@ export interface GameRow {
   updated_at: string
 }
 
+// Keep in sync with `apps/network/schema.sql`.
+export const D1_MOCK_GAMES_SCHEMA_SQL =
+  'CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);'
+
 interface Condition {
   column: keyof RecordRow
   value: unknown
@@ -105,7 +109,8 @@ export class D1MockDatabase {
 
     // Some callers apply `apps/network/schema.sql` against the mock DB to
     // validate wiring. We don't emulate DDL; we just no-op known table creates.
-    if (/^create table (if not exists )?games\b/.test(normalized)) {
+    const gamesSchemaNormalized = normalizeSql(D1_MOCK_GAMES_SCHEMA_SQL.replace(/;\s*$/, ''))
+    if (normalized === gamesSchemaNormalized || /^create table (if not exists )?games\b/.test(normalized)) {
       return
     }
 

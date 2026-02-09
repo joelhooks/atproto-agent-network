@@ -684,6 +684,17 @@
         "prd.json"
       ],
       "learnings": "Technical Discovery: `apps/network/src/agent.ts` non-catan gameContext is built via an array + `.filter(Boolean).join('\\n')`, so empty-string separators never survive; if you need “sections” in the prompt, inject a single multi-line string (e.g. the RPG `COOPERATION RULES` block) rather than relying on `''` entries for spacing.\nGotcha: Production deploy can fail even when tests pass if Cloudflare bindings referenced in `apps/network/wrangler.toml` don’t exist (here: Vectorize index `agent-memory`). Also, different secrets/tokens may have Workers permissions but not Vectorize permissions; use a token with both, or ensure the index exists before deploying.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.buildThinkPrompt()` which renders the RPG/Catan gameContext and loop instructions. `apps/network/src/agent-do.test.ts` exercises alarm-driven think prompting by inserting rows into `D1MockDatabase`’s `games` table and asserting on the prompt string passed to the mocked Pi agent."
+    },
+    {
+      "id": "story-mlfnwx08",
+      "title": "D1 schema: generic games table for environment state",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/schema.sql",
+        "apps/network/src/schema.test.ts",
+        "packages/core/src/d1-mock.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/schema.test.ts` can validate D1 schema more robustly by executing `apps/network/schema.sql` into a Miniflare D1 database and asserting table existence/columns using `sqlite_master` (rather than only string-parsing the SQL file).\nGotcha: If you add `CREATE TABLE IF NOT EXISTS ...` statements, schema tests that regex-match `CREATE TABLE <name>` need to allow the optional `IF NOT EXISTS` clause, and Miniflare D1 schema application should split statements and strip `--` comments to avoid strict parser failures.\nFiles Context: `apps/network/schema.sql` is the deploy-time D1 schema source of truth; `apps/network/src/schema.test.ts` enforces schema invariants in CI; `packages/core/src/d1-mock.ts` is the in-memory D1 mock used by unit tests and may need no-op handling for known DDL when schema is applied."
     }
   ],
   "failures": [

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { ActivityFeedProvider, useActivityFeed } from './hooks/useActivityFeed'
 import { useAgents } from './hooks/useAgents'
@@ -7,8 +6,7 @@ import { Header } from './components/Header'
 import { StatsBar } from './components/StatsBar'
 import { AgentCard } from './components/AgentCard'
 import { ActivityFeed } from './components/ActivityFeed'
-import { ActivityEvent } from './components/ActivityEvent'
-import type { AgentCardState, WebSocketStatus } from './lib/types'
+import type { AgentCardState } from './lib/types'
 
 function AgentWebSocket({ name }: { name: string }) {
   const { wsStatus } = useWebSocket(name)
@@ -34,7 +32,7 @@ function AppContent() {
   const activeCount = Array.from(agents.values()).filter(a => a.loop?.loopRunning).length
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="app-shell">
       <Header connectionStatus={connectionStatus} wsStatus="disconnected" />
       <StatsBar
         agentCount={agentCount}
@@ -43,13 +41,13 @@ function AppContent() {
         messages={stats.messages}
         networkBirthday={networkBirthday}
       />
-      <main className="dashboard-grid flex-1 grid grid-cols-[360px_1fr] min-h-0 overflow-hidden">
-        <aside className="agents-sidebar border-r border-border overflow-y-auto p-4 lg:p-5 flex flex-col gap-3 max-h-[calc(100vh-160px)]">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-text-dim text-xs uppercase tracking-widest">Agents</span>
-            <span className="text-text-dim text-xs">{agentCount}</span>
+      <main className="dashboard-grid">
+        <aside className="agents-sidebar">
+          <div className="sidebar-header">
+            <span className="sidebar-title">Agents</span>
+            <span className="sidebar-title">{agentCount}</span>
           </div>
-          <div className="agents-list-grid flex flex-col gap-3">
+          <div className="agents-list">
             {Array.from(agents.values()).map(agent => (
               <AgentCard
                 key={agent.name}
@@ -61,13 +59,15 @@ function AppContent() {
               />
             ))}
             {agents.size === 0 && (
-              <div className="text-text-dim text-sm text-center py-8">
-                {connectionStatus === 'connecting' ? 'Connecting...' : 'No agents found'}
+              <div className="feed-empty" style={{ padding: '2rem 0' }}>
+                {connectionStatus === 'connecting' ? (
+                  <span is-="spinner" variant-="dots" speed-="fast" />
+                ) : 'No agents found'}
               </div>
             )}
           </div>
         </aside>
-        <section className="feed-scroll overflow-y-auto p-5 lg:p-6 max-h-[calc(100vh-160px)]">
+        <section className="feed-scroll">
           <ActivityFeed events={events} agents={agents} />
         </section>
       </main>
