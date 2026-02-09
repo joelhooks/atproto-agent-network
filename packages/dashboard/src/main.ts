@@ -132,8 +132,11 @@ function truncate(str: unknown, max = 140): string {
 
 function truncateDid(did: unknown): string {
   const s = typeof did === 'string' ? did : ''
-  if (!s || s.length < 30) return s
-  return s.slice(0, 16) + '…' + s.slice(-8)
+  if (!s || s.length < 20) return s
+  // did:cf:abcd1234… — short enough for mobile
+  const parts = s.split(':')
+  if (parts.length >= 3) return `${parts[0]}:${parts[1]}:${parts[2].slice(0, 8)}…`
+  return s.slice(0, 12) + '…'
 }
 
 function resolveDidToName(did: string): string {
@@ -353,10 +356,13 @@ function renderEvent(ev: DashboardActivityEvent): string {
   const ctx = getEventContext(ev)
   const isToolish = ev.kind === 'tool' || ev.type.includes('tool') || Boolean((ctx as any)?.tool)
 
-  let body = `<div class="event-body ${isThought ? 'thought-body' : ''}">${escapeHtml(ev.summary)}</div>`
+  // Truncate any full DIDs that leaked into the summary (from old events before the fix)
+  const safeSummary = ev.summary.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (m) => truncateDid(m) as string)
+  let body = `<div class="event-body ${isThought ? 'thought-body' : ''}">${escapeHtml(safeSummary)}</div>`
 
   if (ev.text) {
-    body += `<div class="memory-text">${escapeHtml(ev.text)}</div>`
+    const safeText = ev.text.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (m) => truncateDid(m) as string)
+    body += `<div class="memory-text">${escapeHtml(safeText)}</div>`
   }
 
   const tags = [...(ev.tags ?? [])]
