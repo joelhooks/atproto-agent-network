@@ -144,6 +144,9 @@ export const rpgEnvironment: AgentEnvironment = {
           const gameId = `rpg_${generateTid()}`
           const game = createGame({ id: gameId, players })
 
+          // Ensure type column exists (migration from catan-only schema)
+          await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
+
           await db
             .prepare(
               "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
