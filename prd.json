@@ -495,7 +495,7 @@
       "title": "Grimlock inbox webhook bridge — POST messages to webhookUrl",
       "description": "GH Issue #99. When /inbox receives a message and agent config has a webhookUrl field, POST the message payload to that URL. Fire-and-forget, no retries.\n\nFiles: apps/network/src/agent.ts (inbox handler), apps/network/src/agent-do.test.ts\n\nFind the inbox handler: grep -n 'inbox' apps/network/src/agent.ts\n\nAdd to AgentConfig type: webhookUrl?: string\n\nIn the inbox handler, after storing the message, check if config.webhookUrl is set. If so:\n```typescript\nif (this.config?.webhookUrl) {\n  fetch(this.config.webhookUrl, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ type: 'inbox', message: incomingMessage }),\n  }).catch(() => {}) // fire and forget\n}\n```\n\nTest: mock fetch, send inbox message with webhookUrl configured, assert fetch was called with correct payload.\n\nCloses #99",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -517,8 +517,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 47,
-    "lastIteration": "2026-02-09T23:40:15.240Z"
+    "totalIterations": 48,
+    "lastIteration": "2026-02-09T23:49:26.420Z"
   },
   "totalStories": 11
 }

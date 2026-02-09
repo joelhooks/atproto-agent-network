@@ -415,3 +415,9 @@ Note: `.ralph-context.json` and `.ralph-iterations.jsonl` show local diffs from 
 Completed: Auto-restart games on completion — Grimlock creates new coop dungeon
 Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json
 Summary: Implemented GH Issue #98 (story-mlft5kxr): when an RPG finishes, we now emit a `game.completed` event via `broadcast`, and Grimlock will auto-create a fresh coop dungeon when there are no playing RPG games, capped by `maxGamesPerDay` (default 50). Added unit tests covering event emission, Grimlock auto-create behavior, and the daily cap. Validation `pnpm typecheck && pnpm test` passed. Note: `prd.json` is still locally modified but was not staged/committed (per repo rules).
+
+---
+[2026-02-09T23:49:26.423Z]
+Completed: Grimlock inbox webhook bridge — POST messages to webhookUrl
+Files: apps/network/src/agent.ts, packages/core/src/types.ts, packages/dashboard/src/lib/types.ts, .ralph-context.json, .ralph-iterations.jsonl, prd.json
+Summary: Implemented GH Issue #99 (story-mlft5llk): when `/inbox` receives an `agent.comms.message` and `AgentConfig.webhookUrl` is set, AgentDO now POSTs `{ type: 'inbox', message: <validated message> }` to that URL (fire-and-forget). Added config patch support for `webhookUrl`, updated shared `AgentConfig` types, and added a unit test mocking `fetch` to assert the webhook call/payload. Ran `pnpm typecheck && pnpm test`, deployed `apps/network` to production, and verified via `./scripts/smoke-test.sh`.
