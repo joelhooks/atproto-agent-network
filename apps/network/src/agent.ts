@@ -327,6 +327,13 @@ export class AgentDO extends DurableObject {
               () => this.handleExternalExecute(request),
               { route: 'AgentDO.execute', request }
             )
+          case 'debug': {
+            const lastThinkRaw = await this.ctx.storage.get('debug:lastThinkRaw')
+            const lastOpenRouterReq = await this.ctx.storage.get('debug:lastOpenRouterReq')
+            return new Response(JSON.stringify({ lastThinkRaw, lastOpenRouterReq }, null, 2), {
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
           default:
             return new Response('Not found', { status: 404 })
         }
@@ -783,15 +790,19 @@ export class AgentDO extends DurableObject {
     const prompt = this.buildThinkPrompt(observations)
     const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
 
-    // Raw model output debug
-    console.log('AgentDO think raw result', {
+    // Raw model output debug — store in DO for queryable diagnosis
+    const debugInfo = {
       did: this.did,
       name: this.config?.name,
       resultType: typeof result,
       hasToolCalls: !!(result as any)?.toolCalls?.length,
       rawToolCalls: JSON.stringify((result as any)?.toolCalls ?? []).slice(0, 500),
-      rawText: String((result as any)?.text ?? '').slice(0, 300),
-    })
+      rawText: String((result as any)?.text ?? '').slice(0, 500),
+      model: (result as any)?.model,
+      ts: Date.now(),
+    }
+    console.log('AgentDO think raw result', debugInfo)
+    await this.ctx.storage.put('debug:lastThinkRaw', debugInfo)
 
     const thought = this.normalizeThinkResult(result)
 

@@ -89,13 +89,15 @@ export function createOpenRouterAgentFactory(
         }
 
         // Debug: log the full request for tool-calling diagnosis
-        console.log('OpenRouter request', {
+        const debugReq = {
           model: modelId,
           messageCount: trimmedMessages.length,
           toolCount: toolDefs.length,
           toolNames: toolDefs.map((t: any) => t.function?.name),
           lastUserMsg: input.slice(0, 200),
-        })
+          hasToolChoice: !!body.tool_choice,
+        }
+        console.log('OpenRouter request', debugReq)
 
         const response = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
