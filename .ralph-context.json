@@ -394,16 +394,16 @@
         "prd.json"
       ],
       "learnings": "Technical Discovery: In `apps/network/src/games/catan.ts`, using `state.log` to detect whether `build_settlement`/`build_road` occurred on the just-ended turn avoids off-by-one semantics: `end_turn` can set `staleTurns = 0` when a build happened in that turn, otherwise increment and trigger stalemate at the threshold. Also, emitting `stalemate: true` on the `ActionResult` and passing it through `apps/network/src/environments/catan.ts` (tool `details` + `game.finished` broadcast context) is the simplest way to inform agents/dashboard of the end condition.\nGotcha: Prior failure pattern detected: `unknown` (Turbo filter couldn’t find `network`). Mitigation applied: `apps/network/package.json` is now named `network`, so `npx turbo test --filter=network` works. Also, Catan tests that call `roll_dice` are inherently flaky because `distributeResources()` depends on a randomized board/dice; avoid `roll_dice` in tests that assert exact resource totals (e.g. bank/trade). Separate note: `pnpm -C apps/network typecheck` currently fails due to pre-existing errors in `apps/network/src/environments/rpg.ts`; I did not address those in this story.\nFiles Context: `apps/network/src/games/catan.ts`: game state + reducer; added `staleTurns`, stalemate threshold check in `end_turn`, and `stalemate` on game-over result.\n`apps/network/src/games/catan.test.ts`: added stalemate tests and de-flaked existing bank/trade tests by removing unnecessary `roll_dice` calls.\n`apps/network/src/environments/catan.ts`: plumbs `stalemate` through tool response details and `game.finished` event context.\n`apps/network/package.json` + `apps/network/vitest.config.ts`: renamed package/test label to `network` to satisfy the story’s validation command filter."
+    },
+    {
+      "id": "story-mlerl07f",
+      "title": "Agent factory o11y — full think prompt, loop transcript, and timing",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[test_failure] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnetwork:test: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/in"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-4a-alarm-chain",
-      "storyTitle": "4a: Bare alarm chain + start/stop API",
-      "category": "build_error",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
     {
       "storyId": "story-4a-alarm-chain",
       "storyTitle": "4a: Bare alarm chain + start/stop API",
@@ -590,6 +590,18 @@
       "category": "unknown",
       "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n  x No package found with name 'network' in workspace",
       "toolNames": []
+    },
+    {
+      "storyId": "story-mlerl07f",
+      "storyTitle": "Agent factory o11y — full think prompt, loop transcript, and timing",
+      "category": "test_failure",
+      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnetwork:test: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run test exited (1)\nnetwork#test: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm ru",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "nl -ba"
+      ]
     }
   ]
 }

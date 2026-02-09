@@ -32,9 +32,11 @@ export interface PiAgentInit {
   initialState: {
     systemPrompt: string
     model: unknown
+    fastModel?: unknown
     tools?: PiAgentTool[]
     messages?: PiAgentMessage[]
     sessionId?: string
+    [key: string]: unknown
   }
   transformContext?: PiAgentTransformContext
 }
@@ -57,6 +59,7 @@ export type PiAgentFactory = (init: PiAgentInit) => PiAgentLike | Promise<PiAgen
 export interface PiAgentWrapperOptions {
   systemPrompt: string
   model: unknown
+  fastModel?: unknown
   tools?: PiAgentTool[]
   transformContext?: PiAgentTransformContext
   agentFactory?: PiAgentFactory
@@ -93,6 +96,7 @@ export class PiAgentWrapper {
       const initialState: PiAgentInit['initialState'] = {
         systemPrompt: this.options.systemPrompt,
         model: this.options.model,
+        fastModel: this.options.fastModel,
       }
 
       if (this.options.tools) {

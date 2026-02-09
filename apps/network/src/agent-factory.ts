@@ -36,6 +36,8 @@ export interface LoopStep {
   step: number
   timestamp: number
   durationMs: number
+  model?: string
+  fallbackUsed?: string
   modelResponse?: { role: string; content?: string; toolCalls?: Array<{ name: string; arguments: unknown }> }
   toolResults?: Array<{ name: string; durationMs: number; resultPreview: string }>
 }
@@ -63,6 +65,15 @@ export function createOpenRouterAgentFactory(
       ? init.initialState.model
       : (env.OPENROUTER_MODEL_DEFAULT ?? DEFAULT_OPENROUTER_MODEL)
 
+    // Build fallback chain: primary → fastModel → hardcoded fallbacks
+    const fastModel = typeof init.initialState?.fastModel === 'string' ? init.initialState.fastModel : null
+    const fallbackModels: string[] = [
+      modelId,
+      ...(fastModel && fastModel !== modelId ? [fastModel] : []),
+      'google/gemini-2.0-flash-001',
+      'moonshotai/kimi-k2.5',
+    ].filter((v, i, a) => a.indexOf(v) === i) // dedupe
+
     const tools: PiAgentTool[] = Array.isArray(init.initialState?.tools) ? init.initialState!.tools! : []
     const messages: OpenRouterMessage[] = [{ role: 'system', content: systemPrompt }]
 
@@ -79,16 +90,19 @@ export function createOpenRouterAgentFactory(
 
     const baseUrl = getOpenRouterViaAiGatewayBaseUrl(env)
 
-    async function callModel(msgs: OpenRouterMessage[], maxTokens: number): Promise<{
+    type CallModelResult = {
       message: OpenRouterMessage
       toolCalls: Array<{ id: string; name: string; arguments: unknown }>
       text: string
       model: string
+      fallbackUsed?: string
       usage?: { input: number; output: number; totalTokens: number }
-    }> {
+    }
+
+    async function callModelOnce(msgs: OpenRouterMessage[], maxTokens: number, useModel: string): Promise<CallModelResult> {
       const toolDefs = buildToolDefs()
       const body: Record<string, unknown> = {
-        model: modelId,
+        model: useModel,
         messages: msgs,
         max_tokens: maxTokens,
       }
@@ -137,13 +151,41 @@ export function createOpenRouterAgentFactory(
         message,
         toolCalls,
         text: typeof message.content === 'string' ? message.content : '',
-        model: (data.model ?? modelId) as string,
+        model: (data.model ?? useModel) as string,
         usage: usage ? {
           input: (usage.prompt_tokens ?? 0) as number,
           output: (usage.completion_tokens ?? 0) as number,
           totalTokens: (usage.total_tokens ?? 0) as number,
         } : undefined,
       }
+    }
+
+    async function callModel(msgs: OpenRouterMessage[], maxTokens: number): Promise<CallModelResult> {
+      let lastError: Error | null = null
+      for (let i = 0; i < fallbackModels.length; i++) {
+        const model = fallbackModels[i]
+        try {
+          const result = await callModelOnce(msgs, maxTokens, model)
+          if (i > 0) {
+            console.log('Model fallback succeeded', { primary: fallbackModels[0], fallback: model, attempt: i + 1 })
+            result.fallbackUsed = model
+          }
+          return result
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err))
+          console.error('Model call failed, trying fallback', {
+            model,
+            attempt: i + 1,
+            totalFallbacks: fallbackModels.length,
+            error: lastError.message.slice(0, 200),
+          })
+          // Only retry on 5xx, 429, or network errors — not 400-level (bad request)
+          if (lastError.message.includes('API error 4') && !lastError.message.includes('API error 429')) {
+            throw lastError // Don't fallback on client errors (except rate limit)
+          }
+        }
+      }
+      throw lastError ?? new Error('All model fallbacks exhausted')
     }
 
     // O11y state — accessible via (agent as any)._o11y
@@ -210,6 +252,8 @@ export function createOpenRouterAgentFactory(
             step: steps,
             timestamp: stepStart,
             durationMs: modelDuration,
+            model: result.model,
+            fallbackUsed: result.fallbackUsed,
             modelResponse: {
               role: 'assistant',
               content: result.text || undefined,

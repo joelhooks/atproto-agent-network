@@ -2932,6 +2932,7 @@ export class AgentDO extends DurableObject {
     this.agent = new PiAgentWrapper({
       systemPrompt: input?.systemPromptOverride ?? config.personality,
       model: config.model,
+      fastModel: config.fastModel,
       tools,
       agentFactory,
       messages: this.session.messages,
