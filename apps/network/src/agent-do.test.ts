@@ -357,6 +357,90 @@ describe('AgentDO', () => {
     )
   })
 
+  it('stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug', async () => {
+    const { state } = createState('agent-debug-o11y')
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            model: 'test-model',
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call_1',
+                      type: 'function',
+                      function: { name: 'think_aloud', arguments: JSON.stringify({ message: 'hello from tool' }) },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            model: 'test-model',
+            choices: [{ message: { role: 'assistant', content: 'done' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { env } = createEnv({
+      CF_ACCOUNT_ID: 'acct',
+      AI_GATEWAY_SLUG: 'slug',
+      OPENROUTER_API_KEY: 'test-key',
+      OPENROUTER_MODEL_DEFAULT: 'test-model',
+      BLOBS: createFakeR2Bucket(),
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const promptRes = await agent.fetch(
+      new Request('https://example/agents/debuggy/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hello' }),
+      })
+    )
+    expect(promptRes.ok).toBe(true)
+
+    const debugRes = await agent.fetch(new Request('https://example/agents/debuggy/debug'))
+    const debug = await debugRes.json()
+
+    expect(Array.isArray(debug.lastPrompt)).toBe(true)
+    expect(debug.lastPrompt[0]).toMatchObject({ role: 'system' })
+
+    expect(Array.isArray(debug.loopTranscript)).toBe(true)
+    expect(debug.loopTranscript.length).toBeGreaterThan(0)
+    expect(debug.loopTranscript[0]).toMatchObject({
+      step: 1,
+      timestamp: expect.any(Number),
+      durationMs: expect.any(Number),
+    })
+    expect(debug.loopTranscript[0].modelResponse).toMatchObject({ role: 'assistant' })
+    expect(debug.loopTranscript[0].toolResults?.[0]).toMatchObject({
+      name: 'think_aloud',
+      durationMs: expect.any(Number),
+    })
+
+    expect(debug.loopDurationMs).toEqual(expect.any(Number))
+    expect(debug.loopDurationMs).toBeGreaterThan(0)
+  })
+
   it('stores encrypted memory and retrieves decrypted records', async () => {
     const { state } = createState('agent-memory')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })

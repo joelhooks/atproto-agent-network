@@ -563,6 +563,12 @@ export default {
               if (!row) return Response.json({ error: 'Game not found' }, { status: 404 })
               const game = JSON.parse((row as any).state)
               const { renderBoard, generateGameSummary } = await import('./games/catan')
+
+              // ?raw=true returns full game state for visualization
+              if (url.searchParams.get('raw') === 'true') {
+                return Response.json(game)
+              }
+
               return Response.json({
                 id: game.id,
                 type: 'catan',

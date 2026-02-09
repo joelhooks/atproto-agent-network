@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agents of Catan — Live</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #14141f; --border: #1e1e2e; --text: #e0e0e0;
+    --muted: #888; --accent: #60a5fa; --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
+    --wood: #22c55e; --brick: #ef4444; --sheep: #a3e635; --wheat: #fbbf24; --ore: #94a3b8; --desert: #d4c5a9;
+    --slag: #f97316; --snarl: #8b5cf6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; min-height: 100vh; }
+  
+  .layout { display: grid; grid-template-columns: 1fr 400px; height: 100vh; gap: 0; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; grid-template-rows: 60vh 40vh; } }
+  
+  .board-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; }
+  .feed-panel { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  
+  .header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 14px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--border); }
+  .status-badge.live { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+  
+  .scoreboard { display: flex; gap: 24px; padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .player-score { display: flex; align-items: center; gap: 8px; }
+  .player-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .player-dot.slag { background: var(--slag); }
+  .player-dot.snarl { background: var(--snarl); }
+  .vp { font-weight: 700; font-size: 16px; }
+  .resources { font-size: 11px; color: var(--muted); margin-left: 4px; }
+  .turn-info { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .current-turn { color: var(--accent); font-weight: 600; }
+  
+  #boardSvg { max-width: 100%; max-height: calc(100vh - 80px); }
+  
+  .feed-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .feed-item { padding: 6px 16px; font-size: 12px; line-height: 1.5; border-bottom: 1px solid rgba(30,30,46,0.5); }
+  .feed-item:hover { background: rgba(96,165,250,0.05); }
+  .feed-turn { color: var(--muted); font-size: 10px; margin-right: 6px; }
+  .feed-player { font-weight: 600; margin-right: 4px; }
+  .feed-player.slag { color: var(--slag); }
+  .feed-player.snarl { color: var(--snarl); }
+  .feed-action { color: var(--text); }
+  .feed-action.roll_dice { color: var(--yellow); }
+  .feed-action.build_settlement { color: var(--green); }
+  .feed-action.build_road { color: var(--accent); }
+  .feed-action.bank_trade { color: #c084fc; }
+  .feed-action.end_turn { color: var(--muted); }
+  .feed-detail { color: var(--muted); margin-left: 4px; }
+  
+  .no-game { text-align: center; color: var(--muted); padding: 40px; }
+  .no-game h2 { font-size: 24px; margin-bottom: 8px; }
+  
+  .legend { display: flex; gap: 12px; padding: 8px 20px; font-size: 10px; color: var(--muted); flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="board-panel">
+    <svg id="boardSvg" viewBox="-250 -220 500 440" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="feed-panel">
+    <div class="header">
+      <h1>🎲 Agents of Catan</h1>
+      <span class="status-badge" id="statusBadge">connecting...</span>
+    </div>
+    <div class="scoreboard" id="scoreboard"></div>
+    <div class="feed-list" id="feedList">
+      <div class="no-game"><h2>🎮</h2><p>Loading game...</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://agent-network.joelhooks.workers.dev';
+const TOKEN = localStorage.getItem('adminToken') || new URLSearchParams(location.search).get('token') || '';
+if (TOKEN) localStorage.setItem('adminToken', TOKEN);
+
+const COLORS = {
+  wood: '#22c55e', brick: '#ef4444', sheep: '#a3e635', wheat: '#fbbf24', ore: '#94a3b8', desert: '#78716c',
+};
+const PLAYER_COLORS = { slag: '#f97316', snarl: '#8b5cf6', grimlock: '#22d3ee' };
+const HEX_SIZE = 38;
+const RESOURCE_EMOJI = { wood: '🌲', brick: '🧱', sheep: '🐑', wheat: '🌾', ore: '⛰️', desert: '🏜️' };
+
+// Axial hex coords (same as server)
+const HEX_COORDS = [
+  [-1,-2],[0,-2],[1,-2],
+  [-2,-1],[-1,-1],[0,-1],[1,-1],
+  [-2,0],[-1,0],[0,0],[1,0],[2,0],
+  [-1,1],[0,1],[1,1],[2,1],
+  [0,2],[1,2],[2,2],
+];
+
+function hexCenter(q, r) {
+  const x = HEX_SIZE * (3/2 * q);
+  const y = HEX_SIZE * (Math.sqrt(3)/2 * q + Math.sqrt(3) * r);
+  return { x, y };
+}
+
+function hexCorners(cx, cy) {
+  const corners = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i);
+    corners.push({
+      x: cx + HEX_SIZE * Math.cos(angle),
+      y: cy + HEX_SIZE * Math.sin(angle),
+    });
+  }
+  return corners;
+}
+
+// Server uses doubled coords for vertex keys
+const CORNER_OFFSETS = [[1,-1],[2,0],[1,1],[-1,1],[-2,0],[-1,-1]];
+
+function vertexPos(vertexId, hexes) {
+  // Build vertex map same as server
+  const vMap = new Map();
+  let nextId = 0;
+  for (let h = 0; h < HEX_COORDS.length; h++) {
+    const [q, r] = HEX_COORDS[h];
+    const col = 2*q + r, row = 2*r;
+    for (let d = 0; d < 6; d++) {
+      const vc = col + CORNER_OFFSETS[d][0];
+      const vr = row + CORNER_OFFSETS[d][1];
+      const key = `${vc},${vr}`;
+      if (!vMap.has(key)) vMap.set(key, nextId++);
+      if (vMap.get(key) === vertexId) {
+        // Convert doubled coords to pixel
+        const { x: hx, y: hy } = hexCenter(q, r);
+        const corners = hexCorners(hx, hy);
+        return corners[d];
+      }
+    }
+  }
+  return null;
+}
+
+// Pre-compute all vertex positions
+function buildVertexPositions() {
+  const positions = new Map();
+  const vMap = new Map();
+  let nextId = 0;
+  for (let h = 0; h < HEX_COORDS.length; h++) {
+    const [q, r] = HEX_COORDS[h];
+    const col = 2*q + r, row = 2*r;
+    const { x: hx, y: hy } = hexCenter(q, r);
+    const corners = hexCorners(hx, hy);
+    for (let d = 0; d < 6; d++) {
+      const vc = col + CORNER_OFFSETS[d][0];
+      const vr = row + CORNER_OFFSETS[d][1];
+      const key = `${vc},${vr}`;
+      if (!vMap.has(key)) {
+        const id = nextId++;
+        vMap.set(key, id);
+        positions.set(id, corners[d]);
+      }
+    }
+  }
+  return positions;
+}
+
+const VERTEX_POS = buildVertexPositions();
+
+let currentGame = null;
+let allLog = [];
+let pollInterval = null;
+
+function renderBoard(game) {
+  const svg = document.getElementById('boardSvg');
+  let html = '';
+  
+  // Draw hexes
+  game.board.hexes.forEach((hex, i) => {
+    const [q, r] = HEX_COORDS[i];
+    const { x, y } = hexCenter(q, r);
+    const corners = hexCorners(x, y);
+    const points = corners.map(c => `${c.x},${c.y}`).join(' ');
+    const fill = COLORS[hex.type] || COLORS.desert;
+    const opacity = hex.type === 'desert' ? 0.4 : 0.25;
+    
+    html += `<polygon points="${points}" fill="${fill}" fill-opacity="${opacity}" stroke="${fill}" stroke-opacity="0.6" stroke-width="1.5"/>`;
+    
+    // Dice number
+    if (hex.diceNumber) {
+      const isHot = hex.diceNumber === 6 || hex.diceNumber === 8;
+      html += `<text x="${x}" y="${y-4}" text-anchor="middle" font-size="${isHot ? 14 : 12}" font-weight="${isHot ? 700 : 400}" fill="${isHot ? '#f87171' : '#e0e0e0'}">${hex.diceNumber}</text>`;
+    }
+    // Resource icon
+    html += `<text x="${x}" y="${y+14}" text-anchor="middle" font-size="12">${RESOURCE_EMOJI[hex.type] || ''}</text>`;
+  });
+  
+  // Draw roads (edges with owners)
+  game.board.edges.forEach(edge => {
+    if (!edge.owner) return;
+    const p1 = VERTEX_POS.get(edge.vertices[0]);
+    const p2 = VERTEX_POS.get(edge.vertices[1]);
+    if (!p1 || !p2) return;
+    const color = PLAYER_COLORS[edge.owner] || '#fff';
+    html += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="4" stroke-linecap="round" opacity="0.9"/>`;
+  });
+  
+  // Draw settlements (vertices with owners)
+  game.board.vertices.forEach(v => {
+    if (!v.owner) return;
+    const pos = VERTEX_POS.get(v.id);
+    if (!pos) return;
+    const color = PLAYER_COLORS[v.owner] || '#fff';
+    html += `<rect x="${pos.x-6}" y="${pos.y-6}" width="12" height="12" rx="2" fill="${color}" stroke="#000" stroke-width="1"/>`;
+  });
+  
+  // Highlight current player's last dice roll
+  if (game.lastDiceRoll) {
+    html += `<text x="0" y="-185" text-anchor="middle" font-size="11" fill="#888">Last roll: ${game.lastDiceRoll}</text>`;
+  }
+  
+  svg.innerHTML = html;
+}
+
+function renderScoreboard(game) {
+  const sb = document.getElementById('scoreboard');
+  const resStr = (r) => Object.entries(r).filter(([,v]) => v > 0).map(([k,v]) => `${RESOURCE_EMOJI[k]||k}${v}`).join(' ');
+  
+  sb.innerHTML = game.players.map(p => `
+    <div class="player-score">
+      <span class="player-dot ${p.name}"></span>
+      <span style="color:${PLAYER_COLORS[p.name]||'#fff'}">${p.name}</span>
+      <span class="vp">${p.victoryPoints}VP</span>
+      <span class="resources">${resStr(p.resources)}</span>
+    </div>
+  `).join('') + `
+    <div class="turn-info">
+      Turn <span class="current-turn">${game.turn}</span> · 
+      <span style="color:${PLAYER_COLORS[game.currentPlayer]||'#fff'}">${game.currentPlayer}</span>'s move
+    </div>
+  `;
+}
+
+function renderFeed(log) {
+  const el = document.getElementById('feedList');
+  // Show newest first
+  const items = [...log].reverse();
+  el.innerHTML = items.map(entry => `
+    <div class="feed-item">
+      <span class="feed-turn">T${entry.turn}</span>
+      <span class="feed-player ${entry.player}">${entry.player}</span>
+      <span class="feed-action ${entry.action}">${entry.action}</span>
+      <span class="feed-detail">${entry.detail || ''}</span>
+    </div>
+  `).join('');
+  // Auto-scroll to top (newest)
+  el.scrollTop = 0;
+}
+
+function renderLegend() {
+  document.getElementById('legend').innerHTML = Object.entries(COLORS).map(([name, color]) => `
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:${color};opacity:0.5"></div>
+      ${name}
+    </div>
+  `).join('') + Object.entries(PLAYER_COLORS).filter(([n]) => n !== 'grimlock').map(([name, color]) => `
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:${color}"></div>
+      ${name}
+    </div>
+  `).join('');
+}
+
+async function fetchGame(gameId) {
+  const headers = { 'Authorization': `Bearer ${TOKEN}` };
+  const res = await fetch(`${API}/games/${gameId}?raw=true`, { headers });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function findActiveGame() {
+  const headers = { 'Authorization': `Bearer ${TOKEN}` };
+  const res = await fetch(`${API}/games`, { headers });
+  const data = await res.json();
+  const games = data.games || [];
+  // Find first active catan game
+  const active = games.find(g => g.phase === 'playing' || g.phase === 'setup');
+  return active?.id || null;
+}
+
+let lastTurn = 0;
+let gameId = new URLSearchParams(location.search).get('game');
+
+async function poll() {
+  try {
+    if (!gameId) {
+      gameId = await findActiveGame();
+      if (!gameId) {
+        document.getElementById('feedList').innerHTML = '<div class="no-game"><h2>🎮</h2><p>No active games</p></div>';
+        return;
+      }
+    }
+    
+    const game = await fetchGame(gameId);
+    if (!game) {
+      document.getElementById('statusBadge').textContent = 'error';
+      document.getElementById('statusBadge').className = 'status-badge';
+      return;
+    }
+    
+    currentGame = game;
+    
+    // Accumulate full log
+    if (game.log) {
+      const existingTurns = new Set(allLog.map(e => `${e.turn}:${e.action}:${e.player}:${e.timestamp}`));
+      for (const entry of game.log) {
+        const key = `${entry.turn}:${entry.action}:${entry.player}:${entry.timestamp}`;
+        if (!existingTurns.has(key)) allLog.push(entry);
+      }
+      allLog.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+    
+    renderBoard(game);
+    renderScoreboard(game);
+    renderFeed(allLog);
+    
+    document.getElementById('statusBadge').textContent = '⚡ live';
+    document.getElementById('statusBadge').className = 'status-badge live';
+    
+    // Flash on new turns
+    if (game.turn > lastTurn && lastTurn > 0) {
+      document.title = `[T${game.turn}] Agents of Catan`;
+      setTimeout(() => document.title = 'Agents of Catan — Live', 3000);
+    }
+    lastTurn = game.turn;
+    
+  } catch (err) {
+    console.error('Poll error:', err);
+    document.getElementById('statusBadge').textContent = 'error';
+    document.getElementById('statusBadge').className = 'status-badge';
+  }
+}
+
+renderLegend();
+poll();
+// Poll every 5 seconds for near-real-time
+pollInterval = setInterval(poll, 5000);
+</script>
+</body>
+</html>
