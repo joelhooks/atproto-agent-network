@@ -496,20 +496,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
+    },
+    {
+      "id": "story-mlfbi0o4",
+      "title": "Adaptive alarm interval — faster when it's your turn in a game",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[test_failure] • turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tes"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2raq",
-      "storyTitle": "Agent creation API",
-      "category": "timeout",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "sed -n",
-        "rg -n"
-      ]
-    },
     {
       "storyId": "story-mlde37m4",
       "storyTitle": "Self-extending agents (R2 extension storage)",
@@ -721,6 +717,22 @@
         "/usr/bin/zsh -lc",
         "rg -n",
         "sed -n"
+      ],
+      "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlfbi0o4",
+      "storyTitle": "Adaptive alarm interval — faster when it's your turn in a game",
+      "category": "test_failure",
+      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/dashboard| src/index-html.test.ts > dashboard index.html wiring > loads the Vite entry module (src/main.ts) instead of legacy inline JS\nAssertionError: expected '<",
+      "toolNames": [
+        "sed -n",
+        "rg -n",
+        "swarm memory",
+        "nl -ba",
+        "/usr/bin/zsh -lc",
+        "ls -ლა",
+        "find packages/dashboard/src"
       ],
       "iterationNumber": 1
     }

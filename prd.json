@@ -327,7 +327,7 @@
       "title": "Post-game summary — log structured outcome when game finishes",
       "description": "In apps/network/src/environments/catan.ts, when a game ends (phase becomes 'finished'), emit a structured summary. Find the code that sets phase='finished' (search for `phase = 'finished'` or `phase: 'finished'`).\\n\\nAfter setting phase to finished:\\n1. Build a summary object: { gameId, type: 'catan', winner, turns: state.turn, players: state.players.map(p => ({name: p.name, vp: p.victoryPoints})) }\\n2. console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))\\n\\nDo the same in apps/network/src/environments/rpg.ts for RPG game completion.\\n\\nAdd a test in each environment's test file: complete a game, verify the JSON log line contains event_type='game.completed'.\\n\\nFiles: apps/network/src/environments/catan.ts, apps/network/src/environments/rpg.ts, apps/network/src/environments/catan.test.ts (or rpg.test.ts)\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 26,
-    "lastIteration": "2026-02-09T18:14:38.003Z"
+    "totalIterations": 27,
+    "lastIteration": "2026-02-09T18:31:05.023Z"
   },
   "totalStories": 11
 }

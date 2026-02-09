@@ -238,6 +238,7 @@ export const rpgEnvironment: AgentEnvironment = {
             return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
           }
 
+          const beforePhase = game.phase
           const result = explore(game, { dice })
 
           // advance turn
@@ -250,6 +251,18 @@ export const rpgEnvironment: AgentEnvironment = {
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            const turns = typeof (game as any).turn === 'number' ? (game as any).turn : game.roomIndex + 1
+            const summary = {
+              gameId,
+              type: 'rpg' as const,
+              winner: (game as any).winner ?? null,
+              turns,
+              players: Array.isArray(game.party) ? game.party.map((p) => ({ name: p.name, vp: p.hp })) : [],
+            }
+            console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))
+          }
 
           return {
             content: toTextContent(

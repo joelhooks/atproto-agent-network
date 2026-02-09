@@ -249,6 +249,7 @@ export const catanEnvironment: AgentEnvironment = {
           const playerName = ctx.agentName.trim() || 'unknown'
           const beforeCurrentPlayer = (game as any).currentPlayer as string | undefined
           const beforeTurn = (game as any).turn as number | undefined
+          const beforePhase = (game as any).phase as string | undefined
 
           const result = executeAction(game as any, playerName, action as any) as {
             ok: boolean
@@ -257,6 +258,8 @@ export const catanEnvironment: AgentEnvironment = {
             gameOver: boolean
             stalemate?: boolean
           }
+          const afterPhase = (game as any).phase as string | undefined
+          const finishedNow = beforePhase !== 'finished' && afterPhase === 'finished'
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -295,6 +298,20 @@ export const catanEnvironment: AgentEnvironment = {
               event_type: 'game.finished',
               context: { gameId, winner: (game as any).winner, turns: (game as any).turn, stalemate: Boolean(result.stalemate) },
             })
+          }
+
+          if (finishedNow) {
+            const state = game as any
+            const summary = {
+              gameId,
+              type: 'catan' as const,
+              winner: state.winner ?? null,
+              turns: state.turn,
+              players: Array.isArray(state.players)
+                ? state.players.map((p: any) => ({ name: p?.name, vp: p?.victoryPoints }))
+                : [],
+            }
+            console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))
           }
 
           const afterCurrentPlayer = (game as any).currentPlayer as string | undefined

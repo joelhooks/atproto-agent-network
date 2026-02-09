@@ -83,3 +83,45 @@ Summary: Starting story-mlfbhwfc: I’m going to (1) run the required `swarm mem
 Completed: Adaptive alarm interval — faster when it's your turn in a game
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/logger.test.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, packages/dashboard/index.html, packages/dashboard/package.json, packages/dashboard/tsconfig.json, packages/dashboard/vite.config.ts, pnpm-lock.yaml
 Summary: Adaptive alarm interval behavior is already implemented in the working tree: gameContext-derived interval reason ('my_turn'/'waiting'/'default') is set after the gameContext block, alarm() clamps interval to 15s/45s accordingly, and autoPlay debug includes intervalReason. The unit test asserting 15s reschedule when it is the agent’s turn is present and passes. Validation succeeded: pnpm typecheck && pnpm test. Note: git status shows unexpected local modifications (including forbidden .ralph-* and progress.txt); I did not intentionally edit these in this session—tell me if you want a diff/revert/commit workflow.
+
+---
+[2026-02-09T18:21:12.763Z]
+Failed: Adaptive alarm interval — faster when it's your turn in a game [test_failure]
+Validation: • turbo 2.8.3
+stderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)
+Vectorize embedding dimension mismatch { expected: [33m1024[39m, got: [33m768[39m, model: [32m'@cf/baai/bge-large-en-v1.5'[39m }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tes
+Codex: Starting story-mlfbi0o4: I’m going to (1) pull hivemind context for this story, (2) inspect `apps/network/src/agent.ts` alarm scheduling and gameContext generation, then (3) write a failing test in `apps/network/src/agent-do.test.ts` before implementing the adaptive interval logic.
+
+---
+[2026-02-09T18:31:05.024Z]
+Completed: Post-game summary — log structured outcome when game finishes
+Files: packages/dashboard/src/index-html.test.ts, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/catan.ts, apps/network/src/environments/rpg.ts, packages/dashboard/index.html, packages/dashboard/src/index.tsx, packages/dashboard/src/main.ts, packages/dashboard/vite.config.ts, progress.txt
+Summary: Implemented structured post-game completion logging for both environments and added tests that assert the JSON log line.
+
+Prior failure pattern detected: timeout/test_failure. Mitigation: ran validation in two explicit steps (`pnpm typecheck` then `pnpm test`) and kept tests small + deterministic.
+
+Changes
+- `apps/network/src/environments/catan.ts`: on phase transition to `'finished'`, logs `console.log(JSON.stringify({ event_type: 'game.completed', level: 'info', ...summary }))` with `{ gameId, type:'catan', winner, turns, players:[{name,vp}] }`.
+- `apps/network/src/environments/rpg.ts`: same on completion (explore transitions phase to `'finished'`).
+- `apps/network/src/environments/catan.test.ts`: completes a game via stalemate fast-path, asserts log contains `event_type:"game.completed"`.
+- `apps/network/src/environments/rpg.test.ts`: forces immediate completion, asserts log contains `event_type:"game.completed"`.
+
+Validation
+- Passed: `pnpm typecheck`
+- Passed: `pnpm test`
+
+Ops
+- Stored hivemind learning: `mem-37f702d08cd69d54`
+- Sent: `openclaw system event --mode now --text "Ralph: completed Post-game summary — log structured outcome when game finishes"`
+
+Note: `git status` shows unrelated local modifications (including forbidden `.ralph-*` + `progress.txt` and dashboard file churn). I did not change those as part of this story; tell me if you want me to isolate/clean up the worktree.
+
+## Learnings
+### Technical Discovery
+`apps/network/src/environments/catan.ts` and `apps/network/src/environments/rpg.ts` can reliably detect completion via a `beforePhase`→`afterPhase` transition check and emit a single structured JSON log line for downstream ingestion and unit tests.
+### Gotcha for Next Iteration
+Use a phase-transition guard (`beforePhase !== 'finished' && afterPhase === 'finished'`) to avoid duplicate `game.completed` logs when replaying actions or re-running completion code paths.
+### Files Context
+`apps/network/src/environments/catan.ts` and `apps/network/src/environments/rpg.ts` are the environment tool entrypoints where game state mutates and DB updates happen; `apps/network/src/environments/catan.test.ts` and `apps/network/src/environments/rpg.test.ts` are the right place to assert console JSON logging at completion without depending on broadcasts.
