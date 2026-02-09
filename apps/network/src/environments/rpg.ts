@@ -8,6 +8,7 @@ import {
   createDice,
   createGame,
   explore,
+  resolveSkillCheck,
   type RpgClass,
   type RpgGameState,
 } from '../games/rpg-engine'

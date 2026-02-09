@@ -154,11 +154,13 @@ function computeTurnOrder(party: Character[]): Character[] {
 function defaultDungeon(): Room[] {
   return [
     { type: 'rest', description: 'A quiet alcove.' },
+    { type: 'trap', description: 'A pressure plate clicks underfoot.' },
     {
       type: 'combat',
       description: 'A snarling goblin blocks the way.',
       enemies: [{ name: 'Goblin', hp: 6, DEX: 40, attack: 30, dodge: 20 }],
     },
+    { type: 'puzzle', description: 'A rune-locked door hums with strange energy.' },
     { type: 'treasure', description: 'A small chest with a few coins.' },
   ]
 }
@@ -266,6 +268,32 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
     game.combat = undefined
 
     // Keep a tiny bit of BRP flavor: some rooms can still grant small improvements.
+    if (room.type === 'rest') {
+      for (const member of game.party) {
+        member.hp = Math.min(member.maxHp, member.hp + 2)
+        member.mp = Math.min(member.maxMp, member.mp + 1)
+      }
+    }
+
+    if (room.type === 'treasure') {
+      const actor = findCharacter(game, game.currentPlayer)
+      if (actor) {
+        actor.mp = Math.min(actor.maxMp, actor.mp + 1)
+      }
+    }
+
+    if (room.type === 'trap') {
+      const actor = findCharacter(game, game.currentPlayer)
+      if (actor) {
+        const check = resolveSkillCheck({ skill: actor.skills.use_skill, dice: input.dice })
+        if (check.success) {
+          actor.skills.use_skill = check.nextSkill
+        } else {
+          applyDamage(actor, 2)
+        }
+      }
+    }
+
     if (room.type === 'puzzle') {
       const actor = findCharacter(game, game.currentPlayer)
       if (actor) {

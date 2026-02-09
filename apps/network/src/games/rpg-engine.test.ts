@@ -109,7 +109,6 @@ describe('rpg-engine', () => {
     const game = createGame({
       id: 'rpg_1',
       players: ['alice', 'bob'],
-      dice,
       dungeon: [
         { type: 'rest', description: 'A quiet alcove.' },
         { type: 'combat', description: 'Goblins!', enemies: [{ name: 'Goblin', hp: 6, DEX: 40, attack: 30, dodge: 20 }] },
@@ -122,5 +121,42 @@ describe('rpg-engine', () => {
     explore(game, { dice })
     expect(game.roomIndex).toBe(1)
     expect(game.mode).toBe('combat')
+  })
+
+  it('default dungeon includes all encounter types (combat, trap, treasure, rest, puzzle)', () => {
+    const game = createGame({ id: 'rpg_1', players: ['alice', 'bob'] })
+    const types = new Set(game.dungeon.map((r) => r.type))
+    expect(types.has('combat')).toBe(true)
+    expect(types.has('trap')).toBe(true)
+    expect(types.has('treasure')).toBe(true)
+    expect(types.has('rest')).toBe(true)
+    expect(types.has('puzzle')).toBe(true)
+  })
+
+  it('rest rooms heal the party (capped at max)', () => {
+    const dice = makeDiceFromD100([50])
+    const a = createCharacter({ name: 'a', klass: 'Warrior' })
+    const b = createCharacter({ name: 'b', klass: 'Mage' })
+    a.hp = Math.max(0, a.hp - 3)
+    b.hp = Math.max(0, b.hp - 3)
+
+    const game = createGame({
+      id: 'rpg_1',
+      players: [a, b],
+      dungeon: [
+        { type: 'treasure', description: 'Coins.' },
+        { type: 'rest', description: 'A quiet alcove.' },
+      ],
+    })
+
+    explore(game, { dice })
+    expect(game.roomIndex).toBe(1)
+
+    const aAfter = game.party.find((p) => p.name === 'a')!.hp
+    const bAfter = game.party.find((p) => p.name === 'b')!.hp
+    expect(aAfter).toBeGreaterThan(a.hp)
+    expect(bAfter).toBeGreaterThan(b.hp)
+    expect(aAfter).toBeLessThanOrEqual(a.maxHp)
+    expect(bAfter).toBeLessThanOrEqual(b.maxHp)
   })
 })

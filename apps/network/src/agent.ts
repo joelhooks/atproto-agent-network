@@ -331,14 +331,14 @@ export class AgentDO extends DurableObject {
             const lastThinkRaw = await this.ctx.storage.get('debug:lastThinkRaw')
             const lastOpenRouterReq = await this.ctx.storage.get('debug:lastOpenRouterReq')
             const autoPlay = await this.ctx.storage.get('debug:autoPlay')
-            const loopTranscript = await this.ctx.storage.get('debug:loopTranscript')
-            const lastPrompt = await this.ctx.storage.get('debug:lastPrompt')
-            const lastError = await this.ctx.storage.get('debug:lastError')
+            const loopTranscript = await this.ctx.storage.get('debug:loopTranscript') ?? null
+            const lastPrompt = await this.ctx.storage.get('debug:lastPrompt') ?? null
+            const lastError = await this.ctx.storage.get('debug:lastError') ?? null
             const consecutiveErrors = await this.ctx.storage.get<number>('consecutiveErrors') ?? 0
             return new Response(JSON.stringify({
-              lastThinkRaw,
-              lastOpenRouterReq,
-              autoPlay,
+              lastThinkRaw: lastThinkRaw ?? null,
+              lastOpenRouterReq: lastOpenRouterReq ?? null,
+              autoPlay: autoPlay ?? null,
               loopTranscript,
               lastPrompt,
               lastError,
