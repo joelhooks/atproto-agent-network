@@ -871,12 +871,13 @@ export class AgentDO extends DurableObject {
 
     // AUTO-PLAY: If the agent has a game turn but didn't call the game tool, inject game actions.
     // This is the nuclear option for models that refuse to use the game tool despite explicit prompting.
-    const hasGamePlayCall = selected.some(c => {
+    const hasEndTurnCall = selected.some(c => {
       if (c.name !== 'game') return false
       const args = c.arguments as Record<string, unknown> | undefined
-      return args?.command === 'action' && args?.gameAction && typeof args.gameAction === 'object'
+      const ga = args?.gameAction as Record<string, unknown> | undefined
+      return args?.command === 'action' && ga?.type === 'end_turn'
     })
-    if (!hasGamePlayCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
+    if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
       // Check D1 directly for any active game where it's this agent's turn
       try {
         const agentName = this.config?.name ?? ''
