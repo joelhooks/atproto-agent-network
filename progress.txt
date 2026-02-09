@@ -179,3 +179,37 @@ Codex: Starting story-mlfedsg1 (GH #90): I’m going to locate the default `enab
 Completed: Add extension tools to all agents' default enabledTools
 Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
 Summary: I found the extension tools (`write_extension`, `list_extensions`, `remove_extension`) already present in `apps/network/src/agent.ts` default `enabledTools`, with a conditional prompt hint, and `apps/network/src/agent-do.test.ts` already has a test asserting default config includes extension tools. Next step is to run `pnpm typecheck && pnpm test` and fix whatever is currently breaking validation (prior failure pattern detected: build_error/type_error/test_failure; mitigation: run validations early and address the actual failing package/test output).
+
+---
+[2026-02-09T19:11:55.963Z]
+Failed: Housekeeping mode — prune old goals and stale memories [build_error]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: 
+
+---
+[2026-02-09T19:16:04.033Z]
+Completed: Housekeeping mode — prune old goals and stale memories
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Implemented housekeeping alarm mode and coverage for GH #88.
+
+- `apps/network/src/agent.ts`: added `private async runHousekeeping()` to prune completed goals older than 24h, trim `actionOutcomes` to last 50, and emit structured `agent.housekeeping` log; `alarm()` now runs housekeeping instead of observe→think→act→reflect when `alarmMode === 'housekeeping'` while still rescheduling alarms.
+- `apps/network/src/agent-do.test.ts`: added unit test that sets `alarmMode='housekeeping'`, seeds 3 old completed goals, runs `alarm()`, and asserts they were pruned.
+
+Prior failure pattern detected: `build_error` / `test_failure`. Mitigation: ran `pnpm typecheck` and `pnpm test` early, then re-ran them via pre-commit hook on commit.
+
+Validation:
+- `pnpm typecheck` (pass)
+- `pnpm test` (pass)
+
+Ship + verify (STONE TABLET):
+- Deployed `apps/network` to production via `wrangler deploy`
+- Ran `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` (pass)
+
+Notes:
+- Committed with `Closes #88`.
+- Local workspace still has unrelated dirty files (`.ralph-context.json`, `.ralph-iterations.jsonl`, `progress.txt`, and untracked `.claude/.worker-tracking/`) which were not staged/committed.

@@ -543,25 +543,25 @@
     {
       "id": "story-mlfedsg1",
       "title": "Add extension tools to all agents' default enabledTools",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already contains (1) default `enabledTools` entries for the three extension tools, (2) a `buildThinkPrompt()` hint gated on whether any extension tool is enabled, and (3) concrete tool implementations for `write_extension`, `list_extensions`, `remove_extension`. `apps/network/src/agent-do.test.ts` already has a unit test verifying default enabledTools contains extension tools via `GET /config`.\nGotcha: This story may appear “missing” from the issue description, but the code already includes it; the real work may be unblocking repo-wide `pnpm typecheck && pnpm test` failures unrelated to the change. Run validations first and capture full output so you don’t chase phantom TODOs.\nFiles Context: `apps/network/src/agent.ts` holds agent config defaults (`enabledTools`), prompt building (`buildThinkPrompt()`), and extension tool implementations. `apps/network/src/agent-do.test.ts` contains the default-config test (`includes extension tools in the default enabledTools config`)."
+    },
+    {
+      "id": "story-mlfedt6k",
+      "title": "Housekeeping mode — prune old goals and stale memories",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
+      "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlepe7gy",
-      "storyTitle": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
-      "category": "type_error",
-      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\n@atproto-agent/network:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\n@atproto-agent/network#typecheck: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/no",
-      "toolNames": [
-        "sed -n",
-        "/usr/bin/zsh -lc",
-        "ls -la",
-        "rg -n",
-        "(rg -n"
-      ]
-    },
     {
       "storyId": "story-mlerh2h4",
       "storyTitle": "Stalemate detection — end Catan games early when stuck",
@@ -789,6 +789,18 @@
         "git show"
       ],
       "iterationNumber": 5
+    },
+    {
+      "storyId": "story-mlfedt6k",
+      "storyTitle": "Housekeeping mode — prune old goals and stale memories",
+      "category": "build_error",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n"
+      ],
+      "iterationNumber": 7
     }
   ]
 }

@@ -359,7 +359,7 @@
       "title": "Housekeeping mode — prune old goals and stale memories",
       "description": "GH Issue #88. Depends on AlarmMode being added (story-mlfedqnm).\\n\\nIn apps/network/src/agent.ts:\\n1. Add a private method `async runHousekeeping()` that:\\n   a. Reads goals from config, removes any with status='completed' that are older than 24h\\n   b. Reads actionOutcomes from storage, trims to last 50\\n   c. Logs: console.log(JSON.stringify({ event_type: 'agent.housekeeping', level: 'info', prunedGoals: count, trimmedOutcomes: count }))\\n2. In alarm(), when alarmMode === 'housekeeping', call runHousekeeping() INSTEAD of the normal observe→think→act→reflect cycle\\n3. Still reschedule the next alarm as normal\\n\\nAdd test: set alarmMode='housekeeping' in storage, add 3 completed goals older than 24h, run alarm(), verify goals were pruned.\\n\\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\\nValidation: pnpm typecheck && pnpm test\"",
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -397,8 +397,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 30,
-    "lastIteration": "2026-02-09T19:01:17.745Z"
+    "totalIterations": 31,
+    "lastIteration": "2026-02-09T19:16:04.032Z"
   },
   "totalStories": 11
 }
