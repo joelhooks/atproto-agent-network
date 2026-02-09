@@ -279,6 +279,78 @@
     .thoughts { display: grid; gap: 0.35rem; }
     .thought-line { font-size: 0.7rem; color: var(--text-dim); font-style: italic; line-height: 1.45; }
 
+    /* Environments */
+    .env-cards { display: grid; gap: 0.6rem; }
+    .env-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem;
+    }
+    .env-head { display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+    .env-title { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+    .env-icon { font-size: 0.9rem; }
+    .env-name { font-weight: 600; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+    .env-phase {
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.05rem 0.35rem;
+      background: var(--surface);
+    }
+    .env-meta { display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; }
+    .env-chip {
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.05rem 0.35rem;
+      background: var(--surface);
+    }
+    .env-stats { margin-top: 0.4rem; font-size: 0.65rem; color: var(--text); }
+    .env-body { margin-top: 0.5rem; }
+    .env-section { margin-top: 0.5rem; }
+    .env-section-title {
+      font-size: 0.55rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 0.25rem;
+    }
+    .env-section-subtitle { font-size: 0.6rem; color: var(--text-dim); margin-bottom: 0.35rem; }
+    .env-kv { display: grid; gap: 0.25rem; }
+    .env-kv-row { display: flex; justify-content: space-between; gap: 0.75rem; }
+    .env-k { color: var(--text-dim); font-size: 0.65rem; }
+    .env-v { color: var(--text); font-size: 0.65rem; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+    .env-room {
+      font-size: 0.7rem;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.55rem;
+      line-height: 1.45;
+    }
+    .env-details {
+      margin-top: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+    }
+    .env-details summary { cursor: pointer; user-select: none; }
+    .env-details pre {
+      margin-top: 0.35rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.65rem;
+      color: var(--text);
+    }
+    .env-empty { color: var(--text-dim); font-size: 0.7rem; }
+
     /* Stats bar */
     .stats-bar {
       grid-column: 1 / -1;

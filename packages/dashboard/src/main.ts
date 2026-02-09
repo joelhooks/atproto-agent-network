@@ -1,4 +1,5 @@
 import { normalizeAgentEvent, summarizeLexiconRecord, type DashboardActivityEvent } from './activity'
+import { renderEnvironmentCards, type EnvironmentDetail } from './environments'
 
 type AgentCardState = {
   name: string
@@ -34,6 +35,12 @@ type AgentCardState = {
     lastLoopEventAt?: string
   }
   lastGoalsFingerprint?: string
+  environments?: {
+    loading: boolean
+    error?: string
+    items: EnvironmentDetail[]
+    fetchedAt?: number
+  }
 }
 
 const API_BASE =
@@ -233,6 +240,15 @@ function renderAgents() {
       const model = a.config?.model ? truncate(a.config.model, 22) : '—'
       const personalitySnippet = a.config?.personality ? truncate(a.config.personality.trim(), 220) : '—'
       const loopLine = statusPill(a)
+      const envState = a.environments
+      const envHtml = (() => {
+        if (!active) return ''
+        if (!getAdminToken()) return '<div class="detail-empty">Admin token required to load environments.</div>'
+        if (!envState) return '<div class="detail-empty">Loading environments...</div>'
+        if (envState.loading) return '<div class="detail-empty">Loading environments...</div>'
+        if (envState.error) return `<div class="detail-empty">Failed to load environments: ${escapeHtml(envState.error)}</div>`
+        return renderEnvironmentCards(envState.items, a.name)
+      })()
 
       return `
         <div class="agent-card ${active ? 'active expanded' : ''}" data-name="${escapeHtml(a.name)}" role="button" tabindex="0">
@@ -310,6 +326,10 @@ function renderAgents() {
                     ? `<div class="thoughts">${think.map((t) => `<div class="thought-line">${escapeHtml(t)}</div>`).join('')}</div>`
                     : `<div class="detail-empty">No think_aloud yet.</div>`
                 }
+              </div>
+              <div class="detail-block detail-wide">
+                <div class="detail-label">Environments</div>
+                ${envHtml}
               </div>
             </div>
           </div>
@@ -584,6 +604,80 @@ async function fetchAgent(name: string) {
   }
 }
 
+function normalizeEnvironmentDetail(value: any): EnvironmentDetail | null {
+  if (!value || typeof value !== 'object') return null
+  const id = typeof value.id === 'string' ? value.id : null
+  const type = typeof value.type === 'string' ? value.type : null
+  const hostAgent = typeof value.hostAgent === 'string' ? value.hostAgent : 'unknown'
+  const phase = typeof value.phase === 'string' ? value.phase : 'unknown'
+  const players = Array.isArray(value.players) ? value.players.filter((p: any) => typeof p === 'string') : []
+  if (!id || !type) return null
+  return {
+    id,
+    type,
+    hostAgent,
+    phase,
+    players,
+    winner: typeof value.winner === 'string' ? value.winner : null,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : undefined,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : undefined,
+    state: (value as any).state,
+  }
+}
+
+async function loadAgentEnvironments(agentName: string) {
+  const agent = state.agents.get(agentName)
+  if (!agent) return
+  if (!getAdminToken()) return
+
+  const now = Date.now()
+  const existing = agent.environments
+  if (existing?.loading) return
+  if (existing?.fetchedAt && now - existing.fetchedAt < 10_000) return
+
+  agent.environments = {
+    loading: true,
+    items: existing?.items ?? [],
+    fetchedAt: existing?.fetchedAt,
+  }
+  state.agents.set(agentName, agent)
+  renderAgents()
+
+  try {
+    const list = await fetchJson(`${API_BASE}/environments?player=${encodeURIComponent(agentName)}`, { admin: true })
+    const envs = Array.isArray(list?.environments) ? list.environments : []
+
+    // Dashboard wants active environments; exclude finished, keep ordering from API (updated_at DESC).
+    const active = envs.filter((e: any) => e && typeof e === 'object' && String(e.phase ?? '') !== 'finished')
+
+    const details = await Promise.all(
+      active.map(async (e: any) => {
+        const id = typeof e?.id === 'string' ? e.id : null
+        if (!id) return null
+        try {
+          const detail = await fetchJson(`${API_BASE}/environments/${encodeURIComponent(id)}`, { admin: true })
+          return normalizeEnvironmentDetail(detail)
+        } catch {
+          // Fall back to the list payload if detail fetch fails.
+          return normalizeEnvironmentDetail({ ...e, state: null })
+        }
+      })
+    )
+
+    agent.environments = {
+      loading: false,
+      items: details.filter(Boolean) as EnvironmentDetail[],
+      fetchedAt: now,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    agent.environments = { loading: false, items: existing?.items ?? [], fetchedAt: now, error: message }
+  }
+
+  state.agents.set(agentName, agent)
+  renderAgents()
+}
+
 function connectAgentWebSocket(agentName: string) {
   if (state.wsByAgent.has(agentName)) return
 
@@ -712,6 +806,9 @@ function bindUI() {
     if (!name) return
     state.expandedAgent = state.expandedAgent === name ? null : name
     renderAgents()
+    if (state.expandedAgent === name) {
+      loadAgentEnvironments(name)
+    }
   })
 
   // Click-to-copy for truncated DIDs (delegated to document)
