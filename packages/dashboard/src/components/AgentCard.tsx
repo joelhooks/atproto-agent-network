@@ -34,10 +34,10 @@ export function AgentCard({ agent, expanded, isAdmin, onToggle, onLoadEnvironmen
             <Badge variant="dim" className="text-[0.55rem]">{agent.config.specialty}</Badge>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-1.5 text-[0.65rem] text-text-dim">
+        <div className="flex items-center gap-2 mt-1.5 text-[0.65rem] text-text-dim min-w-0 overflow-hidden">
           {agent.did && (
             <span
-              className="hover:text-accent cursor-pointer transition-colors"
+              className="hover:text-accent cursor-pointer transition-colors truncate flex-shrink min-w-0"
               onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(agent.did!) }}
               title={agent.did}
             >
@@ -45,8 +45,10 @@ export function AgentCard({ agent, expanded, isAdmin, onToggle, onLoadEnvironmen
             </span>
           )}
           <div className="flex-1" />
-          {goalCount > 0 && <span>{activeGoals}/{goalCount} goals</span>}
-          {typeof agent.memories === 'number' && <span>{agent.memories} mem</span>}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {goalCount > 0 && <span>{activeGoals}/{goalCount} goals</span>}
+            {typeof agent.memories === 'number' && <span>{agent.memories} mem</span>}
+          </div>
         </div>
       </Card>
       {expanded && (
