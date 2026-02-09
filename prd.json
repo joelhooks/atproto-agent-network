@@ -455,7 +455,7 @@
       "title": "Environment runtime: drive context + autoplay via AgentEnvironment registry",
       "description": "GH Issue #109. Refactor AgentDO so environment-specific logic is NOT hardcoded in agent.ts.\n\nFind hardcoded env logic: rg -n \"SAFETY NET\" apps/network/src/agent.ts\n\nReplace with registry dispatch: AgentDO calls environment hooks from registry (buildContext, isActionTaken, getAutoPlayActions) instead of if/else branching.\n\nFiles to modify: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts, apps/network/src/environments/types.ts (if needed)\n\nThis is a REFACTOR — behavior must be identical. All 217+ existing tests must pass.\n\nCloses #109",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -485,8 +485,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 42,
-    "lastIteration": "2026-02-09T21:18:38.809Z"
+    "totalIterations": 43,
+    "lastIteration": "2026-02-09T21:28:11.127Z"
   },
   "totalStories": 11
 }
