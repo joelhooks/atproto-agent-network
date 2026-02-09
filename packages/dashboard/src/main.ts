@@ -133,10 +133,25 @@ function truncate(str: unknown, max = 140): string {
 function truncateDid(did: unknown): string {
   const s = typeof did === 'string' ? did : ''
   if (!s || s.length < 20) return s
-  // did:cf:abcd1234… — short enough for mobile
   const parts = s.split(':')
   if (parts.length >= 3) return `${parts[0]}:${parts[1]}:${parts[2].slice(0, 8)}…`
   return s.slice(0, 12) + '…'
+}
+
+/** Replace full DIDs with clickable truncated spans (for HTML contexts) */
+function didToClickable(text: string): string {
+  return text.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (fullDid) => {
+    const short = truncateDid(fullDid)
+    return `<span class="did-copy" title="Click to copy: ${fullDid}" data-did="${fullDid}">${escapeHtml(short)}</span>`
+  })
+}
+
+/** Same but for already-escaped HTML — operates on the escaped DID pattern */
+function didToClickableInHtml(html: string): string {
+  return html.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (fullDid) => {
+    const short = truncateDid(fullDid)
+    return `<span class="did-copy" title="Click to copy: ${fullDid}" data-did="${fullDid}">${escapeHtml(short)}</span>`
+  })
 }
 
 function resolveDidToName(did: string): string {
@@ -356,13 +371,11 @@ function renderEvent(ev: DashboardActivityEvent): string {
   const ctx = getEventContext(ev)
   const isToolish = ev.kind === 'tool' || ev.type.includes('tool') || Boolean((ctx as any)?.tool)
 
-  // Truncate any full DIDs that leaked into the summary (from old events before the fix)
-  const safeSummary = ev.summary.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (m) => truncateDid(m) as string)
-  let body = `<div class="event-body ${isThought ? 'thought-body' : ''}">${escapeHtml(safeSummary)}</div>`
+  // Render DIDs as truncated clickable spans (copy full DID on click)
+  let body = `<div class="event-body ${isThought ? 'thought-body' : ''}">${didToClickableInHtml(escapeHtml(ev.summary))}</div>`
 
   if (ev.text) {
-    const safeText = ev.text.replace(/did:[a-z]+:[a-f0-9]{16,}/g, (m) => truncateDid(m) as string)
-    body += `<div class="memory-text">${escapeHtml(safeText)}</div>`
+    body += `<div class="memory-text">${didToClickableInHtml(escapeHtml(ev.text))}</div>`
   }
 
   const tags = [...(ev.tags ?? [])]
@@ -427,7 +440,7 @@ function renderEvent(ev: DashboardActivityEvent): string {
     // Show raw context as a collapsible block (trim very large payloads by truncating stringified output).
     const json = JSON.stringify(ctx, null, 2)
     if (json && json !== '{}' && json.length < 25_000) {
-      body += `<details class="event-details"><summary>details</summary><pre>${escapeHtml(json)}</pre></details>`
+      body += `<details class="event-details"><summary>details</summary><pre>${didToClickableInHtml(escapeHtml(json))}</pre></details>`
     }
   }
   if (err) {
@@ -441,7 +454,7 @@ function renderEvent(ev: DashboardActivityEvent): string {
       <div class="event-icon ${cls}">${escapeHtml(icon)}</div>
       <div class="event-content">
         <div class="event-header">
-          <span class="event-agent">${escapeHtml(ev.agent)}<span class="event-type">${escapeHtml(ev.type)}</span></span>
+          <span class="event-agent">${didToClickableInHtml(escapeHtml(ev.agent))}<span class="event-type">${escapeHtml(ev.type)}</span></span>
           <span class="event-time">${escapeHtml(formatTime(ev.timestamp))}</span>
         </div>
         ${body}
@@ -699,6 +712,29 @@ function bindUI() {
     if (!name) return
     state.expandedAgent = state.expandedAgent === name ? null : name
     renderAgents()
+  })
+
+  // Click-to-copy for truncated DIDs (delegated to document)
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null
+    if (!target?.classList?.contains('did-copy')) return
+    const fullDid = target.dataset.did
+    if (!fullDid) return
+    navigator.clipboard.writeText(fullDid).then(() => {
+      target.classList.add('copied')
+      const orig = target.textContent
+      target.textContent = 'copied!'
+      setTimeout(() => {
+        target.classList.remove('copied')
+        target.textContent = orig
+      }, 1200)
+    }).catch(() => {
+      // Fallback: select the text
+      const range = document.createRange()
+      range.selectNodeContents(target)
+      window.getSelection()?.removeAllRanges()
+      window.getSelection()?.addRange(range)
+    })
   })
 }
 

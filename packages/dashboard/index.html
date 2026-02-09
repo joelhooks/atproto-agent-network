@@ -183,6 +183,18 @@
       max-width: 100%;
     }
 
+    .did-copy {
+      cursor: pointer;
+      color: var(--accent);
+      border-bottom: 1px dashed var(--accent);
+      transition: opacity 0.15s;
+    }
+    .did-copy:hover { opacity: 0.7; }
+    .did-copy.copied {
+      color: var(--success, #4ade80);
+      border-bottom-color: var(--success, #4ade80);
+    }
+
     .agent-meta {
       display: flex;
       gap: 0.5rem;
