@@ -471,7 +471,7 @@
       "title": "Ralph backlog: generic work_items queue + ralph tool commands",
       "description": "GH Issue #113. Add work_items table to schema.sql and d1-mock.ts:\nCREATE TABLE IF NOT EXISTS work_items (id TEXT PRIMARY KEY, env_type TEXT NOT NULL, env_id TEXT, status TEXT NOT NULL DEFAULT 'open', priority INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', claimed_by_did TEXT, claimed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n\nExtend ralph tool in ralph.ts with commands: propose_work, claim_work, submit_result, status.\n\nTests in ralph.test.ts for propose/claim/submit/status flows.\n\nCloses #113",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -485,8 +485,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 44,
-    "lastIteration": "2026-02-09T21:33:19.796Z"
+    "totalIterations": 45,
+    "lastIteration": "2026-02-09T21:43:09.586Z"
   },
   "totalStories": 11
 }

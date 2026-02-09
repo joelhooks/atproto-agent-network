@@ -365,3 +365,27 @@ Prior failure pattern detected: build_error/test_failure. Mitigation: kept chang
 Validation: `pnpm typecheck && pnpm test`.
 
 Notes: There are unrelated unstaged local modifications remaining in `.ralph-context.json`, `.ralph-iterations.jsonl`, and several `packages/dashboard/...` files; they were not included in the GH #112 commit.
+
+---
+[2026-02-09T21:43:09.588Z]
+Completed: Ralph backlog: generic work_items queue + ralph tool commands
+Files: apps/network/schema.sql, apps/network/src/environments/ralph.test.ts, apps/network/src/environments/ralph.ts, apps/network/src/schema.test.ts, packages/core/src/d1-mock.ts, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Implemented GH #113 work queue + ralph tool commands.
+
+Prior failure pattern detected: test_failure/build_error. Mitigation: kept changes tightly scoped to Ralph + D1Mock + schema, used only SQL shapes explicitly supported by D1Mock (simple WHERE/ORDER/LIMIT + UPDATE ... SET ?), added targeted tests first, and ran full validation (`pnpm typecheck && pnpm test`).
+
+Changes:
+- Added `work_items` table to `apps/network/schema.sql`.
+- Extended `apps/network/src/environments/ralph.ts` tool with `propose_work`, `claim_work`, `submit_result`, and enhanced `status` (queue summary + optional id lookup) while preserving agent identity fields.
+- Added schema test coverage for `work_items` in `apps/network/src/schema.test.ts`.
+- Added flow tests for propose/claim/submit/status in `apps/network/src/environments/ralph.test.ts`.
+- Updated `packages/core/src/d1-mock.ts` with `WorkItemRow`, `D1_MOCK_WORK_ITEMS_SCHEMA_SQL`, and insert/select/update support for `work_items`.
+
+Committed:
+- `feat(network): add work_items queue + ralph commands` (Closes #113)
+
+Validation:
+- `pnpm typecheck && pnpm test` (pass)
+
+Notes:
+- `.ralph-context.json` and `.ralph-iterations.jsonl` remain locally modified but were not touched/staged for this story (per repo rules).

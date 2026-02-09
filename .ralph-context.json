@@ -751,6 +751,21 @@
         "progress.txt"
       ],
       "learnings": ""
+    },
+    {
+      "id": "story-mlfo266m",
+      "title": "RalphEnvironment: skeleton environment + tool + tests",
+      "status": "completed",
+      "filesModified": [
+        "packages/dashboard/src/components/AgentDetail.tsx",
+        "packages/dashboard/src/components/EnvironmentCard.tsx",
+        "packages/dashboard/src/components/Header.tsx",
+        "packages/dashboard/src/components/ui/Heartbeat.tsx",
+        "packages/dashboard/src/styles/app.css",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: Built-in environments are registered by side-effect: `apps/network/src/environments/builtins.ts` calls `registerBuiltInEnvironments()` on import, so tests that assert built-in registry contents should `vi.resetModules()` and then `await import('./builtins')` before calling `getEnvironment()` from `apps/network/src/environments/registry.ts`.\nGotcha: If you add a new environment tool, keep its `execute` argument parsing defensive (`normalizeToolCallArguments()` guard) so malformed tool-call payloads do not crash the agent loop. Also watch for a dirty worktree: unrelated changes (e.g. `.ralph-context.json`, `.ralph-iterations.jsonl`, `packages/dashboard/...`) can accidentally get staged unless you explicitly `git add` only the story paths.\nFiles Context: `apps/network/src/environments/ralph.ts` defines the new `ralphEnvironment` (tool + context + action detection). `apps/network/src/environments/builtins.ts` is the single place that wires built-ins into the registry. `apps/network/src/environments/ralph.test.ts` is the contract test suite ensuring registry wiring + tool behavior stays stable."
     }
   ],
   "failures": [
