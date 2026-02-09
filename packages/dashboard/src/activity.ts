@@ -148,6 +148,15 @@ function tryParseJson(s: string): Record<string, unknown> | null {
   } catch { return null }
 }
 
+/** Pull the first human-readable string from common JSON keys */
+function extractHumanText(obj: Record<string, unknown>): string | undefined {
+  const keys = ['note', 'decision', 'message', 'description', 'summary', 'reason', 'text', 'rationale', 'detail', 'comment', 'observation']
+  for (const k of keys) {
+    if (typeof obj[k] === 'string' && obj[k].length > 0) return obj[k]
+  }
+  return undefined
+}
+
 function humanizeMemoryNote(
   rawSummary: string,
   rawText: string | undefined
@@ -173,16 +182,24 @@ function humanizeMemoryNote(
     if (gameId) parts.push(`#${gameId.split('_').pop()}`)
     const summary = parts.length > 0 ? parts.join(' ') : rawSummary
 
-    // Use note/decision as text, or format remaining fields
-    const text = note ?? decision ?? undefined
+    // Use the first human-readable field as text
+    const text = extractHumanText(obj)
 
     return { summary, text, jsonData: obj }
   }
 
-  // If text is JSON but summary is human-readable, keep summary, extract note from text
+  // If text is JSON but summary is human-readable, keep summary, extract human text from JSON
   if (textJson && !summaryJson) {
-    const note = typeof textJson.note === 'string' ? textJson.note : undefined
-    return { summary: rawSummary, text: note ?? rawText, jsonData: textJson }
+    const humanText = extractHumanText(textJson)
+    return { summary: rawSummary, text: humanText, jsonData: textJson }
+  }
+
+  // If rawText looks like JSON even if tryParseJson didn't catch it, suppress it
+  if (rawText && (rawText.trimStart().startsWith('{') || rawText.trimStart().startsWith('['))) {
+    const parsed = tryParseJson(rawText)
+    if (parsed) {
+      return { summary: rawSummary, text: extractHumanText(parsed), jsonData: parsed }
+    }
   }
 
   return { summary: rawSummary, text: rawText, jsonData: null }

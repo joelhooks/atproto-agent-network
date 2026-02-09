@@ -42,28 +42,44 @@ const kindVariants: Record<ActivityKind, 'default' | 'accent' | 'success' | 'err
   error: 'error',
 }
 
-// Skip keys that are already shown elsewhere or are noise
-const HIDDEN_KEYS = new Set(['type', 'note', 'decision', '$type', 'createdAt', 'updatedAt'])
+// Skip keys already shown in summary/text or that are pure noise
+const HIDDEN_KEYS = new Set([
+  'type', 'note', 'decision', 'message', 'description', 'summary', 'reason',
+  'text', 'rationale', 'detail', 'comment', 'observation',
+  '$type', 'createdAt', 'updatedAt',
+])
+
+function formatValue(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (typeof val === 'number') return String(val)
+  if (typeof val === 'boolean') return val ? 'yes' : 'no'
+  if (val === null || val === undefined) return '—'
+  if (Array.isArray(val)) return val.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(', ')
+  // Nested objects: flatten simple ones, stringify complex ones
+  if (typeof val === 'object') {
+    const obj = val as Record<string, unknown>
+    const flat = Object.entries(obj)
+      .filter(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
+      .map(([k, v]) => `${k}: ${v}`)
+    if (flat.length > 0 && flat.length === Object.keys(obj).length) return flat.join(', ')
+    return JSON.stringify(val)
+  }
+  return String(val)
+}
 
 function MemoryDataDisplay({ data }: { data: Record<string, unknown> }) {
-  const entries = Object.entries(data).filter(([k]) => !HIDDEN_KEYS.has(k))
+  const entries = Object.entries(data).filter(([k, v]) => !HIDDEN_KEYS.has(k) && v !== undefined && v !== null && v !== '')
   if (entries.length === 0) return null
 
   return (
     <div className="mt-2 rounded bg-surface-2/60 border border-border/50 px-3 py-2">
       <div className="grid gap-y-1" style={{ gridTemplateColumns: 'auto 1fr' }}>
-        {entries.map(([key, val]) => {
-          const display = typeof val === 'string' ? val
-            : typeof val === 'number' ? String(val)
-            : typeof val === 'boolean' ? (val ? 'yes' : 'no')
-            : JSON.stringify(val)
-          return (
-            <div key={key} className="contents">
-              <span className="text-[0.58rem] text-text-dim pr-3 tabular-nums">{key.replace(/_/g, ' ')}</span>
-              <span className="text-[0.62rem] text-text break-words">{display}</span>
-            </div>
-          )
-        })}
+        {entries.map(([key, val]) => (
+          <div key={key} className="contents">
+            <span className="text-[0.58rem] text-text-dim pr-3 tabular-nums">{key.replace(/_/g, ' ')}</span>
+            <span className="text-[0.62rem] text-text break-words">{formatValue(val)}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
