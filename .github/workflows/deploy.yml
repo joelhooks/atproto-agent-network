@@ -46,7 +46,10 @@ jobs:
       - name: Typecheck
         run: pnpm turbo typecheck
 
-      - name: Deploy to Cloudflare Workers
+      - name: Build dashboard
+        run: pnpm --filter @atproto-agent/dashboard build
+
+      - name: Deploy network worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -54,6 +57,15 @@ jobs:
           workingDirectory: apps/network
           packageManager: pnpm
           command: deploy --env ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
+
+      - name: Deploy dashboard
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/dashboard
+          packageManager: pnpm
+          command: deploy
 
       - name: Smoke test
         run: ./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev
