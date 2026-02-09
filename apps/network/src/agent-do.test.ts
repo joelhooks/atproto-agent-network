@@ -80,6 +80,16 @@ class FakeStorage {
     this.store.set(key, structuredClone(value))
   }
 
+  async list(options: { prefix?: string } = {}): Promise<Map<string, unknown>> {
+    const prefix = typeof options.prefix === 'string' ? options.prefix : ''
+    const out = new Map<string, unknown>()
+    for (const [key, value] of this.store.entries()) {
+      if (prefix && !key.startsWith(prefix)) continue
+      out.set(key, structuredClone(value))
+    }
+    return out
+  }
+
   async setAlarm(scheduledTime: number | Date): Promise<void> {
     this._alarm = typeof scheduledTime === 'number' ? scheduledTime : scheduledTime.getTime()
   }
@@ -461,6 +471,7 @@ describe('AgentDO', () => {
     expect('loopTranscript' in debug).toBe(true)
     expect('consecutiveErrors' in debug).toBe(true)
     expect('lastError' in debug).toBe(true)
+    expect('extensionMetrics' in debug).toBe(true)
   })
 
   it('stores encrypted memory and retrieves decrypted records', async () => {
@@ -2886,6 +2897,42 @@ describe('AgentDO', () => {
 
     const tools = (agent as any).tools as Array<{ name: string }>
     expect(tools.some((t) => t.name === 'ext_tool')).toBe(true)
+  })
+
+  it('tracks extension usage metrics in DO storage after activation', async () => {
+    const key = 'extensions/alice/ext-metrics.js'
+    const bucket = createFakeR2Bucket({
+      [key]:
+        'export function activate(agent) { agent.registerTool({ name: \"ext_metrics_tool\", label: \"Ext Metrics Tool\", execute: () => ({ ok: true }) }) }',
+    })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { state, storage } = createState('agent-ext-metrics')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    // Execute a tool that came from an extension (proves extension activation worked).
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => unknown }>
+    const extTool = tools.find((t) => t.name === 'ext_metrics_tool')
+    expect(extTool).toBeTruthy()
+    expect(typeof extTool!.execute).toBe('function')
+    await extTool!.execute!({})
+
+    const metrics = await storage.get<any>('extensionMetrics:ext-metrics')
+    expect(metrics).toMatchObject({
+      name: 'ext-metrics',
+      totalCalls: 1,
+      successCalls: 1,
+      failedCalls: 0,
+      lastUsed: expect.any(Number),
+    })
   })
 
   it('hot reload loads new extensions on the next alarm cycle after write_extension', async () => {
