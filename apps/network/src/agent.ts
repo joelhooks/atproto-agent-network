@@ -995,8 +995,8 @@ export class AgentDO extends DurableObject {
       }
     }
 
-    // FALLBACK ONLY: If the model didn't call end_turn, inject roll_dice + end_turn to prevent stuck turns.
-    // The MODEL makes all strategic decisions (trade, build, etc). This just ensures turns always complete.
+    // ASSIST MODE: Model makes strategic decisions, but we help fill gaps.
+    // If model rolled but didn't build when it could, inject builds. Always ensure end_turn.
     const hasEndTurnCall = selected.some(c => {
       if (c.name !== 'game') return false
       const args = c.arguments as Record<string, unknown> | undefined
@@ -1008,6 +1008,13 @@ export class AgentDO extends DurableObject {
       const args = c.arguments as Record<string, unknown> | undefined
       const ga = args?.gameAction as Record<string, unknown> | undefined
       return args?.command === 'action' && ga?.type === 'roll_dice'
+    })
+    const hasBuildCall = selected.some(c => {
+      if (c.name !== 'game') return false
+      const args = c.arguments as Record<string, unknown> | undefined
+      const ga = args?.gameAction as Record<string, unknown> | undefined
+      const t = ga?.type as string | undefined
+      return args?.command === 'action' && (t === 'build_road' || t === 'build_settlement' || t === 'bank_trade')
     })
     if (!hasEndTurnCall && this.config?.enabledTools?.includes('game') && this.agentEnv?.DB) {
       try {
@@ -1023,9 +1030,10 @@ export class AgentDO extends DurableObject {
           gameId: gameRow?.id ?? null,
           modelCalledGame: selected.some(c => c.name === 'game'),
           hasRollCall,
+          hasBuildCall,
           ts: Date.now(),
         }
-        console.log('FALLBACK check:', autoPlayDebug)
+        console.log('ASSIST check:', autoPlayDebug)
         await this.ctx.storage.put('debug:autoPlay', autoPlayDebug)
 
         if (gameRow) {
@@ -1033,18 +1041,87 @@ export class AgentDO extends DurableObject {
           const state = JSON.parse(gameRow.state)
           const alreadyRolled = state.log?.some((e: any) => e.turn === state.turn && e.player === agentName && e.action === 'roll_dice')
 
-          // Only inject roll_dice if model didn't roll and turn hasn't been rolled yet
+          // Inject roll_dice if needed
           if (!hasRollCall && !alreadyRolled) {
-            console.log('FALLBACK: Injecting roll_dice for', agentName)
             selected.unshift({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'roll_dice' } } })
           }
 
-          // Always inject end_turn at the end — model's actions (trade/build) run first
-          console.log('FALLBACK: Injecting end_turn for', agentName)
+          // If model didn't build, inject smart builds (the model "wanted" to build but only sent 1 action)
+          if (!hasBuildCall) {
+            const me = state.players?.find((p: any) => p.name === agentName)
+            if (me?.resources) {
+              const r = { ...me.resources } as Record<string, number>
+              const allEdges = state.board?.edges || []
+              const occupiedVertices = new Set((state.board?.vertices?.filter((v: any) => v.owner) || []).map((v: any) => v.id))
+              const myRoadEdges = allEdges.filter((e: any) => e.owner === agentName)
+              const networkVertices = new Set<number>()
+              for (const v of (state.board?.vertices?.filter((v: any) => v.owner === agentName) || [])) networkVertices.add(v.id)
+              for (const road of myRoadEdges) for (const vid of road.vertices || []) networkVertices.add(vid)
+
+              // Trade surplus for scarce (same logic as before)
+              const needed = ['wood', 'brick', 'sheep', 'wheat']
+              const low = needed.filter(x => (r[x] || 0) < 3)
+              const surplus = Object.entries(r).filter(([, count]) => typeof count === 'number' && count >= 4)
+              let trades = 0
+              for (const missing of low) {
+                if (trades >= 3) break
+                for (const [res] of surplus) {
+                  if (res === missing) continue
+                  if ((r[res] || 0) >= 3) {
+                    selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'bank_trade', offering: res, requesting: missing } } })
+                    r[res] = (r[res] || 0) - 3
+                    r[missing] = (r[missing] || 0) + 1
+                    trades++
+                    break
+                  }
+                }
+              }
+
+              // Build roads
+              for (let i = 0; i < 2 && (r.wood || 0) >= 1 && (r.brick || 0) >= 1; i++) {
+                let bestEdge: number | null = null
+                for (const edge of allEdges) {
+                  if (edge.owner) continue
+                  const [v1, v2] = edge.vertices || []
+                  if (!networkVertices.has(v1) && !networkVertices.has(v2)) continue
+                  const farEnd = networkVertices.has(v1) ? v2 : v1
+                  if (!occupiedVertices.has(farEnd)) { bestEdge = edge.id; break }
+                }
+                if (bestEdge !== null) {
+                  selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_road', edgeId: bestEdge } } })
+                  r.wood = (r.wood || 0) - 1
+                  r.brick = (r.brick || 0) - 1
+                  const roadData = allEdges.find((e: any) => e.id === bestEdge)
+                  if (roadData) for (const vid of roadData.vertices || []) networkVertices.add(vid)
+                } else break
+              }
+
+              // Build settlement
+              if (r.wood >= 1 && r.brick >= 1 && r.sheep >= 1 && r.wheat >= 1) {
+                for (const vid of networkVertices) {
+                  if (occupiedVertices.has(vid)) continue
+                  const adjacentVerts = new Set<number>()
+                  for (const e of allEdges) {
+                    if (e.vertices?.includes(vid)) {
+                      for (const av of e.vertices) if (av !== vid) adjacentVerts.add(av)
+                    }
+                  }
+                  if (![...adjacentVerts].some(av => occupiedVertices.has(av))) {
+                    selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'build_settlement', vertexId: vid } } })
+                    break
+                  }
+                }
+              }
+
+              console.log('ASSIST: Injected builds for', agentName, 'trades:', trades)
+            }
+          }
+
+          // Always end turn
           selected.push({ name: 'game', arguments: { command: 'action', gameId, gameAction: { type: 'end_turn' } } })
         }
       } catch (err) {
-        console.error('FALLBACK D1 query failed:', err instanceof Error ? err.message : String(err))
+        console.error('ASSIST D1 query failed:', err instanceof Error ? err.message : String(err))
       }
     }
 
