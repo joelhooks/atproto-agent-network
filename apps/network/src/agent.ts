@@ -781,15 +781,19 @@ export class AgentDO extends DurableObject {
               `📋 TURN ORDER: 1) Roll dice  2) Trade/Build (as many as you can afford!)  3) End turn`,
               `🎯 GOAL: First to 5 VP wins! Each settlement = 1VP. Build roads to reach new settlement spots.`,
               ``,
-              `ACTIONS — use game tool with gameId "${gameRow.id}":`,
-              `  Roll: {"type":"roll_dice"}`,
-              `  Build settlement: {"type":"build_settlement","vertexId":NUMBER}`,
-              `  Build road: {"type":"build_road","edgeId":NUMBER}`,
-              `  Bank trade (3:1): {"type":"bank_trade","offering":"RESOURCE","requesting":"RESOURCE"}`,
-              `  End turn: {"type":"end_turn"}`,
+              `⚠️⚠️⚠️ YOU MUST USE command:"action" — NOT command:"status"! Status is read-only and wastes your turn!`,
+              ``,
+              `EXACT TOOL CALLS — copy these exactly, just fill in values:`,
+              `  Step 1 - Roll: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"roll_dice"}})`,
+              `  Step 2 - Build road: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_road","edgeId":NUMBER}})`,
+              `  Step 2 - Build settlement: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"build_settlement","vertexId":NUMBER}})`,
+              `  Step 2 - Bank trade: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"bank_trade","offering":"wood","requesting":"brick"}})`,
+              `  Step 3 - End turn: game({"command":"action","gameId":"${gameRow.id}","gameAction":{"type":"end_turn"}})`,
               ``,
               `⚡ IMPORTANT: Do ALL your building/trading BEFORE ending your turn! Don't just roll and end.`,
-            ].join('\n')
+              canAffordRoad ? `🛤️ YOU CAN AFFORD A ROAD RIGHT NOW! Build one before ending your turn!` : '',
+              canAffordSettlement ? `🏠 YOU CAN AFFORD A SETTLEMENT RIGHT NOW! Build one before ending your turn!` : '',
+            ].filter(Boolean).join('\n')
           } else {
             gameContext = [
               `🎲 Active Catan game: ${gameRow.id} (turn ${state.turn})`,
