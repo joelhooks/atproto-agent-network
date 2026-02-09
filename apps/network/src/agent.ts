@@ -924,7 +924,7 @@ export class AgentDO extends DurableObject {
               partyMember ? `You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})` : '',
               room ? `Current room: ${room.description} (type: ${room.type})` : '',
               ``,
-              isMyTurn ? `Use the game tool to act: game({"command":"explore","gameId":"${gameRow.id}"}) or game({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
+              isMyTurn ? `Use the rpg tool to act: rpg({"command":"explore","gameId":"${gameRow.id}"}) or rpg({"command":"status","gameId":"${gameRow.id}"})` : 'Wait for your turn.',
               `DO NOT create a new game.`,
             ].filter(Boolean).join('\n')
           } else {
