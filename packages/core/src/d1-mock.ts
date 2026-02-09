@@ -28,6 +28,7 @@ export interface AgentRow {
 
 export interface GameRow {
   id: string
+  type?: string | null
   host_agent: string
   state: string
   phase: string
@@ -132,12 +133,28 @@ export class D1MockDatabase {
     }
 
     if (normalized.startsWith('insert into games')) {
-      const [id, hostAgent, state, phase, players] = params
-      const key = String(id)
       const now = new Date().toISOString()
+
+      // Supports both:
+      // - INSERT INTO games (id, host_agent, state, phase, players, ...) VALUES (?, ?, ?, ?, ?, ...)
+      // - INSERT INTO games (id, type, host_agent, state, phase, players, ...) VALUES (?, ?, ?, ?, ?, ?, ...)
+      let id: unknown
+      let type: unknown = null
+      let hostAgent: unknown
+      let state: unknown
+      let phase: unknown
+      let players: unknown
+
+      if (params.length >= 6) {
+        ;[id, type, hostAgent, state, phase, players] = params
+      } else {
+        ;[id, hostAgent, state, phase, players] = params
+      }
+      const key = String(id)
 
       this.games.set(key, {
         id: key,
+        type: type == null ? null : String(type),
         host_agent: String(hostAgent ?? ''),
         state: String(state ?? ''),
         phase: String(phase ?? ''),

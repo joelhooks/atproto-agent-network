@@ -70,6 +70,7 @@ export function createOpenRouterAgentFactory(
     const fallbackModels: string[] = [
       modelId,
       ...(fastModel && fastModel !== modelId ? [fastModel] : []),
+      'google/gemini-3-flash-preview',
       'google/gemini-2.0-flash-001',
       'moonshotai/kimi-k2.5',
     ].filter((v, i, a) => a.indexOf(v) === i) // dedupe

@@ -149,13 +149,16 @@ describe('rpg-engine', () => {
       ],
     })
 
+    const aBefore = game.party.find((p) => p.name === 'a')!.hp
+    const bBefore = game.party.find((p) => p.name === 'b')!.hp
+
     explore(game, { dice })
     expect(game.roomIndex).toBe(1)
 
     const aAfter = game.party.find((p) => p.name === 'a')!.hp
     const bAfter = game.party.find((p) => p.name === 'b')!.hp
-    expect(aAfter).toBeGreaterThan(a.hp)
-    expect(bAfter).toBeGreaterThan(b.hp)
+    expect(aAfter).toBeGreaterThan(aBefore)
+    expect(bAfter).toBeGreaterThan(bBefore)
     expect(aAfter).toBeLessThanOrEqual(a.maxHp)
     expect(bAfter).toBeLessThanOrEqual(b.maxHp)
   })
