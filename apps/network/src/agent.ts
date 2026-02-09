@@ -732,13 +732,25 @@ export class AgentDO extends DurableObject {
         '⚠️ You have UNREAD MESSAGES in your inbox. You MUST respond to them using the "message" tool.',
         'For each message, compose a thoughtful reply and send it back to the sender.',
       ].join('\n') : '',
+      // Detect game turn notifications in inbox
+      observations?.inbox?.some((m: any) => {
+        const text = m?.content?.text ?? m?.text ?? ''
+        return typeof text === 'string' && text.includes('your turn in Catan')
+      }) ? [
+        '',
+        '🎮 GAME TURN ALERT: You have a Catan turn notification! You MUST play your turn NOW.',
+        'Steps: 1) game tool with command:"action", gameAction:{"type":"roll_dice"}',
+        '       2) Check if you can build (need wood+brick+sheep+wheat for settlement, wood+brick for road)',
+        '       3) game tool with command:"action", gameAction:{"type":"end_turn"}',
+        'The gameId is in the message text. Extract it and use it.',
+      ].join('\n') : '',
       hasEvents ? 'You have pending events to process.' : '',
       '',
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
       '',
       'INSTRUCTIONS:',
       '1. If you have inbox messages, RESPOND to each one using the message tool.',
-      '2. If you have game turn notifications (type: game_turn_notification), use the game tool IMMEDIATELY: first check status, then roll_dice, then build/trade if possible, then end_turn.',
+      '2. If you have a Catan game turn, use the game tool IMMEDIATELY: roll_dice, then build/trade if possible, then end_turn. This is HIGHEST PRIORITY.',
       '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
       '4. Always use at least one tool per cycle. Do NOT just think — ACT.',
       '5. If you want to update goals, include an updated `goals` array in your response.',
