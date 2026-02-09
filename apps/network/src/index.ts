@@ -132,6 +132,42 @@ function safeJsonParseArray(value: unknown): string[] {
   }
 }
 
+function parseD1Timestamp(value: unknown): number | null {
+  if (typeof value !== 'string' || !value) return null
+
+  const direct = Date.parse(value)
+  if (Number.isFinite(direct)) return direct
+
+  // D1/SQLite `datetime('now')` format: `YYYY-MM-DD HH:MM:SS` (UTC).
+  if (value.includes(' ') && !value.includes('T')) {
+    const normalized = `${value.replace(' ', 'T')}Z`
+    const parsed = Date.parse(normalized)
+    if (Number.isFinite(parsed)) return parsed
+  }
+
+  return null
+}
+
+function parseGamesLimit(value: string | null): number | { error: string } {
+  if (value == null || value === '') return 20
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return { error: 'limit must be an integer' }
+  if (parsed < 1) return { error: 'limit must be >= 1' }
+  if (parsed > 100) return { error: 'limit must be <= 100' }
+  return parsed
+}
+
+function parseGamesCursor(value: string): { updatedAtRaw: string; updatedAtMs: number; id: string } | null {
+  const idx = value.indexOf('|')
+  if (idx <= 0 || idx === value.length - 1) return null
+  const updatedAtRaw = value.slice(0, idx)
+  const id = value.slice(idx + 1)
+  const updatedAtMs = parseD1Timestamp(updatedAtRaw)
+  if (updatedAtMs == null) return null
+  if (!id) return null
+  return { updatedAtRaw, updatedAtMs, id }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -522,22 +558,92 @@ export default {
           return withErrorHandling(
             async () => {
               const showAll = url.searchParams.get('all') === 'true'
-              const sqlParts = [
-                'SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE id LIKE ?',
-              ]
-              const binds: unknown[] = ['catan_%']
-              if (!showAll) {
-                sqlParts.push("AND phase NOT IN ('finished', 'abandoned', 'setup')")
+              const limitParsed = parseGamesLimit(url.searchParams.get('limit'))
+              if (typeof limitParsed === 'object') {
+                return Response.json({ error: limitParsed.error }, { status: 400 })
               }
-              sqlParts.push('ORDER BY updated_at DESC LIMIT 20')
+              const limit = limitParsed
 
-              const rows = await env.DB.prepare(sqlParts.join(' ')).bind(...binds).all()
+              const cursorRaw = url.searchParams.get('cursor')
+              const cursor = cursorRaw ? parseGamesCursor(cursorRaw) : null
+              if (cursorRaw && !cursor) {
+                return Response.json({ error: 'Invalid cursor' }, { status: 400 })
+              }
+
+              // D1MockDatabase only supports a small SQL subset (no ORs, no >=),
+              // so fetch a bounded window and apply the 24h + pagination logic in JS.
+              const fetchLimit = Math.min(Math.max(limit * 10, 200), 500)
+
+              const selectCols = 'id, host_agent, phase, players, winner, created_at, updated_at'
+              const activeSql = `SELECT ${selectCols} FROM games WHERE phase NOT IN ('finished', 'abandoned', 'setup') ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+              const finishedSql = `SELECT ${selectCols} FROM games WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+              const allSql = `SELECT ${selectCols} FROM games ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+
+              const nowMs = Date.now()
+              const cutoffMs = nowMs - 24 * 60 * 60_000
+
+              let rawRows: any[] = []
+              if (showAll) {
+                const rows = await env.DB.prepare(allSql).all()
+                rawRows = rows.results ?? []
+              } else {
+                const [activeRows, finishedRows] = await Promise.all([
+                  env.DB.prepare(activeSql).all(),
+                  env.DB.prepare(finishedSql).all(),
+                ])
+
+                const recentFinished = (finishedRows.results ?? []).filter((r: any) => {
+                  const ts = parseD1Timestamp(r.updated_at)
+                  return ts != null && ts >= cutoffMs
+                })
+
+                rawRows = [...(activeRows.results ?? []), ...recentFinished]
+              }
+
+              const enriched = rawRows
+                .map((r: any) => {
+                  const id = String(r.id ?? '')
+                  const updatedAtRaw = r.updated_at
+                  const updatedAtMs = parseD1Timestamp(updatedAtRaw) ?? 0
+                  return {
+                    row: {
+                      ...r,
+                      id,
+                      players: safeJsonParseArray(r.players),
+                      type: inferEnvironmentTypeFromId(id),
+                    },
+                    id,
+                    updatedAtRaw: String(updatedAtRaw ?? ''),
+                    updatedAtMs,
+                  }
+                })
+                .filter((r) => r.id.length > 0)
+                .sort((a, b) => {
+                  if (a.updatedAtMs !== b.updatedAtMs) return b.updatedAtMs - a.updatedAtMs
+                  return b.id.localeCompare(a.id)
+                })
+
+              const afterCursor = cursor
+                ? enriched.filter((g) => {
+                    if (g.updatedAtMs < cursor.updatedAtMs) return true
+                    if (g.updatedAtMs > cursor.updatedAtMs) return false
+                    return g.id.localeCompare(cursor.id) < 0
+                  })
+                : enriched
+
+              const pagePlusOne = afterCursor.slice(0, limit + 1)
+              const hasMore = pagePlusOne.length > limit
+              const page = pagePlusOne.slice(0, limit)
+
+              const last = page.at(-1)
+              const nextCursor =
+                hasMore && last && last.updatedAtRaw
+                  ? `${last.updatedAtRaw}|${last.id}`
+                  : undefined
+
               return Response.json({
-                games: (rows.results ?? []).map((r: any) => ({
-                  ...r,
-                  players: r.players ? JSON.parse(r.players) : [],
-                  type: 'catan',
-                })),
+                games: page.map((g) => g.row),
+                nextCursor,
               })
             },
             { route: 'network.games', request }

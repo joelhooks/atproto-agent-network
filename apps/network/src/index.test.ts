@@ -686,6 +686,169 @@ describe('network worker environments API', () => {
     )
   })
 
+  it('GET /games?all=true returns all game rows (not just catan)', async () => {
+    const db = new D1MockDatabase()
+
+    await registerGame(db, {
+      id: 'catan_1',
+      hostAgent: 'grimlock',
+      phase: 'playing',
+      players: ['grimlock', 'slag'],
+      state: { id: 'catan_1', phase: 'playing' },
+    })
+    await registerGame(db, {
+      id: 'rpg_1',
+      hostAgent: 'snarl',
+      phase: 'playing',
+      players: ['snarl', 'swoop'],
+      state: { id: 'rpg_1', phase: 'playing' },
+    })
+
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const response = await worker.fetch(
+      new Request('https://example.com/games?all=true', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.games).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'catan_1', type: 'catan' }),
+        expect.objectContaining({ id: 'rpg_1', type: 'rpg' }),
+      ])
+    )
+  })
+
+  it('GET /games includes active and recently finished (24h) by default', async () => {
+    const db = new D1MockDatabase()
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-02-09T00:00:00.000Z')
+
+      vi.setSystemTime(new Date(base.getTime() - 48 * 60 * 60_000))
+      await registerGame(db, {
+        id: 'catan_finished_old',
+        hostAgent: 'grimlock',
+        phase: 'finished',
+        players: ['grimlock', 'snarl'],
+      })
+
+      vi.setSystemTime(new Date(base.getTime() - 2 * 60 * 60_000))
+      await registerGame(db, {
+        id: 'rpg_finished_recent',
+        hostAgent: 'snarl',
+        phase: 'finished',
+        players: ['snarl', 'swoop'],
+      })
+
+      vi.setSystemTime(new Date(base.getTime() - 60_000))
+      await registerGame(db, {
+        id: 'catan_active',
+        hostAgent: 'grimlock',
+        phase: 'playing',
+        players: ['grimlock', 'slag'],
+      })
+
+      await registerGame(db, {
+        id: 'rpg_setup',
+        hostAgent: 'snarl',
+        phase: 'setup',
+        players: ['snarl', 'swoop'],
+      })
+
+      vi.setSystemTime(base)
+
+      const env = createHealthEnv({ DB: db })
+      const { default: worker } = await import('./index')
+
+      const response = await worker.fetch(
+        new Request('https://example.com/games', {
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+        env
+      )
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      const ids = (body.games as any[]).map((g) => g.id)
+
+      expect(ids).toEqual(expect.arrayContaining(['catan_active', 'rpg_finished_recent']))
+      expect(ids).not.toContain('catan_finished_old')
+      expect(ids).not.toContain('rpg_setup')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('GET /games supports pagination via limit + cursor', async () => {
+    const db = new D1MockDatabase()
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-02-09T00:00:00.000Z')
+
+      vi.setSystemTime(new Date(base.getTime() - 2000))
+      await registerGame(db, {
+        id: 'catan_1',
+        hostAgent: 'grimlock',
+        phase: 'playing',
+        players: ['grimlock', 'snarl'],
+      })
+
+      vi.setSystemTime(new Date(base.getTime() - 1000))
+      await registerGame(db, {
+        id: 'rpg_2',
+        hostAgent: 'snarl',
+        phase: 'playing',
+        players: ['snarl', 'swoop'],
+      })
+
+      vi.setSystemTime(base)
+      await registerGame(db, {
+        id: 'catan_3',
+        hostAgent: 'grimlock',
+        phase: 'playing',
+        players: ['grimlock', 'slag'],
+      })
+
+      const env = createHealthEnv({ DB: db })
+      const { default: worker } = await import('./index')
+
+      const page1Res = await worker.fetch(
+        new Request('https://example.com/games?all=true&limit=2', {
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+        env
+      )
+
+      expect(page1Res.status).toBe(200)
+      const page1 = await page1Res.json()
+      expect(page1.games).toHaveLength(2)
+      expect(typeof page1.nextCursor).toBe('string')
+
+      const page2Res = await worker.fetch(
+        new Request(`https://example.com/games?all=true&limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`, {
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+        env
+      )
+
+      expect(page2Res.status).toBe(200)
+      const page2 = await page2Res.json()
+      expect(page2.games).toHaveLength(1)
+
+      const page1Ids = (page1.games as any[]).map((g) => g.id)
+      const page2Ids = (page2.games as any[]).map((g) => g.id)
+      expect(new Set([...page1Ids, ...page2Ids])).toEqual(new Set(['catan_3', 'rpg_2', 'catan_1']))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('GET /games/:id only serves catan instances (alias compatibility)', async () => {
     const db = new D1MockDatabase()
 
