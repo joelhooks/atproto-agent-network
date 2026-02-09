@@ -1313,6 +1313,59 @@ describe('AgentDO', () => {
     expect(config3).toEqual(config2)
   })
 
+  it('enforces enabledTools for OpenRouter tool definitions (strict tool exposure)', async () => {
+    const { state, storage } = createState('agent-enabled-tools-openrouter')
+    const { env } = createEnv({
+      // Ensure the DO uses the OpenRouter factory path (not PI_AGENT_FACTORY).
+      CF_ACCOUNT_ID: 'acct_123',
+      AI_GATEWAY_SLUG: 'gateway_slug',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      OPENROUTER_MODEL_DEFAULT: 'openrouter/test-model',
+    })
+
+    // Pre-seed config so initialization builds the wrapper with enabledTools already set.
+    await storage.put('config', {
+      name: 'alice',
+      personality: 'test',
+      specialty: 'test',
+      model: 'openrouter/test-model',
+      fastModel: 'openrouter/test-model',
+      loopIntervalMs: 60_000,
+      goals: [],
+      enabledTools: ['remember'],
+    })
+
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { tools?: Array<{ function?: { name?: string } }> }
+      const names = (body.tools ?? []).map((t) => t.function?.name).filter(Boolean)
+      expect(names).toEqual(['remember'])
+
+      return new Response(
+        JSON.stringify({
+          model: 'openrouter/test-model',
+          choices: [{ message: { role: 'assistant', content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const response = await agent.fetch(
+      new Request('https://example/agents/alice/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hello' }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it.skip('accepts and persists enabledEnvironments in agent config', async () => {
     const { state, storage } = createState('agent-config-envs')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })

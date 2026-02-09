@@ -3039,12 +3039,23 @@ export class AgentDO extends DurableObject {
     const agentFactory =
       this.agentEnv.PI_AGENT_FACTORY ??
       (this.agentEnv.OPENROUTER_API_KEY && this.agentEnv.CF_ACCOUNT_ID && this.agentEnv.AI_GATEWAY_SLUG
-        ? createOpenRouterAgentFactory({
+        ? (() => {
+          const baseFactory = createOpenRouterAgentFactory({
             CF_ACCOUNT_ID: this.agentEnv.CF_ACCOUNT_ID,
             AI_GATEWAY_SLUG: this.agentEnv.AI_GATEWAY_SLUG,
             OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY,
             OPENROUTER_MODEL_DEFAULT: this.agentEnv.OPENROUTER_MODEL_DEFAULT,
           })
+          // Enforce enabledTools strictly for OpenRouter by passing the allowlist down to the factory.
+          return (init) =>
+            baseFactory({
+              ...init,
+              initialState: {
+                ...init.initialState,
+                enabledTools: config.enabledTools,
+              },
+            })
+        })()
         : undefined)
 
     this.agent = new PiAgentWrapper({

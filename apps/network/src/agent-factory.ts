@@ -75,10 +75,17 @@ export function createOpenRouterAgentFactory(
     ].filter((v, i, a) => a.indexOf(v) === i) // dedupe
 
     const tools: PiAgentTool[] = Array.isArray(init.initialState?.tools) ? init.initialState!.tools! : []
+    const enabledToolsRaw = (init.initialState as Record<string, unknown> | undefined)?.enabledTools
+    const enabledToolsAllowlist = Array.isArray(enabledToolsRaw)
+      ? enabledToolsRaw.filter((tool): tool is string => typeof tool === 'string' && tool.length > 0)
+      : []
+    // Backward compat: if enabledTools is empty or missing, expose all tools.
+    const allowlist = enabledToolsAllowlist.length > 0 ? new Set(enabledToolsAllowlist) : null
+    const exposedTools = allowlist ? tools.filter((t) => allowlist.has(t.name)) : tools
     const messages: OpenRouterMessage[] = [{ role: 'system', content: systemPrompt }]
 
     function buildToolDefs(): OpenRouterToolDef[] {
-      return tools.map((tool) => ({
+      return exposedTools.map((tool) => ({
         type: 'function' as const,
         function: {
           name: tool.name,
@@ -281,12 +288,15 @@ export function createOpenRouterAgentFactory(
           // Execute each tool call and feed results back, with per-tool timing
           const toolResults: LoopStep['toolResults'] = []
           for (const tc of result.toolCalls) {
-            const tool = tools.find(t => t.name === tc.name)
+            const tool = exposedTools.find(t => t.name === tc.name)
             let toolResult: string
             const toolStart = Date.now()
 
             if (!tool?.execute) {
-              toolResult = JSON.stringify({ pending: true, name: tc.name, arguments: tc.arguments })
+              // If enabledTools is configured, treat missing tools as a hard error rather than a "pending" tool.
+              toolResult = allowlist
+                ? JSON.stringify({ error: 'Tool not enabled', name: tc.name })
+                : JSON.stringify({ pending: true, name: tc.name, arguments: tc.arguments })
             } else {
               try {
                 const execResult = await tool.execute(tc.id, tc.arguments, undefined, undefined)
