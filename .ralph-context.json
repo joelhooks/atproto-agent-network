@@ -353,21 +353,11 @@
       "id": "story-mlepdwd0",
       "title": "Wire environment hooks into agent alarm cycle",
       "status": "failed",
-      "filesModified": [
-        "apps/network/src/games/catan.ts",
-        "prd.json"
-      ],
-      "learnings": "[unknown] /bin/sh: 1: turbo: not found"
+      "filesModified": [],
+      "learnings": "[test_failure] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnpm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/networ"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlde2057",
-      "storyTitle": "Pi session persistence in DO storage",
-      "category": "test_failure",
-      "error": "\n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atproto-agent/core:typecheck: cache hit, replaying logs 24261bb203c627b7\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atp",
-      "toolNames": []
-    },
     {
       "storyId": "story-mlde2anm",
       "storyTitle": "Alarm-driven Pi agent loop",
@@ -546,6 +536,19 @@
         "sed -n",
         "/usr/bin/zsh -lc",
         "rg -n"
+      ]
+    },
+    {
+      "storyId": "story-mlepdwd0",
+      "storyTitle": "Wire environment hooks into agent alarm cycle",
+      "category": "test_failure",
+      "error": "npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnpm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts > AgentDO > agent.ts contains no Catan-specific code (delegated to environments/catan.ts)\nAssertionError: expected '/**\\n * agent durable object\\n * \\n *…' not to contain 'cata",
+      "toolNames": [
+        "sed -n",
+        "ls -la",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "npx vitest"
       ]
     }
   ]
