@@ -689,7 +689,7 @@
       "title": "XP and leveling system — encounter rewards + stat growth on level up",
       "description": "Add XP rewards for encounters and a leveling system.\n\nIn apps/network/src/games/rpg-engine.ts:\n\nAdd XP constants:\n  const XP_PER_ENEMY_KILL = 25\n  const XP_PER_ROOM_CLEAR = 50\n  const XP_PER_BOSS_KILL = 100\n  const XP_PER_ADVENTURE_COMPLETE = 200\n  const XP_TABLE = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500] // XP needed for levels 1-10\n\nAdd exported function:\n  export function awardXp(pc: PersistentCharacter, amount: number): { leveledUp: boolean; newLevel: number } \n  - Adds amount to pc.xp\n  - Checks XP_TABLE to see if level should increase\n  - If leveled up: increment pc.level, increase pc.maxHp by 5+level, increase pc.maxMp by 3+level, add random skill point (+5 to a random skill)\n  - Returns whether they leveled up and new level\n\nIn apps/network/src/environments/rpg.ts:\n- After enemy killed in combat: track XP earned in game log\n- On room clear (explore advances room): award XP_PER_ROOM_CLEAR to all living party members\n- On boss kill: award XP_PER_BOSS_KILL\n- On adventure complete (game.completed): award XP_PER_ADVENTURE_COMPLETE\n- When saving persistent character on game end, apply accumulated XP via awardXp()\n\nIn buildContext: show character level and XP progress (\"Level 3 Warrior (450/600 XP to next level)\")\n\nTests:\n- awardXp correctly levels up character\n- awardXp increases stats on level up\n- XP_TABLE progression is correct\n- Multiple level ups from large XP award work correctly",
       "priority": 73,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && pnpm vitest run",
       "acceptanceCriteria": [
         "XP awarded for enemy kills, room clears, boss kills, adventure completion",
@@ -733,8 +733,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 66,
-    "lastIteration": "2026-02-10T17:59:49.561Z"
+    "totalIterations": 67,
+    "lastIteration": "2026-02-10T18:04:53.302Z"
   },
   "totalStories": 11
 }
