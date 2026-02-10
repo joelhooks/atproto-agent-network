@@ -3017,7 +3017,7 @@ export class AgentDO extends DurableObject {
         const enabled = Array.isArray(this.config?.enabledTools) ? this.config!.enabledTools : []
         if (!enabled.includes('gm')) return []
         if (!isGrimlock(agentName)) return []
-        const gmCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent }
+        const gmCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent, webhookUrl: this.config?.webhookUrl }
         return [createGmTool(gmCtx as any)]
       })(),
     ]

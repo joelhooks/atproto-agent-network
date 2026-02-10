@@ -7,6 +7,15 @@ function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
 }
 
+function parseWebhook(input: string): { url: string; headers: Record<string, string> } {
+  const parsed = new URL(input)
+  const token = parsed.searchParams.get('token')
+  if (token) parsed.searchParams.delete('token')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  return { url: parsed.toString(), headers }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -124,18 +133,20 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
       '- narrate: Add a narrative message to the game log\n' +
       '- adjust_difficulty: Modify room difficulty mid-dungeon\n' +
       '- add_event: Inject an emergent event into the current room\n' +
-      '- review_party: Summarize party status\n',
+      '- review_party: Summarize party status\n' +
+      '- consult_library: Query pdf-brain (via Grimlock webhook) for RPG GM knowledge\n',
     parameters: {
       type: 'object',
       properties: {
         command: {
           type: 'string',
-          enum: ['narrate', 'adjust_difficulty', 'add_event', 'review_party'],
+          enum: ['narrate', 'adjust_difficulty', 'add_event', 'review_party', 'consult_library'],
         },
         gameId: { type: 'string', description: 'RPG game id (optional; defaults to your active adventure).' },
         roomIndex: { type: 'number', description: 'Target room index (defaults to current room).' },
         text: { type: 'string', description: 'Narration/event text.' },
         kind: { type: 'string', description: 'Event kind (npc|hazard|loot|twist|other).' },
+        query: { type: 'string', description: 'pdf-brain search query (consult_library)' },
         // Difficulty knobs (apply broadly to the room)
         enemyHpDelta: { type: 'number' },
         enemyAttackDelta: { type: 'number' },
@@ -251,8 +262,50 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
         return { content: toTextContent(summary), details: { gameId, roomIndex: game.roomIndex } }
       }
 
+      if (command === 'consult_library') {
+        const query = clampText(params.query, 240)
+        if (!query) throw new Error('query is required for consult_library')
+        if (!ctx.webhookUrl) throw new Error('Grimlock webhookUrl is not configured')
+
+        const { url, headers } = parseWebhook(ctx.webhookUrl)
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ type: 'consult_library', query, limit: 3, expand: 2000 }),
+        })
+
+        let resultText = ''
+        const contentType = response.headers.get('Content-Type') ?? ''
+        if (contentType.includes('application/json')) {
+          const json = (await response.json()) as unknown
+          if (isRecord(json) && typeof json.text === 'string') resultText = json.text
+          else if (isRecord(json) && typeof json.result === 'string') resultText = json.result
+          else resultText = JSON.stringify(json)
+        } else {
+          resultText = await response.text()
+        }
+
+        resultText = String(resultText ?? '').trim()
+        if (!response.ok) {
+          throw new Error(`consult_library webhook error (${response.status}): ${resultText || 'unknown error'}`)
+        }
+
+        game.libraryContext ??= {}
+        game.libraryContext[query] = resultText
+        // Keep the cache bounded so D1 state doesn't bloat.
+        const keys = Object.keys(game.libraryContext)
+        if (keys.length > 25) {
+          for (const k of keys.slice(0, keys.length - 25)) delete game.libraryContext[k]
+        }
+
+        game.log.push({ at: now, who: 'GM', what: `[GM] consult_library: ${query}` })
+        recordNarrativeBeat(game, { kind: 'gm', text: 'consult_library', roomIndex, at: now })
+        await persistRpgGame(ctx, game)
+
+        return { content: toTextContent(resultText || '(no results)'), details: { gameId, roomIndex, query } }
+      }
+
       throw new Error(`Unknown gm command: ${command}`)
     },
   }
 }
-

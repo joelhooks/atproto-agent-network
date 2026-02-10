@@ -583,7 +583,7 @@
       "title": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
       "description": "Add a `consult_library` action to the GM tool that queries pdf-brain for RPG knowledge. This runs LOCALLY on clanker-001 via Grimlock's webhook.\n\n1. Add `consult_library` action to gm-tool.ts that sends a webhook request to Grimlock's webhookUrl with a pdf-brain search query\n2. The webhook handler on clanker-001 (OpenClaw) runs `pdf-brain search \"<query>\" --limit 3 --expand 2000` and returns results\n3. GM can query for: encounter design patterns, monster tactics, skill check rulings, dungeon procedures, BRP mechanics\n4. Results are returned as text that the GM can use to inform narration and difficulty decisions\n5. Add a `libraryContext` field to game state where GM can cache relevant lookups for the current dungeon theme\n\nThe webhook bridge (story-mlft5llk) already exists. This extends it to handle pdf-brain queries as a new message type.\n\nFiles: apps/network/src/tools/gm-tool.ts, webhook handler on clanker-001 side\n\nAcceptance: GM tool can call consult_library with a query string and get pdf-brain results back. Test with a mock webhook that returns sample results. Integration test queries actual pdf-brain.",
       "priority": 59,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -605,8 +605,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 58,
-    "lastIteration": "2026-02-10T04:40:47.576Z"
+    "totalIterations": 59,
+    "lastIteration": "2026-02-10T04:56:29.191Z"
   },
   "totalStories": 11
 }

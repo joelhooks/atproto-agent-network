@@ -953,22 +953,30 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/ca"
+    },
+    {
+      "id": "story-mlfzjdn8",
+      "title": "Phase 3b: Dynamic difficulty scaling — GM auto-adjusts based on party performance",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 3b work: I’m going to (1) run the required `swarm memory find` for this story, then (2) inspect the current RPG engine and GM tool code paths where room completion and difficulty adjustments belong, and finally (3) write failing Vitest cases for breezing/struggling parties before implementing the scaling logic.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_ou"
+    },
+    {
+      "id": "story-mlfzjmrq",
+      "title": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] ✓ |network| src/logger.test.ts > logger > createLogger() merges base fields into each event 1ms\n ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > overwrites "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbhphy",
-      "storyTitle": "Structured JSON logging for all agent lifecycle events",
-      "category": "type_error",
-      "error": "• turbo 2.8.3\nnetwork:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\nnetwork#typecheck: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\n ERROR  run failed: command  exited (2)\n\n> atproto-agent-network@ typechec",
-      "toolNames": [
-        "sed -n",
-        "rg -n",
-        "ls -la",
-        "swarm memory"
-      ],
-      "iterationNumber": 1
-    },
     {
       "storyId": "story-mlfbhphy",
       "storyTitle": "Structured JSON logging for all agent lifecycle events",
@@ -1209,6 +1217,21 @@
         "bash -lc"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlfzjmrq",
+      "storyTitle": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "category": "unknown",
+      "error": "✓ |network| src/logger.test.ts > logger > createLogger() merges base fields into each event 1ms\n ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > overwrites environments when registering the same type twice 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > returns undefined for unknown environment types 6ms\n ✓ |network| src/deplo",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "ls apps/network/src",
+        "jq '.hooks.mappings[]",
+        "ls -la"
+      ],
+      "iterationNumber": 4
     }
   ]
 }

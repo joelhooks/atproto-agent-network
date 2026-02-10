@@ -110,6 +110,8 @@ export type RpgGameState = {
   turnOrder: Character[]
   currentPlayer: string
   combat?: { enemies: Enemy[] }
+  // GM lookups from pdf-brain keyed by query string (optional for backwards compat).
+  libraryContext?: Record<string, string>
   // Tracks recent actions per player to detect stuck agent loops.
   // Optional for backwards compatibility with persisted games.
   actionHistory?: Record<string, RpgActionHistoryEntry[]>

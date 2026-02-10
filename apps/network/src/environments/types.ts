@@ -11,6 +11,8 @@ export type EnvironmentContext = {
   db: D1Database
   relay?: DurableObjectStub
   broadcast: (event: Record<string, unknown>) => void | Promise<void>
+  // Optional outbound webhook (used by Grimlock for inbox + consult_library bridge).
+  webhookUrl?: string
 }
 
 export interface AgentEnvironment {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, explore, createTestDice, type RpgGameState } from '../games/rpg-engine'
@@ -20,6 +20,13 @@ async function getStoredGame(db: D1Database, gameId: string): Promise<RpgGameSta
 }
 
 describe('gm tool (grimlock-only)', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    ;(globalThis as any).fetch = originalFetch
+  })
+
   it('narrate: appends a [GM] message to the game log', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
@@ -188,5 +195,68 @@ describe('gm tool (grimlock-only)', () => {
     const tools = getToolsForAgent(ctx as any, ['gm'])
     expect(tools.length).toBe(0)
   })
-})
 
+  it('consult_library: POSTs to grimlock webhookUrl and caches results into game.libraryContext', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const game = createGame({
+      id: 'rpg_gm_consult_library',
+      players: ['grimlock'],
+      dungeon: [{ type: 'rest', description: 'start' }],
+    })
+    await insertRpgGame(db as any, game, ['grimlock'])
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ text: 'Encounter pacing: easy -> hard -> boss.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    vi.stubGlobal('fetch', fetchSpy as any)
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+      webhookUrl: 'https://example.test/hooks/agent-network?token=hook-secret',
+    }
+    const [tool] = getToolsForAgent(ctx as any, ['gm'])
+
+    const result = await tool!.execute!('tc_consult', {
+      command: 'consult_library',
+      gameId: game.id,
+      query: 'encounter design pacing and difficulty curve',
+    })
+
+    const text = Array.isArray((result as any)?.content) ? String((result as any).content[0]?.text ?? '') : ''
+    expect(text).toContain('Encounter pacing')
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0] as [unknown, unknown]
+    expect(String(url)).toBe('https://example.test/hooks/agent-network')
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer hook-secret',
+      },
+    })
+
+    const body = (init as { body?: unknown }).body
+    expect(typeof body).toBe('string')
+    expect(JSON.parse(String(body))).toEqual({
+      type: 'consult_library',
+      query: 'encounter design pacing and difficulty curve',
+      limit: 3,
+      expand: 2000,
+    })
+
+    const stored = await getStoredGame(db as any, game.id)
+    expect(stored.libraryContext).toBeTruthy()
+    expect((stored.libraryContext as any)['encounter design pacing and difficulty curve']).toContain('Encounter pacing')
+  })
+})
