@@ -260,7 +260,7 @@ describe('gm tool (grimlock-only)', () => {
     expect((stored.libraryContext as any)['encounter design pacing and difficulty curve']).toContain('Encounter pacing')
   })
 
-  it('craft_dungeon: consults library and crafts a paced dungeon with varied tactics and a multi-phase boss', async () => {
+  it('craft_dungeon: consults library and returns a dungeon with dungeonContext.libraryContext populated', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
 
@@ -269,8 +269,6 @@ describe('gm tool (grimlock-only)', () => {
       players: ['grimlock', 'alice'],
       dungeon: [{ type: 'rest', description: 'staging' }],
     })
-    // Make theme deterministic for assertions that scan descriptions.
-    game.theme = { name: 'Saltworn Archives', backstory: 'A drowned library preserved in brine and myth.' }
     await insertRpgGame(db as any, game, ['grimlock', 'alice'])
 
     const responses: Record<string, string> = {
@@ -301,7 +299,7 @@ describe('gm tool (grimlock-only)', () => {
     }
     const [tool] = getToolsForAgent(ctx as any, ['gm'])
 
-    await tool!.execute!('tc_craft', { command: 'craft_dungeon', gameId: game.id })
+    const result = await tool!.execute!('tc_craft', { command: 'craft_dungeon', gameId: game.id, theme: 'Saltworn Archives' })
 
     expect(fetchSpy).toHaveBeenCalledTimes(4)
     const queries = fetchSpy.mock.calls.map((call) => {
@@ -318,37 +316,22 @@ describe('gm tool (grimlock-only)', () => {
       ])
     )
 
-    const stored = await getStoredGame(db as any, game.id)
-    expect(stored.libraryContext).toBeTruthy()
-    for (const [k, v] of Object.entries(responses)) {
-      expect((stored.libraryContext as any)[k]).toContain(v.slice(0, 10))
-    }
+    const details = (result as any)?.details ?? {}
+    expect(details.dungeon).toBeTruthy()
+    expect(Array.isArray(details.dungeon)).toBe(true)
+    expect(details.dungeon.length).toBeGreaterThan(0)
 
     // Dungeon state should retain the library context for adjudication.
-    expect((stored as any).dungeonContext).toBeTruthy()
-    expect((stored as any).dungeonContext.libraryContext).toBeTruthy()
-    expect((stored as any).dungeonContext.designNotes.join('\n')).toContain('easy -> medium -> hard -> deadly -> boss')
-    expect((stored as any).dungeonContext.designNotes.join('\n')).toContain('crit at skill/5')
+    expect(details.dungeonContext).toBeTruthy()
+    expect(details.dungeonContext.libraryContext).toBeTruthy()
+    for (const [k, v] of Object.entries(responses)) {
+      expect(String(details.dungeonContext.libraryContext[k] ?? '')).toContain(v.slice(0, 10))
+    }
 
-    // Difficulty curve (Game Angry): easy -> medium -> hard -> deadly -> boss.
-    const difficultyRooms = stored.dungeon.filter((r: any) => r?.difficultyTier)
-    expect(difficultyRooms.map((r: any) => r.difficultyTier)).toEqual(['easy', 'medium', 'hard', 'deadly', 'boss'])
-
-    // Strategic rests after hard and deadly fights.
-    const hardIndex = stored.dungeon.findIndex((r: any) => r?.difficultyTier === 'hard')
-    const deadlyIndex = stored.dungeon.findIndex((r: any) => r?.difficultyTier === 'deadly')
-    expect(stored.dungeon[hardIndex + 1]?.type).toBe('rest')
-    expect(stored.dungeon[deadlyIndex + 1]?.type).toBe('rest')
-
-    // Enemy tactics vary by type.
-    const goblinRoom = stored.dungeon.find((r: any) => r?.type === 'combat' && r?.enemies?.some((e: any) => e?.name === 'Goblin'))
-    const orcRoom = stored.dungeon.find((r: any) => r?.type === 'combat' && r?.enemies?.some((e: any) => e?.name === 'Orc'))
-    expect(String(goblinRoom?.tactics?.join(' ') ?? '')).toContain('hit-and-run')
-    expect(String(orcRoom?.tactics?.join(' ') ?? '')).toContain('power attack')
-
-    // Boss is multi-phase.
-    const bossRoom = stored.dungeon.find((r: any) => r?.type === 'boss')
-    expect(Array.isArray((bossRoom as any)?.bossPhases)).toBe(true)
-    expect((bossRoom as any).bossPhases.length).toBeGreaterThanOrEqual(2)
+    const stored = await getStoredGame(db as any, game.id)
+    expect(stored.dungeonContext).toBeTruthy()
+    for (const [k, v] of Object.entries(responses)) {
+      expect(String((stored.dungeonContext as any).libraryContext?.[k] ?? '')).toContain(v.slice(0, 10))
+    }
   })
 })

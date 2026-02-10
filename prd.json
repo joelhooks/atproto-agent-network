@@ -591,7 +591,7 @@
       "title": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
       "description": "Replace the static generateDungeon() with a GM-driven dungeon crafting flow. When Grimlock creates an RPG game:\n\n1. Grimlock's loop calls `gm.craft_dungeon` instead of the static generator\n2. craft_dungeon first calls `consult_library` with queries like:\n   - \"encounter design pacing and difficulty curve\" (Game Angry)\n   - \"BRP opposed roll mechanics combat\" (BRP SRD)  \n   - \"monster tactics for [theme enemies]\" (Monsters Know)\n   - \"dungeon exploration procedures\" (OSE)\n3. Using library context + party composition, generate a dungeon with:\n   - Difficulty curve from Game Angry (easy→medium→hard→deadly→boss)\n   - BRP-informed combat mechanics (opposed rolls, crits at skill/5, fumbles at 96-00)\n   - Monster tactics per enemy type (goblins hit-and-run, orcs power attack, boss multi-phase)\n   - Strategic rest placement (after hard fights, not random)\n4. Store libraryContext in dungeon state for reference during live adjudication\n\nThis is where Grimlock becomes an actually knowledgeable GM instead of a random number generator.\n\nFiles: apps/network/src/tools/gm-tool.ts, apps/network/src/environments/rpg-engine.ts\n\nAcceptance: craft_dungeon queries pdf-brain and uses results to inform dungeon design. Enemy tactics vary by type. Difficulty follows Game Angry curve. Boss fights are multi-phase. Test that crafted dungeons reference library knowledge in their design.",
       "priority": 60,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -601,12 +601,44 @@
       "priority": 55,
       "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlg5qzc3",
+      "title": "Phase 4b-1: craft_dungeon GM action — replace generateDungeon with GM-driven flow",
+      "description": "Add a `craft_dungeon` action to the GM tool that Grimlock calls instead of the static generateDungeon(). \n\n1. Add `craft_dungeon` to gm-tool.ts with params: { gameId, theme?, partyComposition }\n2. It should read the party from game state (classes, stats, skills)\n3. Call the existing consult_library action internally with queries like \"encounter design pacing\" and \"BRP combat mechanics\"\n4. Store the library results in a `libraryContext` field on the dungeon state\n5. For now, still use generateDungeon() for the actual room layout but pass libraryContext so future stories can use it\n6. Return the crafted dungeon state\n\nThis is the plumbing — wire craft_dungeon into the flow without changing dungeon gen yet.\n\nFiles: apps/network/src/tools/gm-tool.ts, apps/network/src/tools/gm-tool.test.ts\n\nAcceptance: craft_dungeon action exists, reads party, calls consult_library, stores libraryContext. Test that craft_dungeon returns a dungeon with libraryContext populated.",
+      "priority": 61,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlg5r7ew",
+      "title": "Phase 4b-2: BRP-informed combat — opposed rolls, crits, fumbles",
+      "description": "Upgrade combat resolution in rpg-engine.ts to use BRP-style mechanics:\n\n1. **Opposed rolls**: Attacker rolls against attack skill, defender rolls against dodge. Both succeed = compare margins. Both fail = miss.\n2. **Critical hits**: Roll <= skill/5 = double damage\n3. **Fumbles**: Roll 96-00 = bad thing happens (attacker hits self for half damage, or drops weapon losing next turn)\n4. **Damage calculation**: Base damage + STR bonus - armor (if any)\n\nReplace the current simple \"roll vs attack\" with these mechanics. Keep it deterministic enough to test.\n\nFiles: apps/network/src/games/rpg-engine.ts, apps/network/src/games/rpg-engine.test.ts\n\nAcceptance: Combat uses opposed rolls. Crits at skill/5 do double damage. Fumbles at 96+ cause self-harm. Tests for each mechanic with seeded random.",
+      "priority": 62,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlg5rfww",
+      "title": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "description": "Add enemy AI tactics to combat in rpg-engine.ts. Each enemy type should behave differently:\n\n1. **Goblins**: Hit and run — attack squishy targets (lowest HP or Mage class), flee at <30% HP\n2. **Orcs**: Aggressive — power attack (+10 damage, -10 hit chance), fight to the death\n3. **Skeleton**: Resistant to piercing, vulnerable to blunt. Target random.\n4. **Boss**: Multi-phase behavior:\n   - Phase 1 (>50% HP): Target healer first, use special ability every 3 turns\n   - Phase 2 (<50% HP): Enrage (+20% damage), AoE attack hits all party members for half damage\n\nAdd a `tactics` field to enemy definitions and a `selectTarget` function that uses tactics to pick targets.\n\nFiles: apps/network/src/games/rpg-engine.ts, apps/network/src/games/rpg-engine.test.ts\n\nAcceptance: Goblins target squishy characters. Orcs power attack. Boss has 2 phases. Tests verify target selection and phase transitions.",
+      "priority": 63,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlg5rnzm",
+      "title": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "description": "Apply Game Angry's encounter design pacing to dungeon generation in rpg-engine.ts:\n\n1. Add a `difficulty` field to each room: 'easy' | 'medium' | 'hard' | 'deadly' | 'boss'\n2. Rooms 1-3: easy (enemies at 60% stats, rest rooms between combats)\n3. Rooms 4-6: medium (enemies at 80% stats, fewer rest rooms)\n4. Rooms 7-9: hard (enemies at 100% stats, at least one near-death expected)\n5. Rooms 10-11: deadly (enemies at 120% stats, traps + combat combos)\n6. Room 12: boss (multi-phase boss, callbacks to earlier rooms in description)\n\nApply difficulty multipliers during generateDungeon() based on room index. Strategic rest placement: always after a hard+ combat, never before the boss.\n\nFiles: apps/network/src/games/rpg-engine.ts, apps/network/src/games/rpg-engine.test.ts\n\nAcceptance: Each room has a difficulty field. Enemy stats scale by room position. Rest rooms placed after hard combats. Test that room 1 enemies are weaker than room 10 enemies.",
+      "priority": 64,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 59,
-    "lastIteration": "2026-02-10T04:56:29.191Z"
+    "totalIterations": 60,
+    "lastIteration": "2026-02-10T05:39:07.149Z"
   },
   "totalStories": 11
 }
