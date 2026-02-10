@@ -13,6 +13,9 @@ export type EnvironmentContext = {
   broadcast: (event: Record<string, unknown>) => void | Promise<void>
   // Optional outbound webhook (used by Grimlock for inbox + consult_library bridge).
   webhookUrl?: string
+  // Character persistence (closes over DO storage in agent.ts)
+  loadCharacter?: () => Promise<unknown>
+  saveCharacter?: (character: unknown) => Promise<void>
 }
 
 export interface AgentEnvironment {

@@ -985,3 +985,92 @@ describe('rpg-engine', () => {
     })
   })
 })
+
+// ── Persistent character helpers ──────────────────────────────────────
+
+import { persistentToGameCharacter, gameCharacterToPersistent } from './rpg-engine'
+import type { PersistentCharacter } from '@atproto-agent/core'
+
+describe('persistentToGameCharacter', () => {
+  it('resets HP/MP to max values', () => {
+    const pc: PersistentCharacter = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 3,
+      xp: 500,
+      maxHp: 20,
+      maxMp: 5,
+      skills: { attack: 60, dodge: 30, cast_spell: 10, use_skill: 40 },
+      adventureLog: ['Adventure 1'],
+      achievements: [],
+      inventory: ['Sword'],
+      createdAt: 1000,
+      updatedAt: 2000,
+      gamesPlayed: 5,
+      deaths: 1,
+    }
+    const gc = persistentToGameCharacter(pc, 'player1')
+    expect(gc.hp).toBe(20)
+    expect(gc.maxHp).toBe(20)
+    expect(gc.mp).toBe(5)
+    expect(gc.maxMp).toBe(5)
+    expect(gc.agent).toBe('player1')
+    expect(gc.skills.attack).toBe(60)
+  })
+})
+
+describe('gameCharacterToPersistent', () => {
+  it('increments gamesPlayed and deaths when hp <= 0', () => {
+    const gc = createCharacter({ name: 'Thorin', klass: 'Warrior', agent: 'p1' })
+    gc.hp = 0 // dead
+    const existing: PersistentCharacter = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 1,
+      xp: 0,
+      maxHp: gc.maxHp,
+      maxMp: gc.maxMp,
+      skills: { ...gc.skills },
+      adventureLog: [],
+      achievements: [],
+      inventory: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+      gamesPlayed: 3,
+      deaths: 1,
+    }
+    const result = gameCharacterToPersistent(gc, existing, 'Defeated by dragon')
+    expect(result.gamesPlayed).toBe(4)
+    expect(result.deaths).toBe(2)
+  })
+
+  it('does not increment deaths when hp > 0', () => {
+    const gc = createCharacter({ name: 'Thorin', klass: 'Warrior', agent: 'p1' })
+    const result = gameCharacterToPersistent(gc, null, 'Victory!')
+    expect(result.gamesPlayed).toBe(1)
+    expect(result.deaths).toBe(0)
+  })
+
+  it('caps adventureLog at 10 entries', () => {
+    const gc = createCharacter({ name: 'Thorin', klass: 'Warrior', agent: 'p1' })
+    const existing: PersistentCharacter = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 1,
+      xp: 0,
+      maxHp: gc.maxHp,
+      maxMp: gc.maxMp,
+      skills: { ...gc.skills },
+      adventureLog: Array.from({ length: 12 }, (_, i) => `Log ${i}`),
+      achievements: [],
+      inventory: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+      gamesPlayed: 12,
+      deaths: 0,
+    }
+    const result = gameCharacterToPersistent(gc, existing, 'New adventure')
+    expect(result.adventureLog.length).toBe(10)
+    expect(result.adventureLog[9]).toBe('New adventure')
+  })
+})

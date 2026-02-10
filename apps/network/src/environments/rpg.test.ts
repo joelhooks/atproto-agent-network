@@ -691,4 +691,62 @@ describe('rpgEnvironment', () => {
     // Party tactics should NOT be present when waiting
     expect(text).not.toContain('Party Coordination & Action Economy')
   })
+
+  it('join_game uses persistent character when loadCharacter returns one', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const persistentChar = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 3,
+      xp: 500,
+      maxHp: 25,
+      maxMp: 3,
+      skills: { attack: 70, dodge: 40, cast_spell: 10, use_skill: 50 },
+      adventureLog: ['Slew a dragon'],
+      achievements: [],
+      inventory: ['Axe'],
+      createdAt: 1000,
+      updatedAt: 2000,
+      gamesPlayed: 5,
+      deaths: 1,
+    }
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue(persistentChar),
+      saveCharacter: vi.fn(),
+    }
+
+    // Create a game for alice to join
+    const game = createGame({
+      id: 'rpg_persist_test',
+      players: ['grimlock'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+
+    await db.prepare(
+      "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+    ).bind('rpg_persist_test', 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock'])).run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute!('call-1', { command: 'join_game', gameId: 'rpg_persist_test', klass: 'Warrior' })
+
+    expect(ctx.loadCharacter).toHaveBeenCalled()
+
+    // Verify the joined character has persistent stats
+    const updatedRow = await db.prepare("SELECT state FROM games WHERE id = 'rpg_persist_test'").first<{ state: string }>()
+    const updatedGame = JSON.parse(updatedRow!.state)
+    const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
+    expect(alice).toBeDefined()
+    expect(alice.maxHp).toBe(25)
+    expect(alice.hp).toBe(25)
+    expect(alice.skills.attack).toBe(70)
+  })
 })

@@ -633,6 +633,87 @@
       "priority": 64,
       "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlguvihc",
+      "title": "Persistent characters: PersistentCharacter type + agent DO storage + load/save endpoints",
+      "description": "Add PersistentCharacter type to packages/core/src/types.ts with fields: name, klass, level, xp, maxHp, maxMp, skills (Record<string,number>), backstory, motivation, appearance, personalityTraits (string[]), adventureLog (string[], capped at 10), achievements (string[]), inventory (string[]), createdAt, updatedAt, gamesPlayed, deaths.\n\nIn apps/network/src/agent.ts:\n- Add 'character' case to the fetch router (same pattern as 'profile' case)\n- GET /agents/:name/character → this.ctx.storage.get('rpg:character')\n- PUT /agents/:name/character → this.ctx.storage.put('rpg:character', body)\n- Add handleCharacter(request) method\n\nIn apps/network/src/games/rpg-engine.ts add two exported helper functions:\n- persistentToGameCharacter(pc, agent): converts PersistentCharacter to in-game Character. Resets HP/MP to maxHp/maxMp (fresh adventure). Copies name, klass, skills. Sets agent field.\n- gameCharacterToPersistent(gc, existing, adventureSummary?): Updates or creates PersistentCharacter from game Character. Increments gamesPlayed. Increments deaths if gc.hp <= 0. Appends adventureSummary to adventureLog (cap at 10 entries via slice(-9)). Updates skills from gc. Sets updatedAt.\n\nAdd tests in rpg-engine.test.ts:\n- persistentToGameCharacter resets HP/MP to max\n- gameCharacterToPersistent increments gamesPlayed\n- gameCharacterToPersistent increments deaths when hp <= 0\n- gameCharacterToPersistent caps adventureLog at 10\n\nAdd test in agent-do.test.ts:\n- GET /character returns {} when no character exists\n- PUT then GET roundtrips character data",
+      "priority": 70,
+      "passes": false,
+      "validationCommand": "cd apps/network && pnpm vitest run",
+      "acceptanceCriteria": [
+        "PersistentCharacter type exists in packages/core/src/types.ts",
+        "GET/PUT /agents/:name/character endpoints work",
+        "persistentToGameCharacter resets HP/MP to max",
+        "gameCharacterToPersistent increments gamesPlayed and deaths correctly",
+        "adventureLog capped at 10 entries",
+        "All existing tests pass",
+        "New tests for persistence helpers and endpoints"
+      ]
+    },
+    {
+      "id": "story-mlguvug2",
+      "title": "Wire character persistence into RPG environment — load on join, save on completion",
+      "description": "Extend EnvironmentContext in apps/network/src/environments/types.ts with optional character persistence callbacks:\n  loadCharacter?: () => Promise<unknown>\n  saveCharacter?: (character: unknown) => Promise<void>\n\nIn apps/network/src/agent.ts, where environment contexts are constructed (search for EnvironmentContext or where agentName/agentDid/db are assembled), add:\n  loadCharacter: async () => this.ctx.storage.get('rpg:character'),\n  saveCharacter: async (c: unknown) => { await this.ctx.storage.put('rpg:character', c) },\n\nIn apps/network/src/environments/rpg.ts:\n1. In join_game command: before calling createCharacter, check if ctx.loadCharacter exists. If so, load persistent character. If found, use persistentToGameCharacter() to create the in-game character instead of generating fresh. Import helpers from rpg-engine.\n2. In game completion (search for 'game.completed' log or phase='finished'): if ctx.saveCharacter exists, call gameCharacterToPersistent() for each party member's agent and save via their context. Note: we only have the current agent's context, so save only the current agent's character.\n3. In buildContext: if persistent character has backstory, add \"Your backstory: {backstory}\" to context lines. If adventureLog has entries, add \"Previous adventures: {last 3 entries}\" to context.\n\nAdd tests in rpg.test.ts:\n- When loadCharacter returns a PersistentCharacter, join_game uses that character's name/class/stats\n- When loadCharacter returns null, join_game creates fresh character as before\n- buildContext includes backstory when persistent character has one",
+      "priority": 71,
+      "passes": false,
+      "validationCommand": "cd apps/network && pnpm vitest run",
+      "acceptanceCriteria": [
+        "EnvironmentContext has loadCharacter and saveCharacter optional fields",
+        "join_game loads persistent character when available",
+        "join_game falls back to fresh character when no persistent character",
+        "Game completion saves updated character back to DO",
+        "buildContext includes backstory and adventure log from persistent character",
+        "All existing tests pass"
+      ]
+    },
+    {
+      "id": "story-mlguwbeo",
+      "title": "Character backstory conversation — setup phase with DM-player dialogue",
+      "description": "Add a setup phase to RPG games where the DM has a back-and-forth with each player to develop their character backstory. Only triggers for characters without an existing backstory (new characters).\n\nIn apps/network/src/games/rpg-engine.ts, add to RpgGameState:\n  setupPhase?: {\n    currentPlayerIndex: number\n    exchangeCount: number\n    maxExchanges: number  // default 2\n    dialogues: Record<string, string[]>  // agent -> array of dialogue messages\n    complete: boolean\n  }\n\nAdd new RPG commands in apps/network/src/environments/rpg.ts:\n- setup_respond: Player responds to DM backstory question. Params: { gameId, message }. Appends message to dialogues[agent], increments exchangeCount. If exchangeCount >= maxExchanges, move to next player (currentPlayerIndex++). If all players done, set setupPhase.complete = true.\n- setup_narrate: DM asks a question or narrates. Params: { gameId, message, target? }. Appends to dialogues. Only grimlock can use this.\n- setup_finalize: DM wraps up setup. Params: { gameId, backstories: Record<string, string> }. Writes backstory string to each Character in party. Sets setupPhase.complete, transitions game to active exploration (remove setupPhase, start at room 0).\n\nIn buildContext during setup phase:\n- If setupPhase exists and !complete:\n  - For DM (grimlock): \"SETUP PHASE: You are interviewing {currentPlayer} about their character. Ask about their origin, motivation, and appearance. Keep it brief (2-3 exchanges per player). Use setup_narrate to ask questions, then setup_finalize when all players have backstories.\"\n  - For current player: \"The DM is asking about your character's backstory. Respond in character using setup_respond. Be creative — this defines who you are.\"\n  - For other players: \"Waiting for {currentPlayer} to finish backstory with DM.\"\n\nIn getAutoPlayActions during setup phase:\n  - If DM's turn and no dialogue yet for current player: auto-inject setup_narrate asking \"Tell me about your character...\"\n  - If player's turn: auto-inject setup_respond with a creative response based on their class\n\nOn new_game: if any player lacks a persistent backstory, initialize setupPhase with currentPlayerIndex=0, maxExchanges=2.\n\nAdd isActionTaken check for setup_respond, setup_narrate, setup_finalize.\n\nTests:\n- Setup phase initializes on new game\n- setup_respond advances exchange count\n- setup_finalize writes backstories and completes setup\n- buildContext shows correct prompts per role during setup",
+      "priority": 72,
+      "passes": false,
+      "validationCommand": "cd apps/network && pnpm vitest run",
+      "acceptanceCriteria": [
+        "New game initializes setupPhase when characters lack backstory",
+        "setup_respond command works for players",
+        "setup_narrate command works for DM only",
+        "setup_finalize writes backstories to characters and transitions to active",
+        "buildContext shows setup-specific prompts",
+        "Auto-play works during setup phase",
+        "All existing tests pass"
+      ]
+    },
+    {
+      "id": "story-mlguwnws",
+      "title": "XP and leveling system — encounter rewards + stat growth on level up",
+      "description": "Add XP rewards for encounters and a leveling system.\n\nIn apps/network/src/games/rpg-engine.ts:\n\nAdd XP constants:\n  const XP_PER_ENEMY_KILL = 25\n  const XP_PER_ROOM_CLEAR = 50\n  const XP_PER_BOSS_KILL = 100\n  const XP_PER_ADVENTURE_COMPLETE = 200\n  const XP_TABLE = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500] // XP needed for levels 1-10\n\nAdd exported function:\n  export function awardXp(pc: PersistentCharacter, amount: number): { leveledUp: boolean; newLevel: number } \n  - Adds amount to pc.xp\n  - Checks XP_TABLE to see if level should increase\n  - If leveled up: increment pc.level, increase pc.maxHp by 5+level, increase pc.maxMp by 3+level, add random skill point (+5 to a random skill)\n  - Returns whether they leveled up and new level\n\nIn apps/network/src/environments/rpg.ts:\n- After enemy killed in combat: track XP earned in game log\n- On room clear (explore advances room): award XP_PER_ROOM_CLEAR to all living party members\n- On boss kill: award XP_PER_BOSS_KILL\n- On adventure complete (game.completed): award XP_PER_ADVENTURE_COMPLETE\n- When saving persistent character on game end, apply accumulated XP via awardXp()\n\nIn buildContext: show character level and XP progress (\"Level 3 Warrior (450/600 XP to next level)\")\n\nTests:\n- awardXp correctly levels up character\n- awardXp increases stats on level up\n- XP_TABLE progression is correct\n- Multiple level ups from large XP award work correctly",
+      "priority": 73,
+      "passes": false,
+      "validationCommand": "cd apps/network && pnpm vitest run",
+      "acceptanceCriteria": [
+        "XP awarded for enemy kills, room clears, boss kills, adventure completion",
+        "awardXp function correctly handles leveling",
+        "Stats increase on level up (HP, MP, random skill)",
+        "Level shown in buildContext",
+        "All existing tests pass"
+      ]
+    },
+    {
+      "id": "story-mlgux0y8",
+      "title": "Campaign memory — adventure log compaction + previously-on context injection",
+      "description": "When a game ends, the DM compacts the adventure into a narrative summary stored on each character. Future games inject this as campaign context.\n\nIn apps/network/src/environments/rpg.ts:\n\nOn game completion (where game.completed is logged), generate an adventure summary from the game log:\n  export function compactAdventureLog(game: RpgGameState): string\n  - Takes the game's log entries and generates a 2-3 sentence summary\n  - Format: \"The party of {names} ventured into {theme} dungeon. {key events from log - kills, deaths, room clears}. {outcome: victory/TPK/abandoned}.\"\n  - Include notable moments: boss kills, player deaths, barrier breaks\n  - Cap at 200 characters\n\nThis summary is passed to gameCharacterToPersistent() as the adventureSummary parameter (already implemented in story 70).\n\nIn buildContext, when persistent character has adventureLog entries:\n  Add to context lines:\n  \"📜 CAMPAIGN HISTORY:\"\n  \"Your previous adventures:\"\n  - For each entry in adventureLog (last 3): \"- {entry}\"\n  This goes AFTER the character intro but BEFORE the tactical skills.\n\nAlso add to buildContext when persistent character has achievements:\n  \"🏆 Your achievements: {achievements.join(', ')}\"\n\nOn notable events during gameplay, add achievements to persistent character:\n- First boss kill → \"Dragonslayer\" (or based on enemy type)\n- Survived with <10% HP → \"Death's Doorstep\"\n- Cleared dungeon without taking damage → \"Untouchable\"\n- 5+ games played → \"Veteran Adventurer\"\n\nTests:\n- compactAdventureLog generates summary from game state\n- compactAdventureLog caps at 200 chars\n- buildContext includes campaign history when adventureLog exists\n- buildContext includes achievements when present\n- Achievement triggers fire correctly",
+      "priority": 74,
+      "passes": false,
+      "validationCommand": "cd apps/network && pnpm vitest run",
+      "acceptanceCriteria": [
+        "compactAdventureLog generates narrative summary from game state",
+        "Summary capped at 200 characters",
+        "buildContext injects campaign history",
+        "buildContext shows achievements",
+        "Achievements awarded on notable events",
+        "All existing tests pass"
+      ]
     }
   ],
   "metadata": {

@@ -420,6 +420,11 @@ export class AgentDO extends DurableObject {
               () => this.handleProfile(request),
               { route: 'AgentDO.profile', request }
             )
+          case 'character':
+            return withErrorHandling(
+              () => this.handleCharacter(request),
+              { route: 'AgentDO.character', request }
+            )
           case 'observations':
             return withErrorHandling(
               () => this.handleGetObservations(request),
@@ -1201,6 +1206,7 @@ export class AgentDO extends DurableObject {
     if (this.agentEnv?.DB) {
       const agentName = this.config?.name ?? ''
       const did = this.identity?.did ?? ''
+      const ctxStorage = this.ctx.storage
       const envCtx = {
         agentName,
         agentDid: did,
@@ -1210,6 +1216,8 @@ export class AgentDO extends DurableObject {
           const msg = JSON.stringify(event)
           for (const ws of sockets) { try { ws.send(msg) } catch {} }
         },
+        loadCharacter: async () => (await ctxStorage.get('rpg:character')) ?? null,
+        saveCharacter: async (character: unknown) => { await ctxStorage.put('rpg:character', character) },
       }
       try {
         // Try each registered environment's buildContext
@@ -1460,6 +1468,7 @@ export class AgentDO extends DurableObject {
 	        const environments = getAllEnvironments()
 	        const agentName = this.config?.name ?? ''
 	        const did = this.identity?.did ?? ''
+	        const autoPlayStorage = this.ctx.storage
 	        const envCtx = {
 	          agentName,
 	          agentDid: did,
@@ -1469,6 +1478,8 @@ export class AgentDO extends DurableObject {
 	            const msg = JSON.stringify(event)
 	            for (const ws of sockets) { try { ws.send(msg) } catch {} }
 	          },
+	          loadCharacter: async () => (await autoPlayStorage.get('rpg:character')) ?? null,
+	          saveCharacter: async (character: unknown) => { await autoPlayStorage.put('rpg:character', character) },
 	        }
 
 	        for (const env of environments) {
@@ -1937,6 +1948,27 @@ export class AgentDO extends DurableObject {
       const profile = { ...(body as Record<string, unknown>), updatedAt: Date.now() }
       await this.ctx.storage.put('profile', profile)
       return Response.json({ ok: true, profile })
+    }
+    return new Response('Method not allowed', { status: 405 })
+  }
+
+  /**
+   * GET/PUT /agents/:name/character
+   * Persistent RPG character stored in DO storage.
+   */
+  private async handleCharacter(request: Request): Promise<Response> {
+    if (request.method === 'GET') {
+      const character = await this.ctx.storage.get('rpg:character')
+      return Response.json(character ?? {})
+    }
+    if (request.method === 'PUT') {
+      const body = await request.json().catch(() => null)
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+      }
+      const character = { ...(body as Record<string, unknown>), updatedAt: Date.now() }
+      await this.ctx.storage.put('rpg:character', character)
+      return Response.json({ ok: true, character })
     }
     return new Response('Method not allowed', { status: 405 })
   }
@@ -3005,7 +3037,12 @@ export class AgentDO extends DurableObject {
       // RPG environment tool — dynamically loaded
       (() => {
         const agentName = this.config?.name ?? ''
-        const rpgCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent }
+        const storage = this.ctx.storage
+        const rpgCtx = {
+          agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent,
+          loadCharacter: async () => (await storage.get('rpg:character')) ?? null,
+          saveCharacter: async (character: unknown) => { await storage.put('rpg:character', character) },
+        }
         return {
           name: 'rpg',
           label: 'Dungeon Crawl',

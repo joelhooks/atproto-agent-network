@@ -1701,3 +1701,66 @@ export function disarmTrap(
   game.log.push({ at: Date.now(), who: rogueName, what: `disarmed trap (skill ${boostedSkill})` })
   return { ok: true, disarmed: result.success }
 }
+
+// ── Persistent character helpers ──────────────────────────────────────
+
+import type { PersistentCharacter } from '@atproto-agent/core'
+
+/**
+ * Convert a persistent character into an in-game Character.
+ * HP/MP are reset to max for each new adventure.
+ */
+export function persistentToGameCharacter(pc: PersistentCharacter, agent: string): Character {
+  // Use createCharacter to get proper stats for the class, then override with persistent data
+  const base = createCharacter({ name: pc.name, klass: pc.klass as RpgClass, agent })
+  return {
+    ...base,
+    hp: pc.maxHp,
+    maxHp: pc.maxHp,
+    mp: pc.maxMp,
+    maxMp: pc.maxMp,
+    skills: {
+      attack: pc.skills.attack ?? base.skills.attack,
+      dodge: pc.skills.dodge ?? base.skills.dodge,
+      cast_spell: pc.skills.cast_spell ?? base.skills.cast_spell,
+      use_skill: pc.skills.use_skill ?? base.skills.use_skill,
+    },
+  }
+}
+
+/**
+ * Update (or create) a persistent character from in-game state after an adventure.
+ */
+export function gameCharacterToPersistent(
+  gc: Character,
+  existing: PersistentCharacter | null,
+  adventureSummary?: string
+): PersistentCharacter {
+  const now = Date.now()
+  const base: PersistentCharacter = existing ?? {
+    name: gc.name,
+    klass: gc.klass,
+    level: 1,
+    xp: 0,
+    maxHp: gc.maxHp,
+    maxMp: gc.maxMp,
+    skills: { ...gc.skills },
+    adventureLog: [],
+    achievements: [],
+    inventory: [],
+    createdAt: now,
+    updatedAt: now,
+    gamesPlayed: 0,
+    deaths: 0,
+  }
+  return {
+    ...base,
+    skills: { ...gc.skills },
+    updatedAt: now,
+    gamesPlayed: base.gamesPlayed + 1,
+    deaths: gc.hp <= 0 ? base.deaths + 1 : base.deaths,
+    adventureLog: adventureSummary
+      ? [...base.adventureLog.slice(-9), adventureSummary]
+      : base.adventureLog,
+  }
+}

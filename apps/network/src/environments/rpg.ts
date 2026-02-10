@@ -10,14 +10,18 @@ import {
   createGame,
   describeRoom,
   explore,
+  gameCharacterToPersistent,
   generateFantasyName,
   gmInterveneIfStuck,
   partyWipe,
+  persistentToGameCharacter,
   resolveSkillCheck,
   soloMultiplier,
   type RpgClass,
   type RpgGameState,
 } from '../games/rpg-engine'
+
+import type { PersistentCharacter } from '@atproto-agent/core'
 
 import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
 import {
@@ -117,6 +121,24 @@ async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: strin
     await ctx.broadcast({ event_type: 'game.completed', ...summary })
   } catch {
     // best-effort
+  }
+
+  // Save persistent character for this agent
+  if (ctx.saveCharacter && ctx.loadCharacter) {
+    try {
+      const agentName = ctx.agentName.trim()
+      const partyMember = Array.isArray(game.party)
+        ? game.party.find((p) => (p.agent ?? p.name) === agentName)
+        : undefined
+      if (partyMember) {
+        const existing = (await ctx.loadCharacter()) as PersistentCharacter | null
+        const adventureSummary = `Adventure ${gameId}: ${(game as any).winner === 'party' ? 'Victory' : 'Defeat'} (${turns} turns)`
+        const persistent = gameCharacterToPersistent(partyMember, existing?.klass ? existing : null, adventureSummary)
+        await ctx.saveCharacter(persistent)
+      }
+    } catch {
+      // best-effort — don't break game completion
+    }
   }
 }
 
@@ -421,7 +443,19 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const fantasyName = generateJoinName(klass, game.party.length)
-          const joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+
+          // Try to load persistent character
+          let joined: Character
+          if (ctx.loadCharacter) {
+            const persistent = await ctx.loadCharacter() as PersistentCharacter | null
+            if (persistent && persistent.klass) {
+              joined = persistentToGameCharacter(persistent, agentName)
+            } else {
+              joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+            }
+          } else {
+            joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+          }
           game.party.push(joined)
           recomputeTurnOrder(game)
 
@@ -928,6 +962,23 @@ export const rpgEnvironment: AgentEnvironment = {
         }
       }
 
+      // Inject persistent character backstory/history
+      const persistentLines: string[] = []
+      if (ctx.loadCharacter) {
+        try {
+          const pc = (await ctx.loadCharacter()) as PersistentCharacter | null
+          if (pc && pc.klass) {
+            if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
+            if (pc.adventureLog && pc.adventureLog.length > 0) {
+              persistentLines.push(`Previous adventures: ${pc.adventureLog.join('; ')}`)
+            }
+            if (pc.gamesPlayed > 0) {
+              persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
+
       const lines: string[] = []
       if (isMyTurn) {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
@@ -947,6 +998,8 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push('Wait for your turn.')
         lines.push(`DO NOT create a new game.`)
       }
+
+      lines.push(...persistentLines)
 
       return lines.filter(Boolean)
     } catch {
