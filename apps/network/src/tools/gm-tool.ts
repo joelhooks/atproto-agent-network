@@ -1,6 +1,6 @@
 import type { PiAgentTool } from '@atproto-agent/agent'
 
-import { craftDungeonFromLibrary, recordNarrativeBeat, type Enemy, type RpgClass, type RpgGameState, type Room } from '../games/rpg-engine'
+import { createDice, generateDungeon, recordNarrativeBeat, type Enemy, type RpgClass, type RpgGameState, type Room } from '../games/rpg-engine'
 import type { EnvironmentContext } from '../environments/types'
 
 function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
@@ -162,6 +162,27 @@ function summarizeParty(game: RpgGameState): string {
   )
 }
 
+function uniquePartyClasses(party: RpgGameState['party']): RpgClass[] {
+  const out = new Set<RpgClass>()
+  for (const member of Array.isArray(party) ? party : []) {
+    const klass = (member as any)?.klass
+    if (klass === 'Warrior' || klass === 'Scout' || klass === 'Mage' || klass === 'Healer') out.add(klass)
+  }
+  return Array.from(out)
+}
+
+function rewriteDungeonThemePrefix(dungeon: Room[], fromTheme: string, toTheme: string): void {
+  if (!fromTheme || !toTheme || fromTheme === toTheme) return
+  const fromPrefix = `${fromTheme}:`
+  const toPrefix = `${toTheme}:`
+  for (const room of dungeon) {
+    const desc = String((room as any)?.description ?? '')
+    if (!desc) continue
+    if (desc.startsWith(fromPrefix)) (room as any).description = `${toPrefix}${desc.slice(fromPrefix.length)}`
+    else if (!desc.startsWith(toPrefix)) (room as any).description = `${toPrefix} ${desc}`
+  }
+}
+
 export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
   return {
     name: 'gm',
@@ -187,6 +208,8 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
         text: { type: 'string', description: 'Narration/event text.' },
         kind: { type: 'string', description: 'Event kind (npc|hazard|loot|twist|other).' },
         query: { type: 'string', description: 'pdf-brain search query (consult_library)' },
+        theme: { type: 'string', description: 'Optional theme hint for craft_dungeon.' },
+        partyComposition: { type: 'string', description: 'Optional party composition hint (craft_dungeon).' },
         // Difficulty knobs (apply broadly to the room)
         enemyHpDelta: { type: 'number' },
         enemyAttackDelta: { type: 'number' },
@@ -237,6 +260,16 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
       }
 
       if (command === 'craft_dungeon') {
+        const themeHint = clampText(params.theme, 80)
+        const partyHint = clampText(params.partyComposition, 180)
+
+        const party = Array.isArray(game.party) ? game.party : []
+        const partySnapshot =
+          partyHint ||
+          party
+            .map((p) => `${p.name}(${p.klass}) STR ${p.stats.STR} DEX ${p.stats.DEX} INT ${p.stats.INT} WIS ${p.stats.WIS}`)
+            .join(' | ')
+
         const queries = [
           'encounter design pacing and difficulty curve (Game Angry)',
           'BRP opposed roll mechanics combat (BRP SRD)',
@@ -249,13 +282,19 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
           cacheLibraryResult(game, query, resultText)
         }
 
-        const { rooms, difficultyCurve, designNotes } = craftDungeonFromLibrary({
-          theme: game.theme,
-          party: game.party,
-          libraryContext: game.libraryContext ?? {},
-        })
+        // Plumbing only: still rely on the existing generator for the layout, but attach library context
+        // on the dungeon state so future stories can shape encounters without additional lookups.
+        const partyClasses = uniquePartyClasses(game.party)
+        const generated = generateDungeon(12, createDice(), { partyClasses })
 
-        game.dungeon = rooms
+        game.dungeon = generated.rooms
+        const fromTheme = generated.theme.name
+        game.theme = generated.theme
+        if (themeHint) {
+          game.theme = { ...game.theme, name: themeHint }
+          rewriteDungeonThemePrefix(game.dungeon, fromTheme, themeHint)
+        }
+
         game.roomIndex = 0
         const initial = game.dungeon[0]
         if (initial && (initial.type === 'combat' || initial.type === 'boss')) {
@@ -269,8 +308,11 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
         game.dungeonContext = {
           craftedAt: now,
           libraryContext: { ...(game.libraryContext ?? {}) },
-          designNotes,
-          difficultyCurve,
+          designNotes: [
+            `party: ${String(partySnapshot || '(empty)').slice(0, 800)}`,
+            themeHint ? `theme_hint: ${themeHint}` : `theme: ${game.theme.name}`,
+          ],
+          difficultyCurve: [],
         }
 
         game.log.push({ at: now, who: 'GM', what: '[GM] craft_dungeon' })
@@ -278,11 +320,8 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
         await persistRpgGame(ctx, game)
 
         return {
-          content: toTextContent(
-            `Dungeon crafted: ${game.theme.name} (${game.dungeon.length} rooms)\n` +
-              `Curve: ${difficultyCurve.join(' -> ')}`
-          ),
-          details: { gameId, roomIndex: 0, curve: difficultyCurve },
+          content: toTextContent(`Dungeon crafted: ${game.theme.name} (${game.dungeon.length} rooms)`),
+          details: { gameId, roomIndex: 0, dungeon: game.dungeon, dungeonContext: game.dungeonContext, theme: game.theme },
         }
       }
 

@@ -41,6 +41,8 @@ export type Character = {
   klass: RpgClass
   stats: Stats
   skills: Skills
+  // Optional for backwards compatibility with persisted games.
+  armor?: number
   hp: number
   maxHp: number
   mp: number
@@ -50,9 +52,23 @@ export type Character = {
 export type Enemy = {
   name: string
   hp: number
+  // Optional for backwards compatibility with persisted games and older tests.
+  maxHp?: number
   DEX: number
   attack: number
   dodge: number
+  // Optional, but when present it drives target selection and special behaviors.
+  tactics?: EnemyTactics
+  // Optional per-enemy turn counter for multi-phase behaviors.
+  turnsTaken?: number
+}
+
+export type EnemyTacticKind = 'goblin' | 'orc' | 'skeleton' | 'boss' | 'unknown'
+
+export type EnemyTactics = {
+  kind: EnemyTacticKind
+  // Boss-only knob: special ability cadence in phase 1.
+  specialEveryTurns?: number
 }
 
 export type DifficultyTier = 'easy' | 'medium' | 'hard' | 'deadly' | 'boss'
@@ -335,6 +351,7 @@ export function createCharacter(input: { name: string; klass: RpgClass }): Chara
     klass: input.klass,
     stats,
     skills,
+    armor: 0,
     hp: maxHp,
     maxHp,
     mp: maxMp,
@@ -463,8 +480,8 @@ function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: Dung
 
   const enemy: Enemy =
     tier === 'early'
-      ? { name: 'Goblin', hp, DEX: 40, attack: 30, dodge: 20 }
-      : { name: 'Orc', hp, DEX: 45, attack: 40, dodge: 25 }
+      ? { name: 'Goblin', hp, maxHp: hp, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'goblin' } }
+      : { name: 'Orc', hp, maxHp: hp, DEX: 45, attack: 40, dodge: 25, tactics: { kind: 'orc' } }
 
   return {
     type: 'combat',
@@ -475,7 +492,7 @@ function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: Dung
 
 function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
   const hp = 29 + rollDie(dice, 20) // 30+
-  const enemy: Enemy = { name: 'Dungeon Boss', hp, DEX: 55, attack: 55, dodge: 35 }
+  const enemy: Enemy = { name: 'Dungeon Boss', hp, maxHp: hp, DEX: 55, attack: 55, dodge: 35, tactics: { kind: 'boss', specialEveryTurns: 3 } }
   return { type: 'boss', description: withThemeDescription(theme, 'A hulking presence fills the chamber.'), enemies: [enemy] }
 }
 
@@ -545,7 +562,17 @@ export function craftDungeonFromLibrary(input: {
     difficultyTier: 'easy',
     tactics: goblinTactics,
     description: withThemeDescription(theme, 'A lone goblin scout tests your defenses, then darts back into cover.'),
-    enemies: [{ name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 25, dodge: 30 }],
+    enemies: [
+      {
+        name: 'Goblin',
+        hp: Math.floor(6 * partyScale),
+        maxHp: Math.floor(6 * partyScale),
+        DEX: 45,
+        attack: 25,
+        dodge: 30,
+        tactics: { kind: 'goblin' },
+      },
+    ],
   }
 
   const medium: Room = {
@@ -554,8 +581,24 @@ export function craftDungeonFromLibrary(input: {
     tactics: goblinTactics,
     description: withThemeDescription(theme, 'A goblin pack sets a crossfire in the cramped corridor.'),
     enemies: [
-      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 28, dodge: 32 },
-      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 28, dodge: 32 },
+      {
+        name: 'Goblin',
+        hp: Math.floor(6 * partyScale),
+        maxHp: Math.floor(6 * partyScale),
+        DEX: 45,
+        attack: 28,
+        dodge: 32,
+        tactics: { kind: 'goblin' },
+      },
+      {
+        name: 'Goblin',
+        hp: Math.floor(6 * partyScale),
+        maxHp: Math.floor(6 * partyScale),
+        DEX: 45,
+        attack: 28,
+        dodge: 32,
+        tactics: { kind: 'goblin' },
+      },
     ],
   }
 
@@ -565,8 +608,24 @@ export function craftDungeonFromLibrary(input: {
     tactics: orcTactics,
     description: withThemeDescription(theme, 'Orc raiders hold the choke point, daring you to break their line.'),
     enemies: [
-      { name: 'Orc', hp: Math.floor(11 * partyScale), DEX: 45, attack: 45, dodge: 28 },
-      { name: 'Orc', hp: Math.floor(11 * partyScale), DEX: 45, attack: 45, dodge: 28 },
+      {
+        name: 'Orc',
+        hp: Math.floor(11 * partyScale),
+        maxHp: Math.floor(11 * partyScale),
+        DEX: 45,
+        attack: 45,
+        dodge: 28,
+        tactics: { kind: 'orc' },
+      },
+      {
+        name: 'Orc',
+        hp: Math.floor(11 * partyScale),
+        maxHp: Math.floor(11 * partyScale),
+        DEX: 45,
+        attack: 45,
+        dodge: 28,
+        tactics: { kind: 'orc' },
+      },
     ],
   }
 
@@ -576,13 +635,35 @@ export function craftDungeonFromLibrary(input: {
     tactics: orcTactics,
     description: withThemeDescription(theme, 'An orc berserker crashes in with brutal swings while skirmishers harry the flanks.'),
     enemies: [
-      { name: 'Orc', hp: Math.floor(16 * partyScale), DEX: 50, attack: 55, dodge: 30 },
-      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 55, attack: 25, dodge: 35 },
+      {
+        name: 'Orc',
+        hp: Math.floor(16 * partyScale),
+        maxHp: Math.floor(16 * partyScale),
+        DEX: 50,
+        attack: 55,
+        dodge: 30,
+        tactics: { kind: 'orc' },
+      },
+      {
+        name: 'Goblin',
+        hp: Math.floor(6 * partyScale),
+        maxHp: Math.floor(6 * partyScale),
+        DEX: 55,
+        attack: 25,
+        dodge: 35,
+        tactics: { kind: 'goblin' },
+      },
     ],
   }
 
-  const bossPhase1: Enemy[] = [{ name: 'Dungeon Boss', hp: Math.floor(40 * partyScale), DEX: 55, attack: 55, dodge: 35 }]
-  const bossPhase2: Enemy[] = [{ name: 'Dungeon Boss', hp: Math.floor(26 * partyScale), DEX: 60, attack: 65, dodge: 40 }]
+  const bossPhase1Hp = Math.floor(40 * partyScale)
+  const bossPhase2Hp = Math.floor(26 * partyScale)
+  const bossPhase1: Enemy[] = [
+    { name: 'Dungeon Boss', hp: bossPhase1Hp, maxHp: bossPhase1Hp, DEX: 55, attack: 55, dodge: 35, tactics: { kind: 'boss', specialEveryTurns: 3 } },
+  ]
+  const bossPhase2: Enemy[] = [
+    { name: 'Dungeon Boss', hp: bossPhase2Hp, maxHp: bossPhase2Hp, DEX: 60, attack: 65, dodge: 40, tactics: { kind: 'boss', specialEveryTurns: 3 } },
+  ]
 
   const boss: Room = {
     type: 'boss',
@@ -886,18 +967,50 @@ export function attack(
   const atk = resolveSkillCheck({ skill: attacker.skills.attack, dice: input.dice })
   const dod = resolveSkillCheck({ skill: defender.skills.dodge, dice: input.dice })
 
-  // BRP-inspired opposed roll: success beats failure; if both succeed, margin decides.
-  const atkMargin = atk.success ? attacker.skills.attack - atk.roll : -Infinity
-  const dodMargin = dod.success ? defender.skills.dodge - dod.roll : -Infinity
+  // BRP-informed combat:
+  // - Opposed rolls: success beats failure; if both succeed, compare margins.
+  // - Critical hits: roll <= skill/5 => double damage.
+  // - Fumbles: roll 96-00 => attacker hurts themselves for half damage.
 
-  const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+  const atkSkill = clampSkill(attacker.skills.attack)
+  const dodSkill = clampSkill(defender.skills.dodge)
+  const strBonus = Math.floor(attacker.stats.STR / 25)
+  const armorRaw = (defender as any).armor
+  const armor = Number.isFinite(armorRaw) ? Math.max(0, Math.floor(armorRaw as number)) : 0
+
+  const isFumble = atk.roll >= 96
+  const critThreshold = Math.max(1, Math.floor(atkSkill / 5))
+  const isCrit = !isFumble && atk.roll <= critThreshold
+
+  if (isFumble) {
+    const base = rollDie(input.dice, 6) + strBonus
+    const selfDamage = Math.max(1, Math.floor(base / 2))
+    applyDamage(attacker, selfDamage)
+    partyWipe(game)
+    game.log.push({ at: Date.now(), who: attacker.name, what: `fumble: hurt self for ${selfDamage}` })
+    return { ok: true, hit: false, detail: 'fumble' }
+  }
+
+  const atkMargin = atk.success ? atkSkill - atk.roll : -Infinity
+  const dodMargin = dod.success ? dodSkill - dod.roll : -Infinity
+
+  const hit =
+    atk.success &&
+    (!dod.success || isCrit || atkMargin > dodMargin)
+
   if (hit) {
-    const damage = input.dice.d(6) + Math.floor(attacker.stats.STR / 25)
+    const base = rollDie(input.dice, 6) + strBonus
+    const raw = (isCrit ? base * 2 : base) - armor
+    const damage = Math.max(0, raw)
     applyDamage(defender, damage)
     partyWipe(game)
     attacker.skills.attack = atk.nextSkill
-    game.log.push({ at: Date.now(), who: attacker.name, what: `hit ${defender.name} for ${damage}` })
-    return { ok: true, hit: true, detail: 'hit' }
+    game.log.push({
+      at: Date.now(),
+      who: attacker.name,
+      what: isCrit ? `critical hit ${defender.name} for ${damage}` : `hit ${defender.name} for ${damage}`,
+    })
+    return { ok: true, hit: true, detail: isCrit ? 'critical' : 'hit' }
   }
 
   if (dod.success) {
@@ -906,6 +1019,316 @@ export function attack(
 
   game.log.push({ at: Date.now(), who: attacker.name, what: `missed ${defender.name}` })
   return { ok: true, hit: false, detail: 'miss' }
+}
+
+function normalizeEnemyMaxHp(enemy: Enemy): number {
+  const raw = (enemy as any).maxHp
+  const maxHp =
+    typeof raw === 'number' && Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : Math.max(1, Math.floor(enemy.hp ?? 1))
+  if (!Number.isFinite((enemy as any).maxHp)) enemy.maxHp = maxHp
+  return maxHp
+}
+
+function inferEnemyTactics(enemy: Enemy): EnemyTactics {
+  const existing = (enemy as any).tactics as EnemyTactics | undefined
+  if (existing && typeof existing === 'object' && typeof existing.kind === 'string') {
+    return existing
+  }
+
+  const name = String(enemy?.name ?? '').toLowerCase()
+  if (name.includes('goblin')) return { kind: 'goblin' }
+  if (name.includes('orc')) return { kind: 'orc' }
+  if (name.includes('skeleton')) return { kind: 'skeleton' }
+  if (name.includes('boss')) return { kind: 'boss', specialEveryTurns: 3 }
+  return { kind: 'unknown' }
+}
+
+function livingParty(party: Character[]): Character[] {
+  return (Array.isArray(party) ? party : []).filter((p) => p && (p.hp ?? 0) > 0)
+}
+
+function pickLowestHp(candidates: Character[]): Character | null {
+  if (candidates.length === 0) return null
+  return [...candidates].sort((a, b) => {
+    const hp = (a.hp ?? 0) - (b.hp ?? 0)
+    if (hp !== 0) return hp
+    const max = (a.maxHp ?? 0) - (b.maxHp ?? 0)
+    if (max !== 0) return max
+    return a.name.localeCompare(b.name)
+  })[0]!
+}
+
+function pickHighestMaxHp(candidates: Character[]): Character | null {
+  if (candidates.length === 0) return null
+  return [...candidates].sort((a, b) => {
+    const max = (b.maxHp ?? 0) - (a.maxHp ?? 0)
+    if (max !== 0) return max
+    const hp = (b.hp ?? 0) - (a.hp ?? 0)
+    if (hp !== 0) return hp
+    return a.name.localeCompare(b.name)
+  })[0]!
+}
+
+export function selectTarget(input: { enemy: Enemy; party: Character[]; dice: Dice }): Character | null {
+  const enemy = input.enemy
+  const dice = input.dice
+  const party = livingParty(input.party)
+  if (party.length === 0) return null
+
+  const tactics = inferEnemyTactics(enemy)
+
+  if (tactics.kind === 'boss') {
+    const healers = party.filter((p) => p.klass === 'Healer')
+    return pickLowestHp(healers) ?? pickLowestHp(party)
+  }
+
+  if (tactics.kind === 'goblin') {
+    const mages = party.filter((p) => p.klass === 'Mage')
+    return pickLowestHp(mages) ?? pickLowestHp(party)
+  }
+
+  if (tactics.kind === 'orc') {
+    // Aggressive: challenge the toughest target.
+    return pickHighestMaxHp(party)
+  }
+
+  if (tactics.kind === 'skeleton') {
+    const idx = rollDie(dice, party.length) - 1
+    return party[Math.max(0, Math.min(party.length - 1, idx))] ?? null
+  }
+
+  const idx = rollDie(dice, party.length) - 1
+  return party[Math.max(0, Math.min(party.length - 1, idx))] ?? null
+}
+
+type DamageType = 'piercing' | 'blunt' | 'magic' | 'unknown'
+
+function damageTypeForCharacter(attacker: Character): DamageType {
+  switch (attacker.klass) {
+    case 'Scout':
+      return 'piercing'
+    case 'Warrior':
+      return 'blunt'
+    case 'Mage':
+      return 'magic'
+    case 'Healer':
+      return 'blunt'
+    default:
+      return 'unknown'
+  }
+}
+
+function adjustDamageAgainstEnemy(enemy: Enemy, amount: number, damageType: DamageType): number {
+  const tactics = inferEnemyTactics(enemy)
+  const dmg = Math.max(0, Math.floor(amount))
+  if (dmg === 0) return 0
+
+  if (tactics.kind === 'skeleton') {
+    if (damageType === 'piercing') return Math.floor(dmg * 0.5)
+    if (damageType === 'blunt') return Math.floor(dmg * 1.5)
+  }
+
+  return dmg
+}
+
+export function attackEnemy(
+  game: RpgGameState,
+  input: { attacker: string; enemyIndex?: number; dice: Dice }
+): { ok: true; hit: boolean; damage: number; detail: string } {
+  const attacker = findCharacter(game, input.attacker)
+  const enemies = game.combat?.enemies ?? []
+  const idx = Number.isFinite(input.enemyIndex) ? Math.max(0, Math.floor(input.enemyIndex as number)) : 0
+  const enemy = enemies[idx]
+  if (!attacker || !enemy) return { ok: true, hit: false, damage: 0, detail: 'invalid combatants' }
+
+  normalizeEnemyMaxHp(enemy)
+
+  const atk = resolveSkillCheck({ skill: attacker.skills.attack, dice: input.dice })
+  const dod = resolveSkillCheck({ skill: enemy.dodge, dice: input.dice })
+  const atkMargin = atk.success ? attacker.skills.attack - atk.roll : -Infinity
+  const dodMargin = dod.success ? enemy.dodge - dod.roll : -Infinity
+  const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+
+  if (!hit) {
+    game.log.push({ at: Date.now(), who: attacker.name, what: `missed ${enemy.name}` })
+    return { ok: true, hit: false, damage: 0, detail: 'miss' }
+  }
+
+  const strBonus = Math.floor(attacker.stats.STR / 25)
+  const base = rollDie(input.dice, 6) + strBonus
+  const damageType = damageTypeForCharacter(attacker)
+  const damage = adjustDamageAgainstEnemy(enemy, base, damageType)
+
+  enemy.hp = Math.max(0, enemy.hp - damage)
+  attacker.skills.attack = atk.nextSkill
+
+  game.log.push({ at: Date.now(), who: attacker.name, what: `hit ${enemy.name} for ${damage}` })
+  return { ok: true, hit: true, damage, detail: 'hit' }
+}
+
+export type EnemyTurnResult = {
+  ok: true
+  action: 'attack' | 'flee' | 'idle'
+  enemy: string
+  targets: string[]
+  damageByTarget: Record<string, number>
+  detail: string
+}
+
+export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; enemyName?: string; dice: Dice }): EnemyTurnResult {
+  const enemies = game.combat?.enemies ?? []
+  if (enemies.length === 0) {
+    return { ok: true, action: 'idle', enemy: 'none', targets: [], damageByTarget: {}, detail: 'no enemies' }
+  }
+
+  let enemy: Enemy | undefined
+  if (typeof input.enemyName === 'string' && input.enemyName.trim()) {
+    const name = input.enemyName.trim()
+    enemy = enemies.find((e) => e?.name === name && (e.hp ?? 0) > 0)
+  } else if (Number.isFinite(input.enemyIndex)) {
+    const idx = Math.max(0, Math.floor(input.enemyIndex as number))
+    enemy = enemies[idx]
+    if (enemy && (enemy.hp ?? 0) <= 0) enemy = undefined
+  }
+
+  enemy ??= enemies.find((e) => (e?.hp ?? 0) > 0)
+  if (!enemy) {
+    return { ok: true, action: 'idle', enemy: 'none', targets: [], damageByTarget: {}, detail: 'no living enemies' }
+  }
+
+  const maxHp = normalizeEnemyMaxHp(enemy)
+  const tactics = inferEnemyTactics(enemy)
+
+  const turnsTaken = Math.max(0, Math.floor((enemy as any).turnsTaken ?? 0)) + 1
+  enemy.turnsTaken = turnsTaken
+
+  // Goblin: flee when hurt.
+  if (tactics.kind === 'goblin') {
+    const ratio = maxHp > 0 ? enemy.hp / maxHp : 1
+    if (ratio < 0.3) {
+      enemy.hp = 0
+      ;(enemy as any).fled = true
+      game.log.push({ at: Date.now(), who: enemy.name, what: 'fled' })
+      return { ok: true, action: 'flee', enemy: enemy.name, targets: [], damageByTarget: {}, detail: 'flee' }
+    }
+  }
+
+  const party = livingParty(game.party)
+  if (party.length === 0) {
+    partyWipe(game)
+    return { ok: true, action: 'idle', enemy: enemy.name, targets: [], damageByTarget: {}, detail: 'no targets' }
+  }
+
+  // Boss phase 2: enraged AoE (unavoidable half damage).
+  if (tactics.kind === 'boss') {
+    const ratio = maxHp > 0 ? enemy.hp / maxHp : 1
+    const phase: 1 | 2 = ratio < 0.5 ? 2 : 1
+    ;(enemy as any).phase = phase
+
+    if (phase === 2) {
+      const raw = rollDie(input.dice, 6)
+      const scaled = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
+      const enraged = Math.floor(scaled * 1.2)
+      const perTarget = Math.floor(enraged / 2)
+
+      const damageByTarget: Record<string, number> = {}
+      const targets = party.map((p) => p.name)
+      for (const member of party) {
+        applyDamage(member, perTarget)
+        damageByTarget[member.name] = perTarget
+      }
+      partyWipe(game)
+      game.log.push({ at: Date.now(), who: enemy.name, what: `aoe ${perTarget} to all (enraged)` })
+      return { ok: true, action: 'attack', enemy: enemy.name, targets, damageByTarget, detail: 'enraged_aoe' }
+    }
+
+    const target = selectTarget({ enemy, party, dice: input.dice }) ?? party[0]!
+    const specialEvery = Math.max(1, Math.floor(tactics.specialEveryTurns ?? 3))
+    const useSpecial = turnsTaken % specialEvery === 0
+
+    if (useSpecial) {
+      const raw = rollDie(input.dice, 6)
+      const scaled = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
+      const damage = scaled + 4
+      applyDamage(target, damage)
+      partyWipe(game)
+      game.log.push({ at: Date.now(), who: enemy.name, what: `special hit ${target.name} for ${damage}` })
+      return {
+        ok: true,
+        action: 'attack',
+        enemy: enemy.name,
+        targets: [target.name],
+        damageByTarget: { [target.name]: damage },
+        detail: 'special',
+      }
+    }
+
+    // Default boss attack (single target, avoidable).
+    const atk = resolveSkillCheck({ skill: enemy.attack, dice: input.dice })
+    const dod = resolveSkillCheck({ skill: target.skills.dodge, dice: input.dice })
+    const atkMargin = atk.success ? enemy.attack - atk.roll : -Infinity
+    const dodMargin = dod.success ? target.skills.dodge - dod.roll : -Infinity
+    const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+    if (hit) {
+      const raw = rollDie(input.dice, 6)
+      const scaled = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
+      applyDamage(target, scaled)
+      partyWipe(game)
+      game.log.push({ at: Date.now(), who: enemy.name, what: `hit ${target.name} for ${scaled}` })
+      return {
+        ok: true,
+        action: 'attack',
+        enemy: enemy.name,
+        targets: [target.name],
+        damageByTarget: { [target.name]: scaled },
+        detail: 'hit',
+      }
+    }
+
+    game.log.push({ at: Date.now(), who: enemy.name, what: `missed ${target.name}` })
+    return { ok: true, action: 'attack', enemy: enemy.name, targets: [target.name], damageByTarget: {}, detail: 'miss' }
+  }
+
+  const target = selectTarget({ enemy, party, dice: input.dice }) ?? party[0]!
+
+  const powerAttack = tactics.kind === 'orc'
+  const hitPenalty = powerAttack ? 10 : 0
+  const damageBonus = powerAttack ? 10 : 0
+
+  const atkSkill = clampSkill(enemy.attack - hitPenalty)
+  const atk = resolveSkillCheck({ skill: atkSkill, dice: input.dice })
+  const dod = resolveSkillCheck({ skill: target.skills.dodge, dice: input.dice })
+
+  const atkMargin = atk.success ? atkSkill - atk.roll : -Infinity
+  const dodMargin = dod.success ? target.skills.dodge - dod.roll : -Infinity
+  const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+
+  if (hit) {
+    const raw = rollDie(input.dice, 6)
+    const scaled = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
+    const damage = scaled + damageBonus
+    applyDamage(target, damage)
+    partyWipe(game)
+    game.log.push({ at: Date.now(), who: enemy.name, what: `hit ${target.name} for ${damage}` })
+    return {
+      ok: true,
+      action: 'attack',
+      enemy: enemy.name,
+      targets: [target.name],
+      damageByTarget: { [target.name]: damage },
+      detail: powerAttack ? 'power_attack_hit' : 'hit',
+    }
+  }
+
+  game.log.push({ at: Date.now(), who: enemy.name, what: `missed ${target.name}` })
+  return {
+    ok: true,
+    action: 'attack',
+    enemy: enemy.name,
+    targets: [target.name],
+    damageByTarget: {},
+    detail: powerAttack ? 'power_attack_miss' : 'miss',
+  }
 }
 
 export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; room: Room | null } {
