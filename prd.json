@@ -656,7 +656,7 @@
       "title": "Wire character persistence into RPG environment — load on join, save on completion",
       "description": "Extend EnvironmentContext in apps/network/src/environments/types.ts with optional character persistence callbacks:\n  loadCharacter?: () => Promise<unknown>\n  saveCharacter?: (character: unknown) => Promise<void>\n\nIn apps/network/src/agent.ts, where environment contexts are constructed (search for EnvironmentContext or where agentName/agentDid/db are assembled), add:\n  loadCharacter: async () => this.ctx.storage.get('rpg:character'),\n  saveCharacter: async (c: unknown) => { await this.ctx.storage.put('rpg:character', c) },\n\nIn apps/network/src/environments/rpg.ts:\n1. In join_game command: before calling createCharacter, check if ctx.loadCharacter exists. If so, load persistent character. If found, use persistentToGameCharacter() to create the in-game character instead of generating fresh. Import helpers from rpg-engine.\n2. In game completion (search for 'game.completed' log or phase='finished'): if ctx.saveCharacter exists, call gameCharacterToPersistent() for each party member's agent and save via their context. Note: we only have the current agent's context, so save only the current agent's character.\n3. In buildContext: if persistent character has backstory, add \"Your backstory: {backstory}\" to context lines. If adventureLog has entries, add \"Previous adventures: {last 3 entries}\" to context.\n\nAdd tests in rpg.test.ts:\n- When loadCharacter returns a PersistentCharacter, join_game uses that character's name/class/stats\n- When loadCharacter returns null, join_game creates fresh character as before\n- buildContext includes backstory when persistent character has one",
       "priority": 71,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && pnpm vitest run",
       "acceptanceCriteria": [
         "EnvironmentContext has loadCharacter and saveCharacter optional fields",
@@ -733,8 +733,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 64,
-    "lastIteration": "2026-02-10T17:16:28.528Z"
+    "totalIterations": 65,
+    "lastIteration": "2026-02-10T17:23:09.503Z"
   },
   "totalStories": 11
 }

@@ -1033,6 +1033,23 @@
         "progress.txt"
       ],
       "learnings": "{\"success\":false,\"summary\":\"Starting story-mlg5rnzm. I’m going to (1) run the required `swarm memory find`, (2) inspect the current RPG dungeon generation + tests, then (3) add failing Vitest cases for room difficulty/stat scaling/rest placement before implementing changes in `generateDungeon()`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlguvihc",
+      "title": "Persistent characters: PersistentCharacter type + agent DO storage + load/save endpoints",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "packages/core/src/types.ts",
+        "prd.json",
+        "apps/network/src/agent-do.test.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already had a `character` route and `handleCharacter()` implemented, but it was mutating `updatedAt` on PUT like `/profile` does. That breaks strict roundtrip expectations; storing the payload verbatim keeps the DO endpoint semantics simple and lets `apps/network/src/games/rpg-engine.ts` own timestamp updates via `gameCharacterToPersistent()`.\nGotcha: If you make `PersistentCharacter` fields required in `packages/core/src/types.ts`, you must also update any constructors/fixtures (notably `gameCharacterToPersistent()` defaults and tests) or you’ll create type drift and inconsistent stored shapes. Also, avoid hidden server-side mutations (like overriding `updatedAt`) in endpoints that are meant to roundtrip client state.\nFiles Context: `packages/core/src/types.ts` defines the canonical `PersistentCharacter` shape. `apps/network/src/agent.ts` is the AgentDO HTTP router and persists the character under `rpg:character` in DO storage. `apps/network/src/games/rpg-engine.ts` contains the conversion helpers (`persistentToGameCharacter`, `gameCharacterToPersistent`) used by the RPG environment. Tests live in `apps/network/src/games/rpg-engine.test.ts` (helper behavior) and `apps/network/src/agent-do.test.ts` (DO endpoint behavior)."
     }
   ],
   "failures": [

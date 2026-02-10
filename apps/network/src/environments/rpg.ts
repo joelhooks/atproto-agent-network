@@ -923,8 +923,9 @@ export const rpgEnvironment: AgentEnvironment = {
     try {
       const game = JSON.parse(row.state) as RpgGameState
       const room = game.dungeon[game.roomIndex]
-      const isMyTurn = game.currentPlayer === ctx.agentName
-      const partyMember = game.party?.find((p: any) => p.name === ctx.agentName)
+      const agentName = ctx.agentName.trim()
+      const isMyTurn = game.currentPlayer === agentName
+      const partyMember = game.party?.find((p: any) => p && isCharacter(p, agentName))
 
       // Barrier detection: if room requires a class nobody has, prompt recruitment
       const blockedRecruitment = (() => {
@@ -970,7 +971,7 @@ export const rpgEnvironment: AgentEnvironment = {
           if (pc && pc.klass) {
             if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
             if (pc.adventureLog && pc.adventureLog.length > 0) {
-              persistentLines.push(`Previous adventures: ${pc.adventureLog.join('; ')}`)
+              persistentLines.push(`Previous adventures: ${pc.adventureLog.slice(-3).join('; ')}`)
             }
             if (pc.gamesPlayed > 0) {
               persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)

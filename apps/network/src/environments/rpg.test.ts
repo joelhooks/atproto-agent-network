@@ -692,6 +692,93 @@ describe('rpgEnvironment', () => {
     expect(text).not.toContain('Party Coordination & Action Economy')
   })
 
+  it('buildContext includes persistent backstory and only the last 3 adventure log entries', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_build_context_persistent'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'A quiet room.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue({
+        name: 'Thorin',
+        klass: 'Warrior',
+        level: 2,
+        xp: 123,
+        maxHp: 20,
+        maxMp: 5,
+        skills: { attack: 60, dodge: 50, cast_spell: 10, use_skill: 40 },
+        backstory: 'Raised by wolves in the Ashwood.',
+        motivation: '',
+        appearance: '',
+        personalityTraits: [],
+        adventureLog: ['A1', 'A2', 'A3', 'A4', 'A5'],
+        achievements: [],
+        inventory: [],
+        createdAt: 1,
+        updatedAt: 2,
+        gamesPlayed: 5,
+        deaths: 0,
+      }),
+    }
+
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('Your backstory: Raised by wolves in the Ashwood.')
+    expect(text).toContain('Previous adventures: A3; A4; A5')
+    expect(text).not.toContain('A1')
+    expect(text).not.toContain('A2')
+  })
+
+  it('buildContext finds the current party member by agent name even when their character has a fantasy name', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_build_context_agent_mapping'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'A quiet room.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('IT IS YOUR TURN')
+    expect(text).toContain('You are')
+    expect(text).toContain('HP:')
+  })
+
   it('join_game uses persistent character when loadCharacter returns one', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
@@ -745,8 +832,97 @@ describe('rpgEnvironment', () => {
     const updatedGame = JSON.parse(updatedRow!.state)
     const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
     expect(alice).toBeDefined()
+    expect(alice.name).toBe('Thorin')
+    expect(alice.klass).toBe('Warrior')
     expect(alice.maxHp).toBe(25)
     expect(alice.hp).toBe(25)
     expect(alice.skills.attack).toBe(70)
+  })
+
+  it('join_game creates a fresh character when loadCharacter returns null', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue(null),
+      saveCharacter: vi.fn(),
+    }
+
+    const gameId = 'rpg_test_join_game_fresh_when_no_persist'
+    const game = createGame({
+      id: gameId,
+      players: ['grimlock'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute!('call-1', { command: 'join_game', gameId, klass: 'Mage' })
+
+    expect(ctx.loadCharacter).toHaveBeenCalled()
+
+    const updatedRow = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updatedGame = JSON.parse(updatedRow!.state)
+    const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
+    expect(alice).toBeDefined()
+    expect(alice.klass).toBe('Mage')
+    expect(typeof alice.name).toBe('string')
+    expect(alice.name.length).toBeGreaterThan(0)
+  })
+
+  it('on game completion, saves the updated persistent character when saveCharacter is available', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const saveCharacter = vi.fn()
+    const loadCharacter = vi.fn().mockResolvedValue(null)
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter,
+      saveCharacter,
+    }
+
+    const gameId = 'rpg_test_game_completed_saves_character'
+    const game = createGame({ id: gameId, players: ['alice'], dungeon: [{ type: 'rest', description: 'safe' }] })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = Math.max(0, game.dungeon.length - 1)
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-1', { command: 'explore', gameId })
+
+    expect(loadCharacter).toHaveBeenCalled()
+    expect(saveCharacter).toHaveBeenCalledTimes(1)
+    expect(saveCharacter.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        klass: expect.any(String),
+        name: expect.any(String),
+        gamesPlayed: 1,
+        adventureLog: expect.arrayContaining([expect.stringContaining(`Adventure ${gameId}:`)]),
+      })
+    )
   })
 })

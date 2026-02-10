@@ -769,3 +769,16 @@ Changes:
 
 Validation:
 - Ran `cd apps/network && pnpm vitest run` (passing).
+
+---
+[2026-02-10T17:23:09.505Z]
+Completed: Wire character persistence into RPG environment — load on join, save on completion
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, packages/core/src/types.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Prior failure pattern detected: test_failure. Mitigation: added RED tests in `apps/network/src/environments/rpg.test.ts`, ran `pnpm vitest run src/environments/rpg.test.ts` to confirm failures, implemented minimal fixes in `apps/network/src/environments/rpg.ts`, then re-ran the full validation `cd apps/network && pnpm vitest run`.
+
+Implemented RPG character persistence wiring behaviors:
+- `buildContext()` now resolves the current party member via agent mapping (`isCharacter(..., ctx.agentName.trim())`) so fantasy-named/persistent characters still get correct "You are ..." context.
+- `buildContext()` now prints only the last 3 persistent `adventureLog` entries.
+- Added coverage for: persistent join behavior, null fallback, buildContext backstory + last-3 adventures, and save-on-completion.
+
+Validation: `cd apps/network && pnpm vitest run` (pass).
