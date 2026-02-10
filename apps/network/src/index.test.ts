@@ -779,7 +779,7 @@ describe('network worker environments API', () => {
 
       expect(ids).toEqual(expect.arrayContaining(['catan_active', 'rpg_finished_recent']))
       expect(ids).not.toContain('catan_finished_old')
-      expect(ids).not.toContain('rpg_setup')
+      expect(ids).toContain('rpg_setup')
     } finally {
       vi.useRealTimers()
     }

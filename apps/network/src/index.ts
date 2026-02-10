@@ -590,7 +590,7 @@ export default {
               const fetchLimit = Math.min(Math.max(limit * 10, 200), 500)
 
               const selectCols = 'id, host_agent, phase, players, winner, created_at, updated_at'
-              const activeSql = `SELECT ${selectCols} FROM games WHERE phase NOT IN ('finished', 'abandoned', 'setup') ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+              const activeSql = `SELECT ${selectCols} FROM games WHERE phase NOT IN ('finished', 'abandoned') ORDER BY updated_at DESC LIMIT ${fetchLimit}`
               const finishedSql = `SELECT ${selectCols} FROM games WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT ${fetchLimit}`
               const allSql = `SELECT ${selectCols} FROM games ORDER BY updated_at DESC LIMIT ${fetchLimit}`
 

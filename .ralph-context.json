@@ -1094,9 +1094,17 @@
     {
       "id": "story-mlgxf8wb",
       "title": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[timeout] > typecheck\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:buil"
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `send_message` is already implemented in `apps/network/src/environments/rpg.ts` with a per-round counter stored at `game.messageRateLimit` keyed by the raw `ctx.agentName`, and the \"round\" increments inside `advanceTurn()` when initiative wraps; this makes the 2-messages-per-round guard stable across persisted games. `buildContext()` filters feed relevance by `to` (`@party`, direct `@agent`, `@dm` for Grimlock) and also by scanning message text for `@agent` mentions, rendering IC with character display names when available.\nGotcha: Cloudflare deploy can silently fall back to interactive OAuth if `CLOUDFLARE_API_TOKEN` isn’t present; and tokens/account IDs must match. Using `cloudflare_api_token` with `atproto-agents::cloudflare_account_id` produced CF API auth error 10000 (account mismatch). For non-interactive deploys, inject env vars inline with `CLOUDFLARE_API_TOKEN=\"$(secrets lease <name> --raw)\"` and `CLOUDFLARE_ACCOUNT_ID=\"$(secrets lease <name> --raw)\"` so secret values never hit stdout.\nFiles Context: `apps/network/src/environments/rpg.ts` contains the RPG tool schema, `send_message` execution (validation, persistence, trimming, rate limiting), and `buildContext()` feed-message injection. `apps/network/src/games/rpg-engine.ts` defines `FeedMessage`, `FeedMessageType`, and the `RpgGameState` fields (`feedMessages`, `messageRateLimit`, `round`). `apps/network/src/environments/rpg.test.ts` has the Vitest coverage for `send_message` behavior and context inclusion."
     }
   ],
   "failures": [
