@@ -1009,32 +1009,33 @@
     {
       "id": "story-mlg5rfww",
       "title": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` drives monster AI via `Enemy.tactics` (fallback `inferEnemyTactics()` by name). `enemyTakeTurn()` normalizes `enemy.maxHp`, increments `enemy.turnsTaken`, applies goblin flee at hp/maxHp < 0.3, orc power-attack as `atkSkill = enemy.attack - 10` plus `damageBonus = +10`, and boss phase switch at hp/maxHp < 0.5 with enraged AoE per-target damage computed as `floor(floor(d6*soloMultiplier)*1.2/2)`.\nGotcha: When validating with `| tail -30`, you must run with `set -o pipefail` or test failures can be hidden by the pipeline exit code. Also, `enemy.maxHp` may be missing on older records; always call `normalizeEnemyMaxHp(enemy)` before phase/ratio logic.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains `selectTarget()`, skeleton damage typing (`damageTypeForCharacter` + `adjustDamageAgainstEnemy`), and `enemyTakeTurn()` boss/goblin/orc logic. `apps/network/src/games/rpg-engine.test.ts` has deterministic dice helpers (`makeDice`, `makeDiceFromD100`) and the acceptance tests under `describe('enemy tactics')`."
+    },
+    {
+      "id": "story-mlg5rnzm",
+      "title": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
       "status": "failed",
-      "filesModified": [],
-      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing ph"
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "[verification_rejected] ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing ph"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbhwfc",
-      "storyTitle": "Fix autoPlay — filter by game type and skip finished/abandoned games",
-      "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
-      "toolNames": [],
-      "iterationNumber": 1
-    },
-    {
-      "storyId": "story-mlfbhwfc",
-      "storyTitle": "Fix autoPlay game detection",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "sed -n"
-      ],
-      "iterationNumber": 1
-    },
     {
       "storyId": "story-mlfbi0o4",
       "storyTitle": "Adaptive alarm interval — faster when it's your turn in a game",
@@ -1278,6 +1279,22 @@
         "zsh -lc"
       ],
       "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlg5rnzm",
+      "storyTitle": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "toolNames": [],
+      "iterationNumber": 5
+    },
+    {
+      "storyId": "story-mlg5rnzm",
+      "storyTitle": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "toolNames": [],
+      "iterationNumber": 6
     }
   ]
 }
