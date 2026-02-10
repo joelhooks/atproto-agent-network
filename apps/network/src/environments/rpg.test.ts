@@ -422,6 +422,233 @@ describe('rpgEnvironment', () => {
     expect((result as any).details.phase).toBe('playing')
   })
 
+  it('new_game initializes setupPhase when party characters lack a backstory', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+    }
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['slag', 'snarl'] })
+    const gameId = String((result as any)?.details?.gameId ?? '')
+    expect(gameId).toContain('rpg_')
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+
+    expect(updated.setupPhase).toMatchObject({
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      complete: false,
+    })
+    expect(updated.setupPhase.dialogues).toEqual({})
+    // Setup starts with the DM prompting the first player.
+    expect(updated.currentPlayer).toBe('grimlock')
+  })
+
+  it('setup_narrate is DM-only, appends dialogue for the current player, and hands the turn to the player', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_narrate'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: {},
+      complete: false,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'grimlock'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const nonDmTool = rpgEnvironment.getTool({ agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast } as any)
+    const rejected = await nonDmTool.execute('toolcall-setup-narrate', { command: 'setup_narrate', gameId, message: 'yo' })
+    expect(rejected).toMatchObject({ ok: false })
+    expect(String((rejected as any).error)).toContain('Only Grimlock')
+
+    const dmTool = rpgEnvironment.getTool({ agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast } as any)
+    await dmTool.execute('toolcall-setup-narrate', { command: 'setup_narrate', gameId, message: 'Tell me about your origin.' })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+
+    expect(updated.setupPhase.dialogues.slag).toEqual([expect.stringContaining('Tell me about your origin')])
+    expect(updated.currentPlayer).toBe('slag')
+  })
+
+  it('setup_respond appends the player response, increments exchangeCount, and advances to the next player at maxExchanges', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_respond'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: {},
+      complete: false,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'slag'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const slagTool = rpgEnvironment.getTool({ agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast } as any)
+    await slagTool.execute('toolcall-setup-respond-1', { command: 'setup_respond', gameId, message: 'I was born under a broken moon.' })
+
+    {
+      const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const updated = JSON.parse(row.state)
+      expect(updated.setupPhase.exchangeCount).toBe(1)
+      expect(updated.setupPhase.currentPlayerIndex).toBe(0)
+      expect(updated.setupPhase.dialogues.slag).toEqual([expect.stringContaining('broken moon')])
+      expect(updated.currentPlayer).toBe('grimlock')
+    }
+
+    const dmTool = rpgEnvironment.getTool({ agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast } as any)
+    await dmTool.execute('toolcall-setup-narrate-2', { command: 'setup_narrate', gameId, message: 'And what drives you onward?' })
+
+    await slagTool.execute('toolcall-setup-respond-2', { command: 'setup_respond', gameId, message: 'Vengeance, and a promise I cannot break.' })
+
+    {
+      const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const updated = JSON.parse(row.state)
+      expect(updated.setupPhase.exchangeCount).toBe(0)
+      expect(updated.setupPhase.currentPlayerIndex).toBe(1)
+      expect(updated.currentPlayer).toBe('grimlock')
+    }
+  })
+
+  it('setup_finalize writes backstories to the party, removes setupPhase, and returns the game to active exploration at room 0', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_finalize'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }, { type: 'rest', description: 'after' }],
+    })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 1,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: {},
+      complete: true,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'grimlock'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const dmTool = rpgEnvironment.getTool({ agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast } as any)
+    await dmTool.execute('toolcall-setup-finalize', {
+      command: 'setup_finalize',
+      gameId,
+      backstories: {
+        slag: 'A blacksmith turned oathbreaker.',
+        snarl: 'A scout who fled the glass woods.',
+      },
+    })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+
+    expect(updated.setupPhase).toBeUndefined()
+    expect(updated.roomIndex).toBe(0)
+    expect(updated.mode).toBe('exploring')
+    expect(updated.currentPlayer).not.toBe('grimlock')
+    expect(updated.party.find((p: any) => (p.agent ?? p.name) === 'slag').backstory).toContain('blacksmith')
+    expect(updated.party.find((p: any) => (p.agent ?? p.name) === 'snarl').backstory).toContain('glass woods')
+  })
+
+  it('buildContext shows setup-phase prompts for DM, current player, and waiting players', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_build_context'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: {},
+      complete: false,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+
+    // DM prompt context comes from "it's my turn" lookup (grimlock is not in players).
+    game.currentPlayer = 'grimlock'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const dmLines = await rpgEnvironment.buildContext({ agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast } as any)
+    expect(dmLines.join('\n')).toContain('SETUP PHASE')
+    expect(dmLines.join('\n')).toContain('slag')
+
+    // Current player prompt
+    game.currentPlayer = 'slag'
+    await db
+      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+      .run()
+
+    const slagLines = await rpgEnvironment.buildContext({ agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast } as any)
+    expect(slagLines.join('\n')).toContain('backstory')
+    expect(slagLines.join('\n')).toContain('setup_respond')
+
+    const snarlLines = await rpgEnvironment.buildContext({ agentName: 'snarl', agentDid: 'did:cf:snarl', db: db as any, broadcast } as any)
+    expect(snarlLines.join('\n')).toContain('Waiting')
+    expect(snarlLines.join('\n')).toContain('slag')
+  })
+
   it("logs a structured game.completed event when the adventure finishes (phase becomes 'finished')", async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
@@ -545,6 +772,84 @@ describe('rpgEnvironment', () => {
     expect(calls).toEqual([])
   })
 
+  it('setup phase autoplay: grimlock asks an opening backstory question when no dialogue exists yet', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_autoplay_dm'
+    const game = createGame({ id: gameId, players: ['slag', 'snarl'], dungeon: [{ type: 'rest', description: 'safe' }] })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: {},
+      complete: false,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'grimlock'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const ctx = { agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast }
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        name: 'rpg',
+        arguments: expect.objectContaining({
+          command: 'setup_narrate',
+          gameId,
+          target: 'slag',
+        }),
+      }),
+    ])
+  })
+
+  it('setup phase autoplay: current player responds with setup_respond when it is their setup turn', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_setup_autoplay_player'
+    const game = createGame({ id: gameId, players: ['slag', 'snarl'], dungeon: [{ type: 'rest', description: 'safe' }] })
+    ;(game as any).setupPhase = {
+      currentPlayerIndex: 0,
+      exchangeCount: 0,
+      maxExchanges: 2,
+      dialogues: { slag: ['Tell me about your character.'] },
+      complete: false,
+    }
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'slag'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const ctx = { agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast }
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        name: 'rpg',
+        arguments: expect.objectContaining({
+          command: 'setup_respond',
+          gameId,
+          message: expect.any(String),
+        }),
+      }),
+    ])
+  })
+
   it('room descriptions reference prior party actions (narrativeContext) after room 3+, and boss calls back to the journey', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
@@ -603,6 +908,56 @@ describe('rpgEnvironment', () => {
     expect(bossText).toContain('You enter: boss')
     expect(bossText).toContain('soot-black opal')
     expect(bossText).toContain('bruised shoulder')
+  })
+
+  // ---------------------------------------------------------------------------
+  // XP rewards
+  // ---------------------------------------------------------------------------
+
+  it('awards encounter and completion XP into game state (xpEarned) across the adventure', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_xp_rewards'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'combat', description: 'combat', enemies: [{ name: 'Goblin', hp: 1, DEX: 10, attack: 0, dodge: 0 }] },
+        { type: 'boss', description: 'boss', enemies: [{ name: 'Dungeon Boss', hp: 1, DEX: 10, attack: 0, dodge: 0, tactics: { kind: 'boss' } }] },
+        { type: 'rest', description: 'rest' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 'alice'
+    // Ensure the attacker always succeeds the skill check.
+    game.party[0]!.skills.attack = 100
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
+    const tool = rpgEnvironment.getTool(ctx as any)
+
+    // Kill the first enemy (+25).
+    await tool.execute('toolcall-1', { command: 'attack', gameId })
+    // Clear the combat room by advancing (+50) into the boss room.
+    await tool.execute('toolcall-2', { command: 'explore', gameId })
+    // Kill the boss enemy (+25) and get boss bonus (+100).
+    await tool.execute('toolcall-3', { command: 'attack', gameId })
+    // Clear the boss room by advancing (+50) into the last room.
+    await tool.execute('toolcall-4', { command: 'explore', gameId })
+    // Finish the adventure (+200).
+    await tool.execute('toolcall-5', { command: 'explore', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.phase).toBe('finished')
+    expect(updated.xpEarned).toEqual({ alice: 450 })
   })
 
   // ---------------------------------------------------------------------------
@@ -747,6 +1102,60 @@ describe('rpgEnvironment', () => {
     expect(text).toContain('Previous adventures: A3; A4; A5')
     expect(text).not.toContain('A1')
     expect(text).not.toContain('A2')
+  })
+
+  it('buildContext shows character level and XP progress toward the next level', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_build_context_xp_progress'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'A quiet room.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue({
+        name: 'Thorin',
+        klass: 'Warrior',
+        level: 3,
+        xp: 450,
+        maxHp: 20,
+        maxMp: 5,
+        skills: { attack: 60, dodge: 50, cast_spell: 10, use_skill: 40 },
+        backstory: '',
+        motivation: '',
+        appearance: '',
+        personalityTraits: [],
+        adventureLog: [],
+        achievements: [],
+        inventory: [],
+        createdAt: 1,
+        updatedAt: 2,
+        gamesPlayed: 1,
+        deaths: 0,
+      }),
+    }
+
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('Level 3 Warrior (450/600 XP to next level)')
   })
 
   it('buildContext finds the current party member by agent name even when their character has a fantasy name', async () => {
@@ -924,5 +1333,52 @@ describe('rpgEnvironment', () => {
         adventureLog: expect.arrayContaining([expect.stringContaining(`Adventure ${gameId}:`)]),
       })
     )
+  })
+
+  it('on game completion, applies accumulated XP via awardXp() before saving the persistent character', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const saveCharacter = vi.fn()
+    const loadCharacter = vi.fn().mockResolvedValue(null)
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter,
+      saveCharacter,
+    }
+
+    // Make the random skill point deterministic (always the first skill key).
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    const gameId = 'rpg_test_game_completed_awards_xp'
+    const game = createGame({ id: gameId, players: ['alice'], dungeon: [{ type: 'rest', description: 'safe' }] })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = Math.max(0, game.dungeon.length - 1)
+    game.currentPlayer = 'alice'
+    ;(game as any).xpEarned = { alice: 450 }
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-1', { command: 'explore', gameId })
+
+    expect(loadCharacter).toHaveBeenCalled()
+    expect(saveCharacter).toHaveBeenCalledTimes(1)
+
+    const saved = saveCharacter.mock.calls[0]![0]
+    expect(saved.xp).toBe(450)
+    expect(saved.level).toBe(3) // 0->100->300 thresholds
+    expect(saved.maxHp).toBeGreaterThan(game.party[0]!.maxHp)
+    expect(saved.maxMp).toBeGreaterThan(game.party[0]!.maxMp)
   })
 })

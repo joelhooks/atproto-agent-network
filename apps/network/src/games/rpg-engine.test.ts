@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   attack,
+  awardXp,
   createCharacter,
   createGame,
   createTestDice,
   generateDungeon,
   explore,
+  XP_TABLE,
   resolveSkillCheck,
   rollD100,
   soloMultiplier,
@@ -1084,5 +1086,99 @@ describe('gameCharacterToPersistent', () => {
     const result = gameCharacterToPersistent(gc, existing, 'New adventure')
     expect(result.adventureLog.length).toBe(10)
     expect(result.adventureLog[9]).toBe('New adventure')
+  })
+})
+
+describe('awardXp', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function makePersistentCharacter(partial?: Partial<PersistentCharacter>): PersistentCharacter {
+    const now = Date.now()
+    return {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 1,
+      xp: 0,
+      maxHp: 20,
+      maxMp: 8,
+      skills: { attack: 50, dodge: 40, cast_spell: 10, use_skill: 30 },
+      backstory: '',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: [],
+      achievements: [],
+      inventory: [],
+      createdAt: now,
+      updatedAt: now,
+      gamesPlayed: 0,
+      deaths: 0,
+      ...partial,
+    }
+  }
+
+  it('XP_TABLE matches the expected level thresholds (levels 1-10)', () => {
+    expect(XP_TABLE).toEqual([0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500])
+  })
+
+  it('levels up a character when crossing the next XP threshold', () => {
+    const pc = makePersistentCharacter({ level: 1, xp: 0 })
+    const result = awardXp(pc, 100)
+    expect(result).toEqual({ leveledUp: true, newLevel: 2 })
+    expect(pc.xp).toBe(100)
+    expect(pc.level).toBe(2)
+  })
+
+  it('increases HP/MP and adds +5 to a random skill on level up', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0) // first skill in sorted key order
+
+    const pc = makePersistentCharacter({
+      level: 1,
+      xp: 0,
+      maxHp: 10,
+      maxMp: 5,
+      skills: { attack: 10, dodge: 10, cast_spell: 10, use_skill: 10 },
+    })
+
+    awardXp(pc, 100) // -> level 2
+
+    // On reaching level 2: + (5 + level) HP, + (3 + level) MP
+    expect(pc.maxHp).toBe(10 + (5 + 2))
+    expect(pc.maxMp).toBe(5 + (3 + 2))
+    expect(pc.skills.attack).toBe(15)
+  })
+
+  it('supports multiple level-ups from a large XP award', () => {
+    vi.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.0) // attack
+      .mockReturnValueOnce(0.3) // cast_spell (sorted keys)
+      .mockReturnValueOnce(0.6) // dodge
+      .mockReturnValueOnce(0.9) // use_skill
+
+    const pc = makePersistentCharacter({
+      level: 1,
+      xp: 0,
+      maxHp: 10,
+      maxMp: 5,
+      skills: { attack: 10, dodge: 10, cast_spell: 10, use_skill: 10 },
+    })
+
+    const result = awardXp(pc, 1000) // level 1 -> 5
+
+    expect(result).toEqual({ leveledUp: true, newLevel: 5 })
+    expect(pc.level).toBe(5)
+    expect(pc.xp).toBe(1000)
+
+    // HP increases: +7 (L2) +8 (L3) +9 (L4) +10 (L5) = +34
+    // MP increases: +5 (L2) +6 (L3) +7 (L4) +8 (L5) = +26
+    expect(pc.maxHp).toBe(10 + 34)
+    expect(pc.maxMp).toBe(5 + 26)
+
+    expect(pc.skills.attack).toBe(15)
+    expect(pc.skills.cast_spell).toBe(15)
+    expect(pc.skills.dodge).toBe(15)
+    expect(pc.skills.use_skill).toBe(15)
   })
 })
