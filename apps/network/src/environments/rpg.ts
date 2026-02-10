@@ -20,6 +20,19 @@ import {
 } from '../games/rpg-engine'
 
 import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
+import {
+  DM_SKILL,
+  DM_SKILL_BRIEF,
+  WARRIOR_SKILL,
+  SCOUT_SKILL,
+  MAGE_SKILL,
+  HEALER_SKILL,
+  PARTY_TACTICS,
+  WARRIOR_SKILL_BRIEF,
+  SCOUT_SKILL_BRIEF,
+  MAGE_SKILL_BRIEF,
+  HEALER_SKILL_BRIEF,
+} from './rpg-skills'
 
 function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
@@ -892,31 +905,28 @@ export const rpgEnvironment: AgentEnvironment = {
         return `URGENT: Recruit ${requiredClass} via message tool`
       })()
 
-      const classRole = (() => {
+      // Inject role-based skills
+      const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
+      const roleSkillLines: string[] = []
+      if (isGrimlockAgent) {
+        const skill = isMyTurn ? DM_SKILL : DM_SKILL_BRIEF
+        roleSkillLines.push(skill)
+      } else {
         const klass = partyMember?.klass?.toLowerCase() ?? ''
-        if (klass === 'warrior') return `YOUR ROLE — WARRIOR (Frontline Tank):
-You are the frontline. Taunt enemies to protect squishier allies. Use your high HP to absorb damage. Position between enemies and your healer. Attack the biggest threat first. If the healer is being targeted, intercept immediately.`
-        if (klass === 'scout') return `YOUR ROLE — SCOUT (Striker & Utility):
-You are the eyes of the party. Disarm traps before the party walks into them. Use stealth to scout ahead. In combat, target enemy spellcasters and archers first. Use terrain to your advantage — flank, hide, ambush.`
-        if (klass === 'mage') return `YOUR ROLE — MAGE (Artillery & Control):
-You are the artillery. Open combat with your strongest AoE if facing multiple enemies. Conserve MP for boss encounters. Stay behind the warrior. Use skills creatively — magic isn't just damage. Control the battlefield with crowd control.`
-        if (klass === 'healer') return `YOUR ROLE — HEALER (Lifeline):
-You are the lifeline. Keep the warrior alive above all. Don't waste heals on minor scratches — wait until HP drops below 50%. In emergencies, heal yourself first (dead healer = dead party). Use your turns tactically, not just reactively.`
-        return `YOUR ROLE: Play your class to its strengths. Coordinate with the party.`
-      })()
-
-      const cooperationRules = [
-        'TACTICAL COOPERATION RULES:',
-        classRole,
-        '',
-        'PARTY TACTICS (all roles):',
-        '- Focus fire: kill one enemy at a time rather than spreading damage across many',
-        '- Positioning: stay together but not clustered (AoE danger from enemies)',
-        '- Communicate: use think_aloud to coordinate strategy with party members before acting',
-        '- Know when to retreat: if HP drops below 25%, consider resting or fleeing',
-        '- Protect the healer: the healer is the most important party member — if they die, everyone dies',
-        '- Adapt to monster type: undead are fearless (no intimidation), beasts can be scared off, constructs ignore pain',
-      ].join('\n')
+        const skillMap: Record<string, { full: string; brief: string }> = {
+          warrior: { full: WARRIOR_SKILL, brief: WARRIOR_SKILL_BRIEF },
+          scout: { full: SCOUT_SKILL, brief: SCOUT_SKILL_BRIEF },
+          mage: { full: MAGE_SKILL, brief: MAGE_SKILL_BRIEF },
+          healer: { full: HEALER_SKILL, brief: HEALER_SKILL_BRIEF },
+        }
+        const classSkill = skillMap[klass]
+        if (isMyTurn) {
+          roleSkillLines.push(classSkill?.full ?? 'Play your class to its strengths.')
+          roleSkillLines.push(PARTY_TACTICS)
+        } else {
+          roleSkillLines.push(classSkill?.brief ?? 'Wait for your turn. Coordinate with the party.')
+        }
+      }
 
       const lines: string[] = []
       if (isMyTurn) {
@@ -924,7 +934,7 @@ You are the lifeline. Keep the warrior alive above all. Don't waste heals on min
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
-        lines.push(cooperationRules)
+        lines.push(...roleSkillLines)
         lines.push('')
         lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"}) or rpg({"command":"status","gameId":"${row.id}"})`)
         lines.push(`DO NOT create a new game.`)
@@ -933,7 +943,7 @@ You are the lifeline. Keep the warrior alive above all. Don't waste heals on min
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
-        lines.push(cooperationRules)
+        lines.push(...roleSkillLines)
         lines.push('Wait for your turn.')
         lines.push(`DO NOT create a new game.`)
       }
