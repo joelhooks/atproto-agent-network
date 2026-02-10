@@ -1725,9 +1725,28 @@ export const rpgEnvironment: AgentEnvironment = {
         const current = party[idx]
         const currentAgent = current ? (current.agent ?? current.name) : ''
 
-        // DM turn: ask an opening question if no dialogue yet for this player.
+        // DM turn: handle setup_narrate or setup_finalize
         if (ctx.agentName.trim() === 'grimlock') {
           const dialogues = (setupPhase.dialogues ?? {}) as Record<string, string[]>
+
+          // Check if phase machine says it's time to finalize
+          const pmData = (state as any).phaseMachine
+          if (pmData) {
+            const pm = deserializePhaseMachine(pmData)
+            const currentPhase = pm.getCurrentPhase()
+            if (currentPhase?.transitionOn === 'setup_finalize') {
+              // Auto-build backstories from dialogues
+              const backstories: Record<string, string> = {}
+              for (const [agent, msgs] of Object.entries(dialogues)) {
+                backstories[agent] = msgs.filter((_, i) => i % 2 === 1).join(' ') || 'A mysterious adventurer.'
+              }
+              return [{
+                name: 'rpg',
+                arguments: { command: 'setup_finalize', gameId: row.id, backstories },
+              }]
+            }
+          }
+
           const existing = Array.isArray(dialogues[currentAgent]) ? dialogues[currentAgent] : []
           if (existing.length === 0) {
             return [
