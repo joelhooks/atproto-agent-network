@@ -1324,7 +1324,12 @@ export class AgentDO extends DurableObject {
     // from the tool definitions sent to the LLM so it prioritizes game actions.
     // (Tool execution is also guarded in the OpenRouter factory based on state.)
     const suppressGameplayTools = this.intervalReason === 'my_turn'
-    const suppressed = suppressGameplayTools ? ['think_aloud', 'recall'] : []
+    const isSetupPhase = prompt.includes('SETUP PHASE')
+    const suppressed = suppressGameplayTools
+      ? isSetupPhase
+        ? ['think_aloud', 'recall', 'message', 'remember']
+        : ['think_aloud', 'recall']
+      : []
     try {
       await this.agent.initialize()
       const inner = this.agent.getAgent() as any
