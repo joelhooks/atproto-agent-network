@@ -152,11 +152,24 @@ export type DungeonContext = {
   difficultyCurve: DifficultyTier[]
 }
 
+export type FeedMessageType = 'ic' | 'ooc'
+
+export type FeedMessage = {
+  sender: string
+  to: string
+  message: string
+  type: FeedMessageType
+  timestamp: number
+}
+
 export type RpgGameState = {
   id: string
   type: 'rpg'
   phase: 'playing' | 'finished'
   mode: RpgMode
+  // Turn-cycle counter. Used for rate limiting and other per-round mechanics.
+  // Optional for backwards compatibility with persisted games.
+  round?: number
   roomIndex: number
   theme: DungeonTheme
   dungeon: Room[]
@@ -188,6 +201,12 @@ export type RpgGameState = {
   // Key story beats extracted from play (no need to parse the entire log at render time).
   // Optional for backwards compatibility with persisted games.
   narrativeContext?: NarrativeBeat[]
+  // Agent-to-agent table talk / dialogue on the game feed.
+  // Optional for backwards compatibility with persisted games.
+  feedMessages?: FeedMessage[]
+  // Per-round spam guard for send_message.
+  // Optional for backwards compatibility with persisted games.
+  messageRateLimit?: { round: number; counts: Record<string, number> }
   log: Array<{ at: number; who: string; what: string }>
 }
 
@@ -866,6 +885,7 @@ export function createGame(input: {
     type: 'rpg',
     phase: 'playing',
     mode: initialMode,
+    round: 1,
     roomIndex: 0,
     theme,
     dungeon,
@@ -876,6 +896,7 @@ export function createGame(input: {
     actionHistory: {},
     barrierAttempts: {},
     narrativeContext: [],
+    feedMessages: [],
     log: [],
   }
 }

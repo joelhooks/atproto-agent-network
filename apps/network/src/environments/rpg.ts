@@ -19,6 +19,8 @@ import {
   resolveSkillCheck,
   soloMultiplier,
   type RpgClass,
+  type FeedMessage,
+  type FeedMessageType,
   type RpgGameState,
   XP_PER_ADVENTURE_COMPLETE,
   XP_PER_BOSS_KILL,
@@ -516,6 +518,7 @@ function normalizeTurnState(game: RpgGameState): boolean {
 function advanceTurn(game: RpgGameState): void {
   game.party ??= []
   game.log ??= []
+  game.round ??= 1
 
   const initiative = computeInitiativeOrder(game.party)
   const living = initiative.filter(isLiving)
@@ -536,9 +539,14 @@ function advanceTurn(game: RpgGameState): void {
 
   const start = idx >= 0 ? idx : -1
   for (let offset = 1; offset <= initiative.length; offset += 1) {
-    const candidate = initiative[(start + offset) % initiative.length]
+    const nextIdx = (start + offset) % initiative.length
+    const candidate = initiative[nextIdx]
     if (!candidate) continue
     if (isLiving(candidate)) {
+      // If we wrapped around to an earlier index, that's a new round.
+      if (idx >= 0 && nextIdx <= idx) {
+        game.round = (game.round ?? 1) + 1
+      }
       game.currentPlayer = characterId(candidate)
       return
     }
@@ -565,6 +573,7 @@ export const rpgEnvironment: AgentEnvironment = {
         '- new_game: Start an adventure (requires players array)\n' +
         '- join_game: Join an open adventure (requires gameId + klass)\n' +
         '- create_character: Create/update your character (requires klass)\n' +
+        "- send_message: Send a message to another agent on the game feed (requires to + message + type)\n" +
         '- setup_narrate: DM asks a backstory question (setup phase only)\n' +
         '- setup_respond: Player responds to DM backstory question (setup phase only)\n' +
         '- setup_finalize: DM finalizes backstories and begins the adventure (setup phase only)\n' +
@@ -583,6 +592,7 @@ export const rpgEnvironment: AgentEnvironment = {
               'new_game',
               'join_game',
               'create_character',
+              'send_message',
               'setup_narrate',
               'setup_respond',
               'setup_finalize',
@@ -601,6 +611,11 @@ export const rpgEnvironment: AgentEnvironment = {
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
           skill: { type: 'string', description: 'Skill name for use_skill (defaults to use_skill).' },
           message: { type: 'string', description: 'Narration/response message for setup phase.' },
+          to: {
+            type: 'string',
+            description: 'Routing target: @agent, @party (broadcast), or @dm.',
+          },
+          type: { type: 'string', enum: ['ic', 'ooc'], description: 'ic = in-character, ooc = table talk.' },
           target: { type: 'string', description: 'Target player agent for DM narration (setup phase).' },
           backstories: { type: 'object', additionalProperties: { type: 'string' }, description: 'Final backstories by agent.' },
         },
@@ -815,6 +830,8 @@ export const rpgEnvironment: AgentEnvironment = {
 
         const game = JSON.parse(row.state) as RpgGameState
         game.party ??= []
+        game.feedMessages ??= []
+        game.round ??= 1
 
         const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
         const setupActive = Boolean(setupPhase && !setupPhase.complete)
@@ -978,6 +995,60 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return { content: toTextContent('Setup complete. The adventure begins.'), details: { gameId } }
+        }
+
+        if (command === 'send_message') {
+          const sender = ctx.agentName.trim() || 'unknown'
+          const toRaw = typeof params.to === 'string' ? params.to.trim() : ''
+          const to = toRaw.startsWith('@') ? toRaw.toLowerCase() : ''
+          const rawType = typeof params.type === 'string' ? params.type.trim() : ''
+          const msgRaw = typeof params.message === 'string' ? params.message.trim() : ''
+          const message = capChars(msgRaw, 500)
+
+          const type: FeedMessageType | null = rawType === 'ic' || rawType === 'ooc' ? (rawType as FeedMessageType) : null
+          if (!to) return { ok: false, error: 'to required for send_message (use @agent, @party, or @dm)' }
+          if (!type) return { ok: false, error: "type required for send_message ('ic' | 'ooc')" }
+          if (!message) return { ok: false, error: 'message required for send_message' }
+
+          const allowed = new Set<string>(['@party', '@dm'])
+          for (const member of Array.isArray(game.party) ? game.party : []) {
+            const handle = `@${characterId(member).toLowerCase()}`
+            if (handle.length > 1) allowed.add(handle)
+          }
+          if (!allowed.has(to)) {
+            const options = [...allowed].filter((h) => h !== '@party' && h !== '@dm').sort()
+            return {
+              ok: false,
+              error: `Invalid recipient: ${to}. Use @party, @dm, or one of: ${options.join(', ')}`,
+            }
+          }
+
+          game.messageRateLimit ??= { round: game.round ?? 1, counts: {} }
+          if (game.messageRateLimit.round !== (game.round ?? 1)) {
+            game.messageRateLimit = { round: game.round ?? 1, counts: {} }
+          }
+          const used = game.messageRateLimit.counts[sender] ?? 0
+          if (used >= 2) {
+            return { ok: false, error: `Rate limit: max 2 messages per agent per round (round ${game.round ?? 1}).` }
+          }
+
+          game.messageRateLimit.counts[sender] = used + 1
+          const entry: FeedMessage = { sender, to, message, type, timestamp: Date.now() }
+          game.feedMessages ??= []
+          game.feedMessages.push(entry)
+          if (game.feedMessages.length > 20) {
+            game.feedMessages.splice(0, game.feedMessages.length - 20)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(`Sent ${type.toUpperCase()} message to ${to}: ${message}`),
+            details: { gameId, message: entry },
+          }
         }
 
         // While setup is active, block normal gameplay commands to prevent skipping backstories.
@@ -1392,10 +1463,50 @@ export const rpgEnvironment: AgentEnvironment = {
       }
 
       const lines: string[] = []
+      const feedLines: string[] = []
+      const feed = Array.isArray(game.feedMessages) ? game.feedMessages : []
+      if (feed.length > 0) {
+        const mention = `@${agentName.toLowerCase()}`
+        const isDm = agentName.toLowerCase() === 'grimlock'
+        const relevant = feed.filter((m: any) => {
+          const to = typeof m?.to === 'string' ? m.to.toLowerCase() : ''
+          const text = typeof m?.message === 'string' ? m.message.toLowerCase() : ''
+          if (to === '@party') return true
+          if (to === mention) return true
+          if (to === '@dm' && isDm) return true
+          return Boolean(mention && text.includes(mention))
+        })
+        const recent = relevant.slice(-10)
+        if (recent.length > 0) {
+          feedLines.push('Recent messages (no response required):')
+          for (const m of recent) {
+            const to = typeof m?.to === 'string' ? m.to : ''
+            const msg = typeof m?.message === 'string' ? m.message : ''
+            const sender = typeof m?.sender === 'string' ? m.sender : 'unknown'
+            const kind = m?.type === 'ic' || m?.type === 'ooc' ? (m.type as FeedMessageType) : 'ooc'
+
+            if (kind === 'ic') {
+              const senderChar = Array.isArray(game.party) ? game.party.find((p: any) => p && isCharacter(p, sender)) : undefined
+              const senderName = senderChar?.name ?? sender
+              const targetHandle = to.toLowerCase()
+              const targetAgent = targetHandle.startsWith('@') ? targetHandle.slice(1) : targetHandle
+              const targetChar = Array.isArray(game.party)
+                ? game.party.find((p: any) => p && isCharacter(p, targetAgent))
+                : undefined
+              const targetName = targetHandle === '@party' ? 'the party' : targetHandle === '@dm' ? 'the DM' : targetChar?.name ?? to
+              feedLines.push(`- IC ${senderName} -> ${targetName} (${to}): ${msg}`)
+            } else {
+              feedLines.push(`- OOC ${sender} -> ${to}: ${msg}`)
+            }
+          }
+        }
+      }
+
       if (isMyTurn) {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
+        lines.push(...feedLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
@@ -1406,6 +1517,7 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
+        lines.push(...feedLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
@@ -1433,6 +1545,7 @@ export const rpgEnvironment: AgentEnvironment = {
         'use_skill',
         'rest',
         'create_character',
+        'send_message',
         'setup_narrate',
         'setup_respond',
         'setup_finalize',

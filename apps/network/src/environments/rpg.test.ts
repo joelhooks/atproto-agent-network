@@ -1516,6 +1516,153 @@ describe('rpgEnvironment', () => {
     expect(saved.achievements).toEqual(expect.arrayContaining(["Death's Doorstep", 'Veteran Adventurer']))
     expect(saved.achievements.join(' ')).toMatch(/slayer/i)
   })
+
+  it('send_message adds to feedMessages (rolling buffer) with sender/to/type/timestamp', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'slag',
+      agentDid: 'did:cf:slag',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_send_message_adds_feed'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-send_message', {
+      command: 'send_message',
+      gameId,
+      to: '@snarl',
+      message: 'Hold the line. I am coming.',
+      type: 'ic',
+    })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+
+    expect(Array.isArray(updated.feedMessages)).toBe(true)
+    expect(updated.feedMessages.length).toBe(1)
+    expect(updated.feedMessages[0].sender).toBe('slag')
+    expect(updated.feedMessages[0].to).toBe('@snarl')
+    expect(updated.feedMessages[0].type).toBe('ic')
+    expect(updated.feedMessages[0].message).toBe('Hold the line. I am coming.')
+    expect(typeof updated.feedMessages[0].timestamp).toBe('number')
+  })
+
+  it('buildContext includes recent messages mentioning the agent (direct @to and @party)', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'slag',
+      agentDid: 'did:cf:slag',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_context_includes_mentions'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'slag'
+    ;(game as any).feedMessages = [
+      { sender: 'snarl', to: '@slag', message: 'OOC: flank left?', type: 'ooc', timestamp: Date.now() - 50 },
+      { sender: 'snarl', to: '@party', message: 'IC: The torchlight is dying.', type: 'ic', timestamp: Date.now() - 25 },
+    ]
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const joined = lines.join('\n')
+    expect(joined).toContain('Recent messages')
+    expect(joined).toContain('@slag')
+    expect(joined).toContain('@party')
+    expect(joined).toContain('flank left?')
+    expect(joined).toContain('torchlight')
+  })
+
+  it('send_message is rate limited to 2 per agent per round', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'slag',
+      agentDid: 'did:cf:slag',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_send_message_rate_limit'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    ;(game as any).round = 1
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-send_message-1', {
+      command: 'send_message',
+      gameId,
+      to: '@party',
+      message: 'msg1',
+      type: 'ooc',
+    })
+    await tool.execute('toolcall-send_message-2', {
+      command: 'send_message',
+      gameId,
+      to: '@party',
+      message: 'msg2',
+      type: 'ooc',
+    })
+    const third = await tool.execute('toolcall-send_message-3', {
+      command: 'send_message',
+      gameId,
+      to: '@party',
+      message: 'msg3',
+      type: 'ooc',
+    })
+
+    expect((third as any).ok).toBe(false)
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    expect(updated.feedMessages.length).toBe(2)
+  })
 })
 
 describe('compactAdventureLog', () => {
