@@ -1410,15 +1410,23 @@ export class AgentDO extends DurableObject {
 
     let result = await this.agent.prompt(prompt, { mode: 'loop.think' })
 
-    // Phase machine text→tool coercion: if model produced text but no tool calls
-    // during an active phase, wrap the text as the expected tool call.
-    // This bridges models that narrate instead of using tools.
+    // Phase machine text→tool coercion: if model produced text but didn't call
+    // the expected setup command, wrap the text as the expected tool call.
+    // This bridges models that narrate or call status/explore instead of setup commands.
+    // Check: the LAST tool call in the loop should be the phase's transitionOn command.
+    // If not (e.g., only called 'status' then narrated), coerce.
+    const allToolCalls = Array.isArray((result as any)?.toolCalls) ? (result as any).toolCalls : []
+    const lastToolCall = allToolCalls.length > 0 ? allToolCalls[allToolCalls.length - 1] : null
+    const lastToolWasSetupCmd = lastToolCall &&
+      lastToolCall.name === 'rpg' &&
+      typeof lastToolCall.arguments?.command === 'string' &&
+      ['setup_narrate', 'setup_respond', 'setup_finalize'].includes(lastToolCall.arguments.command)
     if (
       phaseWhitelist &&
       phaseWhitelist.length > 0 &&
       result &&
       typeof result === 'object' &&
-      (!Array.isArray((result as any).toolCalls) || (result as any).toolCalls.length === 0) &&
+      !lastToolWasSetupCmd &&
       typeof (result as any).text === 'string' &&
       (result as any).text.length > 10
     ) {

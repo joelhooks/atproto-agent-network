@@ -861,15 +861,33 @@ export const rpgEnvironment: AgentEnvironment = {
         if (command === 'status') {
           const room = game.dungeon[game.roomIndex]
           const description = describeRoom(game, game.roomIndex)
-          return {
-            content: toTextContent(
+          let statusText =
               `Adventure: ${gameId}\n` +
-                `Mode: ${game.mode} | Phase: ${game.phase}\n` +
-                `Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}\n` +
-                `${description}\n\n` +
-                `Current player: ${game.currentPlayer}\n` +
-                `Party: ${summarizeParty(game)}`
-            ),
+              `Mode: ${game.mode} | Phase: ${game.phase}\n` +
+              `Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}\n` +
+              `${description}\n\n` +
+              `Current player: ${game.currentPlayer}\n` +
+              `Party: ${summarizeParty(game)}`
+
+          // During setup, append a forceful instruction for the next action
+          if (setupActive) {
+            const pmData = (game as any).phaseMachine
+            if (pmData) {
+              const pm = deserializePhaseMachine(pmData)
+              const currentPhase = pm.getCurrentPhase()
+              if (currentPhase) {
+                const targetMatch = currentPhase.name.match(/setup_(?:narrate|respond)_(\w+)_/)
+                const target = targetMatch ? targetMatch[1] : 'unknown'
+                statusText += `\n\n⚠️ SETUP PHASE ACTIVE — Phase: ${currentPhase.name}\n` +
+                  `Active agent: ${currentPhase.activeAgent}\n` +
+                  `YOUR NEXT ACTION: Call rpg tool with ${JSON.stringify({ command: currentPhase.transitionOn, ...(currentPhase.transitionOn === 'setup_narrate' ? { target, message: '<your backstory question>' } : { message: '<your response>' }), gameId })}\n` +
+                  `DO NOT use explore, attack, or any other command. ONLY ${currentPhase.transitionOn} is accepted.`
+              }
+            }
+          }
+
+          return {
+            content: toTextContent(statusText),
             details: {
               gameId,
               mode: game.mode,
