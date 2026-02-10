@@ -55,3 +55,11 @@ CREATE TABLE IF NOT EXISTS work_items (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS observer_reports (
+  id TEXT PRIMARY KEY,
+  agent_name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);

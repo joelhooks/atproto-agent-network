@@ -2,6 +2,7 @@ import { registerEnvironment } from './registry'
 import { catanEnvironment } from './catan'
 import { rpgEnvironment } from './rpg'
 import { ralphEnvironment } from './ralph'
+import { observeEnvironment } from './observe'
 
 let registered = false
 
@@ -10,6 +11,7 @@ export function registerBuiltInEnvironments(): void {
   registerEnvironment(catanEnvironment)
   registerEnvironment(rpgEnvironment)
   registerEnvironment(ralphEnvironment)
+  registerEnvironment(observeEnvironment)
   registered = true
 }
 
