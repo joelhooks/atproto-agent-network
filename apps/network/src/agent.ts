@@ -1408,7 +1408,47 @@ export class AgentDO extends DurableObject {
       })
     }
 
-    const result = await this.agent.prompt(prompt, { mode: 'loop.think' })
+    let result = await this.agent.prompt(prompt, { mode: 'loop.think' })
+
+    // Phase machine text→tool coercion: if model produced text but no tool calls
+    // during an active phase, wrap the text as the expected tool call.
+    // This bridges models that narrate instead of using tools.
+    if (
+      phaseWhitelist &&
+      phaseWhitelist.length > 0 &&
+      result &&
+      typeof result === 'object' &&
+      (!Array.isArray((result as any).toolCalls) || (result as any).toolCalls.length === 0) &&
+      typeof (result as any).text === 'string' &&
+      (result as any).text.length > 10
+    ) {
+      const text = (result as any).text as string
+      // Find the phase machine to determine what tool call to inject
+      try {
+        const { getAllEnvironments } = await import('./environments/registry')
+        const agentName = this.config?.name ?? ''
+        const envCtx = { agentName, agentDid: this.did, db: this.agentEnv.DB, broadcast: async () => {} }
+        for (const env of getAllEnvironments()) {
+          if (typeof env.getPhaseMachine === 'function') {
+            const pm = await env.getPhaseMachine(envCtx as any)
+            if (pm && pm.isActiveAgent(agentName)) {
+              const phase = pm.getCurrentPhase()
+              if (phase) {
+                // Build the tool call from the phase's transitionOn command
+                const cmd = phase.transitionOn
+                let args: Record<string, unknown> = { command: cmd, message: text.slice(0, 500) }
+                // Add target for setup_narrate
+                const match = phase.name.match(/setup_narrate_(\w+)_/)
+                if (match) args.target = match[1]
+                console.log('phase-coerce: text→tool', { agent: agentName, cmd, textLen: text.length })
+                ;(result as any).toolCalls = [{ name: 'rpg', arguments: args }]
+                break
+              }
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
 
     // Raw model output debug — store in DO for queryable diagnosis
     const debugInfo = {
