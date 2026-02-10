@@ -746,8 +746,8 @@ export const rpgEnvironment: AgentEnvironment = {
           const filteredPlayers = players
             .map((p) => p.toLowerCase().trim())
             .filter((p) => p !== 'grimlock' && KNOWN_AGENTS.includes(p))
-          // If no valid agents found, use the default player list
-          const finalPlayers = filteredPlayers.length > 0 ? filteredPlayers : KNOWN_AGENTS
+          // Always use the full player roster — partial lists lead to lopsided parties
+          const finalPlayers = KNOWN_AGENTS
           if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
 
           // Prefer joining an open adventure when a solo new_game is requested.
