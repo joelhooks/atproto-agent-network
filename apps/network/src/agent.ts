@@ -192,14 +192,15 @@ function createSpanId(): string {
 }
 
 async function sendO11yEvent(r2: R2Bucket | undefined, event: Record<string, unknown>): Promise<void> {
-  if (!r2) return
+  if (!r2 || typeof r2.put !== 'function') return
   try {
     const ts = new Date()
     const day = ts.toISOString().slice(0, 10)
     const key = `o11y/${day}/${ts.getTime()}-${randomHex(4)}.json`
     await r2.put(key, JSON.stringify({ ...event, _ts: ts.toISOString() }))
-  } catch {
+  } catch (err) {
     // non-fatal: o11y must not break the agent loop
+    console.error('o11y write failed', { error: String(err), key: `o11y/${new Date().toISOString().slice(0, 10)}/...` })
   }
 }
 
