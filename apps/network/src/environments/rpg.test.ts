@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
 import { rpgEnvironment } from './rpg'
+import { DM_SKILL_BRIEF, WARRIOR_SKILL_BRIEF } from './rpg-skills'
 
 describe('rpgEnvironment', () => {
   it('skips dead players in turn order (hp <= 0) and never assigns them as currentPlayer', async () => {
@@ -602,5 +603,92 @@ describe('rpgEnvironment', () => {
     expect(bossText).toContain('You enter: boss')
     expect(bossText).toContain('soot-black opal')
     expect(bossText).toContain('bruised shoulder')
+  })
+
+  // ---------------------------------------------------------------------------
+  // buildContext skill injection tests
+  // ---------------------------------------------------------------------------
+
+  async function setupBuildContextGame(db: any, agentName: string, currentPlayer: string, klass: string) {
+    const gameId = `rpg_test_skills_${agentName}_${currentPlayer}`
+    const char = createCharacter({ name: agentName, klass: klass as any })
+    const game = createGame({
+      id: gameId,
+      players: [char],
+      dungeon: [{ type: 'rest', description: 'A quiet room.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = currentPlayer
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', agentName, JSON.stringify(game), game.phase, JSON.stringify([agentName]))
+      .run()
+
+    return gameId
+  }
+
+  it("buildContext injects DM skill for grimlock on grimlock's turn", async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    await setupBuildContextGame(db, 'grimlock', 'grimlock', 'Warrior')
+
+    const ctx = { agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast }
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    // Full DM skill should be present (check distinctive phrase)
+    expect(text).toContain('Monster Selection')
+    expect(text).toContain('Goblins (CR 1/4)')
+    // Brief should NOT be the only thing
+    expect(text).not.toContain(DM_SKILL_BRIEF)
+  })
+
+  it("buildContext injects DM brief for grimlock when it's NOT grimlock's turn", async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    await setupBuildContextGame(db, 'grimlock', 'someone_else', 'Warrior')
+
+    const ctx = { agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast }
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('Observe the party')
+    // Full skill should NOT be present
+    expect(text).not.toContain('Goblins (CR 1/4)')
+  })
+
+  it("buildContext injects warrior skill on warrior's turn", async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    await setupBuildContextGame(db, 'slag', 'slag', 'Warrior')
+
+    const ctx = { agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast }
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('YOUR ROLE — WARRIOR')
+    expect(text).toContain('Taunt/Grapple')
+    // Party tactics should also be included
+    expect(text).toContain('Party Coordination & Action Economy')
+  })
+
+  it('buildContext injects warrior brief when NOT the warrior\'s turn', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    await setupBuildContextGame(db, 'slag', 'someone_else', 'Warrior')
+
+    const ctx = { agentName: 'slag', agentDid: 'did:cf:slag', db: db as any, broadcast }
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain(WARRIOR_SKILL_BRIEF)
+    // Full skill should NOT be present
+    expect(text).not.toContain('Taunt/Grapple')
+    // Party tactics should NOT be present when waiting
+    expect(text).not.toContain('Party Coordination & Action Economy')
   })
 })
