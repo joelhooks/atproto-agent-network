@@ -450,3 +450,9 @@ Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
 Summary: Implemented tool-call misroute routing between `game` and `rpg` based on active environment, including o11y logging, and added/updated AgentDO tests. Validation (`pnpm typecheck && pnpm test`) passes. Stored hivemind learning and emitted the required openclaw system event. Commit created with `Closes #95`.
 
 Prior failure pattern detected: `test_failure`. Mitigation: route tool names early enough to avoid allowlist false negatives and to prevent environment auto-play from mis-classifying misnamed tool calls (which caused unintended injections and failing assertions).
+
+---
+[2026-02-10T02:42:23.154Z]
+Completed: Phase 1a: Barrier class filtering — only generate barriers for party classes
+Files: apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json
+Summary: Implemented party-class-only barrier generation for RPG dungeons and added a regression test. Updated dungeon generation to accept optional partyClasses and wired createGame() to pass the party’s unique classes so barriers never require missing classes. Ran story validation, full typecheck/tests, deployed network worker to production, and verified with smoke test. Stored hivemind learning and emitted openclaw system event.

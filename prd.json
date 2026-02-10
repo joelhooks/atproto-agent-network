@@ -513,12 +513,92 @@
       "priority": 4,
       "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mlfzhu6d",
+      "title": "Phase 1a: Barrier class filtering — only generate barriers for party classes",
+      "description": "In rpg-engine.ts generateDungeon(), barrier rooms currently pick random classes. Fix to only pick from classes actually present in the party. Read the party composition from game state before generating. If party has [Warrior, Mage], only generate warrior/mage barriers — never scout/healer barriers. This is the #1 softlock cause (82 consecutive \"barrier: blocked\" entries in logs).\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: barriers in generated dungeons only require classes present in the party. Add a test that generates 100 dungeons for a 2-class party and asserts no barrier requires a missing class.",
+      "priority": 51,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzi29l",
+      "title": "Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble",
+      "description": "When a party encounters a barrier they can't pass (wrong class), provide alternative paths instead of softlocking:\n\n1. **Brute force**: Any warrior-type can smash through at HP cost (lose 20% max HP)\n2. **Skill check**: INT or WIS check at Hard difficulty (30%) — any class can attempt\n3. **MP sacrifice**: Spend 50% max MP to magically force it open\n4. **Auto-crumble**: After 5 failed attempts on the same barrier, the GM narrates it crumbling (\"The ancient seal weakens and shatters\")\n\nIn rpg-engine.ts, modify the barrier action handler. When class doesn't match, instead of returning \"blocked\", offer alternatives and resolve them. Track attempt count per barrier in game state.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: A party without the required class can still pass any barrier via one of the 4 alternatives. Auto-crumble triggers after exactly 5 failed attempts. Test all 4 paths.",
+      "priority": 52,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzi9ki",
+      "title": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
+      "description": "Track the last N actions per player in game state. If a player takes the exact same action 5 times in a row (same action type + same target), the game intervenes:\n\n1. Log a warning in the game log\n2. Auto-resolve the current obstacle (open the barrier, kill the enemy at HP cost, skip the puzzle)\n3. Add a narrative message: \"The dungeon shifts around you, opening a new path...\"\n4. Move the party forward one room\n\nThis prevents infinite loops where an agent keeps trying the same failing action. Store action history as an array of {action, target, roomIndex} in the game state.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: After 5 identical consecutive actions, the game auto-resolves and advances. Test with a mock agent repeating the same action.",
+      "priority": 53,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzig0p",
+      "title": "Phase 1d: Enemy scaling to party size",
+      "description": "Scale combat encounters based on party size:\n\n- **Solo (1 player)**: Enemies at 60% HP, 60% damage (solo penalty already adds 2x damage taken, so enemies should be weaker)\n- **Duo (2 players)**: Enemies at 80% HP, 80% damage  \n- **Full party (3+ players)**: Enemies at 100% HP, 100% damage\n- **Boss rooms**: Scale boss HP by 50% per additional player beyond 1\n\nIn generateDungeon() and combat resolution, read party size and apply multipliers. Store the scaling factors in the dungeon state so they're visible in debug output.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Solo player faces weaker enemies than a full party. Boss HP scales with party size. Test with 1, 2, and 3 player parties and assert different enemy stats.",
+      "priority": 54,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzioik",
+      "title": "Phase 2a: Dungeon themes and narrative arc — replace random rooms with story",
+      "description": "Replace the current random room generation with themed narrative dungeons. Add a dungeon theme system:\n\n1. Add a `theme` field to dungeon state with properties: name, backstory, atmosphere, and room_flavor_seeds\n2. Create 5-10 dungeon theme templates (e.g., \"The Whispering Mines\", \"Sunken Temple of the Drowned God\", \"The Clockwork Labyrinth\")\n3. Each theme defines: room description templates, enemy types that fit the theme, barrier flavors, boss identity\n4. Room descriptions should reference the theme and build narrative tension (early rooms = exploration/mystery, mid = rising threat, late = climax)\n5. Replace static \"a goblin prowls here\" descriptions with theme-aware text\n\nThe dungeon should feel like a story: setup → rising action → climax → resolution.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Generated dungeons have a theme name and backstory. Room descriptions reference the theme. No more generic \"a goblin prowls here\" — all descriptions are thematic. Test that 10 generated dungeons each have unique themes.",
+      "priority": 55,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfziw4w",
+      "title": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "description": "Make room descriptions and game log entries reference what the party has actually done. When entering a new room:\n\n1. Check the game log for notable events (kills, near-deaths, barriers overcome, items found)\n2. Weave references into the next room's description: \"Slag's fireball still echoes in the tunnels ahead\" or \"The blood from your last fight has attracted something...\"\n3. Add a `narrativeContext` array to game state that tracks key story beats\n4. Boss room description should reference the entire journey: callbacks to earlier rooms, items found, party members who nearly died\n\nThis makes the dungeon feel reactive, not static. The narrative should acknowledge the party's actual experience.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Room descriptions after room 3+ contain references to prior party actions. Boss room description references at least 2 earlier events. Test by simulating a full dungeon run and checking description content.",
+      "priority": 56,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzj4xx",
+      "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "description": "Create a new `gm` tool that only Grimlock can use. Actions:\n\n1. `narrate` — Add a narrative message to the game log (GM flavor text, descriptions, dramatic moments)\n2. `adjust_difficulty` — Modify a room's enemy stats, barrier difficulty, or add/remove hazards mid-dungeon\n3. `add_event` — Inject an emergent event into the current room (NPC encounter, environmental hazard, loot drop, plot twist)\n4. `review_party` — Get a summary of party status (HP, MP, inventory, rooms cleared, deaths, near-deaths)\n\nRegister the tool in the tool registry but ONLY enable it for grimlock agent config. Other agents should never see this tool.\n\nThe GM tool operates on active RPG games. It reads/writes to the same D1 game state that rpg-engine uses. Actions are logged in the game log with a [GM] prefix.\n\nFiles: apps/network/src/tools/gm-tool.ts (new), apps/network/src/tools/index.ts, apps/network/src/environments/rpg-engine.ts\n\nAcceptance: GM tool registered and callable. Only grimlock can use it (other agents get \"tool not available\"). narrate adds to game log, adjust_difficulty modifies room state, review_party returns party summary. Tests for each action + access control test.",
+      "priority": 57,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzjdn8",
+      "title": "Phase 3b: Dynamic difficulty scaling — GM auto-adjusts based on party performance",
+      "description": "Add automatic difficulty adjustment logic that Grimlock's GM loop can trigger:\n\n1. **Track party performance metrics** in game state: average HP %, rooms cleared without rest, deaths, near-deaths (HP < 20%), overkill ratio (damage dealt vs enemy HP)\n2. **Difficulty signals**:\n   - Party breezing (avg HP > 80% after 3+ combat rooms) → increase enemy damage by 20%, add extra enemies\n   - Party struggling (avg HP < 40%, or 2+ near-deaths) → reduce next room difficulty, place a rest room, add healing loot\n   - Party TPK risk (any member dead + another < 30% HP) → next room is a rest room with full heal\n3. **GM intervention hook**: After each room completion, calculate metrics and if adjustment needed, auto-call adjust_difficulty on upcoming rooms\n4. Log all adjustments in game log with [GM] prefix so it's observable\n\nFiles: apps/network/src/environments/rpg-engine.ts, apps/network/src/tools/gm-tool.ts\n\nAcceptance: Party performance is tracked. Difficulty adjusts automatically based on thresholds. A test simulating a struggling party gets easier rooms. A test simulating a breezing party gets harder rooms.",
+      "priority": 58,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzjmrq",
+      "title": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "description": "Add a `consult_library` action to the GM tool that queries pdf-brain for RPG knowledge. This runs LOCALLY on clanker-001 via Grimlock's webhook.\n\n1. Add `consult_library` action to gm-tool.ts that sends a webhook request to Grimlock's webhookUrl with a pdf-brain search query\n2. The webhook handler on clanker-001 (OpenClaw) runs `pdf-brain search \"<query>\" --limit 3 --expand 2000` and returns results\n3. GM can query for: encounter design patterns, monster tactics, skill check rulings, dungeon procedures, BRP mechanics\n4. Results are returned as text that the GM can use to inform narration and difficulty decisions\n5. Add a `libraryContext` field to game state where GM can cache relevant lookups for the current dungeon theme\n\nThe webhook bridge (story-mlft5llk) already exists. This extends it to handle pdf-brain queries as a new message type.\n\nFiles: apps/network/src/tools/gm-tool.ts, webhook handler on clanker-001 side\n\nAcceptance: GM tool can call consult_library with a query string and get pdf-brain results back. Test with a mock webhook that returns sample results. Integration test queries actual pdf-brain.",
+      "priority": 59,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlfzjx9w",
+      "title": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
+      "description": "Replace the static generateDungeon() with a GM-driven dungeon crafting flow. When Grimlock creates an RPG game:\n\n1. Grimlock's loop calls `gm.craft_dungeon` instead of the static generator\n2. craft_dungeon first calls `consult_library` with queries like:\n   - \"encounter design pacing and difficulty curve\" (Game Angry)\n   - \"BRP opposed roll mechanics combat\" (BRP SRD)  \n   - \"monster tactics for [theme enemies]\" (Monsters Know)\n   - \"dungeon exploration procedures\" (OSE)\n3. Using library context + party composition, generate a dungeon with:\n   - Difficulty curve from Game Angry (easy→medium→hard→deadly→boss)\n   - BRP-informed combat mechanics (opposed rolls, crits at skill/5, fumbles at 96-00)\n   - Monster tactics per enemy type (goblins hit-and-run, orcs power attack, boss multi-phase)\n   - Strategic rest placement (after hard fights, not random)\n4. Store libraryContext in dungeon state for reference during live adjudication\n\nThis is where Grimlock becomes an actually knowledgeable GM instead of a random number generator.\n\nFiles: apps/network/src/tools/gm-tool.ts, apps/network/src/environments/rpg-engine.ts\n\nAcceptance: craft_dungeon queries pdf-brain and uses results to inform dungeon design. Enemy tactics vary by type. Difficulty follows Game Angry curve. Boss fights are multi-phase. Test that crafted dungeons reference library knowledge in their design.",
+      "priority": 60,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 50,
-    "lastIteration": "2026-02-10T00:28:28.626Z"
+    "totalIterations": 51,
+    "lastIteration": "2026-02-10T02:42:23.152Z"
   },
   "totalStories": 11
 }
