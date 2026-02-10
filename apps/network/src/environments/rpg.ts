@@ -114,7 +114,7 @@ function getMaxGamesPerDay(ctx: EnvironmentContext): number {
 async function anyPlayingRpgGamesExist(ctx: EnvironmentContext): Promise<boolean> {
   try {
     const row = await ctx.db
-      .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase = 'playing' LIMIT 1")
+      .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
       .first<{ id: string }>()
     return Boolean(row?.id)
   } catch {
@@ -341,7 +341,7 @@ async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow 
 
   try {
     const row = await ctx.db
-      .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase = 'playing' AND players LIKE ? LIMIT 1")
+      .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
       .first<GameRow>()
     return row ?? null
@@ -357,7 +357,7 @@ async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<Ga
   try {
     const row = await ctx.db
       .prepare(
-        "SELECT id, state, type FROM games WHERE type = 'rpg' AND phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?"
+        "SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND json_extract(state, '$.currentPlayer') = ?"
       )
       .bind(agentName)
       .first<GameRow>()
@@ -408,7 +408,7 @@ async function findJoinableGamesForAgent(
 
   try {
     const { results } = await ctx.db
-      .prepare("SELECT id, state FROM games WHERE type = 'rpg' AND phase = 'playing' ORDER BY updated_at DESC")
+      .prepare("SELECT id, state FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY updated_at DESC")
       .all<GameRow>()
 
     const joinable: Array<{ id: string; game: RpgGameState }> = []
@@ -715,7 +715,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const existing = await db
-            .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase = 'playing' AND players LIKE ? LIMIT 1")
+            .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
             .bind(`%${agentName}%`)
             .first<{ id: string }>()
             .catch(() => null)
@@ -774,6 +774,7 @@ export const rpgEnvironment: AgentEnvironment = {
               complete: false,
             }
             // Setup begins with the DM (grimlock) asking the first question.
+            game.phase = 'setup' as any
             game.currentPlayer = 'grimlock'
           }
 
@@ -808,7 +809,7 @@ export const rpgEnvironment: AgentEnvironment = {
           if (!row) {
             // List joinable games so agent knows what to do
             const joinable = await db
-              .prepare("SELECT id, players FROM games WHERE type = 'rpg' AND phase = 'playing' ORDER BY created_at DESC LIMIT 5")
+              .prepare("SELECT id, players FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY created_at DESC LIMIT 5")
               .all<{ id: string; players: string }>()
             const listings = (joinable.results ?? [])
               .map(g => `- ${g.id} (${JSON.parse(g.players).join(', ')})`)
@@ -988,13 +989,14 @@ export const rpgEnvironment: AgentEnvironment = {
           }
           recomputeTurnOrder(game)
           game.currentPlayer = characterId(game.turnOrder[0]) ?? characterId(game.party[0]) ?? 'unknown'
+          game.phase = 'playing'
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          return { content: toTextContent('Setup complete. The adventure begins.'), details: { gameId } }
+          return { content: toTextContent('Setup complete. The adventure begins!'), details: { gameId, phase: 'playing' } }
         }
 
         if (command === 'send_message') {

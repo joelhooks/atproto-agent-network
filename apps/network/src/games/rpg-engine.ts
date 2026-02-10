@@ -51,6 +51,8 @@ export type Character = {
   maxHp: number
   mp: number
   maxMp: number
+  level?: number
+  xp?: number
 }
 
 export type Enemy = {
@@ -165,7 +167,7 @@ export type FeedMessage = {
 export type RpgGameState = {
   id: string
   type: 'rpg'
-  phase: 'playing' | 'finished'
+  phase: 'setup' | 'playing' | 'finished'
   mode: RpgMode
   // Turn-cycle counter. Used for rate limiting and other per-round mechanics.
   // Optional for backwards compatibility with persisted games.
@@ -204,6 +206,7 @@ export type RpgGameState = {
   // Agent-to-agent table talk / dialogue on the game feed.
   // Optional for backwards compatibility with persisted games.
   feedMessages?: FeedMessage[]
+  campaignLog?: string[]
   // Per-round spam guard for send_message.
   // Optional for backwards compatibility with persisted games.
   messageRateLimit?: { round: number; counts: Record<string, number> }
@@ -401,6 +404,8 @@ export function createCharacter(input: { name: string; klass: RpgClass; agent?: 
     maxHp,
     mp: maxMp,
     maxMp,
+    level: 1,
+    xp: 0,
   }
 }
 
@@ -897,6 +902,7 @@ export function createGame(input: {
     barrierAttempts: {},
     narrativeContext: [],
     feedMessages: [],
+    campaignLog: [],
     log: [],
   }
 }

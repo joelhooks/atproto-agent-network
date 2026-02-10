@@ -419,7 +419,7 @@ describe('rpgEnvironment', () => {
     // Grimlock is DM, never a player — players should be the actual agents
     expect((result as any).details.players).toContain('slag')
     expect((result as any).details.players).not.toContain('grimlock')
-    expect((result as any).details.phase).toBe('playing')
+    expect((result as any).details.phase).toBe('setup')
   })
 
   it('new_game initializes setupPhase when party characters lack a backstory', async () => {
