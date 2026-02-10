@@ -61,4 +61,4 @@ enabled = true
 # O11Y: events flow through CF Pipelines → R2 Data Catalog (Iceberg)
 [[pipelines]]
 binding = "O11Y_PIPELINE"
-pipeline = "agentnetwork"
+pipeline = "6a7c771ecbc7428bb9b3c5b7aeb8167e"
