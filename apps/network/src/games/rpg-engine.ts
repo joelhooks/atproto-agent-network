@@ -55,6 +55,15 @@ export type Enemy = {
   dodge: number
 }
 
+export type DifficultyTier = 'easy' | 'medium' | 'hard' | 'deadly' | 'boss'
+
+export type BossPhase = {
+  name: string
+  trigger: 'start' | 'bloodied' | 'near_death'
+  enemies: Enemy[]
+  tactics: string[]
+}
+
 export type RoomMeta = {
   // GM-injected annotations that should not break existing rooms.
   hazards?: string[]
@@ -63,6 +72,11 @@ export type RoomMeta = {
   // Barrier tuning knobs (defaults preserve legacy behavior).
   autoCrumbleAttempts?: number
   skillCheckTarget?: number
+
+  // Dungeon-crafting metadata (optional for backwards compatibility).
+  difficultyTier?: DifficultyTier
+  tactics?: string[]
+  bossPhases?: BossPhase[]
 }
 
 export type Room = (
@@ -98,6 +112,16 @@ export type DungeonTheme = {
   backstory: string
 }
 
+export type DungeonContext = {
+  craftedAt: number
+  // Stored for live adjudication and future tool calls (e.g. gm.adjust_difficulty).
+  libraryContext: Record<string, string>
+  // Human-readable notes derived from library context to explain why the dungeon is shaped this way.
+  designNotes: string[]
+  // Expected fight progression for pacing verification.
+  difficultyCurve: DifficultyTier[]
+}
+
 export type RpgGameState = {
   id: string
   type: 'rpg'
@@ -112,6 +136,8 @@ export type RpgGameState = {
   combat?: { enemies: Enemy[] }
   // GM lookups from pdf-brain keyed by query string (optional for backwards compat).
   libraryContext?: Record<string, string>
+  // Dungeon-level notes and cached library context for adjudication (optional for backwards compat).
+  dungeonContext?: DungeonContext
   // Tracks recent actions per player to detect stuck agent loops.
   // Optional for backwards compatibility with persisted games.
   actionHistory?: Record<string, RpgActionHistoryEntry[]>
@@ -451,6 +477,146 @@ function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
   const hp = 29 + rollDie(dice, 20) // 30+
   const enemy: Enemy = { name: 'Dungeon Boss', hp, DEX: 55, attack: 55, dodge: 35 }
   return { type: 'boss', description: withThemeDescription(theme, 'A hulking presence fills the chamber.'), enemies: [enemy] }
+}
+
+function clampLibrarySnippet(text: string, max = 220): string {
+  return String(text || '').trim().replace(/\s+/g, ' ').slice(0, max)
+}
+
+function extractTacticsFromLibrary(input: { text: string; keyword: string; defaults: string[] }): string[] {
+  const text = String(input.text || '')
+  const out = new Set<string>()
+  for (const d of input.defaults) out.add(d)
+
+  // Keep this intentionally simple and robust: preserve recognizable phrases if present.
+  const normalized = text.toLowerCase()
+  if (normalized.includes(input.keyword.toLowerCase())) out.add(input.keyword)
+  if (normalized.includes('hit-and-run')) out.add('hit-and-run')
+  if (normalized.includes('power attack')) out.add('power attack')
+  if (normalized.includes('ambush')) out.add('ambush')
+  if (normalized.includes('press the advantage')) out.add('press the advantage')
+
+  return Array.from(out)
+}
+
+export function craftDungeonFromLibrary(input: {
+  theme: DungeonTheme
+  party: Character[]
+  libraryContext: Record<string, string>
+}): { rooms: Room[]; difficultyCurve: DifficultyTier[]; designNotes: string[] } {
+  const theme = input.theme
+  const party = Array.isArray(input.party) ? input.party : []
+  const libraryContext = input.libraryContext ?? {}
+
+  const pacingQuery = 'encounter design pacing and difficulty curve (Game Angry)'
+  const brpQuery = 'BRP opposed roll mechanics combat (BRP SRD)'
+  const tacticsQuery = "monster tactics for goblins and orcs (The Monsters Know What They're Doing)"
+  const proceduresQuery = 'dungeon exploration procedures (OSE)'
+
+  const designNotes: string[] = []
+  const pacing = clampLibrarySnippet(libraryContext[pacingQuery] ?? '')
+  const brp = clampLibrarySnippet(libraryContext[brpQuery] ?? '')
+  const tactics = clampLibrarySnippet(libraryContext[tacticsQuery] ?? '')
+  const procedures = clampLibrarySnippet(libraryContext[proceduresQuery] ?? '')
+
+  if (pacing) designNotes.push(`Pacing (Game Angry): ${pacing}`)
+  if (brp) designNotes.push(`Combat (BRP SRD): ${brp}`)
+  if (tactics) designNotes.push(`Tactics (Monsters Know): ${tactics}`)
+  if (procedures) designNotes.push(`Exploration (OSE): ${procedures}`)
+
+  const partyClasses = uniquePartyClasses(party)
+  const requiredClass: RpgClass = partyClasses[0] ?? 'Warrior'
+  const partyScale = soloMultiplier(party.length)
+
+  const goblinTactics = extractTacticsFromLibrary({
+    text: libraryContext[tacticsQuery] ?? '',
+    keyword: 'hit-and-run',
+    defaults: ['hit-and-run', 'focus fire', 'disengage when hurt'],
+  })
+
+  const orcTactics = extractTacticsFromLibrary({
+    text: libraryContext[tacticsQuery] ?? '',
+    keyword: 'power attack',
+    defaults: ['power attack', 'bully the weakest', 'press the advantage'],
+  })
+
+  const easy: Room = {
+    type: 'combat',
+    difficultyTier: 'easy',
+    tactics: goblinTactics,
+    description: withThemeDescription(theme, 'A lone goblin scout tests your defenses, then darts back into cover.'),
+    enemies: [{ name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 25, dodge: 30 }],
+  }
+
+  const medium: Room = {
+    type: 'combat',
+    difficultyTier: 'medium',
+    tactics: goblinTactics,
+    description: withThemeDescription(theme, 'A goblin pack sets a crossfire in the cramped corridor.'),
+    enemies: [
+      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 28, dodge: 32 },
+      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 45, attack: 28, dodge: 32 },
+    ],
+  }
+
+  const hard: Room = {
+    type: 'combat',
+    difficultyTier: 'hard',
+    tactics: orcTactics,
+    description: withThemeDescription(theme, 'Orc raiders hold the choke point, daring you to break their line.'),
+    enemies: [
+      { name: 'Orc', hp: Math.floor(11 * partyScale), DEX: 45, attack: 45, dodge: 28 },
+      { name: 'Orc', hp: Math.floor(11 * partyScale), DEX: 45, attack: 45, dodge: 28 },
+    ],
+  }
+
+  const deadly: Room = {
+    type: 'combat',
+    difficultyTier: 'deadly',
+    tactics: orcTactics,
+    description: withThemeDescription(theme, 'An orc berserker crashes in with brutal swings while skirmishers harry the flanks.'),
+    enemies: [
+      { name: 'Orc', hp: Math.floor(16 * partyScale), DEX: 50, attack: 55, dodge: 30 },
+      { name: 'Goblin', hp: Math.floor(6 * partyScale), DEX: 55, attack: 25, dodge: 35 },
+    ],
+  }
+
+  const bossPhase1: Enemy[] = [{ name: 'Dungeon Boss', hp: Math.floor(40 * partyScale), DEX: 55, attack: 55, dodge: 35 }]
+  const bossPhase2: Enemy[] = [{ name: 'Dungeon Boss', hp: Math.floor(26 * partyScale), DEX: 60, attack: 65, dodge: 40 }]
+
+  const boss: Room = {
+    type: 'boss',
+    difficultyTier: 'boss',
+    tactics: ['multi-phase', 'terrain pressure', 'target the healer'],
+    bossPhases: [
+      { name: 'Phase 1: The Warden Stirs', trigger: 'start', enemies: bossPhase1, tactics: ['test defenses', 'probe weaknesses'] },
+      { name: 'Phase 2: Brine-Fury Unsealed', trigger: 'bloodied', enemies: bossPhase2, tactics: ['all-in offense', 'deny rest', 'focus fire'] },
+    ],
+    description: withThemeDescription(theme, 'The master of this place rises, and the room itself feels like a weapon.'),
+    enemies: bossPhase1.map((e) => ({ ...e })),
+  }
+
+  const rooms: Room[] = [
+    { type: 'rest', description: withThemeDescription(theme, 'You stand at the threshold, counting torchlight and steps.') },
+    easy,
+    { type: 'trap', description: withThemeDescription(theme, 'A simple hazard invites care: mark time, test stones, listen first.') },
+    medium,
+    { type: 'treasure', description: withThemeDescription(theme, 'A salt-stiffened satchel holds coins and a half-ruined note.') },
+    hard,
+    { type: 'rest', description: withThemeDescription(theme, 'A sheltered alcove where the air is still enough to catch your breath.') },
+    deadly,
+    { type: 'rest', description: withThemeDescription(theme, 'A sealed side-room offers a rare moment to bind wounds and steady hands.') },
+    {
+      type: 'barrier',
+      requiredClass,
+      description: withThemeDescription(theme, `A sealed archway bars the way. Only a ${requiredClass} can open it.`),
+    },
+    { type: 'puzzle', description: withThemeDescription(theme, 'A door of etched sigils demands patience, not haste.') },
+    boss,
+  ]
+
+  const difficultyCurve: DifficultyTier[] = ['easy', 'medium', 'hard', 'deadly', 'boss']
+  return { rooms, difficultyCurve, designNotes }
 }
 
 export function generateDungeon(

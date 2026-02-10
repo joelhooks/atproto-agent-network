@@ -1,6 +1,6 @@
 import type { PiAgentTool } from '@atproto-agent/agent'
 
-import { recordNarrativeBeat, type Enemy, type RpgClass, type RpgGameState, type Room } from '../games/rpg-engine'
+import { craftDungeonFromLibrary, recordNarrativeBeat, type Enemy, type RpgClass, type RpgGameState, type Room } from '../games/rpg-engine'
 import type { EnvironmentContext } from '../environments/types'
 
 function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
@@ -29,6 +29,45 @@ function isGrimlock(name: string): boolean {
 }
 
 type GameRow = { id: string; state: string; type?: string | null; phase?: string | null; players?: string | null }
+
+async function consultLibrary(ctx: EnvironmentContext, query: string): Promise<string> {
+  if (!ctx.webhookUrl) throw new Error('Grimlock webhookUrl is not configured')
+
+  const { url, headers } = parseWebhook(ctx.webhookUrl)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ type: 'consult_library', query, limit: 3, expand: 2000 }),
+  })
+
+  let resultText = ''
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (contentType.includes('application/json')) {
+    const json = (await response.json()) as unknown
+    if (isRecord(json) && typeof json.text === 'string') resultText = json.text
+    else if (isRecord(json) && typeof json.result === 'string') resultText = json.result
+    else resultText = JSON.stringify(json)
+  } else {
+    resultText = await response.text()
+  }
+
+  resultText = String(resultText ?? '').trim()
+  if (!response.ok) {
+    throw new Error(`consult_library webhook error (${response.status}): ${resultText || 'unknown error'}`)
+  }
+
+  return resultText
+}
+
+function cacheLibraryResult(game: RpgGameState, query: string, resultText: string): void {
+  game.libraryContext ??= {}
+  game.libraryContext[query] = resultText
+  // Keep the cache bounded so D1 state doesn't bloat.
+  const keys = Object.keys(game.libraryContext)
+  if (keys.length > 25) {
+    for (const k of keys.slice(0, keys.length - 25)) delete game.libraryContext[k]
+  }
+}
 
 async function loadRpgGame(ctx: EnvironmentContext, gameId: string): Promise<RpgGameState> {
   const row = await ctx.db
@@ -134,13 +173,14 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
       '- adjust_difficulty: Modify room difficulty mid-dungeon\n' +
       '- add_event: Inject an emergent event into the current room\n' +
       '- review_party: Summarize party status\n' +
+      '- craft_dungeon: Consult pdf-brain and craft a paced dungeon tailored to the party\n' +
       '- consult_library: Query pdf-brain (via Grimlock webhook) for RPG GM knowledge\n',
     parameters: {
       type: 'object',
       properties: {
         command: {
           type: 'string',
-          enum: ['narrate', 'adjust_difficulty', 'add_event', 'review_party', 'consult_library'],
+          enum: ['narrate', 'adjust_difficulty', 'add_event', 'review_party', 'craft_dungeon', 'consult_library'],
         },
         gameId: { type: 'string', description: 'RPG game id (optional; defaults to your active adventure).' },
         roomIndex: { type: 'number', description: 'Target room index (defaults to current room).' },
@@ -173,6 +213,79 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
 
       const game = await loadRpgGame(ctx, gameId)
 
+      const now = Date.now()
+
+      if (command === 'review_party') {
+        const summary = summarizeParty(game)
+        game.log.push({ at: now, who: 'GM', what: '[GM] review_party' })
+        await persistRpgGame(ctx, game)
+        return { content: toTextContent(summary), details: { gameId, roomIndex: game.roomIndex } }
+      }
+
+      if (command === 'consult_library') {
+        const query = clampText(params.query, 240)
+        if (!query) throw new Error('query is required for consult_library')
+
+        const resultText = await consultLibrary(ctx, query)
+        cacheLibraryResult(game, query, resultText)
+
+        game.log.push({ at: now, who: 'GM', what: `[GM] consult_library: ${query}` })
+        recordNarrativeBeat(game, { kind: 'gm', text: 'consult_library', roomIndex: game.roomIndex, at: now })
+        await persistRpgGame(ctx, game)
+
+        return { content: toTextContent(resultText || '(no results)'), details: { gameId, roomIndex: game.roomIndex, query } }
+      }
+
+      if (command === 'craft_dungeon') {
+        const queries = [
+          'encounter design pacing and difficulty curve (Game Angry)',
+          'BRP opposed roll mechanics combat (BRP SRD)',
+          "monster tactics for goblins and orcs (The Monsters Know What They're Doing)",
+          'dungeon exploration procedures (OSE)',
+        ]
+
+        for (const query of queries) {
+          const resultText = await consultLibrary(ctx, query)
+          cacheLibraryResult(game, query, resultText)
+        }
+
+        const { rooms, difficultyCurve, designNotes } = craftDungeonFromLibrary({
+          theme: game.theme,
+          party: game.party,
+          libraryContext: game.libraryContext ?? {},
+        })
+
+        game.dungeon = rooms
+        game.roomIndex = 0
+        const initial = game.dungeon[0]
+        if (initial && (initial.type === 'combat' || initial.type === 'boss')) {
+          game.mode = 'combat'
+          game.combat = { enemies: (initial as Room & { enemies: Enemy[] }).enemies.map((e) => ({ ...e })) }
+        } else {
+          game.mode = 'exploring'
+          game.combat = undefined
+        }
+
+        game.dungeonContext = {
+          craftedAt: now,
+          libraryContext: { ...(game.libraryContext ?? {}) },
+          designNotes,
+          difficultyCurve,
+        }
+
+        game.log.push({ at: now, who: 'GM', what: '[GM] craft_dungeon' })
+        recordNarrativeBeat(game, { kind: 'gm', text: 'craft_dungeon', roomIndex: 0, at: now })
+        await persistRpgGame(ctx, game)
+
+        return {
+          content: toTextContent(
+            `Dungeon crafted: ${game.theme.name} (${game.dungeon.length} rooms)\n` +
+              `Curve: ${difficultyCurve.join(' -> ')}`
+          ),
+          details: { gameId, roomIndex: 0, curve: difficultyCurve },
+        }
+      }
+
       const roomIndexRaw = params.roomIndex
       const roomIndex =
         typeof roomIndexRaw === 'number' && Number.isFinite(roomIndexRaw)
@@ -181,8 +294,6 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
 
       const room = game.dungeon[roomIndex]
       if (!room) throw new Error(`Room not found: ${roomIndex}`)
-
-      const now = Date.now()
 
       if (command === 'narrate') {
         const text = clampText(params.text, 1000)
@@ -253,56 +364,6 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
         await persistRpgGame(ctx, game)
 
         return { content: toTextContent(`Difficulty adjusted for room ${roomIndex}.`), details: { gameId, roomIndex } }
-      }
-
-      if (command === 'review_party') {
-        const summary = summarizeParty(game)
-        game.log.push({ at: now, who: 'GM', what: '[GM] review_party' })
-        await persistRpgGame(ctx, game)
-        return { content: toTextContent(summary), details: { gameId, roomIndex: game.roomIndex } }
-      }
-
-      if (command === 'consult_library') {
-        const query = clampText(params.query, 240)
-        if (!query) throw new Error('query is required for consult_library')
-        if (!ctx.webhookUrl) throw new Error('Grimlock webhookUrl is not configured')
-
-        const { url, headers } = parseWebhook(ctx.webhookUrl)
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ type: 'consult_library', query, limit: 3, expand: 2000 }),
-        })
-
-        let resultText = ''
-        const contentType = response.headers.get('Content-Type') ?? ''
-        if (contentType.includes('application/json')) {
-          const json = (await response.json()) as unknown
-          if (isRecord(json) && typeof json.text === 'string') resultText = json.text
-          else if (isRecord(json) && typeof json.result === 'string') resultText = json.result
-          else resultText = JSON.stringify(json)
-        } else {
-          resultText = await response.text()
-        }
-
-        resultText = String(resultText ?? '').trim()
-        if (!response.ok) {
-          throw new Error(`consult_library webhook error (${response.status}): ${resultText || 'unknown error'}`)
-        }
-
-        game.libraryContext ??= {}
-        game.libraryContext[query] = resultText
-        // Keep the cache bounded so D1 state doesn't bloat.
-        const keys = Object.keys(game.libraryContext)
-        if (keys.length > 25) {
-          for (const k of keys.slice(0, keys.length - 25)) delete game.libraryContext[k]
-        }
-
-        game.log.push({ at: now, who: 'GM', what: `[GM] consult_library: ${query}` })
-        recordNarrativeBeat(game, { kind: 'gm', text: 'consult_library', roomIndex, at: now })
-        await persistRpgGame(ctx, game)
-
-        return { content: toTextContent(resultText || '(no results)'), details: { gameId, roomIndex, query } }
       }
 
       throw new Error(`Unknown gm command: ${command}`)

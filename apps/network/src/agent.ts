@@ -1743,7 +1743,7 @@ export class AgentDO extends DurableObject {
         'game',
         'rpg',
         ...(grimlock ? (['gm'] as const) : []),
-        'publish',
+        // 'publish', // disabled — Grimlock's garden, not the dinobots' war journal
         'write_extension',
         'list_extensions',
         'remove_extension',

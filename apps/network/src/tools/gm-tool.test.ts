@@ -259,4 +259,96 @@ describe('gm tool (grimlock-only)', () => {
     expect(stored.libraryContext).toBeTruthy()
     expect((stored.libraryContext as any)['encounter design pacing and difficulty curve']).toContain('Encounter pacing')
   })
+
+  it('craft_dungeon: consults library and crafts a paced dungeon with varied tactics and a multi-phase boss', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const game = createGame({
+      id: 'rpg_gm_craft_dungeon',
+      players: ['grimlock', 'alice'],
+      dungeon: [{ type: 'rest', description: 'staging' }],
+    })
+    // Make theme deterministic for assertions that scan descriptions.
+    game.theme = { name: 'Saltworn Archives', backstory: 'A drowned library preserved in brine and myth.' }
+    await insertRpgGame(db as any, game, ['grimlock', 'alice'])
+
+    const responses: Record<string, string> = {
+      'encounter design pacing and difficulty curve (Game Angry)':
+        'Game Angry pacing: easy -> medium -> hard -> deadly -> boss. Rest after hard fights.',
+      'BRP opposed roll mechanics combat (BRP SRD)':
+        'BRP combat: opposed rolls; crit at skill/5; fumble at 96-00.',
+      "monster tactics for goblins and orcs (The Monsters Know What They're Doing)":
+        'Goblins: hit-and-run, ambush, flee. Orcs: power attack, bully, press the advantage.',
+      'dungeon exploration procedures (OSE)':
+        'OSE procedures: turns, light, wandering monsters, listening, opening doors.',
+    }
+
+    const fetchSpy = vi.fn().mockImplementation(async (_url: unknown, init: any) => {
+      const body = JSON.parse(String(init?.body ?? '{}'))
+      const query = String(body?.query ?? '')
+      const text = responses[query] ?? `unknown query: ${query}`
+      return new Response(JSON.stringify({ text }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchSpy as any)
+
+    const ctx = {
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+      webhookUrl: 'https://example.test/hooks/agent-network?token=hook-secret',
+    }
+    const [tool] = getToolsForAgent(ctx as any, ['gm'])
+
+    await tool!.execute!('tc_craft', { command: 'craft_dungeon', gameId: game.id })
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4)
+    const queries = fetchSpy.mock.calls.map((call) => {
+      const init = call[1] as any
+      const body = JSON.parse(String(init?.body ?? '{}'))
+      return String(body?.query ?? '')
+    })
+    expect(new Set(queries)).toEqual(
+      new Set([
+        'encounter design pacing and difficulty curve (Game Angry)',
+        'BRP opposed roll mechanics combat (BRP SRD)',
+        "monster tactics for goblins and orcs (The Monsters Know What They're Doing)",
+        'dungeon exploration procedures (OSE)',
+      ])
+    )
+
+    const stored = await getStoredGame(db as any, game.id)
+    expect(stored.libraryContext).toBeTruthy()
+    for (const [k, v] of Object.entries(responses)) {
+      expect((stored.libraryContext as any)[k]).toContain(v.slice(0, 10))
+    }
+
+    // Dungeon state should retain the library context for adjudication.
+    expect((stored as any).dungeonContext).toBeTruthy()
+    expect((stored as any).dungeonContext.libraryContext).toBeTruthy()
+    expect((stored as any).dungeonContext.designNotes.join('\n')).toContain('easy -> medium -> hard -> deadly -> boss')
+    expect((stored as any).dungeonContext.designNotes.join('\n')).toContain('crit at skill/5')
+
+    // Difficulty curve (Game Angry): easy -> medium -> hard -> deadly -> boss.
+    const difficultyRooms = stored.dungeon.filter((r: any) => r?.difficultyTier)
+    expect(difficultyRooms.map((r: any) => r.difficultyTier)).toEqual(['easy', 'medium', 'hard', 'deadly', 'boss'])
+
+    // Strategic rests after hard and deadly fights.
+    const hardIndex = stored.dungeon.findIndex((r: any) => r?.difficultyTier === 'hard')
+    const deadlyIndex = stored.dungeon.findIndex((r: any) => r?.difficultyTier === 'deadly')
+    expect(stored.dungeon[hardIndex + 1]?.type).toBe('rest')
+    expect(stored.dungeon[deadlyIndex + 1]?.type).toBe('rest')
+
+    // Enemy tactics vary by type.
+    const goblinRoom = stored.dungeon.find((r: any) => r?.type === 'combat' && r?.enemies?.some((e: any) => e?.name === 'Goblin'))
+    const orcRoom = stored.dungeon.find((r: any) => r?.type === 'combat' && r?.enemies?.some((e: any) => e?.name === 'Orc'))
+    expect(String(goblinRoom?.tactics?.join(' ') ?? '')).toContain('hit-and-run')
+    expect(String(orcRoom?.tactics?.join(' ') ?? '')).toContain('power attack')
+
+    // Boss is multi-phase.
+    const bossRoom = stored.dungeon.find((r: any) => r?.type === 'boss')
+    expect(Array.isArray((bossRoom as any)?.bossPhases)).toBe(true)
+    expect((bossRoom as any).bossPhases.length).toBeGreaterThanOrEqual(2)
+  })
 })

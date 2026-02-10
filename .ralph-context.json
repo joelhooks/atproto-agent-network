@@ -971,24 +971,29 @@
     {
       "id": "story-mlfzjmrq",
       "title": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts"
+      ],
+      "learnings": "Technical Discovery: The GM tool is instantiated directly inside `apps/network/src/agent.ts` (not only via `apps/network/src/tools/index.ts`), so new GM actions that depend on runtime config must have that config explicitly threaded into the GM tool context. For consult_library, `webhookUrl` must be passed from `this.config.webhookUrl` into `createGmTool()`’s ctx, otherwise it always fails at runtime even if unit tests pass.\nGotcha: Don’t compare against raw webhook URLs that include `?token=`; the runtime pattern (also used for inbox webhook delivery) is to strip the token from the URL and send it as `Authorization: Bearer ...`. If you forget to strip it, you’ll leak tokens in logs and tests will be brittle. Also, the default `apps/network/vitest.config.ts` only includes `src/**/*.test.ts`, so “live/integration” tests must either be `.test.ts` and skipped by default or run via a separate config.\nFiles Context: `apps/network/src/tools/gm-tool.ts` implements the new `consult_library` command (fetch to webhook, parse result, persist `libraryContext`). `apps/network/src/games/rpg-engine.ts` holds the `RpgGameState` type; `libraryContext` is added here for persistence/back-compat. `apps/network/src/agent.ts` is where the GM tool is wired into the DO runtime and now passes `webhookUrl` into the GM ctx. `apps/network/src/tools/gm-tool.test.ts` contains the mock-webhook TDD case. `apps/network/src/tools/gm-tool.pdfbrain.live.test.ts` is a live test gated by `GRIMLOCK_WEBHOOK_URL`."
+    },
+    {
+      "id": "story-mlfzjx9w",
+      "title": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[unknown] ✓ |network| src/logger.test.ts > logger > createLogger() merges base fields into each event 1ms\n ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > overwrites "
+      "learnings": "[unknown] ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n ✓ |network| src/enviro"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbhphy",
-      "storyTitle": "Structured JSON logging for all agent lifecycle events",
-      "category": "type_error",
-      "error": "• turbo 2.8.3\nnetwork:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\nnetwork#typecheck: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\n ERROR  run failed: command  exited (2)\n\n> atproto-agent-network@ typechec",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "sed -n",
-        "rg -n"
-      ],
-      "iterationNumber": 2
-    },
     {
       "storyId": "story-mlfbhwfc",
       "storyTitle": "Fix autoPlay — filter by game type and skip finished/abandoned games",
@@ -1232,6 +1237,21 @@
         "ls -la"
       ],
       "iterationNumber": 4
+    },
+    {
+      "storyId": "story-mlfzjx9w",
+      "storyTitle": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
+      "category": "unknown",
+      "error": "✓ |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > non-grimlock agent calling new_game gets rejected with helpful message 1ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > grimlock calling new_game ",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "ls -ლა",
+        "ls -la",
+        "rg -n",
+        "nl -ba"
+      ],
+      "iterationNumber": 6
     }
   ]
 }
