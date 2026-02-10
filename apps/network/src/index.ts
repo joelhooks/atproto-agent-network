@@ -773,6 +773,20 @@ export default {
                 return Response.json({ agents })
               }
 
+              if (normalizedPathname === '/admin/pipeline-test') {
+                if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+                const pipeline = (env as any).O11Y_PIPELINE
+                if (!pipeline || typeof pipeline.send !== 'function') {
+                  return Response.json({ ok: false, error: 'O11Y_PIPELINE binding missing or has no send()' }, { status: 500 })
+                }
+                try {
+                  await pipeline.send([{ event_type: 'test.pipeline_verify', source: 'admin', _ts: new Date().toISOString() }])
+                  return Response.json({ ok: true, message: 'Event sent to pipeline' })
+                } catch (err) {
+                  return Response.json({ ok: false, error: String(err) }, { status: 500 })
+                }
+              }
+
               return new Response('Admin not yet implemented', { status: 501 })
             },
             { route: 'network.admin', request }
