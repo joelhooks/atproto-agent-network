@@ -714,9 +714,9 @@ export const rpgEnvironment: AgentEnvironment = {
             return { ok: false, error: lines.join('\n') }
           }
 
+          // Grimlock is DM — check for ANY active RPG game (grimlock isn't in players list)
           const existing = await db
-            .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
-            .bind(`%${agentName}%`)
+            .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
             .first<{ id: string }>()
             .catch(() => null)
 
