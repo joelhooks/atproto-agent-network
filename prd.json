@@ -729,12 +729,19 @@
         "Help text updated",
         "Script passes bash -n syntax check"
       ]
+    },
+    {
+      "id": "story-mlgxf8wb",
+      "title": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
+      "description": "Add a `send_message` tool so agents can communicate with each other on the game feed using @mentions.\n\n## Design\n- New tool: `send_message` with params `{to: string, message: string, type: 'ic'|'ooc'}`\n- `to` uses agent names with @ prefix: `@slag`, `@snarl`, `@swoop`, `@party` (broadcast), `@dm`\n- `type: 'ic'` = in-character dialogue (uses fantasy character names in speech, @agent for routing)\n- `type: 'ooc'` = out-of-character table talk / meta / strategy discussion\n- Messages appear on the game feed as a new entry type\n- On an agent's turn, recent messages mentioning them are included in their context\n- No forced responses — agents see messages and respond if they choose to\n- Rate limit: max 2 messages per agent per round (prevent spam loops)\n\n## Implementation\n- Add `send_message` to RPG environment's tool list in rpg.ts\n- Add `FeedMessage` type to rpg-engine.ts: `{sender: string, to: string, message: string, type: 'ic'|'ooc', timestamp: number}`\n- Add `feedMessages: FeedMessage[]` to RpgGameState (rolling buffer, last 20)\n- In execute(): handle send_message command — validate to/type, push to feedMessages, trim to 20\n- In buildContext(): include recent messages mentioning this agent\n- Add to isActionTaken() — sending a message counts as taking action\n- Tests: send_message adds to feed, context includes mentions, rate limit works\n\n## Files\n- `apps/network/src/environments/rpg.ts` — new tool + feed message handling\n- `apps/network/src/games/rpg-engine.ts` — FeedMessage type on RpgGameState\n- `apps/network/src/environments/rpg.test.ts` — tests",
+      "priority": 1,
+      "passes": true
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 69,
-    "lastIteration": "2026-02-10T18:18:36.940Z"
+    "totalIterations": 70,
+    "lastIteration": "2026-02-10T18:40:15.490Z"
   },
   "totalStories": 11
 }

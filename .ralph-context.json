@@ -1076,25 +1076,30 @@
         "apps/network/src/environments/rpg.ts"
       ],
       "learnings": "Technical Discovery: `RpgGameState.log` entries are simple `{ at, who, what }` strings (not structured enums). Boss kills can be detected reliably via the ordered pair of log lines in `apps/network/src/environments/rpg.ts` attack flow: `gained ... (kill: NAME)` immediately followed by `gained ... (boss kill)`, which lets `compactAdventureLog()` and achievement awarding infer a boss-slayer title without adding new engine types.\nGotcha: `buildContext()` ordering matters for prompt quality and tests: if you append persistent character lines at the end (after role skills), campaign history and achievements land after tactical instructions and violate the spec. Inject persistent lines immediately after the `You are ...` intro, before `roleSkillLines`, or tests that assert ordering will fail.\nFiles Context: `apps/network/src/environments/rpg.ts`: implements `compactAdventureLog()`, emits/saves the summary on completion, awards achievements, and injects campaign history/achievements into `buildContext()`.\n\n`apps/network/src/environments/rpg.test.ts`: adds unit coverage for compaction + 200-char cap, verifies campaign history/achievement context injection (including ordering), and validates achievement triggers through the real completion path."
+    },
+    {
+      "id": "story-mlguxbgw",
+      "title": "anet CLI: add character and campaign commands",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: In `/home/joel/.local/bin/anet`, new CLI verbs are best added as additional `case \"$cmd\" in` arms before the final `help|*` arm; also `shift 2>/dev/null || true` is `shift` with stderr redirected (not a shift-by-2), so `$1` remains the first argument after the command name.\nGotcha: AGENTS.md references `swarm hive cells --status open`, but the current `swarm` CLI uses `swarm cells --status open`; following the outdated subcommand will fail with \"Unknown command: hive\".\nFiles Context: `/home/joel/.local/bin/anet` is the bash wrapper CLI used to hit the production network worker API (`$API`) with admin auth (`$AUTH`) and dispatch subcommands via a `case` statement; this story only touched that file (added the new command arms and help lines)."
+    },
+    {
+      "id": "story-mlgxf8wb",
+      "title": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[timeout] > typecheck\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:buil"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbi54u",
-      "storyTitle": "Post-game summary — log structured outcome when game finishes",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/dashboard:typecheck: > tsc --noEmit\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "sed -n",
-        "ls -la",
-        "rg --files",
-        "nl -ba",
-        "swarm memory"
-      ],
-      "iterationNumber": 2
-    },
     {
       "storyId": "story-mlfedrp4",
       "storyTitle": "Store ActionOutcome after each tool call in act()",
@@ -1336,6 +1341,18 @@
         "git diff"
       ],
       "iterationNumber": 6
+    },
+    {
+      "storyId": "story-mlgxf8wb",
+      "storyTitle": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
+      "category": "timeout",
+      "error": "> typecheck\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI tsup v8.5.1\n@atproto-agent/core:build: CLI Target: es2022\n@atproto-agent",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n"
+      ],
+      "iterationNumber": 1
     }
   ]
 }

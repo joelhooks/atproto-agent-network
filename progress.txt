@@ -839,3 +839,36 @@ Validation: `cd apps/network && pnpm vitest run` (pass). Stored hivemind learnin
 Completed: anet CLI: add character and campaign commands
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json, progress.txt
 Summary: Implemented the requested `anet` CLI additions by editing `/home/joel/.local/bin/anet`: added `char|c`, `party`, and `campaign` case branches that call the character endpoints and format output with `jq`, and updated the help text accordingly. Validation `bash -n /home/joel/.local/bin/anet && echo PASS` passes.
+
+---
+[2026-02-10T18:30:58.052Z]
+Failed: Agent @mention messaging on feed — in-character dialogue + OOC table talk [timeout]
+Validation: > typecheck
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts --format esm --dts
+@atproto-agent/core:build: 
+@atproto-agent/core:buil
+Codex: Starting story implementation: I’m going to (1) run `swarm memory find` for this story topic, then (2) open the RPG environment + engine + tests, and (3) write failing Vitest cases for `send_message` before implementing the tool and rate limiting.
+
+---
+[2026-02-10T18:40:15.492Z]
+Completed: Agent @mention messaging on feed — in-character dialogue + OOC table talk
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.ts, .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
+Summary: Prior failure pattern detected: timeout. Mitigation: run long commands with PTY/polling, and avoid interactive `wrangler login` by injecting `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` via `secrets lease --raw`.
+
+This story’s functionality is already implemented and covered by tests:
+- `send_message` tool is wired into the RPG tool schema + execution path, persists to `game.feedMessages` (rolling 20), validates recipients, and enforces 2 messages/agent/round: `apps/network/src/environments/rpg.ts`.
+- Feed message types/state live on `RpgGameState`: `apps/network/src/games/rpg-engine.ts`.
+- Tests cover: append-to-feed, context mention inclusion, and rate limit: `apps/network/src/environments/rpg.test.ts`.
+
+Validation run:
+- `pnpm typecheck` passed
+- `pnpm test` passed
+- Deployed `apps/network` to production and verified with `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` (PASS)
+
+Also:
+- Stored hivemind learning via `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- Reported completion via `openclaw system event`
