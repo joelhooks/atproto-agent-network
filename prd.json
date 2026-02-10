@@ -575,7 +575,7 @@
       "title": "Phase 3b: Dynamic difficulty scaling — GM auto-adjusts based on party performance",
       "description": "Add automatic difficulty adjustment logic that Grimlock's GM loop can trigger:\n\n1. **Track party performance metrics** in game state: average HP %, rooms cleared without rest, deaths, near-deaths (HP < 20%), overkill ratio (damage dealt vs enemy HP)\n2. **Difficulty signals**:\n   - Party breezing (avg HP > 80% after 3+ combat rooms) → increase enemy damage by 20%, add extra enemies\n   - Party struggling (avg HP < 40%, or 2+ near-deaths) → reduce next room difficulty, place a rest room, add healing loot\n   - Party TPK risk (any member dead + another < 30% HP) → next room is a rest room with full heal\n3. **GM intervention hook**: After each room completion, calculate metrics and if adjustment needed, auto-call adjust_difficulty on upcoming rooms\n4. Log all adjustments in game log with [GM] prefix so it's observable\n\nFiles: apps/network/src/environments/rpg-engine.ts, apps/network/src/tools/gm-tool.ts\n\nAcceptance: Party performance is tracked. Difficulty adjusts automatically based on thresholds. A test simulating a struggling party gets easier rooms. A test simulating a breezing party gets harder rooms.",
       "priority": 58,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -605,8 +605,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 57,
-    "lastIteration": "2026-02-10T04:35:06.067Z"
+    "totalIterations": 58,
+    "lastIteration": "2026-02-10T04:40:47.576Z"
   },
   "totalStories": 11
 }

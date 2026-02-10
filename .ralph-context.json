@@ -928,9 +928,24 @@
     {
       "id": "story-mlfzj4xx",
       "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/ca"
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "apps/network/src/tools/index.ts",
+        "packages/core/src/d1-mock.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: `D1MockDatabase` only supports a narrow set of `games` SQL shapes; GM tooling should stick to `SELECT ... FROM games WHERE ...` clauses supported by `parseGameConditions()` and persist via the supported `UPDATE games SET state = ?, phase = ?, updated_at = datetime('now') WHERE id = ?` branch (optionally with `AND type = 'rpg'`).\nGotcha: The story spec mentions `apps/network/src/environments/rpg-engine.ts`, but the environment implementation is actually `apps/network/src/environments/rpg.ts`; if you add new queries, keep them compatible with `packages/core/src/d1-mock.ts` (complex clauses/aggregates can break unit tests).\nFiles Context: `apps/network/src/tools/gm-tool.ts` implements GM commands and persists RPG state in `games.state` JSON; `apps/network/src/tools/index.ts` is the tool exposure gate (allowlist + Grimlock check); `apps/network/src/tools/gm-tool.test.ts` pins behavior for D1 persistence + log formatting; `apps/network/src/environments/rpg.ts` is the primary RPG D1 integration used by the runtime; `packages/core/src/d1-mock.ts` defines which SQL shapes tests can use."
     },
     {
       "id": "story-mlg25sjb",
