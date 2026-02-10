@@ -485,7 +485,7 @@ describe('rpgEnvironment', () => {
     }
 
     const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
-    expect(calls).toEqual([{ name: 'rpg', arguments: { command: 'new_game', players: ['grimlock'] } }])
+    expect(calls).toEqual([{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'] } }])
   })
 
   it('grimlock does not auto-create a dungeon if any playing game exists', async () => {

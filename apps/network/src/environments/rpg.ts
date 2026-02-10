@@ -940,7 +940,7 @@ You are the lifeline. Keep the warrior alive above all. Don't waste heals on min
         const finishedToday = await countFinishedRpgGamesToday(ctx)
         if (finishedToday >= maxGamesPerDay) return []
 
-        return [{ name: 'rpg', arguments: { command: 'new_game', players: ['grimlock'] } }]
+        return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'] } }]
       }
 
       const joinable = await findJoinableGamesForAgent(ctx, { limit: 1 })

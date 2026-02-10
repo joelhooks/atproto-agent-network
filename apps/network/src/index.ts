@@ -557,6 +557,19 @@ export default {
 
         // Games (shared D1 state)
         if (normalizedPathname === '/games') {
+          // DELETE /games — kill ALL active games (admin nuclear option)
+          if (request.method === 'DELETE') {
+            return withErrorHandling(
+              async () => {
+                const result = await env.DB.prepare(
+                  "UPDATE games SET phase = 'abandoned', updated_at = datetime('now') WHERE phase NOT IN ('finished', 'abandoned')"
+                ).run()
+                const count = result.meta?.changes ?? 0
+                return Response.json({ ok: true, message: `Killed ${count} active game(s)` })
+              },
+              { route: 'DELETE /games' }
+            )
+          }
           return withErrorHandling(
             async () => {
               const showAll = url.searchParams.get('all') === 'true'
