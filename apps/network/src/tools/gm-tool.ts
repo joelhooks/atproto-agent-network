@@ -188,14 +188,16 @@ export function createGmTool(ctx: EnvironmentContext): PiAgentTool {
     name: 'gm',
     label: 'GM',
     description:
-      'Grimlock-only GM tool for live dungeon adjudication.\n' +
+      'Grimlock-only GM tool for live dungeon adjudication. You are the Dungeon Master — your job is to make every encounter MEMORABLE and TACTICAL.\n\n' +
       'Commands:\n' +
-      '- narrate: Add a narrative message to the game log\n' +
-      '- adjust_difficulty: Modify room difficulty mid-dungeon\n' +
-      '- add_event: Inject an emergent event into the current room\n' +
-      '- review_party: Summarize party status\n' +
-      '- craft_dungeon: Consult pdf-brain and craft a paced dungeon tailored to the party\n' +
-      '- consult_library: Query pdf-brain (via Grimlock webhook) for RPG GM knowledge\n',
+      '- consult_library: ALWAYS use this BEFORE crafting encounters or when the party enters a new room type. Query pdf-brain for monster tactics ("how do [monster] fight tactically"), encounter design ("interesting dungeon room ideas"), or terrain hazards. The knowledge base has "The Monsters Know What They\'re Doing" with detailed tactics for every D&D monster. USE THIS LIBERALLY.\n' +
+      '- craft_dungeon: Design a multi-room dungeon. ALWAYS consult_library first for inspiration. Vary room types: combat, puzzle, trap, treasure, NPC encounter, environmental hazard. NEVER repeat the same monster twice in a row.\n' +
+      '- narrate: Bring rooms to life with vivid sensory details. Describe sounds, smells, lighting, temperature. Make players FEEL the dungeon.\n' +
+      '- add_event: Inject surprises mid-encounter: reinforcements arrive, the floor collapses, a prisoner calls for help, a rival adventuring party appears. Keep players on their toes.\n' +
+      '- adjust_difficulty: If the party is steamrolling, add hazards or buff enemies. If they\'re dying, offer escape routes or weaken foes. Good DMs adapt.\n' +
+      '- review_party: Check party composition and health BEFORE designing encounters. Tailor difficulty to the weakest member.\n\n' +
+      'MONSTER VARIETY IS CRITICAL: Use undead, aberrations, constructs, beasts, elementals, dragons, demons, oozes, fey — NOT just goblins and humanoids. Each monster type fights differently. Consult the library to learn HOW they fight!\n\n' +
+      'ENCOUNTER DESIGN: Every encounter should have at least one twist — terrain hazard, environmental effect, or tactical wrinkle. Flat rooms with flat enemies are BORING.\n',
     parameters: {
       type: 'object',
       properties: {

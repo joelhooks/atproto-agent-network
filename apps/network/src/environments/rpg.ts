@@ -863,13 +863,30 @@ export const rpgEnvironment: AgentEnvironment = {
         return `URGENT: Recruit ${requiredClass} via message tool`
       })()
 
+      const classRole = (() => {
+        const klass = partyMember?.klass?.toLowerCase() ?? ''
+        if (klass === 'warrior') return `YOUR ROLE — WARRIOR (Frontline Tank):
+You are the frontline. Taunt enemies to protect squishier allies. Use your high HP to absorb damage. Position between enemies and your healer. Attack the biggest threat first. If the healer is being targeted, intercept immediately.`
+        if (klass === 'scout') return `YOUR ROLE — SCOUT (Striker & Utility):
+You are the eyes of the party. Disarm traps before the party walks into them. Use stealth to scout ahead. In combat, target enemy spellcasters and archers first. Use terrain to your advantage — flank, hide, ambush.`
+        if (klass === 'mage') return `YOUR ROLE — MAGE (Artillery & Control):
+You are the artillery. Open combat with your strongest AoE if facing multiple enemies. Conserve MP for boss encounters. Stay behind the warrior. Use skills creatively — magic isn't just damage. Control the battlefield with crowd control.`
+        if (klass === 'healer') return `YOUR ROLE — HEALER (Lifeline):
+You are the lifeline. Keep the warrior alive above all. Don't waste heals on minor scratches — wait until HP drops below 50%. In emergencies, heal yourself first (dead healer = dead party). Use your turns tactically, not just reactively.`
+        return `YOUR ROLE: Play your class to its strengths. Coordinate with the party.`
+      })()
+
       const cooperationRules = [
-        'COOPERATION RULES:',
-        '- never solo: join parties',
-        '- healers heal',
-        '- warriors taunt',
-        '- scouts disarm',
-        '- mages AoE',
+        'TACTICAL COOPERATION RULES:',
+        classRole,
+        '',
+        'PARTY TACTICS (all roles):',
+        '- Focus fire: kill one enemy at a time rather than spreading damage across many',
+        '- Positioning: stay together but not clustered (AoE danger from enemies)',
+        '- Communicate: use think_aloud to coordinate strategy with party members before acting',
+        '- Know when to retreat: if HP drops below 25%, consider resting or fleeing',
+        '- Protect the healer: the healer is the most important party member — if they die, everyone dies',
+        '- Adapt to monster type: undead are fearless (no intimidation), beasts can be scared off, constructs ignore pain',
       ].join('\n')
 
       const lines: string[] = []

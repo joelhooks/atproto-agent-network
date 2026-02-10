@@ -2517,13 +2517,11 @@ describe('AgentDO', () => {
 
     const thinkPrompt = prompt.mock.calls[0]?.[0]
     expect(typeof thinkPrompt).toBe('string')
-    expect(thinkPrompt).toContain('COOPERATION RULES')
-    expect(thinkPrompt).toContain('never solo')
-    expect(thinkPrompt).toContain('join parties')
-    expect(thinkPrompt).toContain('healers heal')
-    expect(thinkPrompt).toContain('warriors taunt')
-    expect(thinkPrompt).toContain('scouts disarm')
-    expect(thinkPrompt).toContain('mages AoE')
+    expect(thinkPrompt).toContain('TACTICAL COOPERATION RULES')
+    expect(thinkPrompt).toContain('Focus fire')
+    expect(thinkPrompt).toContain('Positioning')
+    expect(thinkPrompt).toContain('Know when to retreat')
+    expect(thinkPrompt).toContain('Protect the healer')
   })
 
   it('adds a blocked-mode recruitment message when an RPG barrier requires a missing class', async () => {
