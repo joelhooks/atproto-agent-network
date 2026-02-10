@@ -62,8 +62,32 @@ Called from the alarm handler after each agent cycle.
 
 ## How to Query the Data
 
+### Option A: R2 SQL (preferred — no download needed)
+
+Requires an API token with **R2 Admin Read & Write** permission (includes R2 SQL Read).
+The `atproto-agents::cloudflare_api_key` does NOT have this — needs a separate token or permission update.
+
 ```bash
-# 1. Download parquet files from R2
+# Set the R2 SQL auth token
+export WRANGLER_R2_SQL_AUTH_TOKEN=<token-with-r2-admin-read-write>
+
+# Query directly
+npx wrangler r2 sql query "<warehouse-name>" "
+  SELECT * FROM agent_network.events
+  WHERE event_type = 'agent.cycle'
+  LIMIT 10
+"
+```
+
+**Setup required (one-time, from CF dashboard):**
+1. Enable Data Catalog on `agent-blobs` bucket (Settings → R2 Data Catalog → Enable)
+2. Note the **Warehouse name** and **Catalog URI**
+3. Create or update API token with **R2 Admin Read & Write** permission
+4. Store token: `secrets add r2_sql_token` (or add perm to existing `atproto-agents::cloudflare_api_key`)
+
+### Option B: Download Parquet + DuckDB (works now)
+
+```bash
 export CLOUDFLARE_API_TOKEN=$(secrets lease atproto-agents::cloudflare_api_key --ttl 5m --client-id grimlock-query | jq -r '.data.value')
 mkdir -p /tmp/o11y
 
@@ -78,7 +102,7 @@ for key in $keys; do
 done
 wait
 
-# 2. Query with DuckDB
+# Query with DuckDB
 duckdb -markdown -c "
 WITH raw AS (
   SELECT __ingest_ts, value::JSON as j FROM '/tmp/o11y/*.parquet'
