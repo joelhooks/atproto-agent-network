@@ -720,7 +720,7 @@
       "title": "anet CLI: add character and campaign commands",
       "description": "Update ~/.local/bin/anet CLI with new commands for the campaign system.\n\nAdd these cases to the case statement:\n\n  char|c)\n    # View agent's persistent character\n    agent=\"${1:?usage: anet char <agent>}\"\n    curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq .\n    ;;\n\n  party)\n    # Show all agents' characters side by side\n    for agent in slag snarl swoop; do\n      echo \"=== $agent ===\"\n      curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq '{name, klass, level, xp, gamesPlayed, deaths, backstory: (.backstory // \"none\")[:80], achievements}'\n    done\n    ;;\n\n  campaign)\n    # Show campaign state — all characters + last adventures\n    for agent in slag snarl swoop; do\n      curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq '{\n        agent: \"'$agent'\",\n        character: .name,\n        class: .klass,\n        level: .level,\n        xp: .xp,\n        games: .gamesPlayed,\n        deaths: .deaths,\n        lastAdventure: (.adventureLog[-1:][0] // \"none\"),\n        achievements: (.achievements | length)\n      }'\n    done\n    ;;\n\nUpdate help text to include:\n  char, c <agent>        View agent's persistent character\n  party                  Show all party characters\n  campaign               Campaign overview (all characters + history)\n\nThis is a bash script at ~/.local/bin/anet. Make the edits directly.",
       "priority": 75,
-      "passes": false,
+      "passes": true,
       "validationCommand": "bash -n ~/.local/bin/anet && echo PASS",
       "acceptanceCriteria": [
         "anet char <agent> shows character data",
@@ -733,8 +733,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 68,
-    "lastIteration": "2026-02-10T18:14:31.651Z"
+    "totalIterations": 69,
+    "lastIteration": "2026-02-10T18:18:36.940Z"
   },
   "totalStories": 11
 }

@@ -833,3 +833,9 @@ Implemented campaign memory for RPG:
 - Added achievement awarding on notable events at completion: boss kill (enemy-based slayer title), <10% HP survival, no-damage clear, and 5+ games played.
 
 Validation: `cd apps/network && pnpm vitest run` (pass). Stored hivemind learning and reported completion via `openclaw system event`.
+
+---
+[2026-02-10T18:18:36.942Z]
+Completed: anet CLI: add character and campaign commands
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json, progress.txt
+Summary: Implemented the requested `anet` CLI additions by editing `/home/joel/.local/bin/anet`: added `char|c`, `party`, and `campaign` case branches that call the character endpoints and format output with `jq`, and updated the help text accordingly. Validation `bash -n /home/joel/.local/bin/anet && echo PASS` passes.

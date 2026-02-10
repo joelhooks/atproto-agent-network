@@ -1062,6 +1062,20 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `awardXp()` in `apps/network/src/games/rpg-engine.ts` levels using `while (pc.level < XP_TABLE.length && pc.xp >= XP_TABLE[pc.level])`, applies per-level stat growth (`maxHp += 5+level`, `maxMp += 3+level`), and does a +5 bump to a random skill chosen from sorted skill keys (so tests can deterministically control it by stubbing `Math.random`).\nGotcha: RPG XP is accumulated in `game.xpEarned` during play and only applied to the current agent’s `PersistentCharacter` inside `emitGameCompleted()` in `apps/network/src/environments/rpg.ts`; if you expect all party members to persist progression, you must ensure each agent runs a completion/save path or implement a different persistence fan-out strategy.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines XP constants, `XP_TABLE`, and `awardXp()` plus persistent character conversion helpers. `apps/network/src/environments/rpg.ts` accumulates XP into `game.xpEarned` on kills/room clears/adventure completion and applies it on save in `emitGameCompleted()`, and `buildContext()` renders level/XP progress. Tests live in `apps/network/src/games/rpg-engine.test.ts` (awardXp unit tests) and `apps/network/src/environments/rpg.test.ts` (XP accumulation + buildContext coverage)."
+    },
+    {
+      "id": "story-mlgux0y8",
+      "title": "Campaign memory — adventure log compaction + previously-on context injection",
+      "status": "completed",
+      "filesModified": [
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "Technical Discovery: `RpgGameState.log` entries are simple `{ at, who, what }` strings (not structured enums). Boss kills can be detected reliably via the ordered pair of log lines in `apps/network/src/environments/rpg.ts` attack flow: `gained ... (kill: NAME)` immediately followed by `gained ... (boss kill)`, which lets `compactAdventureLog()` and achievement awarding infer a boss-slayer title without adding new engine types.\nGotcha: `buildContext()` ordering matters for prompt quality and tests: if you append persistent character lines at the end (after role skills), campaign history and achievements land after tactical instructions and violate the spec. Inject persistent lines immediately after the `You are ...` intro, before `roleSkillLines`, or tests that assert ordering will fail.\nFiles Context: `apps/network/src/environments/rpg.ts`: implements `compactAdventureLog()`, emits/saves the summary on completion, awards achievements, and injects campaign history/achievements into `buildContext()`.\n\n`apps/network/src/environments/rpg.test.ts`: adds unit coverage for compaction + 200-char cap, verifies campaign history/achievement context injection (including ordering), and validates achievement triggers through the real completion path."
     }
   ],
   "failures": [
