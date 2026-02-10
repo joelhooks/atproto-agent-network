@@ -1566,6 +1566,43 @@ export const rpgEnvironment: AgentEnvironment = {
     })
   },
 
+  // During setup, auto-play should always inject setup actions even if the model
+  // already called other rpg commands (which get rejected during setup anyway).
+  // This override is checked by the agent loop before isActionTaken.
+  async getSetupOverrideActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
+    const row = await findActiveGameWhereItsMyTurn(ctx)
+    if (!row) {
+      const active = await findActiveGameForAgent(ctx)
+      if (!active) return []
+      try {
+        const state = JSON.parse(active.state) as RpgGameState
+        const sp = (state as any).setupPhase as RpgGameState['setupPhase'] | undefined
+        if (!sp || sp.complete) return []
+        const party = Array.isArray(state.party) ? state.party : []
+        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(sp.currentPlayerIndex ?? 0)))
+        const current = party[idx]
+        const currentAgent = current ? (current.agent ?? current.name) : ''
+        if (ctx.agentName.trim() === 'grimlock') {
+          const dialogues = (sp.dialogues ?? {}) as Record<string, string[]>
+          const existing = Array.isArray(dialogues[currentAgent]) ? dialogues[currentAgent] : []
+          if (existing.length === 0) {
+            return [{
+              name: 'rpg',
+              arguments: {
+                command: 'setup_narrate',
+                gameId: active.id,
+                target: currentAgent,
+                message: 'Tell me about your character. Where did you come from, and what do you look like?',
+              },
+            }]
+          }
+        }
+      } catch { /* */ }
+      return []
+    }
+    return []
+  },
+
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
     const row = await findActiveGameWhereItsMyTurn(ctx)
     if (!row) {

@@ -29,6 +29,8 @@ export interface AgentEnvironment {
   // (so auto-play should not run).
   isActionTaken: (toolCalls: ToolCall[]) => boolean
   getAutoPlayActions: (ctx: EnvironmentContext) => ToolCall[] | Promise<ToolCall[]>
+  // Optional: always-run setup override that bypasses isActionTaken during setup phase
+  getSetupOverrideActions?: (ctx: EnvironmentContext) => Promise<ToolCall[]>
   notifyTurnChange?: (
     ctx: EnvironmentContext,
     next: string,

@@ -1203,6 +1203,7 @@ export class AgentDO extends DurableObject {
 
     // Game-aware context via environment registry
     let gameContext = ''
+    console.log('buildContext gate', { agent: this.config?.name, hasDB: Boolean(this.agentEnv?.DB) })
     if (this.agentEnv?.DB) {
       const agentName = this.config?.name ?? ''
       const did = this.identity?.did ?? ''
@@ -1231,7 +1232,9 @@ export class AgentDO extends DurableObject {
             break
           }
         }
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        console.error('buildContext error', { agent: this.config?.name, error: String(err) })
+      }
     }
 
     if (gameContext.includes('🎮🎮🎮')) {
@@ -1488,6 +1491,26 @@ export class AgentDO extends DurableObject {
 	        }
 
 	        for (const env of environments) {
+	          // Setup phase override: inject setup actions even if model already called
+	          // other rpg commands (which get rejected during setup anyway).
+	          if (typeof env.getSetupOverrideActions === 'function') {
+	            const overrides = await env.getSetupOverrideActions(envCtx)
+	            if (overrides.length > 0) {
+	              selected.push(...overrides)
+	              const safetyDebug = {
+	                agent: agentName,
+	                environment: env.type,
+	                injectedActions: overrides.map((a: any) => a.name),
+	                modelToolCalls: selected.map(c => c.name),
+	                ts: Date.now(),
+	                reason: 'setup_override',
+	              }
+	              console.log('Setup override injection:', safetyDebug)
+	              await this.ctx.storage.put('debug:autoPlay', safetyDebug)
+	              break
+	            }
+	          }
+
 	          // Route misnamed tool calls for this environment when deciding if an action was taken,
 	          // otherwise auto-play can incorrectly inject extra moves (e.g. roll_dice/end_turn).
 	          const toolCallsForCheck = selected.map(c => ({
