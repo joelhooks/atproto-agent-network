@@ -470,10 +470,17 @@ export const rpgEnvironment: AgentEnvironment = {
           const players = Array.isArray(params.players)
             ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
             : []
-          if (players.length < 1) throw new Error('Need at least 1 player')
+          // Grimlock is the DM, never a player — strip from player list and ensure we have real players
+          const filteredPlayers = players.filter((p) => p !== 'grimlock')
+          if (filteredPlayers.length < players.length && filteredPlayers.length === 0) {
+            // Grimlock tried to create a solo game — use the default player list instead
+            filteredPlayers.push('slag', 'snarl', 'swoop')
+          }
+          const finalPlayers = filteredPlayers.length > 0 ? filteredPlayers : players
+          if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
 
           // Prefer joining an open adventure when a solo new_game is requested.
-          if (players.length <= 1) {
+          if (finalPlayers.length <= 1) {
             const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
             if (joinable.length > 0) {
               const lines: string[] = []
@@ -489,7 +496,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const gameId = `rpg_${generateTid()}`
-          const game = createGame({ id: gameId, players })
+          const game = createGame({ id: gameId, players: finalPlayers })
 
           // Ensure type column exists (migration from catan-only schema)
           await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
@@ -498,20 +505,20 @@ export const rpgEnvironment: AgentEnvironment = {
             .prepare(
               "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
             )
-            .bind(gameId, 'rpg', ctx.agentName.trim() || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(players))
+            .bind(gameId, 'rpg', ctx.agentName.trim() || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(finalPlayers))
             .run()
 
           await ctx.broadcast({
             event_type: 'environment.created',
-            context: { environment: 'rpg', gameId, host: ctx.agentName.trim() || 'unknown', players },
+            context: { environment: 'rpg', gameId, host: ctx.agentName.trim() || 'unknown', players: finalPlayers },
           })
 
           return {
             content: toTextContent(
-              `Adventure created: ${gameId}\nPlayers: ${players.join(', ')}\n\n` +
+              `Adventure created: ${gameId}\nPlayers: ${finalPlayers.join(', ')}\n\n` +
                 `Room 1/${game.dungeon.length}: ${describeRoom(game, 0)}`
             ),
-            details: { gameId, type: 'rpg', players, phase: game.phase },
+            details: { gameId, type: 'rpg', players: finalPlayers, phase: game.phase },
           }
         }
 
@@ -942,7 +949,7 @@ You are the lifeline. Keep the warrior alive above all. Don't waste heals on min
       if (call.name !== 'rpg') return false
       const args = normalizeToolCallArguments(call.arguments)
       const cmd = typeof args.command === 'string' ? args.command : ''
-      return ['join_game', 'explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'create_character'].includes(cmd)
+      return ['new_game', 'join_game', 'explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'create_character'].includes(cmd)
     })
   },
 

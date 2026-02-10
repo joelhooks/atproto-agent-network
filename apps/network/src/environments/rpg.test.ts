@@ -411,11 +411,13 @@ describe('rpgEnvironment', () => {
     }
 
     const tool = rpgEnvironment.getTool(ctx as any)
-    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['grimlock', 'alice'] })
+    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['slag', 'snarl', 'swoop'] })
 
     expect(result).toHaveProperty('content')
     expect(result).toHaveProperty('details')
-    expect((result as any).details.players).toContain('grimlock')
+    // Grimlock is DM, never a player — players should be the actual agents
+    expect((result as any).details.players).toContain('slag')
+    expect((result as any).details.players).not.toContain('grimlock')
     expect((result as any).details.phase).toBe('playing')
   })
 
