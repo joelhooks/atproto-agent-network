@@ -1381,6 +1381,7 @@ export class AgentDO extends DurableObject {
         ? ['think_aloud', 'recall', 'message', 'remember', 'gm']
         : ['think_aloud', 'recall']
       : []
+    console.log('phase-whitelist-debug', { agent: this.config?.name, phaseWhitelist, suppressGameplayTools, isSetupPhase })
     try {
       await this.agent.initialize()
       const inner = this.agent.getAgent() as any
