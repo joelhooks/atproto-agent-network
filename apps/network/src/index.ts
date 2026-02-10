@@ -193,7 +193,7 @@ export default {
               }
 
               return Response.json(
-                { status: 'ok', missing: [], uptimeMs },
+                { status: 'ok', missing: [], uptimeMs, version: 'a721d5a-coerce' },
                 { headers: { 'Cache-Control': 'no-store' } }
               )
             },
