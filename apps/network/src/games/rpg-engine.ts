@@ -1737,7 +1737,7 @@ export function gameCharacterToPersistent(
   adventureSummary?: string
 ): PersistentCharacter {
   const now = Date.now()
-  const base: PersistentCharacter = existing ?? {
+  const fallback: PersistentCharacter = {
     name: gc.name,
     klass: gc.klass,
     level: 1,
@@ -1745,6 +1745,10 @@ export function gameCharacterToPersistent(
     maxHp: gc.maxHp,
     maxMp: gc.maxMp,
     skills: { ...gc.skills },
+    backstory: '',
+    motivation: '',
+    appearance: '',
+    personalityTraits: [],
     adventureLog: [],
     achievements: [],
     inventory: [],
@@ -1753,6 +1757,7 @@ export function gameCharacterToPersistent(
     gamesPlayed: 0,
     deaths: 0,
   }
+  const base: PersistentCharacter = existing ? { ...fallback, ...existing } : fallback
   return {
     ...base,
     skills: { ...gc.skills },

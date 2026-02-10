@@ -639,7 +639,7 @@
       "title": "Persistent characters: PersistentCharacter type + agent DO storage + load/save endpoints",
       "description": "Add PersistentCharacter type to packages/core/src/types.ts with fields: name, klass, level, xp, maxHp, maxMp, skills (Record<string,number>), backstory, motivation, appearance, personalityTraits (string[]), adventureLog (string[], capped at 10), achievements (string[]), inventory (string[]), createdAt, updatedAt, gamesPlayed, deaths.\n\nIn apps/network/src/agent.ts:\n- Add 'character' case to the fetch router (same pattern as 'profile' case)\n- GET /agents/:name/character → this.ctx.storage.get('rpg:character')\n- PUT /agents/:name/character → this.ctx.storage.put('rpg:character', body)\n- Add handleCharacter(request) method\n\nIn apps/network/src/games/rpg-engine.ts add two exported helper functions:\n- persistentToGameCharacter(pc, agent): converts PersistentCharacter to in-game Character. Resets HP/MP to maxHp/maxMp (fresh adventure). Copies name, klass, skills. Sets agent field.\n- gameCharacterToPersistent(gc, existing, adventureSummary?): Updates or creates PersistentCharacter from game Character. Increments gamesPlayed. Increments deaths if gc.hp <= 0. Appends adventureSummary to adventureLog (cap at 10 entries via slice(-9)). Updates skills from gc. Sets updatedAt.\n\nAdd tests in rpg-engine.test.ts:\n- persistentToGameCharacter resets HP/MP to max\n- gameCharacterToPersistent increments gamesPlayed\n- gameCharacterToPersistent increments deaths when hp <= 0\n- gameCharacterToPersistent caps adventureLog at 10\n\nAdd test in agent-do.test.ts:\n- GET /character returns {} when no character exists\n- PUT then GET roundtrips character data",
       "priority": 70,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && pnpm vitest run",
       "acceptanceCriteria": [
         "PersistentCharacter type exists in packages/core/src/types.ts",
@@ -714,12 +714,27 @@
         "Achievements awarded on notable events",
         "All existing tests pass"
       ]
+    },
+    {
+      "id": "story-mlguxbgw",
+      "title": "anet CLI: add character and campaign commands",
+      "description": "Update ~/.local/bin/anet CLI with new commands for the campaign system.\n\nAdd these cases to the case statement:\n\n  char|c)\n    # View agent's persistent character\n    agent=\"${1:?usage: anet char <agent>}\"\n    curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq .\n    ;;\n\n  party)\n    # Show all agents' characters side by side\n    for agent in slag snarl swoop; do\n      echo \"=== $agent ===\"\n      curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq '{name, klass, level, xp, gamesPlayed, deaths, backstory: (.backstory // \"none\")[:80], achievements}'\n    done\n    ;;\n\n  campaign)\n    # Show campaign state — all characters + last adventures\n    for agent in slag snarl swoop; do\n      curl -sf -H \"$AUTH\" \"$API/agents/$agent/character\" | jq '{\n        agent: \"'$agent'\",\n        character: .name,\n        class: .klass,\n        level: .level,\n        xp: .xp,\n        games: .gamesPlayed,\n        deaths: .deaths,\n        lastAdventure: (.adventureLog[-1:][0] // \"none\"),\n        achievements: (.achievements | length)\n      }'\n    done\n    ;;\n\nUpdate help text to include:\n  char, c <agent>        View agent's persistent character\n  party                  Show all party characters\n  campaign               Campaign overview (all characters + history)\n\nThis is a bash script at ~/.local/bin/anet. Make the edits directly.",
+      "priority": 75,
+      "passes": false,
+      "validationCommand": "bash -n ~/.local/bin/anet && echo PASS",
+      "acceptanceCriteria": [
+        "anet char <agent> shows character data",
+        "anet party shows all characters",
+        "anet campaign shows campaign overview",
+        "Help text updated",
+        "Script passes bash -n syntax check"
+      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 63,
-    "lastIteration": "2026-02-10T06:10:17.916Z"
+    "totalIterations": 64,
+    "lastIteration": "2026-02-10T17:16:28.528Z"
   },
   "totalStories": 11
 }

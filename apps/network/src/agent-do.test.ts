@@ -1570,6 +1570,60 @@ describe('AgentDO', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('GET /character returns {} when no character exists', async () => {
+    const { state } = createState('agent-character-empty')
+    const { env } = createEnv()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const res = await agent.fetch(new Request('https://example/agents/alice/character'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({})
+  })
+
+  it('PUT then GET /character roundtrips character data', async () => {
+    const { state } = createState('agent-character-roundtrip')
+    const { env } = createEnv()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const character = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 3,
+      xp: 500,
+      maxHp: 20,
+      maxMp: 5,
+      skills: { attack: 60, dodge: 30, cast_spell: 10, use_skill: 40 },
+      backstory: 'A dwarf from the Iron Hills.',
+      motivation: 'Recover the lost crown.',
+      appearance: 'Broad shoulders, braided beard.',
+      personalityTraits: ['stubborn', 'loyal'],
+      adventureLog: ['Adventure 1'],
+      achievements: ['First blood'],
+      inventory: ['Sword'],
+      createdAt: 1000,
+      updatedAt: 2000,
+      gamesPlayed: 5,
+      deaths: 1,
+    }
+
+    const put = await agent.fetch(
+      new Request('https://example/agents/alice/character', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(character),
+      })
+    )
+    expect(put.status).toBe(200)
+
+    const get = await agent.fetch(new Request('https://example/agents/alice/character'))
+    expect(get.status).toBe(200)
+    expect(await get.json()).toEqual(character)
+  })
+
   it.skip('accepts and persists enabledEnvironments in agent config', async () => {
     const { state, storage } = createState('agent-config-envs')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })

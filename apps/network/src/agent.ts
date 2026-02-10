@@ -1966,7 +1966,7 @@ export class AgentDO extends DurableObject {
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         return Response.json({ error: 'Invalid JSON' }, { status: 400 })
       }
-      const character = { ...(body as Record<string, unknown>), updatedAt: Date.now() }
+      const character = body as Record<string, unknown>
       await this.ctx.storage.put('rpg:character', character)
       return Response.json({ ok: true, character })
     }

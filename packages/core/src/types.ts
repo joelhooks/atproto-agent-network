@@ -102,10 +102,10 @@ export interface PersistentCharacter {
   maxHp: number
   maxMp: number
   skills: Record<string, number>
-  backstory?: string
-  motivation?: string
-  appearance?: string
-  personalityTraits?: string[]
+  backstory: string
+  motivation: string
+  appearance: string
+  personalityTraits: string[]
   adventureLog: string[]
   achievements: string[]
   inventory: string[]

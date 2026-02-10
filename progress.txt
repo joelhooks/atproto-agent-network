@@ -751,3 +751,21 @@ Completed: Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→de
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt
 Summary: Starting story-mlg5rnzm. I’m going to (1) run the required `swarm memory find`, (2) inspect the current RPG dungeon generation + tests, then (3) add failing Vitest cases for room difficulty/stat scaling/rest placement before implementing changes in `generateDungeon()`.
 ⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-10T17:16:28.530Z]
+Completed: Persistent characters: PersistentCharacter type + agent DO storage + load/save endpoints
+Files: apps/network/src/agent.ts, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/environments/types.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, packages/core/src/types.ts, prd.json, apps/network/src/agent-do.test.ts
+Summary: Implemented PersistentCharacter persistence and endpoint roundtripping.
+
+Prior failure pattern detected: test_failure. Mitigation: added a failing roundtrip test first, then made the minimal behavior change (stop mutating updatedAt in the DO), and re-ran `cd apps/network && pnpm vitest run` after each change.
+
+Changes:
+- `packages/core/src/types.ts`: tightened `PersistentCharacter` to include required `backstory`, `motivation`, `appearance`, `personalityTraits` fields.
+- `apps/network/src/agent.ts`: `PUT /agents/:name/character` now stores the request body verbatim at `rpg:character` (no implicit updatedAt rewrite); `GET` returns `{}` when missing.
+- `apps/network/src/games/rpg-engine.ts`: `gameCharacterToPersistent()` now provides defaults for the newly-required PersistentCharacter fields and merges them when `existing` is present.
+- `apps/network/src/games/rpg-engine.test.ts`: updated fixtures to include required persistent character fields.
+- `apps/network/src/agent-do.test.ts`: added coverage for `GET /character` empty default and `PUT` then `GET` roundtrip.
+
+Validation:
+- Ran `cd apps/network && pnpm vitest run` (passing).
