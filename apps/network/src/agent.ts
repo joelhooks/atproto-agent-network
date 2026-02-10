@@ -329,6 +329,27 @@ export class AgentDO extends DurableObject {
         }
 
         switch (leaf) {
+          case 'reset': {
+            // POST /agents/:name/reset — Force DO to clear transient state and re-arm alarm.
+            // Used after deploys to ensure DOs pick up new code paths.
+            if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            
+            // Clear transient state that might reference old code behavior
+            await this.ctx.storage.delete('lastPrompt')
+            await this.ctx.storage.delete('loopTranscript')
+            await this.ctx.storage.delete('consecutiveErrors')
+            
+            // Re-arm alarm to trigger fresh cycle with new code
+            const alarmTime = Date.now() + 5_000 // 5s from now
+            await this.ctx.storage.setAlarm(alarmTime)
+            
+            return Response.json({ 
+              ok: true, 
+              message: `Agent ${agentName} reset. Next alarm in 5s.`,
+              alarmAt: new Date(alarmTime).toISOString(),
+            })
+          }
+
           case 'analytics': {
             // Internal-only endpoint used by `/admin/analytics` in the network worker.
             // Guard it so it can't be reached via public `/agents/:name/...` forwarding.

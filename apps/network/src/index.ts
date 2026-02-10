@@ -800,6 +800,32 @@ export default {
                 }
               }
 
+              if (normalizedPathname === '/admin/deploy-finalize') {
+                if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+                
+                // After a deploy, reset all agent DOs so they pick up new code.
+                // This hits each DO's /reset endpoint which clears transient state and re-arms alarms.
+                const registry = await listAgentRegistryRows(env.DB)
+                const results: Array<{ name: string; ok: boolean; error?: string }> = []
+                
+                await Promise.all(
+                  registry.map(async (row) => {
+                    try {
+                      const agentId = env.AGENTS.idFromName(row.name)
+                      const agent = env.AGENTS.get(agentId)
+                      const resetUrl = new URL(`/agents/${row.name}/reset`, request.url)
+                      const resp = await agent.fetch(new Request(resetUrl.toString(), { method: 'POST' }))
+                      const data = await resp.json().catch(() => null) as any
+                      results.push({ name: row.name, ok: data?.ok ?? false })
+                    } catch (err) {
+                      results.push({ name: row.name, ok: false, error: String(err) })
+                    }
+                  })
+                )
+                
+                return Response.json({ ok: true, agents: results })
+              }
+
               return new Response('Admin not yet implemented', { status: 501 })
             },
             { route: 'network.admin', request }
