@@ -522,6 +522,7 @@ export const rpgEnvironment: AgentEnvironment = {
         if (!row) throw new Error(`Adventure ${gameId} not found`)
 
         const game = JSON.parse(row.state) as RpgGameState
+        game.party ??= []
 
         // Normalize turn state eagerly so dead players never softlock the game.
         // Persist normalization before any early returns (e.g. "Not your turn") so the game can recover.
