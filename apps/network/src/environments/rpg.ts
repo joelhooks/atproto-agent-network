@@ -921,6 +921,14 @@ export const rpgEnvironment: AgentEnvironment = {
                 params.message = coercedMessage
               } else if (setupCmd === 'setup_respond') {
                 params.message = coercedMessage
+              } else if (setupCmd === 'setup_finalize') {
+                // Auto-build backstories from dialogues
+                const dialogues = (setupPhase!.dialogues ?? {}) as Record<string, string[]>
+                const backstories: Record<string, string> = {}
+                for (const [agent, msgs] of Object.entries(dialogues)) {
+                  backstories[agent] = msgs.filter((_, i) => i % 2 === 1).join(' ') || 'A mysterious adventurer with a hidden past.'
+                }
+                params.backstories = backstories
               }
               // Fall through to setup handlers below with corrected command
             }
