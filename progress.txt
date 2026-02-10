@@ -442,3 +442,11 @@ Summary: Prior failure pattern detected: timeout/build_error/test_failure. Mitig
 Verified that during active game turns (intervalReason === 'my_turn', derived from environment context), AgentDO suppresses `think_aloud` and `recall` from LLM tool definitions by setting `agent.state.suppressedTools = ['think_aloud','recall']`, and emits o11y log `{ event_type: 'tools.gameplay_filter', suppressed: [...] }`. OpenRouter agent factory filters both tool definitions and tool execution against that suppression.
 
 Validation: `pnpm typecheck && pnpm test` passed. Ran required follow-ups: `swarm memory store ...` and `openclaw system event ...`.
+
+---
+[2026-02-10T00:28:28.628Z]
+Completed: Tool router — remap game↔rpg calls based on active environment
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
+Summary: Implemented tool-call misroute routing between `game` and `rpg` based on active environment, including o11y logging, and added/updated AgentDO tests. Validation (`pnpm typecheck && pnpm test`) passes. Stored hivemind learning and emitted the required openclaw system event. Commit created with `Closes #95`.
+
+Prior failure pattern detected: `test_failure`. Mitigation: route tool names early enough to avoid allowlist false negatives and to prevent environment auto-play from mis-classifying misnamed tool calls (which caused unintended injections and failing assertions).

@@ -511,14 +511,14 @@
       "title": "Tool router — remap game↔rpg calls based on active environment",
       "description": "GH Issue #95. When an agent calls the wrong tool (game in RPG context or rpg in Catan context), remap it to the correct tool instead of failing.\n\nFind where tool calls are executed: grep -n 'executeTool\\|handleToolCall\\|toolCall' apps/network/src/agent.ts | head -20\n\nIMPLEMENTATION: Before executing a tool call, check the agent's active environment:\n- If active env is RPG and tool called is 'game' → remap to 'rpg'  \n- If active env is Catan and tool called is 'rpg' → remap to 'game'\n- Log the remap as o11y event: { event_type: 'agent.tool.misroute', from: 'game', to: 'rpg', env: 'rpg' }\n\nThis should be a simple if/else before the tool dispatch switch.\n\nFiles: apps/network/src/agent.ts, apps/network/src/agent-do.test.ts\nValidation: pnpm typecheck && pnpm test\n\nCloses #95",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 49,
-    "lastIteration": "2026-02-10T00:08:27.766Z"
+    "totalIterations": 50,
+    "lastIteration": "2026-02-10T00:28:28.626Z"
   },
   "totalStories": 11
 }
