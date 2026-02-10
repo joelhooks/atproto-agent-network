@@ -98,16 +98,16 @@ ORDER BY 1, cycles DESC;
 
 ## Known Gotcha: API Token Permissions
 
-**The `atproto-agents::cloudflare_api_key` token CANNOT list pipelines via the CF REST API.** It returns an empty array, which looks like "no pipelines exist." This is a permissions issue, not reality.
+**The `atproto-agents::cloudflare_api_key` token HAS Worker Pipeline permissions (Edit scope), but the CF REST API (`/accounts/.../pipelines`) returns an empty array anyway.** This is a CF Pipelines v2 beta bug — the REST API doesn't list pipelines even with correct permissions.
 
-To verify pipelines exist, use wrangler with the same token:
+To verify pipelines exist, use wrangler CLI with the same token:
 
 ```bash
 export CLOUDFLARE_API_TOKEN=$(secrets lease atproto-agents::cloudflare_api_key --ttl 5m --client-id grimlock-query | jq -r '.data.value')
 npx wrangler pipelines list
 ```
 
-This works because wrangler uses a different API path internally.
+Wrangler uses `/pipelines/v1/pipelines` internally which DOES work. The generic `/pipelines` endpoint does not.
 
 ## Event Schema
 
