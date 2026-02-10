@@ -257,6 +257,23 @@ describe('rpg-engine', () => {
     }
   })
 
+  it('barrier rooms only require classes present in the party', () => {
+    const allowed = new Set<RpgClass>(['Warrior', 'Mage'])
+
+    for (let i = 0; i < 100; i += 1) {
+      const game = createGame({
+        id: `rpg_barrier_${i}`,
+        players: [createCharacter({ name: 'a', klass: 'Warrior' }), createCharacter({ name: 'b', klass: 'Mage' })],
+      })
+
+      const barriers = game.dungeon.filter((r) => r.type === 'barrier')
+      for (const room of barriers) {
+        if (room.type !== 'barrier') continue
+        expect(allowed.has(room.requiredClass)).toBe(true)
+      }
+    }
+  })
+
   it('rest rooms heal the party (capped at max)', () => {
     const dice = makeDiceFromD100([50])
     const a = createCharacter({ name: 'a', klass: 'Warrior' })

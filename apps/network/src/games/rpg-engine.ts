@@ -171,8 +171,22 @@ function computeTurnOrder(party: Character[]): Character[] {
   })
 }
 
-function defaultDungeon(): Room[] {
-  return generateDungeon(12, createDice())
+function isRpgClass(value: unknown): value is RpgClass {
+  return value === 'Warrior' || value === 'Scout' || value === 'Mage' || value === 'Healer'
+}
+
+function uniquePartyClasses(party: Character[]): RpgClass[] {
+  const seen = new Set<RpgClass>()
+  for (const member of party) {
+    if (!member) continue
+    if (!isRpgClass((member as any).klass)) continue
+    seen.add(member.klass)
+  }
+  return [...seen]
+}
+
+function defaultDungeon(party: Character[]): Room[] {
+  return generateDungeon(12, createDice(), { partyClasses: uniquePartyClasses(party) })
 }
 
 function safeInt(value: unknown, fallback: number): number {
@@ -214,12 +228,22 @@ function buildBossRoom(dice: Dice): Room {
   return { type: 'boss', description: 'A hulking presence fills the chamber.', enemies: [enemy] }
 }
 
-export function generateDungeon(depth: number = 12, dice: Dice): Room[] {
+export function generateDungeon(
+  depth: number = 12,
+  dice: Dice,
+  options?: { partyClasses?: RpgClass[] }
+): Room[] {
   const rooms = safeInt(depth, 12)
   if (rooms < 6) throw new Error('generateDungeon requires depth >= 6')
 
   const lastIndex = rooms - 1
-  const classes: RpgClass[] = shuffle(['Warrior', 'Scout', 'Mage', 'Healer'], dice)
+  const partyClasses = Array.isArray(options?.partyClasses)
+    ? options!.partyClasses.filter(isRpgClass)
+    : ([] as RpgClass[])
+
+  const allClasses: RpgClass[] = ['Warrior', 'Scout', 'Mage', 'Healer']
+  const uniqueClasses = [...new Set(partyClasses)]
+  const classes: RpgClass[] = shuffle(uniqueClasses.length > 0 ? uniqueClasses : allClasses, dice)
 
   const barrierIndices = new Set<number>()
   for (let i = 1; i <= 4; i += 1) {
@@ -236,7 +260,7 @@ export function generateDungeon(depth: number = 12, dice: Dice): Room[] {
   const orderedBarrierIndices = [...barrierIndices].sort((a, b) => a - b)
   const requiredClassByIndex = new Map<number, RpgClass>()
   for (let i = 0; i < orderedBarrierIndices.length; i += 1) {
-    requiredClassByIndex.set(orderedBarrierIndices[i]!, classes[i]!)
+    requiredClassByIndex.set(orderedBarrierIndices[i]!, classes[i % classes.length]!)
   }
 
   const fillerCycle = ['rest', 'combat', 'trap', 'treasure', 'puzzle'] as const
@@ -299,7 +323,7 @@ export function createGame(input: {
 }): RpgGameState {
   const party = input.players.map(toCharacter)
   const turnOrder = computeTurnOrder(party)
-  const dungeon = input.dungeon ?? defaultDungeon()
+  const dungeon = input.dungeon ?? defaultDungeon(party)
 
   const initialRoom = dungeon[0]
   const initialMode: RpgMode =
