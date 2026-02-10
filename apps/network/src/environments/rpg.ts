@@ -340,11 +340,19 @@ async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow 
   if (!agentName) return null
 
   try {
-    const row = await ctx.db
+    // Check as player first
+    const asPlayer = await ctx.db
       .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
       .first<GameRow>()
-    return row ?? null
+    if (asPlayer) return asPlayer
+
+    // Check as host/DM
+    const asHost = await ctx.db
+      .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND host_agent = ? LIMIT 1")
+      .bind(agentName)
+      .first<GameRow>()
+    return asHost ?? null
   } catch {
     return null
   }
