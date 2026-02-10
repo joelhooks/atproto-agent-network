@@ -58,5 +58,7 @@ enabled = true
 
 
 
-# O11Y: writes directly to R2 BLOBS bucket under o11y/ prefix
-# (CF Pipelines v2 requires Data Catalog + Iceberg — overkill for now)
+# O11Y: events flow through CF Pipelines → R2 Data Catalog (Iceberg)
+[[pipelines]]
+binding = "O11Y_PIPELINE"
+pipeline = "agentnetwork"
