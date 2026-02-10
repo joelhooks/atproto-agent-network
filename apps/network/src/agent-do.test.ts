@@ -1512,7 +1512,9 @@ describe('AgentDO', () => {
     const get2 = await agent2.fetch(new Request('https://example/agents/alice/config'))
     expect(get2.status).toBe(200)
     const config3 = (await get2.json()) as Record<string, unknown>
-    expect(config3).toEqual(config2)
+    // GET /config now includes profile from DO storage (empty by default)
+    const { profile: _p, ...config3WithoutProfile } = config3
+    expect(config3WithoutProfile).toEqual(config2)
   })
 
   it('enforces enabledTools for OpenRouter tool definitions (strict tool exposure)', async () => {

@@ -415,6 +415,11 @@ export class AgentDO extends DurableObject {
               () => this.handleConfig(request),
               { route: 'AgentDO.config', request }
             )
+          case 'profile':
+            return withErrorHandling(
+              () => this.handleProfile(request),
+              { route: 'AgentDO.profile', request }
+            )
           case 'observations':
             return withErrorHandling(
               () => this.handleGetObservations(request),
@@ -1855,7 +1860,8 @@ export class AgentDO extends DurableObject {
     const config = await this.loadOrCreateConfig(agentName)
 
     if (request.method === 'GET') {
-      return Response.json(config)
+      const profile = await this.ctx.storage.get('profile')
+      return Response.json({ ...config, profile: profile ?? {} })
     }
 
     if (request.method !== 'PATCH') {
@@ -1912,6 +1918,27 @@ export class AgentDO extends DurableObject {
     this.config = pruned
 
     return Response.json(pruned)
+  }
+
+  /**
+   * GET/PUT /agents/:name/profile
+   * Public profile for dashboard display.
+   */
+  private async handleProfile(request: Request): Promise<Response> {
+    if (request.method === 'GET') {
+      const profile = await this.ctx.storage.get('profile')
+      return Response.json(profile ?? {})
+    }
+    if (request.method === 'PUT') {
+      const body = await request.json().catch(() => null)
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+      }
+      const profile = { ...(body as Record<string, unknown>), updatedAt: Date.now() }
+      await this.ctx.storage.put('profile', profile)
+      return Response.json({ ok: true, profile })
+    }
+    return new Response('Method not allowed', { status: 405 })
   }
 
   /**
@@ -3019,6 +3046,34 @@ export class AgentDO extends DurableObject {
         if (!isGrimlock(agentName)) return []
         const gmCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent, webhookUrl: this.config?.webhookUrl }
         return [createGmTool(gmCtx as any)]
+      })(),
+      // Profile tool: available to ALL agents for self-reporting status to dashboard
+      ...(() => {
+        const storage = this.ctx.storage
+        return [{
+          name: 'update_profile',
+          description: 'Update your public profile visible on the dashboard. Set your current status, what you are focused on, and your mood.',
+          parameters: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', description: 'Short status line, e.g. "playing RPG", "idle"' },
+              currentFocus: { type: 'string', description: 'What you are working on right now' },
+              mood: { type: 'string', description: 'Your current mood or disposition' },
+            },
+          },
+          execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+            const args: Record<string, unknown> =
+              typeof toolCallIdOrParams === 'string'
+                ? ((maybeParams && typeof maybeParams === 'object' ? maybeParams : {}) as Record<string, unknown>)
+                : ((toolCallIdOrParams && typeof toolCallIdOrParams === 'object' ? toolCallIdOrParams : {}) as Record<string, unknown>)
+            const profile: Record<string, unknown> = { updatedAt: Date.now() }
+            if (typeof args.status === 'string') profile.status = args.status.slice(0, 100)
+            if (typeof args.currentFocus === 'string') profile.currentFocus = args.currentFocus.slice(0, 200)
+            if (typeof args.mood === 'string') profile.mood = args.mood.slice(0, 50)
+            await storage.put('profile', profile)
+            return { ok: true, profile }
+          },
+        } as PiAgentTool]
       })(),
     ]
   }

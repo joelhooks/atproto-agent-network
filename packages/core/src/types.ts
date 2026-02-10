@@ -27,6 +27,14 @@ export interface AgentGoal {
   completedAt?: number
 }
 
+export interface AgentProfile {
+  status?: string        // "playing RPG", "idle", "thinking"
+  currentFocus?: string  // "Exploring dungeon room 3"
+  mood?: string          // "excited", "cautious"
+  avatar?: string        // emoji or URL
+  updatedAt?: number     // epoch ms
+}
+
 export interface AgentConfig {
   name: string
   personality: string // System prompt
