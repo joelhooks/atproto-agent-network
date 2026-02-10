@@ -1350,31 +1350,30 @@ export class AgentDO extends DurableObject {
     const suppressGameplayTools = this.intervalReason === 'my_turn'
     const isSetupPhase = prompt.includes('SETUP PHASE')
 
-    // Phase-based tool restriction: if any environment has an active phase machine,
-    // compute allowed tools as a whitelist. All other tools are suppressed.
+    // Phase-based tool restriction: ALWAYS check environments for phase tools.
+    // If any environment has an active phase machine, compute allowed tools as a whitelist.
+    // All other tools are structurally removed — not hinted, not suppressed, GONE.
     let phaseWhitelist: string[] | null = null
-    if (isSetupPhase) {
-      try {
-        const { getAllEnvironments } = await import('./environments/registry')
-        const agentName = this.config?.name ?? ''
-        const envCtx = {
-          agentName,
-          agentDid: this.did,
-          db: this.agentEnv.DB,
-          broadcast: async () => {},
-        }
-        for (const env of getAllEnvironments()) {
-          if (typeof env.getPhaseTools === 'function') {
-            const tools = await env.getPhaseTools(agentName, envCtx as any)
-            if (tools !== null) {
-              phaseWhitelist = tools
-              break
-            }
+    try {
+      const { getAllEnvironments } = await import('./environments/registry')
+      const agentName = this.config?.name ?? ''
+      const envCtx = {
+        agentName,
+        agentDid: this.did,
+        db: this.agentEnv.DB,
+        broadcast: async () => {},
+      }
+      for (const env of getAllEnvironments()) {
+        if (typeof env.getPhaseTools === 'function') {
+          const tools = await env.getPhaseTools(agentName, envCtx as any)
+          if (tools !== null) {
+            phaseWhitelist = tools
+            break
           }
         }
-      } catch {
-        // non-fatal
       }
+    } catch {
+      // non-fatal
     }
 
     const suppressed = suppressGameplayTools
