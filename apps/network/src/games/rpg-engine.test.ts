@@ -15,6 +15,9 @@ import {
   taunt,
   aoeSpell,
   disarmTrap,
+  enemyTakeTurn,
+  selectTarget,
+  attackEnemy,
   type RpgClass,
 } from './rpg-engine'
 
@@ -794,6 +797,191 @@ describe('rpg-engine', () => {
       const result = disarmTrap(game, 'scout', dice)
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.reason).toBe('need_party')
+    })
+  })
+
+  describe('enemy tactics', () => {
+    it('goblins target the Mage when present (hit-and-run squishy focus)', () => {
+      const warrior = createCharacter({ name: 'w', klass: 'Warrior' })
+      const healer = createCharacter({ name: 'h', klass: 'Healer' })
+      const mage = createCharacter({ name: 'm', klass: 'Mage' })
+
+      // Make the healer the lowest HP to prove goblins still prefer a Mage.
+      healer.hp = 1
+      mage.hp = 10
+
+      const game = createGame({
+        id: 'rpg_goblin_target_mage',
+        players: [warrior, healer, mage],
+        dungeon: [{ type: 'combat', description: 'fight', enemies: [{ name: 'Goblin', hp: 10, DEX: 40, attack: 30, dodge: 20 }] }],
+      })
+
+      const enemy = { name: 'Goblin', hp: 10, maxHp: 10, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'goblin' as const } }
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const target = selectTarget({ enemy, party: game.party, dice })
+      expect(target?.name).toBe('m')
+    })
+
+    it('goblins target the lowest-HP living character when no Mage is present', () => {
+      const warrior = createCharacter({ name: 'w', klass: 'Warrior' })
+      const healer = createCharacter({ name: 'h', klass: 'Healer' })
+      warrior.hp = 8
+      healer.hp = 3
+
+      const enemy = { name: 'Goblin', hp: 10, maxHp: 10, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'goblin' as const } }
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const target = selectTarget({ enemy, party: [warrior, healer], dice })
+      expect(target?.name).toBe('h')
+    })
+
+    it('goblins flee when below 30% HP', () => {
+      const warrior = createCharacter({ name: 'w', klass: 'Warrior' })
+      const healer = createCharacter({ name: 'h', klass: 'Healer' })
+      const game = createGame({
+        id: 'rpg_goblin_flee',
+        players: [warrior, healer],
+        dungeon: [
+          {
+            type: 'combat',
+            description: 'fight',
+            enemies: [
+              { name: 'Goblin', hp: 2, maxHp: 10, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'goblin' } },
+            ],
+          },
+        ],
+      })
+
+      const dice = createTestDice({ d100: () => 50, d: () => 1 })
+      const result = enemyTakeTurn(game, { dice })
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.action).toBe('flee')
+        expect(game.combat!.enemies[0]!.hp).toBe(0)
+      }
+    })
+
+    it('orcs use power attack (+10 damage, -10 hit chance)', () => {
+      const warrior = createCharacter({ name: 'w', klass: 'Warrior' })
+      const mage = createCharacter({ name: 'm', klass: 'Mage' })
+      warrior.hp = 30
+      mage.hp = 30
+
+      const game = createGame({
+        id: 'rpg_orc_power',
+        players: [warrior, mage],
+        dungeon: [
+          {
+            type: 'combat',
+            description: 'fight',
+            enemies: [{ name: 'Orc', hp: 20, maxHp: 20, DEX: 45, attack: 40, dodge: 25, tactics: { kind: 'orc' } }],
+          },
+        ],
+      })
+
+      // Enemy attack roll 20 succeeds; defender dodge roll 100 fails; damage roll 2.
+      // Power attack adds +10 damage.
+      const dice = makeDice({ d100Rolls: [20, 100], dRolls: [2] })
+      const hpBefore = game.party.find((p) => p.name === 'w')!.hp
+      enemyTakeTurn(game, { dice })
+      const hpAfter = game.party.find((p) => p.name === 'w')!.hp
+      const expectedDamage = Math.floor(2 * soloMultiplier(game.party.length)) + 10
+      expect(hpAfter).toBe(hpBefore - expectedDamage)
+
+      // Prove the -10 hit chance matters: roll 25 would succeed on skill 30, but fails at 20.
+      const game2 = createGame({
+        id: 'rpg_orc_power_miss',
+        players: [createCharacter({ name: 'w', klass: 'Warrior' }), createCharacter({ name: 'm', klass: 'Mage' })],
+        dungeon: [
+          {
+            type: 'combat',
+            description: 'fight',
+            enemies: [{ name: 'Orc', hp: 20, maxHp: 20, DEX: 45, attack: 30, dodge: 25, tactics: { kind: 'orc' } }],
+          },
+        ],
+      })
+      const dice2 = makeDice({ d100Rolls: [25, 100], dRolls: [6] })
+      const before2 = game2.party.find((p) => p.name === 'w')!.hp
+      enemyTakeTurn(game2, { dice: dice2 })
+      const after2 = game2.party.find((p) => p.name === 'w')!.hp
+      expect(after2).toBe(before2)
+    })
+
+    it('skeletons target random living party members', () => {
+      const a = createCharacter({ name: 'a', klass: 'Warrior' })
+      const b = createCharacter({ name: 'b', klass: 'Scout' })
+      const c = createCharacter({ name: 'c', klass: 'Healer' })
+      const enemy = { name: 'Skeleton', hp: 10, maxHp: 10, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'skeleton' as const } }
+
+      // rollDie(d, 3) => 2 => index 1 => 'b'
+      const dice = createTestDice({ d100: () => 50, d: () => 2 })
+      const target = selectTarget({ enemy, party: [a, b, c], dice })
+      expect(target?.name).toBe('b')
+    })
+
+    it('skeletons are resistant to piercing and vulnerable to blunt when attacked', () => {
+      const scout = createCharacter({ name: 'scout', klass: 'Scout' })
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+      const game = createGame({
+        id: 'rpg_skeleton_resist',
+        players: [scout, warrior],
+        dungeon: [
+          {
+            type: 'combat',
+            description: 'fight',
+            enemies: [{ name: 'Skeleton', hp: 30, maxHp: 30, DEX: 40, attack: 30, dodge: 1, tactics: { kind: 'skeleton' } }],
+          },
+        ],
+      })
+
+      // Two attacks. Always hit (dodge fails). Base dmg for both is d6(6) + STR bonus (scout 1, warrior 3).
+      const dice = makeDice({ d100Rolls: [10, 100, 10, 100], dRolls: [6, 6] })
+      const e = game.combat!.enemies[0]!
+
+      const beforePierce = e.hp
+      attackEnemy(game, { attacker: 'scout', enemyIndex: 0, dice })
+      const afterPierce = e.hp
+      expect(afterPierce).toBe(beforePierce - 3) // floor((6+1)*0.5)=3
+
+      const beforeBlunt = e.hp
+      attackEnemy(game, { attacker: 'warrior', enemyIndex: 0, dice })
+      const afterBlunt = e.hp
+      expect(afterBlunt).toBe(beforeBlunt - 13) // floor((6+3)*1.5)=13
+    })
+
+    it('bosses have 2 phases: healer focus above 50% HP, enraged AoE below 50% HP', () => {
+      const healer = createCharacter({ name: 'healer', klass: 'Healer' })
+      const mage = createCharacter({ name: 'mage', klass: 'Mage' })
+      const warrior = createCharacter({ name: 'warrior', klass: 'Warrior' })
+
+      const game = createGame({
+        id: 'rpg_boss_phases',
+        players: [healer, mage, warrior],
+        dungeon: [
+          {
+            type: 'boss',
+            description: 'fight',
+            enemies: [{ name: 'Dungeon Boss', hp: 20, maxHp: 20, DEX: 55, attack: 55, dodge: 35, tactics: { kind: 'boss', specialEveryTurns: 3 } }],
+          },
+        ],
+      })
+
+      const boss = game.combat!.enemies[0]!
+      const dice = createTestDice({ d100: () => 50, d: () => 6 })
+      const target = selectTarget({ enemy: boss, party: game.party, dice })
+      expect(target?.name).toBe('healer')
+
+      // Bloodied: phase 2 (AoE). AoE is half of enraged damage.
+      boss.hp = 9 // < 50% of 20
+      const hpBefore = new Map(game.party.map((p) => [p.name, p.hp]))
+      const dice2 = createTestDice({ d100: () => 50, d: () => 6 })
+      const turn = enemyTakeTurn(game, { dice: dice2 })
+      expect(turn.ok).toBe(true)
+      if (turn.ok) {
+        expect(turn.targets.sort()).toEqual(['healer', 'mage', 'warrior'].sort())
+        for (const member of game.party) {
+          expect(member.hp).toBe((hpBefore.get(member.name) ?? 0) - 3) // floor(floor(6*1.2)/2)=3
+        }
+      }
     })
   })
 })

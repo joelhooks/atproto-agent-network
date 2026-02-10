@@ -623,7 +623,7 @@
       "title": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
       "description": "Add enemy AI tactics to combat in rpg-engine.ts. Each enemy type should behave differently:\n\n1. **Goblins**: Hit and run — attack squishy targets (lowest HP or Mage class), flee at <30% HP\n2. **Orcs**: Aggressive — power attack (+10 damage, -10 hit chance), fight to the death\n3. **Skeleton**: Resistant to piercing, vulnerable to blunt. Target random.\n4. **Boss**: Multi-phase behavior:\n   - Phase 1 (>50% HP): Target healer first, use special ability every 3 turns\n   - Phase 2 (<50% HP): Enrage (+20% damage), AoE attack hits all party members for half damage\n\nAdd a `tactics` field to enemy definitions and a `selectTarget` function that uses tactics to pick targets.\n\nFiles: apps/network/src/games/rpg-engine.ts, apps/network/src/games/rpg-engine.test.ts\n\nAcceptance: Goblins target squishy characters. Orcs power attack. Boss has 2 phases. Tests verify target selection and phase transitions.",
       "priority": 63,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -637,8 +637,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 61,
-    "lastIteration": "2026-02-10T05:49:19.840Z"
+    "totalIterations": 62,
+    "lastIteration": "2026-02-10T06:03:30.723Z"
   },
   "totalStories": 11
 }

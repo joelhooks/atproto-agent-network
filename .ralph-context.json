@@ -991,17 +991,30 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n ✓ |network| src/enviro"
+    },
+    {
+      "id": "story-mlg5r7ew",
+      "title": "Phase 4b-2: BRP-informed combat — opposed rolls, crits, fumbles",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` already had an opposed-roll scaffold (attack vs dodge with margin compare) but damage/crit/fumble/armor were missing. Adding optional `Character.armor` (default `0`) is backwards compatible with persisted games; damage can safely treat missing armor as `0`. For deterministic tests, a local `makeDice({ d100Rolls, dRolls })` helper in `apps/network/src/games/rpg-engine.test.ts` is simpler than mapping rng outputs and precisely controls d100 order vs d6 damage rolls.\nGotcha: The RPG environment’s enemy combat path is still inlined in `apps/network/src/environments/rpg.ts` (it does its own attack vs enemy logic and will not automatically pick up changes made to `apps/network/src/games/rpg-engine.ts::attack`). If you need BRP crit/fumble behavior against enemies, you must update that inlined section or refactor it to reuse shared engine logic. Also, when validating with `... | tail -30`, always run with `set -o pipefail` or failures can be masked by the pipe.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the core RPG rules and the `attack()` function updated for BRP-style combat (crit/fumble/armor). `apps/network/src/games/rpg-engine.test.ts` contains unit tests and now includes deterministic dice helpers plus coverage for opposed-roll ties, both-fail misses, critical double damage, fumble self-harm, and armor reduction."
+    },
+    {
+      "id": "story-mlg5rfww",
+      "title": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing ph"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbhwfc",
-      "storyTitle": "Fix autoPlay — filter by game type and skip finished/abandoned games",
-      "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
-      "toolNames": [],
-      "iterationNumber": 1
-    },
     {
       "storyId": "story-mlfbhwfc",
       "storyTitle": "Fix autoPlay — filter by game type and skip finished/abandoned games",
@@ -1252,6 +1265,19 @@
         "nl -ba"
       ],
       "iterationNumber": 6
+    },
+    {
+      "storyId": "story-mlg5rfww",
+      "storyTitle": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "category": "unknown",
+      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > allows rolling dice and ending turn 1ms\n ✓ |network| src/games/catan.test.ts > Age",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n",
+        "zsh -lc"
+      ],
+      "iterationNumber": 3
     }
   ]
 }
