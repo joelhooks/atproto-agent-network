@@ -737,16 +737,17 @@ export const rpgEnvironment: AgentEnvironment = {
             }
           }
 
+          const KNOWN_AGENTS = ['slag', 'snarl', 'swoop']
           const players = Array.isArray(params.players)
             ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
             : []
           // Grimlock is the DM, never a player — strip from player list and ensure we have real players
-          const filteredPlayers = players.filter((p) => p !== 'grimlock')
-          if (filteredPlayers.length < players.length && filteredPlayers.length === 0) {
-            // Grimlock tried to create a solo game — use the default player list instead
-            filteredPlayers.push('slag', 'snarl', 'swoop')
-          }
-          const finalPlayers = filteredPlayers.length > 0 ? filteredPlayers : players
+          // Also strip any non-agent names (model sometimes passes fantasy character names)
+          const filteredPlayers = players
+            .map((p) => p.toLowerCase().trim())
+            .filter((p) => p !== 'grimlock' && KNOWN_AGENTS.includes(p))
+          // If no valid agents found, use the default player list
+          const finalPlayers = filteredPlayers.length > 0 ? filteredPlayers : KNOWN_AGENTS
           if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
 
           // Prefer joining an open adventure when a solo new_game is requested.
@@ -768,11 +769,15 @@ export const rpgEnvironment: AgentEnvironment = {
           const gameId = `rpg_${generateTid()}`
           const game = createGame({ id: gameId, players: finalPlayers })
 
-          // Backstory setup phase: DISABLED — kimi-k2.5 can't reliably use setup_narrate/setup_respond
-          // even with mechanical tool suppression. Agents jump straight to combat. Re-enable once
-          // model compliance improves or we switch to a more instruction-following model for DM.
-          // For now, start directly in playing phase.
-          game.phase = 'playing' as any
+          // Backstory setup phase: DM interviews each player before the adventure begins
+          game.phase = 'setup'
+          game.setupPhase = {
+            currentPlayerIndex: 0,
+            exchangeCount: 0,
+            maxExchanges: 2,
+            dialogues: {},
+            complete: false,
+          }
 
           // Ensure type column exists (migration from catan-only schema)
           await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
@@ -1378,17 +1383,26 @@ export const rpgEnvironment: AgentEnvironment = {
 
         if (agentName.toLowerCase() === 'grimlock') {
           return [
-            `🎮🎮🎮 SETUP PHASE: You are interviewing ${currentAgent || 'the next player'} about their character.`,
-            'Ask about their origin, motivation, and appearance. Keep it brief (2-3 exchanges per player).',
-            'You MUST use the rpg tool: command:"setup_narrate" with target:<agent> and message:<question>. After all players respond, use command:"setup_finalize" with backstories for each agent.',
-            'DO NOT use the "message" tool for this — ONLY use the "rpg" tool with setup commands.',
+            `🎮🎮🎮 SETUP PHASE — YOUR ONLY ACTION:`,
+            `Call the "rpg" tool with these EXACT parameters:`,
+            `  { "command": "setup_narrate", "target": "${currentAgent}", "message": "<your question about their backstory>" }`,
+            ``,
+            `You are interviewing ${currentAgent} about their character. Ask about their origin, motivation, or appearance.`,
+            `After all players have responded, call: { "command": "setup_finalize", "backstories": { "<agent>": "<backstory>" } }`,
+            ``,
+            `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
           ]
         }
 
         if (agentName === currentAgent) {
           return [
-            "🎮🎮🎮 The DM is asking about your character's backstory.",
-            'You MUST use the rpg tool with command:"setup_respond" and message:"<your response>". Do NOT use "message" or "remember" — ONLY the "rpg" tool delivers your answer to the DM.',
+            `🎮🎮🎮 SETUP PHASE — YOUR ONLY ACTION:`,
+            `Call the "rpg" tool with these EXACT parameters:`,
+            `  { "command": "setup_respond", "message": "<your backstory response>" }`,
+            ``,
+            `The DM is asking about your character's backstory. Respond in character.`,
+            ``,
+            `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
           ]
         }
 
