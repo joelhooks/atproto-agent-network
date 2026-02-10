@@ -1384,14 +1384,14 @@ export const rpgEnvironment: AgentEnvironment = {
           return [
             `SETUP PHASE: You are interviewing ${currentAgent || 'the next player'} about their character.`,
             'Ask about their origin, motivation, and appearance. Keep it brief (2-3 exchanges per player).',
-            'Use setup_narrate to ask questions, then setup_finalize when all players have backstories.',
+            'You MUST use the rpg tool: command:"setup_narrate" with target:<agent> and message:<question>. After all players respond, use command:"setup_finalize" with backstories for each agent.',
           ]
         }
 
         if (agentName === currentAgent) {
           return [
             "The DM is asking about your character's backstory.",
-            'Respond in character using setup_respond. Be creative — this defines who you are.',
+            'You MUST use the rpg tool with command:"setup_respond" and message:"<your response>". Do NOT just think or remember — call the tool so the DM receives your answer.',
           ]
         }
 
