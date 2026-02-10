@@ -1618,7 +1618,14 @@ export const rpgEnvironment: AgentEnvironment = {
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
         lines.push('')
-        lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"}) or rpg({"command":"status","gameId":"${row.id}"})`)
+        if (game.mode === 'combat') {
+          const enemies = game.combat?.enemies?.filter(e => e.hp > 0).map(e => `${e.name} (HP:${e.hp}/${e.maxHp})`).join(', ') ?? 'unknown'
+          lines.push(`⚔️ COMBAT! Enemies: ${enemies}`)
+          lines.push(`Your action: rpg({"command":"attack","gameId":"${row.id}"})`)
+          lines.push(`DO NOT use explore during combat. You must ATTACK.`)
+        } else {
+          lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
+        }
         lines.push(`DO NOT create a new game.`)
       } else {
         lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)

@@ -526,18 +526,26 @@ function withThemeDescription(theme: DungeonTheme, description: string): string 
 
 function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: DungeonTheme }): Room {
   const { tier, dice, theme } = input
-  const hp = tier === 'early' ? 5 + rollDie(dice, 3) : 9 + rollDie(dice, 5)
 
-  const enemy: Enemy =
-    tier === 'early'
-      ? { name: 'Goblin', hp, maxHp: hp, DEX: 40, attack: 30, dodge: 20, tactics: { kind: 'goblin' } }
-      : { name: 'Orc', hp, maxHp: hp, DEX: 45, attack: 40, dodge: 25, tactics: { kind: 'orc' } }
-
-  return {
-    type: 'combat',
-    description: withThemeDescription(theme, `A ${enemy.name.toLowerCase()} stalks the shadows.`),
-    enemies: [enemy],
+  // Multiple enemies per room — action economy matters!
+  // From "The Monsters Know": never pit a solo creature against a party.
+  if (tier === 'early') {
+    const count = 2 + (rollDie(dice, 2) === 2 ? 1 : 0) // 2-3 goblins
+    const enemies: Enemy[] = Array.from({ length: count }, (_, i) => {
+      const hp = 5 + rollDie(dice, 3)
+      return { name: i === 0 ? 'Goblin' : `Goblin ${i + 1}`, hp, maxHp: hp, DEX: 40, attack: 35, dodge: 25, tactics: { kind: 'goblin' as const } }
+    })
+    const desc = count === 2 ? 'A pair of goblins lurk in ambush.' : 'A pack of goblins blocks the passage, weapons drawn.'
+    return { type: 'combat', description: withThemeDescription(theme, desc), enemies }
   }
+
+  const count = 1 + (rollDie(dice, 3) >= 2 ? 1 : 0) // 1-2 orcs
+  const enemies: Enemy[] = Array.from({ length: count }, (_, i) => {
+    const hp = 10 + rollDie(dice, 6)
+    return { name: i === 0 ? 'Orc' : `Orc ${i + 1}`, hp, maxHp: hp, DEX: 45, attack: 45, dodge: 25, tactics: { kind: 'orc' as const } }
+  })
+  const desc = count === 1 ? 'A hulking orc blocks the way, battle-scarred and furious.' : 'Two orcs stand ready, aggression burning in their eyes.'
+  return { type: 'combat', description: withThemeDescription(theme, desc), enemies }
 }
 
 function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
