@@ -32,6 +32,8 @@ import {
 import type { PersistentCharacter } from '@atproto-agent/core'
 
 import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
+import type { PhaseMachine } from './phase-machine'
+import { createRpgSetupPhaseMachine, serializePhaseMachine, deserializePhaseMachine } from './phase-machine'
 import {
   DM_SKILL,
   DM_SKILL_BRIEF,
@@ -771,6 +773,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // Backstory setup phase: DM interviews each player before the adventure begins
           game.phase = 'setup'
+          const setupMachine = createRpgSetupPhaseMachine(finalPlayers, 2, 'grimlock')
           game.setupPhase = {
             currentPlayerIndex: 0,
             exchangeCount: 0,
@@ -778,6 +781,7 @@ export const rpgEnvironment: AgentEnvironment = {
             dialogues: {},
             complete: false,
           }
+          ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
 
           // Ensure type column exists (migration from catan-only schema)
           await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
@@ -920,6 +924,14 @@ export const rpgEnvironment: AgentEnvironment = {
             ensureDialoguesKey(target).push(message)
             game.currentPlayer = target
 
+            // Advance phase machine
+            const pmData = (game as any).phaseMachine
+            if (pmData) {
+              const pm = deserializePhaseMachine(pmData)
+              pm.advance({ command: 'setup_narrate', target })
+              ;(game as any).phaseMachine = serializePhaseMachine(pm)
+            }
+
             await db
               .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
@@ -953,6 +965,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
             game.currentPlayer = 'grimlock'
 
+            // Advance phase machine
+            const pmData = (game as any).phaseMachine
+            if (pmData) {
+              const pm = deserializePhaseMachine(pmData)
+              pm.advance({ command: 'setup_respond', agent: agentName })
+              ;(game as any).phaseMachine = serializePhaseMachine(pm)
+            }
+
             await db
               .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
@@ -977,6 +997,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           sp.complete = true
           delete (game as any).setupPhase
+          delete (game as any).phaseMachine
 
           // Start adventure at room 0 with correct mode/combat and first player turn.
           game.roomIndex = 0
@@ -1376,6 +1397,24 @@ export const rpgEnvironment: AgentEnvironment = {
       const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
 
       if (setupPhase && !setupPhase.complete) {
+        // Use phase machine for context if available
+        const pmData = (game as any).phaseMachine
+        if (pmData) {
+          const pm = deserializePhaseMachine(pmData)
+          const phase = pm.getCurrentPhase()
+          if (phase && pm.isActiveAgent(agentName)) {
+            return [
+              `🎮🎮🎮 ${phase.prompt}`,
+              ``,
+              `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
+            ]
+          }
+          if (phase && !pm.isActiveAgent(agentName)) {
+            return [`Waiting for ${phase.activeAgent} to act in phase: ${phase.name}.`]
+          }
+        }
+
+        // Fallback for games without phase machine (backward compat)
         const party = Array.isArray(game.party) ? game.party : []
         const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
         const current = party[idx]
@@ -1566,41 +1605,33 @@ export const rpgEnvironment: AgentEnvironment = {
     })
   },
 
-  // During setup, auto-play should always inject setup actions even if the model
-  // already called other rpg commands (which get rejected during setup anyway).
-  // This override is checked by the agent loop before isActionTaken.
-  async getSetupOverrideActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
-    const row = await findActiveGameWhereItsMyTurn(ctx)
-    if (!row) {
-      const active = await findActiveGameForAgent(ctx)
-      if (!active) return []
-      try {
-        const state = JSON.parse(active.state) as RpgGameState
-        const sp = (state as any).setupPhase as RpgGameState['setupPhase'] | undefined
-        if (!sp || sp.complete) return []
-        const party = Array.isArray(state.party) ? state.party : []
-        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(sp.currentPlayerIndex ?? 0)))
-        const current = party[idx]
-        const currentAgent = current ? (current.agent ?? current.name) : ''
-        if (ctx.agentName.trim() === 'grimlock') {
-          const dialogues = (sp.dialogues ?? {}) as Record<string, string[]>
-          const existing = Array.isArray(dialogues[currentAgent]) ? dialogues[currentAgent] : []
-          if (existing.length === 0) {
-            return [{
-              name: 'rpg',
-              arguments: {
-                command: 'setup_narrate',
-                gameId: active.id,
-                target: currentAgent,
-                message: 'Tell me about your character. Where did you come from, and what do you look like?',
-              },
-            }]
-          }
-        }
-      } catch { /* */ }
-      return []
+  // Phase machine: return current phase machine from active game state
+  async getPhaseMachine(ctx: EnvironmentContext): Promise<PhaseMachine | null> {
+    const row = (await findActiveGameWhereItsMyTurn(ctx)) ?? (await findActiveGameForAgent(ctx))
+    if (!row) return null
+    try {
+      const game = JSON.parse(row.state) as RpgGameState
+      const pmData = (game as any).phaseMachine
+      if (!pmData) return null
+      return deserializePhaseMachine(pmData)
+    } catch {
+      return null
     }
-    return []
+  },
+
+  // Phase tools: return whitelist of allowed tools for agent in current phase
+  async getPhaseTools(agentName: string, ctx: EnvironmentContext): Promise<string[] | null> {
+    const row = (await findActiveGameWhereItsMyTurn(ctx)) ?? (await findActiveGameForAgent(ctx))
+    if (!row) return null
+    try {
+      const game = JSON.parse(row.state) as RpgGameState
+      const pmData = (game as any).phaseMachine
+      if (!pmData) return null
+      const pm = deserializePhaseMachine(pmData)
+      return pm.getAvailableTools(agentName)
+    } catch {
+      return null
+    }
   },
 
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
