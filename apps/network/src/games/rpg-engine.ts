@@ -38,6 +38,8 @@ export type Skills = {
 
 export type Character = {
   name: string
+  /** The agent controlling this character (e.g. 'slag'). When set, turn matching uses this instead of name. */
+  agent?: string
   klass: RpgClass
   stats: Stats
   skills: Skills
@@ -340,7 +342,7 @@ function deriveMaxMp(stats: Stats): number {
   return Math.max(0, Math.floor(stats.INT / 10) + Math.floor(stats.WIS / 10))
 }
 
-export function createCharacter(input: { name: string; klass: RpgClass }): Character {
+export function createCharacter(input: { name: string; klass: RpgClass; agent?: string }): Character {
   const stats = classStats(input.klass)
   const skills = deriveSkills(stats)
   const maxHp = deriveMaxHp(stats)
@@ -348,6 +350,7 @@ export function createCharacter(input: { name: string; klass: RpgClass }): Chara
 
   return {
     name: input.name,
+    ...(input.agent ? { agent: input.agent } : {}),
     klass: input.klass,
     stats,
     skills,
@@ -783,10 +786,33 @@ export function generateDungeon(
   return { theme, rooms: dungeon }
 }
 
+/** Fantasy name pools for character generation */
+const FANTASY_FIRST_NAMES: Record<RpgClass, string[]> = {
+  Warrior: ['Kaelen', 'Bjorn', 'Theron', 'Grak', 'Voss', 'Draven', 'Kord', 'Ragnar'],
+  Scout: ['Mira', 'Shade', 'Wren', 'Kael', 'Nyx', 'Riven', 'Talon', 'Zephyr'],
+  Mage: ['Thorin', 'Elara', 'Caius', 'Lysara', 'Orion', 'Vex', 'Sable', 'Ashwin'],
+  Healer: ['Lyra', 'Sera', 'Aldric', 'Enna', 'Solenne', 'Briar', 'Idris', 'Rowan'],
+}
+
+const FANTASY_EPITHETS: Record<RpgClass, string[]> = {
+  Warrior: ['the Bold', 'Ironhand', 'Stoneshield', 'the Unyielding', 'Thunderfist', 'Steelborne'],
+  Scout: ['Shadowstep', 'Nightwhisper', 'the Swift', 'Silentfoot', 'Duskwalker', 'Windrunner'],
+  Mage: ['Starweaver', 'the Wise', 'Flamecaller', 'Spellwright', 'Voidtouched', 'Runebound'],
+  Healer: ['Moonwhisper', 'Dawnbringer', 'the Merciful', 'Lightkeeper', 'Gracewalker', 'Sunblessed'],
+}
+
+export function generateFantasyName(klass: RpgClass, index: number): string {
+  const firsts = FANTASY_FIRST_NAMES[klass]
+  const epithets = FANTASY_EPITHETS[klass]
+  return `${firsts[index % firsts.length]} ${epithets[index % epithets.length]}`
+}
+
 function toCharacter(value: string | Character, index: number): Character {
   if (typeof value !== 'string') return value
   const classes: RpgClass[] = ['Warrior', 'Scout', 'Mage', 'Healer']
-  return createCharacter({ name: value, klass: classes[index % classes.length]! })
+  const klass = classes[index % classes.length]!
+  const fantasyName = generateFantasyName(klass, Math.floor(index / classes.length))
+  return createCharacter({ name: fantasyName, klass, agent: value })
 }
 
 export function createGame(input: {
@@ -822,7 +848,7 @@ export function createGame(input: {
     dungeon,
     party,
     turnOrder,
-    currentPlayer: turnOrder[0]?.name ?? party[0]?.name ?? 'unknown',
+    currentPlayer: turnOrder[0]?.agent ?? turnOrder[0]?.name ?? party[0]?.agent ?? party[0]?.name ?? 'unknown',
     combat,
     actionHistory: {},
     barrierAttempts: {},
@@ -832,7 +858,8 @@ export function createGame(input: {
 }
 
 export function findCharacter(game: RpgGameState, name: string): Character | undefined {
-  return game.party.find((p) => p.name === name)
+  // Match by agent field first (agent→character mapping), then by name (backwards compat)
+  return game.party.find((p) => p.agent === name) ?? game.party.find((p) => p.name === name)
 }
 
 const ACTION_HISTORY_LIMIT = 25

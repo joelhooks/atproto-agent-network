@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
-import { createCharacter, createGame } from '../games/rpg-engine'
+import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
 import { rpgEnvironment } from './rpg'
 
 describe('rpgEnvironment', () => {
@@ -27,7 +27,7 @@ describe('rpgEnvironment', () => {
     game.phase = 'playing'
     game.mode = 'exploring'
     game.currentPlayer = 'swoop'
-    game.party.find((p) => p.name === 'swoop')!.hp = 0
+    findCharacter(game, 'swoop')!.hp = 0
 
     await db
       .prepare(
@@ -43,9 +43,9 @@ describe('rpgEnvironment', () => {
     const updated = JSON.parse(row.state)
 
     expect(updated.currentPlayer).toBe('alice')
-    expect(updated.turnOrder.map((p: any) => p.name)).not.toContain('swoop')
-    expect(updated.party.map((p: any) => [p.name, p.hp])).toContainEqual(['swoop', 0])
-    expect(updated.log.some((e: any) => String(e.what).includes('swoop is dead, skipping turn'))).toBe(true)
+    expect(updated.turnOrder.map((p: any) => p.agent ?? p.name)).not.toContain('swoop')
+    expect(updated.party.find((p: any) => (p.agent ?? p.name) === 'swoop').hp).toBe(0)
+    expect(updated.log.some((e: any) => String(e.what).includes('is dead, skipping turn'))).toBe(true)
   })
 
   it('when a player dies mid-combat, the turn immediately advances to the next living player and persists', async () => {
@@ -77,7 +77,7 @@ describe('rpgEnvironment', () => {
     game.mode = 'combat'
     game.currentPlayer = 'swoop'
 
-    const swoop = game.party.find((p) => p.name === 'swoop')!
+    const swoop = findCharacter(game, 'swoop')!
     swoop.hp = 1
     swoop.skills.attack = 1 // ensure player misses with roll 100
     swoop.skills.dodge = 1 // ensure counter hits with roll 100
@@ -108,10 +108,10 @@ describe('rpgEnvironment', () => {
     const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
-    expect(updated.party.find((p: any) => p.name === 'swoop').hp).toBe(0)
+    expect(updated.party.find((p: any) => (p.agent ?? p.name) === 'swoop').hp).toBe(0)
     expect(updated.currentPlayer).toBe('alice')
-    expect(updated.turnOrder.map((p: any) => p.name)).toEqual(['alice'])
-    expect(updated.log.some((e: any) => String(e.what).includes('swoop is dead, skipping turn'))).toBe(true)
+    expect(updated.turnOrder.map((p: any) => p.agent ?? p.name)).toEqual(['alice'])
+    expect(updated.log.some((e: any) => String(e.what).includes('is dead, skipping turn'))).toBe(true)
   })
 
   it('TPK ends the game (all players hp <= 0)', async () => {
@@ -135,8 +135,8 @@ describe('rpgEnvironment', () => {
     game.phase = 'playing'
     game.mode = 'combat'
     game.currentPlayer = 'alice'
-    game.party.find((p) => p.name === 'alice')!.hp = 0
-    game.party.find((p) => p.name === 'bob')!.hp = 0
+    findCharacter(game, 'alice')!.hp = 0
+    findCharacter(game, 'bob')!.hp = 0
 
     await db
       .prepare(
@@ -184,7 +184,7 @@ describe('rpgEnvironment', () => {
       game.mode = 'combat'
       game.currentPlayer = 'alice'
 
-      const alice = game.party.find((p) => p.name === 'alice')!
+      const alice = findCharacter(game, 'alice')!
       alice.hp = 12
       alice.skills.attack = 1 // ensure player misses with roll 100
       alice.skills.dodge = 1 // ensure counter hits with roll 100
@@ -214,7 +214,7 @@ describe('rpgEnvironment', () => {
 
       const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
       const updated = JSON.parse(row.state)
-      return updated.party.find((p: any) => p.name === 'alice').hp
+      return updated.party.find((p: any) => (p.agent ?? p.name) === 'alice').hp
     }
 
     const soloHp = await runOnce(['alice'])
@@ -253,7 +253,7 @@ describe('rpgEnvironment', () => {
     game.mode = 'combat'
     game.currentPlayer = 'alice'
 
-    const alice = game.party.find((p) => p.name === 'alice')!
+    const alice = findCharacter(game, 'alice')!
     alice.hp = alice.maxHp
     alice.skills.attack = 1 // ensure player misses with roll 100
     alice.skills.dodge = 1 // ensure counter hits with roll 100
@@ -332,7 +332,7 @@ describe('rpgEnvironment', () => {
     const row = await db.prepare('SELECT state, players FROM games WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
-    expect(updated.party.map((p: any) => [p.name, p.klass])).toContainEqual(['bob', 'Mage'])
+    expect(updated.party.some((p: any) => p.agent === 'bob' && p.klass === 'Mage')).toBe(true)
     expect(JSON.parse(row.players)).toContain('bob')
   })
 

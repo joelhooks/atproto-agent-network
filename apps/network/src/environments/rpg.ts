@@ -10,6 +10,7 @@ import {
   createGame,
   describeRoom,
   explore,
+  generateFantasyName,
   gmInterveneIfStuck,
   partyWipe,
   resolveSkillCheck,
@@ -22,6 +23,22 @@ import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
 
 function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
+}
+
+/** Get the identity key for a character (agent name if mapped, otherwise character name) */
+function characterId(c: Character | undefined | null): string {
+  if (!c) return 'unknown'
+  return c.agent ?? c.name
+}
+
+/** Check if a character matches a given identity (agent name or character name) */
+function isCharacter(c: Character, identity: string): boolean {
+  return c.agent === identity || c.name === identity
+}
+
+/** Generate a fantasy name for an agent joining a game */
+function generateJoinName(klass: RpgClass, partyIndex: number): string {
+  return generateFantasyName(klass, partyIndex)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -124,7 +141,10 @@ async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<Ga
 
 function summarizeParty(game: RpgGameState): string {
   return game.party
-    .map((p) => `${p.name}(${p.klass}) HP ${p.hp}/${p.maxHp} MP ${p.mp}/${p.maxMp}`)
+    .map((p) => {
+      const agentTag = p.agent ? ` [${p.agent}]` : ''
+      return `${p.name}(${p.klass})${agentTag} HP ${p.hp}/${p.maxHp} MP ${p.mp}/${p.maxMp}`
+    })
     .join(' | ')
 }
 
@@ -171,7 +191,7 @@ async function findJoinableGamesForAgent(
       try {
         const game = JSON.parse(row.state) as RpgGameState
         if (!game || game.type !== 'rpg') continue
-        if (Array.isArray(game.party) && game.party.some((p) => p?.name === agentName)) continue
+        if (Array.isArray(game.party) && game.party.some((p) => p && isCharacter(p, agentName))) continue
         if (!Array.isArray(game.party) || game.party.length >= 3) continue
         joinable.push({ id: row.id, game })
         if (joinable.length >= limit) break
@@ -230,20 +250,20 @@ function normalizeTurnState(game: RpgGameState): boolean {
     game.combat = undefined
     game.currentPlayer = 'none'
   } else {
-    const idx = initiative.findIndex((p) => p.name === game.currentPlayer)
+    const idx = initiative.findIndex((p) => isCharacter(p, game.currentPlayer))
     const current = idx >= 0 ? initiative[idx] : undefined
     if (!isLiving(current)) {
       if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
 
       if (idx < 0) {
-        game.currentPlayer = living[0]!.name
+        game.currentPlayer = characterId(living[0])
       } else {
         const start = idx
         for (let offset = 1; offset <= initiative.length; offset += 1) {
           const candidate = initiative[(start + offset) % initiative.length]
           if (!candidate) continue
           if (isLiving(candidate)) {
-            game.currentPlayer = candidate.name
+            game.currentPlayer = characterId(candidate)
             break
           }
           logSkipDeadTurn(game, candidate.name)
@@ -284,7 +304,7 @@ function advanceTurn(game: RpgGameState): void {
     return
   }
 
-  const idx = initiative.findIndex((p) => p.name === game.currentPlayer)
+  const idx = initiative.findIndex((p) => isCharacter(p, game.currentPlayer))
   const current = idx >= 0 ? initiative[idx] : undefined
   if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
 
@@ -293,13 +313,13 @@ function advanceTurn(game: RpgGameState): void {
     const candidate = initiative[(start + offset) % initiative.length]
     if (!candidate) continue
     if (isLiving(candidate)) {
-      game.currentPlayer = candidate.name
+      game.currentPlayer = characterId(candidate)
       return
     }
     logSkipDeadTurn(game, candidate.name)
   }
 
-  game.currentPlayer = living[0]!.name
+  game.currentPlayer = characterId(living[0])
 }
 
 function recomputeTurnOrder(game: RpgGameState): void {
@@ -383,15 +403,16 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const agentName = ctx.agentName.trim() || 'unknown'
-          if (game.party.some((p) => p.name === agentName)) {
+          if (game.party.some((p) => isCharacter(p, agentName))) {
             return { ok: false, error: `Already in active adventure ${gameId}.` }
           }
 
-          const joined = createCharacter({ name: agentName, klass })
+          const fantasyName = generateJoinName(klass, game.party.length)
+          const joined = createCharacter({ name: fantasyName, klass, agent: agentName })
           game.party.push(joined)
           recomputeTurnOrder(game)
 
-          const players = game.party.map((p) => p.name)
+          const players = game.party.map((p) => p.agent ?? p.name)
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, players = ?, updated_at = datetime('now') WHERE id = ?")
@@ -404,7 +425,7 @@ export const rpgEnvironment: AgentEnvironment = {
           })
 
           return {
-            content: toTextContent(`Joined adventure: ${gameId} as ${agentName} the ${klass}\nParty: ${summarizeParty(game)}`),
+            content: toTextContent(`Joined adventure: ${gameId} as ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
             details: { gameId, joined },
           }
         }
@@ -569,8 +590,9 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const agentName = ctx.agentName.trim() || 'unknown'
-          const existing = game.party.find((p) => p.name === agentName)
-          const updated = createCharacter({ name: agentName, klass })
+          const existing = game.party.find((p) => isCharacter(p, agentName))
+          const fantasyName = existing?.name ?? generateJoinName(klass, game.party.length)
+          const updated = createCharacter({ name: fantasyName, klass, agent: agentName })
           if (existing) {
             Object.assign(existing, updated)
           } else {
@@ -584,7 +606,7 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return {
-            content: toTextContent(`Character ready: ${agentName} the ${klass}\nParty: ${summarizeParty(game)}`),
+            content: toTextContent(`Character ready: ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
             details: { gameId, character: updated },
           }
         }
@@ -645,7 +667,7 @@ export const rpgEnvironment: AgentEnvironment = {
             } else {
               // Inline enemy resolution to avoid bloating the engine API.
               const attackerName = ctx.agentName.trim() || 'unknown'
-              const attacker = game.party.find((p) => p.name === attackerName)
+              const attacker = game.party.find((p) => isCharacter(p, attackerName))
               if (!attacker) throw new Error('Create your character before attacking')
 
               const atk = resolveSkillCheck({ skill: attacker.skills.attack, dice })
@@ -740,7 +762,7 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         if (command === 'rest') {
-          const actor = game.party.find((p) => p.name === (ctx.agentName.trim() || 'unknown'))
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before resting')
           if ((actor.hp ?? 0) <= 0) {
             return { ok: false, error: 'You are dead. You cannot rest until revived.' }
@@ -761,7 +783,7 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         if (command === 'use_skill') {
-          const actor = game.party.find((p) => p.name === (ctx.agentName.trim() || 'unknown'))
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before using skills')
 
           const skillName = typeof params.skill === 'string' ? params.skill : 'use_skill'
@@ -796,7 +818,7 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         if (command === 'cast_spell') {
-          const actor = game.party.find((p) => p.name === (ctx.agentName.trim() || 'unknown'))
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before casting')
 
           const spell = typeof params.spell === 'string' ? params.spell.trim() : 'spell'
