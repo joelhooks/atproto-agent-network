@@ -825,6 +825,16 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
+    },
+    {
+      "id": "story-mlft5mua",
+      "title": "Tool router — remap game↔rpg calls based on active environment",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/environments/catan.ts` `isActionTaken()` only considers a turn \"taken\" when it sees a `game` tool call ending with `end_turn`, so misnamed tool calls must be routed before those checks or Catan auto-play may inject extra actions. In `apps/network/src/agent.ts` `AgentDO.act()`, allowlist enforcement must treat the original tool name as an alias when a misroute is remapped, otherwise the routed call can fail with \"Tool not enabled\".\nGotcha: If you add new routing/aliases, apply them consistently in both (1) the pre-execution policy checks (enabledTools allowlist) and (2) the environment auto-play / `isActionTaken()` detection path. Otherwise tests will pass/fail nondeterministically based on injected auto-actions and tool ordering.\nFiles Context: `apps/network/src/agent.ts` contains the Pi-loop tool dispatch (`AgentDO.act()`), environment detection, auto-play injection, allowlist enforcement, and the new `agent.tool.misroute` event. `apps/network/src/agent-do.test.ts` is the Durable Object integration test suite and now includes coverage for misrouted tool calls in both RPG and Catan contexts."
     }
   ],
   "failures": [

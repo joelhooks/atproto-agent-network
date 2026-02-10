@@ -3274,9 +3274,15 @@ export class AgentDO extends DurableObject {
       const id = await this.memory.store(incomingMessage)
 
       if (this.config?.webhookUrl) {
-        fetch(this.config.webhookUrl, {
+        // Extract token from URL query param and send as Authorization header
+        const webhookParsed = new URL(this.config.webhookUrl)
+        const webhookToken = webhookParsed.searchParams.get('token')
+        if (webhookToken) webhookParsed.searchParams.delete('token')
+        const webhookHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (webhookToken) webhookHeaders['Authorization'] = `Bearer ${webhookToken}`
+        fetch(webhookParsed.toString(), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: webhookHeaders,
           body: JSON.stringify({ type: 'inbox', message: incomingMessage }),
         }).catch(() => {}) // fire and forget
       }
