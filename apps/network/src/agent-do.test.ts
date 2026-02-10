@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createGame as createCatanGame } from './games/catan'
+import { createGame as createRpgGame } from './games/rpg-engine'
 
 afterEach(() => {
   // Keep tests isolated: some stories stub global fetch.
@@ -3007,6 +3009,124 @@ describe('AgentDO', () => {
     await agent.alarm()
 
     // TODO: structured log event assertion (agent.game.action) — pending structured logging implementation
+  })
+
+  it('remaps misrouted game->rpg tool calls when active environment is rpg', async () => {
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Attack in the dungeon.',
+      toolCalls: [{ name: 'game', arguments: { command: 'status', gameId: 'rpg_router_1' } }],
+    })
+
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-tool-router-rpg')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    // Seed an active RPG game so the runtime is in RPG context.
+    const gameId = 'rpg_router_1'
+    const game = createRpgGame({ id: gameId, players: ['alice'] }) as any
+    game.phase = 'playing'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Ensure agentName used by environment registry matches the DB row.
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await agent.alarm()
+
+      const reflection = await storage.get<{ acted?: { steps?: Array<{ name: string; ok: boolean }> } }>('lastReflection')
+      expect(reflection?.acted?.steps?.[0]).toMatchObject({ name: 'rpg', ok: true })
+
+      const events = parseJsonLogs(logSpy.mock.calls)
+      const misroute = events.find((e) => e.event_type === 'agent.tool.misroute')
+      expect(misroute).toMatchObject({ event_type: 'agent.tool.misroute', from: 'game', to: 'rpg', env: 'rpg' })
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it('remaps misrouted rpg->game tool calls when active environment is catan', async () => {
+    const promptFn = vi.fn().mockResolvedValue({
+      content: 'Roll dice in Catan.',
+      toolCalls: [
+        { name: 'rpg', arguments: { command: 'action', gameId: 'catan_router_1', gameAction: { type: 'end_turn' } } },
+      ],
+    })
+
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-tool-router-catan')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    // Seed an active Catan game so the runtime is in Catan context.
+    const gameId = 'catan_router_1'
+    const game = createCatanGame(gameId, ['alice', 'bob']) as any
+    game.phase = 'playing'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const before = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const beforeState = JSON.parse(before.state)
+    expect(beforeState.currentPlayer).toBe('alice')
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await agent.alarm()
+
+      const reflection = await storage.get<{ acted?: { steps?: Array<{ name: string; ok: boolean }> } }>('lastReflection')
+      expect(reflection?.acted?.steps?.[0]).toMatchObject({ name: 'game', ok: true })
+
+      const after = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const afterState = JSON.parse(after.state)
+      expect(afterState.currentPlayer).toBe('bob')
+      expect(afterState.turn).toBe(beforeState.turn + 1)
+
+      const events = parseJsonLogs(logSpy.mock.calls)
+      const misroute = events.find((e) => e.event_type === 'agent.tool.misroute')
+      expect(misroute).toMatchObject({ event_type: 'agent.tool.misroute', from: 'rpg', to: 'game', env: 'catan' })
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 
   it('act() enforces a 30s timeout per loop cycle tool execution', async () => {

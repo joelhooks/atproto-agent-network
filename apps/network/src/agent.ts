@@ -1380,11 +1380,11 @@ export class AgentDO extends DurableObject {
     return thought
   }
 
-  private async act(thought: ThinkResult): Promise<ActResult> {
-    const startedAt = Date.now()
-    const timeoutMs = 30_000
-    const maxSteps = 10 // LLM needs room: roll + trades + builds + end_turn
-    const deadline = startedAt + timeoutMs
+	  private async act(thought: ThinkResult): Promise<ActResult> {
+	    const startedAt = Date.now()
+	    const timeoutMs = 30_000
+	    const maxSteps = 10 // LLM needs room: roll + trades + builds + end_turn
+	    const deadline = startedAt + timeoutMs
 
     const toolCalls = Array.isArray(thought.toolCalls) ? thought.toolCalls : []
     const configuredAllowlist = this.config?.enabledTools ?? []
@@ -1425,37 +1425,55 @@ export class AgentDO extends DurableObject {
       ? storedOutcomesRaw.filter(isActionOutcome)
       : []
 
-    let selected = toolCalls.slice(0, maxSteps)
-    truncated = toolCalls.length > selected.length
+	    let selected = toolCalls.slice(0, maxSteps)
+	    truncated = toolCalls.length > selected.length
 
-    // Auto-play injection via environment registry.
-    // Each environment defines isActionTaken() and getAutoPlayActions() to handle
-    // safety-net logic (e.g. inject roll_dice/end_turn for Catan).
-    if (this.agentEnv?.DB) {
-      try {
-        const { getAllEnvironments } = await import('./environments/registry')
-        const { registerBuiltInEnvironments } = await import('./environments/builtins')
-        registerBuiltInEnvironments()
-        const agentName = this.config?.name ?? ''
-        const did = this.identity?.did ?? ''
-        const envCtx = {
-          agentName,
-          agentDid: did,
-          db: this.agentEnv.DB,
-          broadcast: async (event: Record<string, unknown>) => {
-            const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
-            const msg = JSON.stringify(event)
-            for (const ws of sockets) { try { ws.send(msg) } catch {} }
-          },
-        }
-        const toolCallsForCheck = selected.map(c => ({ name: c.name, arguments: (c.arguments ?? {}) as Record<string, unknown> }))
+	    const routeToolName = (envType: string | null, toolName: string): string => {
+	      if (envType === 'rpg' && toolName === 'game') return 'rpg'
+	      if (envType === 'catan' && toolName === 'rpg') return 'game'
+	      return toolName
+	    }
 
-        for (const env of getAllEnvironments()) {
-          if (env.isActionTaken(toolCallsForCheck)) break
-          const autoActions = await env.getAutoPlayActions(envCtx)
-          if (autoActions.length > 0) {
-            // Prepend all but the last (usually roll_dice), append the last (usually end_turn)
-            if (autoActions.length === 1) {
+	    // Detect the active environment (best-effort) so we can route misnamed tool calls.
+	    // We treat the first environment returning non-empty buildContext() as "active",
+	    // matching how the prompt picks a single environment context block.
+	    let activeEnvironmentType: string | null = null
+	
+	    // Auto-play injection via environment registry.
+	    // Each environment defines isActionTaken() and getAutoPlayActions() to handle
+	    // safety-net logic (e.g. inject roll_dice/end_turn for Catan).
+	    if (this.agentEnv?.DB) {
+	      try {
+	        const { getAllEnvironments } = await import('./environments/registry')
+	        const { registerBuiltInEnvironments } = await import('./environments/builtins')
+	        registerBuiltInEnvironments()
+	        const environments = getAllEnvironments()
+	        const agentName = this.config?.name ?? ''
+	        const did = this.identity?.did ?? ''
+	        const envCtx = {
+	          agentName,
+	          agentDid: did,
+	          db: this.agentEnv.DB,
+	          broadcast: async (event: Record<string, unknown>) => {
+	            const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
+	            const msg = JSON.stringify(event)
+	            for (const ws of sockets) { try { ws.send(msg) } catch {} }
+	          },
+	        }
+
+	        for (const env of environments) {
+	          // Route misnamed tool calls for this environment when deciding if an action was taken,
+	          // otherwise auto-play can incorrectly inject extra moves (e.g. roll_dice/end_turn).
+	          const toolCallsForCheck = selected.map(c => ({
+	            name: routeToolName(env.type, c.name),
+	            arguments: (c.arguments ?? {}) as Record<string, unknown>,
+	          }))
+
+	          if (env.isActionTaken(toolCallsForCheck)) break
+	          const autoActions = await env.getAutoPlayActions(envCtx)
+	          if (autoActions.length > 0) {
+	            // Prepend all but the last (usually roll_dice), append the last (usually end_turn)
+	            if (autoActions.length === 1) {
               selected.push(autoActions[0])
             } else {
               const prepend = autoActions.slice(0, -1)
@@ -1472,34 +1490,67 @@ export class AgentDO extends DurableObject {
               ts: Date.now(),
             }
             console.log('Auto-play injection:', safetyDebug)
-            await this.ctx.storage.put('debug:autoPlay', safetyDebug)
-            break
-          }
-        }
-      } catch (err) {
-        console.error('Auto-play injection failed:', err instanceof Error ? err.message : String(err))
+	            await this.ctx.storage.put('debug:autoPlay', safetyDebug)
+	            break
+	          }
+	        }
+
+	        for (const env of environments) {
+	          try {
+	            const lines = await env.buildContext(envCtx)
+	            if (Array.isArray(lines) && lines.length > 0) {
+	              activeEnvironmentType = env.type
+	              break
+	            }
+	          } catch {
+	            // ignore env failures for routing purposes
+	          }
+	        }
+	      } catch (err) {
+	        console.error('Auto-play injection failed:', err instanceof Error ? err.message : String(err))
+	      }
+	    }
+
+	    for (const call of selected) {
+	      const remaining = deadline - Date.now()
+	      if (remaining <= 0) {
+	        timedOut = true
+	        break
+	      }
+	
+	      const originalName = call.name
+	      const name = routeToolName(activeEnvironmentType, originalName)
+
+	      if (name !== originalName) {
+	        logEvent({
+	          level: 'info',
+          event_type: 'agent.tool.misroute',
+          component: 'agent-do',
+          did: this.did,
+          session_id: await this.getOrCreateSessionId(),
+          from: originalName,
+          to: name,
+          env: activeEnvironmentType ?? 'unknown',
+        })
       }
-    }
-
-    for (const call of selected) {
-      const remaining = deadline - Date.now()
-      if (remaining <= 0) {
-        timedOut = true
-        break
-      }
-
-      const name = call.name
-
-      // Skip tool calls already executed in the agentic factory loop
-      if ((call as any)._executed) {
-        steps.push({ name, ok: true, result: { _executed_in_factory: true }, durationMs: 0 })
-        outcomes.push({ tool: name, success: true, timestamp: Date.now() })
+	
+	      // Skip tool calls already executed in the agentic factory loop
+	      if ((call as any)._executed) {
+	        steps.push({ name, ok: true, result: { _executed_in_factory: true }, durationMs: 0 })
+	        outcomes.push({ tool: name, success: true, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
         await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
-      if (allowlist && !allowlist.has(name)) {
+      // enabledTools allowlist is enforced after routing. If the model misroutes a call
+      // (e.g. uses `game` inside an RPG context), treat the original tool name as an alias
+      // for the routed name so the call doesn't fail with "Tool not enabled".
+      const allowlisted =
+        !allowlist ||
+        allowlist.has(name) ||
+        (name !== originalName && allowlist.has(originalName))
+      if (!allowlisted) {
         steps.push({ name, ok: false, error: 'Tool not enabled' })
         outcomes.push({ tool: name, success: false, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
