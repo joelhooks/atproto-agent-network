@@ -704,7 +704,7 @@
       "title": "Campaign memory — adventure log compaction + previously-on context injection",
       "description": "When a game ends, the DM compacts the adventure into a narrative summary stored on each character. Future games inject this as campaign context.\n\nIn apps/network/src/environments/rpg.ts:\n\nOn game completion (where game.completed is logged), generate an adventure summary from the game log:\n  export function compactAdventureLog(game: RpgGameState): string\n  - Takes the game's log entries and generates a 2-3 sentence summary\n  - Format: \"The party of {names} ventured into {theme} dungeon. {key events from log - kills, deaths, room clears}. {outcome: victory/TPK/abandoned}.\"\n  - Include notable moments: boss kills, player deaths, barrier breaks\n  - Cap at 200 characters\n\nThis summary is passed to gameCharacterToPersistent() as the adventureSummary parameter (already implemented in story 70).\n\nIn buildContext, when persistent character has adventureLog entries:\n  Add to context lines:\n  \"📜 CAMPAIGN HISTORY:\"\n  \"Your previous adventures:\"\n  - For each entry in adventureLog (last 3): \"- {entry}\"\n  This goes AFTER the character intro but BEFORE the tactical skills.\n\nAlso add to buildContext when persistent character has achievements:\n  \"🏆 Your achievements: {achievements.join(', ')}\"\n\nOn notable events during gameplay, add achievements to persistent character:\n- First boss kill → \"Dragonslayer\" (or based on enemy type)\n- Survived with <10% HP → \"Death's Doorstep\"\n- Cleared dungeon without taking damage → \"Untouchable\"\n- 5+ games played → \"Veteran Adventurer\"\n\nTests:\n- compactAdventureLog generates summary from game state\n- compactAdventureLog caps at 200 chars\n- buildContext includes campaign history when adventureLog exists\n- buildContext includes achievements when present\n- Achievement triggers fire correctly",
       "priority": 74,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && pnpm vitest run",
       "acceptanceCriteria": [
         "compactAdventureLog generates narrative summary from game state",
@@ -733,8 +733,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 67,
-    "lastIteration": "2026-02-10T18:04:53.302Z"
+    "totalIterations": 68,
+    "lastIteration": "2026-02-10T18:14:31.651Z"
   },
   "totalStories": 11
 }

@@ -1054,9 +1054,14 @@
     {
       "id": "story-mlguwnws",
       "title": "XP and leveling system — encounter rewards + stat growth on level up",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[timeout] RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network/apps/network\n\nstdout | src/agent-do.test.ts > AgentDO > stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug\nTool loop step { step: \u001b[33m1\u001b[39m, toolCalls: [ \u001b[32m'think_aloud'\u001b[39m ], elapsed:"
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `awardXp()` in `apps/network/src/games/rpg-engine.ts` levels using `while (pc.level < XP_TABLE.length && pc.xp >= XP_TABLE[pc.level])`, applies per-level stat growth (`maxHp += 5+level`, `maxMp += 3+level`), and does a +5 bump to a random skill chosen from sorted skill keys (so tests can deterministically control it by stubbing `Math.random`).\nGotcha: RPG XP is accumulated in `game.xpEarned` during play and only applied to the current agent’s `PersistentCharacter` inside `emitGameCompleted()` in `apps/network/src/environments/rpg.ts`; if you expect all party members to persist progression, you must ensure each agent runs a completion/save path or implement a different persistence fan-out strategy.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines XP constants, `XP_TABLE`, and `awardXp()` plus persistent character conversion helpers. `apps/network/src/environments/rpg.ts` accumulates XP into `game.xpEarned` on kills/room clears/adventure completion and applies it on save in `emitGameCompleted()`, and `buildContext()` renders level/XP progress. Tests live in `apps/network/src/games/rpg-engine.test.ts` (awardXp unit tests) and `apps/network/src/environments/rpg.test.ts` (XP accumulation + buildContext coverage)."
     }
   ],
   "failures": [

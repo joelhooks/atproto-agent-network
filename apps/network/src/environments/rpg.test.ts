@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
-import { rpgEnvironment } from './rpg'
+import { compactAdventureLog, rpgEnvironment } from './rpg'
 import { DM_SKILL_BRIEF, WARRIOR_SKILL_BRIEF } from './rpg-skills'
 
 describe('rpgEnvironment', () => {
@@ -1099,9 +1099,21 @@ describe('rpgEnvironment', () => {
     const text = lines.join('\n')
 
     expect(text).toContain('Your backstory: Raised by wolves in the Ashwood.')
-    expect(text).toContain('Previous adventures: A3; A4; A5')
+    expect(text).toContain('📜 CAMPAIGN HISTORY:')
+    expect(text).toContain('Your previous adventures:')
+    expect(text).toContain('- A3')
+    expect(text).toContain('- A4')
+    expect(text).toContain('- A5')
     expect(text).not.toContain('A1')
     expect(text).not.toContain('A2')
+
+    // Campaign history should be injected after intro, before tactical skills.
+    const introIdx = lines.findIndex((l) => l.includes('You are'))
+    const historyIdx = lines.findIndex((l) => l.includes('📜 CAMPAIGN HISTORY:'))
+    const tacticsIdx = lines.findIndex((l) => l.includes('Party Coordination & Action Economy'))
+    expect(introIdx).toBeGreaterThanOrEqual(0)
+    expect(historyIdx).toBeGreaterThan(introIdx)
+    expect(tacticsIdx).toBeGreaterThan(historyIdx)
   })
 
   it('buildContext shows character level and XP progress toward the next level', async () => {
@@ -1330,7 +1342,7 @@ describe('rpgEnvironment', () => {
         klass: expect.any(String),
         name: expect.any(String),
         gamesPlayed: 1,
-        adventureLog: expect.arrayContaining([expect.stringContaining(`Adventure ${gameId}:`)]),
+        adventureLog: expect.arrayContaining([expect.stringContaining('The party of')]),
       })
     )
   })
@@ -1380,5 +1392,172 @@ describe('rpgEnvironment', () => {
     expect(saved.level).toBe(3) // 0->100->300 thresholds
     expect(saved.maxHp).toBeGreaterThan(game.party[0]!.maxHp)
     expect(saved.maxMp).toBeGreaterThan(game.party[0]!.maxMp)
+  })
+
+  it('buildContext includes achievements when present', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_build_context_achievements'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'A quiet room.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue({
+        name: 'Thorin',
+        klass: 'Warrior',
+        level: 2,
+        xp: 123,
+        maxHp: 20,
+        maxMp: 5,
+        skills: { attack: 60, dodge: 50, cast_spell: 10, use_skill: 40 },
+        backstory: '',
+        motivation: '',
+        appearance: '',
+        personalityTraits: [],
+        adventureLog: [],
+        achievements: ['Veteran Adventurer', 'Untouchable'],
+        inventory: [],
+        createdAt: 1,
+        updatedAt: 2,
+        gamesPlayed: 5,
+        deaths: 0,
+      }),
+    }
+
+    const lines = await rpgEnvironment.buildContext(ctx as any)
+    const text = lines.join('\n')
+    expect(text).toContain('🏆 Your achievements: Veteran Adventurer, Untouchable')
+  })
+
+  it('awards achievements on notable events at game completion', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const saveCharacter = vi.fn()
+    const loadCharacter = vi.fn().mockResolvedValue({
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 1,
+      xp: 0,
+      maxHp: 20,
+      maxMp: 5,
+      skills: { attack: 60, dodge: 50, cast_spell: 10, use_skill: 40 },
+      backstory: '',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: [],
+      achievements: [],
+      inventory: [],
+      createdAt: 1,
+      updatedAt: 2,
+      gamesPlayed: 4,
+      deaths: 0,
+    })
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter,
+      saveCharacter,
+    }
+
+    const gameId = 'rpg_test_awards_achievements'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = Math.max(0, game.dungeon.length - 1)
+    game.currentPlayer = 'alice'
+
+    // Pre-seed notable events into the log; completion should compact + award.
+    const pc = findCharacter(game, 'alice')!
+    pc.hp = 1 // <10% HP
+    pc.maxHp = 20
+    game.log.push({ at: 1, who: 'alice', what: 'gained 50 XP (kill: Dungeon Boss)' })
+    game.log.push({ at: 2, who: 'alice', what: 'gained 250 XP (boss kill)' })
+    game.log.push({ at: 3, who: 'alice', what: 'barrier: auto_crumble (The ancient seal weakens and shatters)' })
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-1', { command: 'explore', gameId })
+
+    expect(saveCharacter).toHaveBeenCalledTimes(1)
+    const saved = saveCharacter.mock.calls[0]![0]
+    expect(saved.achievements).toEqual(expect.arrayContaining(["Death's Doorstep", 'Veteran Adventurer']))
+    expect(saved.achievements.join(' ')).toMatch(/slayer/i)
+  })
+})
+
+describe('compactAdventureLog', () => {
+  it('generates a narrative summary from the game state log', () => {
+    const game = createGame({
+      id: 'rpg_test_compact_summary',
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'barrier', description: 'sealed', requiredClass: 'Mage' as any },
+        { type: 'boss', description: 'boss', enemies: [{ name: 'Dungeon Boss', hp: 1, DEX: 1, attack: 1, dodge: 1, tactics: { kind: 'boss' } as any }] },
+      ],
+    })
+    ;(game as any).theme = 'haunted crypt'
+    game.roomIndex = 2
+    game.phase = 'finished'
+    game.log.push({ at: 1, who: 'alice', what: 'gained 50 XP (kill: Goblin)' })
+    game.log.push({ at: 2, who: 'alice', what: 'gained 250 XP (boss kill)' })
+    game.log.push({ at: 3, who: 'alice', what: 'barrier: brute_force (-4 HP)' })
+
+    const summary = compactAdventureLog(game as any)
+    expect(summary).toContain('The party of')
+    expect(summary).toContain('ventured into')
+    expect(summary.toLowerCase()).toContain('haunted')
+    expect(summary.toLowerCase()).toContain('boss')
+    expect(summary.length).toBeLessThanOrEqual(200)
+  })
+
+  it('caps the summary at 200 characters', () => {
+    const game = createGame({
+      id: 'rpg_test_compact_cap',
+      players: ['alice', 'bob', 'carol'],
+      dungeon: [{ type: 'rest', description: 'safe' }, { type: 'rest', description: 'safe2' }],
+    })
+    ;(game as any).theme = 'the unbelievably long and overwrought cathedral of endless echoes and sorrow'
+    game.roomIndex = 1
+    game.phase = 'finished'
+    for (let i = 0; i < 20; i += 1) {
+      game.log.push({ at: i + 1, who: 'alice', what: `gained 50 XP (kill: Goblin ${i})` })
+    }
+
+    const summary = compactAdventureLog(game as any)
+    expect(summary.length).toBeLessThanOrEqual(200)
   })
 })

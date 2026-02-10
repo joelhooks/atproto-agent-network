@@ -159,8 +159,10 @@ async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: strin
         : undefined
       if (partyMember) {
         const existing = (await ctx.loadCharacter()) as PersistentCharacter | null
-        const adventureSummary = `Adventure ${gameId}: ${(game as any).winner === 'party' ? 'Victory' : 'Defeat'} (${turns} turns)`
+        const adventureSummary = compactAdventureLog(game)
         const persistent = gameCharacterToPersistent(partyMember, existing?.klass ? existing : null, adventureSummary)
+        persistent.achievements = Array.isArray((persistent as any).achievements) ? (persistent as any).achievements : []
+        awardRpgAchievements(persistent, { game, agentName, characterName: partyMember.name })
         const earned = game.xpEarned?.[agentName] ?? 0
         if (earned > 0) {
           awardXp(persistent, earned)
@@ -170,6 +172,164 @@ async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: strin
     } catch {
       // best-effort — don't break game completion
     }
+  }
+}
+
+function capChars(text: string, max: number): string {
+  if (!text) return ''
+  const s = String(text)
+  if (s.length <= max) return s
+  return s.slice(0, max)
+}
+
+function formatPartyNames(names: string[]): string {
+  const list = (Array.isArray(names) ? names : []).map((n) => String(n ?? '').trim()).filter(Boolean)
+  if (list.length === 0) return 'unknown heroes'
+  return list.slice(0, 3).join(', ')
+}
+
+function outcomeLabel(game: RpgGameState): 'victory' | 'tpk' | 'abandoned' {
+  const party = Array.isArray(game.party) ? game.party : []
+  const tpk = party.length > 0 && party.every((p) => (p?.hp ?? 0) <= 0)
+  if (tpk) return 'tpk'
+  const finishedAtEnd = Number.isFinite(game.roomIndex) && game.roomIndex >= Math.max(0, (game.dungeon?.length ?? 0) - 1)
+  if (finishedAtEnd) return 'victory'
+  return 'abandoned'
+}
+
+function countKillsFromLog(game: RpgGameState, agentName: string): number {
+  const log = Array.isArray(game.log) ? game.log : []
+  return log.filter((e) => e && e.who === agentName && typeof e.what === 'string' && e.what.includes('(kill:')).length
+}
+
+function findBossKillEnemyName(game: RpgGameState, agentName: string): string {
+  const log = Array.isArray(game.log) ? game.log : []
+  for (let i = 0; i < log.length; i += 1) {
+    const e = log[i]
+    if (!e || e.who !== agentName || typeof e.what !== 'string') continue
+    if (!e.what.includes('(boss kill)')) continue
+    // Attack path logs "... (kill: NAME)" and then "... (boss kill)". Walk back to find that name.
+    for (let j = i - 1; j >= 0 && j >= i - 5; j -= 1) {
+      const prev = log[j]
+      const w = typeof prev?.what === 'string' ? prev.what : ''
+      if (prev?.who !== agentName) continue
+      const idx = w.indexOf('(kill:')
+      if (idx < 0) continue
+      const after = w.slice(idx + '(kill:'.length).replace(')', '').trim()
+      return after.replace(/\)\s*$/, '').trim()
+    }
+    return ''
+  }
+  return ''
+}
+
+function hasBarrierBreak(game: RpgGameState): boolean {
+  const log = Array.isArray(game.log) ? game.log : []
+  return log.some((e) => {
+    const w = typeof e?.what === 'string' ? e.what : ''
+    if (!w.startsWith('barrier:')) return false
+    return !w.includes('blocked')
+  })
+}
+
+function hasBossKill(game: RpgGameState): boolean {
+  const log = Array.isArray(game.log) ? game.log : []
+  return log.some((e) => typeof e?.what === 'string' && e.what.includes('(boss kill)'))
+}
+
+/**
+ * Generate a compact narrative summary for the adventure log.
+ * Format: "The party of {names} ventured into {theme} dungeon. {key events}. {outcome}."
+ * Capped at 200 characters.
+ */
+export function compactAdventureLog(game: RpgGameState): string {
+  const names = formatPartyNames((Array.isArray(game.party) ? game.party : []).map((p) => p?.name ?? '').filter(Boolean))
+  const theme = capChars(String((game as any).theme ?? 'mysterious').trim(), 32)
+
+  const roomsCleared = Math.max(0, Math.min((game.roomIndex ?? 0) + 1, (game.dungeon?.length ?? 0)))
+  const dead = (Array.isArray(game.party) ? game.party : []).filter((p) => (p?.hp ?? 0) <= 0).length
+  const totalKills =
+    Array.isArray(game.log) ? game.log.filter((e) => typeof e?.what === 'string' && e.what.includes('(kill:')).length : 0
+
+  const events: string[] = []
+  if (hasBossKill(game)) events.push('boss felled')
+  if (totalKills > 0) events.push(`${totalKills} kill${totalKills === 1 ? '' : 's'}`)
+  if (dead > 0) events.push(`${dead} fallen`)
+  if (hasBarrierBreak(game)) events.push('barrier broken')
+  if (roomsCleared > 0) events.push(`${roomsCleared} room${roomsCleared === 1 ? '' : 's'} cleared`)
+
+  const outcome = outcomeLabel(game)
+
+  const sentence1 = `The party of ${names} ventured into ${theme} dungeon.`
+  const sentence2 = `${events.length > 0 ? events.slice(0, 3).join(', ') : 'Hard-won progress'}`
+  const sentence3 = `Outcome: ${outcome}.`
+
+  return capChars(`${sentence1} ${sentence2}. ${sentence3}`.replace(/\s+/g, ' ').trim(), 200)
+}
+
+function addAchievement(pc: PersistentCharacter, achievement: string): void {
+  const a = String(achievement ?? '').trim()
+  if (!a) return
+  pc.achievements ??= []
+  if (!Array.isArray(pc.achievements)) pc.achievements = []
+  if (pc.achievements.includes(a)) return
+  pc.achievements.push(a)
+}
+
+function bossAchievementFromEnemy(enemyName: string): string {
+  const n = String(enemyName ?? '').toLowerCase()
+  if (n.includes('dragon')) return 'Dragonslayer'
+  if (n.includes('lich')) return 'Lichbane'
+  if (n.includes('demon')) return 'Demonbane'
+  return 'Boss Slayer'
+}
+
+function tookDamageFromLog(game: RpgGameState, characterName: string): boolean {
+  const name = String(characterName ?? '').trim()
+  if (!name) return true
+  const log = Array.isArray(game.log) ? game.log : []
+  return log.some((e) => {
+    const w = typeof e?.what === 'string' ? e.what : ''
+    if (w.includes(`hit ${name} for `)) return true
+    if (w.includes(`critical hit ${name} for `)) return true
+    if (w.includes(`special hit ${name} for `)) return true
+    if (w.includes(`near-death: ${name}`)) return true
+    if (w.includes(`fumble: hurt self`)) return true
+    return false
+  })
+}
+
+function awardRpgAchievements(
+  pc: PersistentCharacter,
+  input: { game: RpgGameState; agentName: string; characterName: string }
+): void {
+  const { game, agentName, characterName } = input
+
+  const log = Array.isArray(game.log) ? game.log : []
+  const bossKill = log.some((e) => e && e.who === agentName && typeof e.what === 'string' && e.what.includes('(boss kill)'))
+  if (bossKill) {
+    const bossName = findBossKillEnemyName(game, agentName)
+    addAchievement(pc, bossAchievementFromEnemy(bossName))
+  }
+
+  const party = Array.isArray(game.party) ? game.party : []
+  const member = party.find((p) => (p?.agent ?? p?.name) === agentName) ?? party.find((p) => p?.name === characterName)
+  if (member && (member.hp ?? 0) > 0) {
+    const ratio = (member.maxHp ?? 0) > 0 ? (member.hp ?? 0) / (member.maxHp ?? 1) : 1
+    if (ratio > 0 && ratio < 0.1) {
+      addAchievement(pc, "Death's Doorstep")
+    }
+  }
+
+  if (member && (member.hp ?? 0) > 0) {
+    const noDamage = (member.hp ?? 0) === (member.maxHp ?? 0) && !tookDamageFromLog(game, member.name)
+    if (noDamage) {
+      addAchievement(pc, 'Untouchable')
+    }
+  }
+
+  if (Number.isFinite(pc.gamesPlayed) && pc.gamesPlayed >= 5) {
+    addAchievement(pc, 'Veteran Adventurer')
   }
 }
 
@@ -1178,6 +1338,36 @@ export const rpgEnvironment: AgentEnvironment = {
         return `URGENT: Recruit ${requiredClass} via message tool`
       })()
 
+      // Inject persistent character backstory/history (after character intro, before tactical skills)
+      const persistentLines: string[] = []
+      if (ctx.loadCharacter) {
+        try {
+          const pc = (await ctx.loadCharacter()) as PersistentCharacter | null
+          if (pc && pc.klass) {
+            const lvl = Number.isFinite(pc.level) ? Math.max(1, Math.floor(pc.level)) : 1
+            const xp = Number.isFinite(pc.xp) ? Math.max(0, Math.floor(pc.xp)) : 0
+            const next = XP_TABLE[Math.min(XP_TABLE.length - 1, lvl)] ?? XP_TABLE[XP_TABLE.length - 1]!
+            persistentLines.push(`Level ${lvl} ${pc.klass} (${xp}/${next} XP to next level)`)
+            if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
+            if (Array.isArray(pc.achievements) && pc.achievements.length > 0) {
+              persistentLines.push(`🏆 Your achievements: ${pc.achievements.join(', ')}`)
+            }
+            if (Array.isArray(pc.adventureLog) && pc.adventureLog.length > 0) {
+              persistentLines.push('📜 CAMPAIGN HISTORY:')
+              persistentLines.push('Your previous adventures:')
+              for (const entry of pc.adventureLog.slice(-3)) {
+                persistentLines.push(`- ${entry}`)
+              }
+            }
+            if (pc.gamesPlayed > 0) {
+              persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)
+            }
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+
       // Inject role-based skills
       const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
       const roleSkillLines: string[] = []
@@ -1201,31 +1391,11 @@ export const rpgEnvironment: AgentEnvironment = {
         }
       }
 
-	      // Inject persistent character backstory/history
-	      const persistentLines: string[] = []
-	      if (ctx.loadCharacter) {
-	        try {
-	          const pc = (await ctx.loadCharacter()) as PersistentCharacter | null
-	          if (pc && pc.klass) {
-	            const lvl = Number.isFinite(pc.level) ? Math.max(1, Math.floor(pc.level)) : 1
-	            const xp = Number.isFinite(pc.xp) ? Math.max(0, Math.floor(pc.xp)) : 0
-	            const next = XP_TABLE[Math.min(XP_TABLE.length - 1, lvl)] ?? XP_TABLE[XP_TABLE.length - 1]!
-	            persistentLines.push(`Level ${lvl} ${pc.klass} (${xp}/${next} XP to next level)`)
-	            if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
-	            if (pc.adventureLog && pc.adventureLog.length > 0) {
-	              persistentLines.push(`Previous adventures: ${pc.adventureLog.slice(-3).join('; ')}`)
-	            }
-	            if (pc.gamesPlayed > 0) {
-	              persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)
-	            }
-	          }
-	        } catch { /* non-fatal */ }
-	      }
-
       const lines: string[] = []
       if (isMyTurn) {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
+        lines.push(...persistentLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
@@ -1235,14 +1405,13 @@ export const rpgEnvironment: AgentEnvironment = {
       } else {
         lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
+        lines.push(...persistentLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
         lines.push('Wait for your turn.')
         lines.push(`DO NOT create a new game.`)
       }
-
-      lines.push(...persistentLines)
 
       return lines.filter(Boolean)
     } catch {

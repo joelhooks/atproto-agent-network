@@ -819,3 +819,17 @@ Note: repo is dirty only due to Ralph tracking files (`prd.json`, `progress.txt`
 Completed: XP and leveling system — encounter rewards + stat growth on level up
 Files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt
 Summary: Verified the XP + leveling story is already implemented end-to-end (engine constants + awardXp(), environment XP accumulation/logging + apply-on-save, buildContext level/XP display) and confirmed all tests pass via `cd apps/network && pnpm vitest run`. Stored a concrete hivemind learning and reported completion via `openclaw system event`. No code changes were necessary; ensured forbidden Ralph tracking files were not left modified.
+
+---
+[2026-02-10T18:14:31.653Z]
+Completed: Campaign memory — adventure log compaction + previously-on context injection
+Files: prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Prior failure pattern detected: test_failure, timeout. Mitigation: ran focused `pnpm vitest run src/environments/rpg.test.ts` first, kept changes scoped to RPG env + tests, then ran full `cd apps/network && pnpm vitest run`.
+
+Implemented campaign memory for RPG:
+- Added `compactAdventureLog(game)` to generate a 2-3 sentence adventure summary from log + outcome, capped at 200 chars.
+- On `game.completed`, pass the compacted summary into `gameCharacterToPersistent(..., adventureSummary)`.
+- `buildContext()` now injects campaign history (last 3 `adventureLog` entries) and achievements in the specified format, placed after the character intro and before tactical skills.
+- Added achievement awarding on notable events at completion: boss kill (enemy-based slayer title), <10% HP survival, no-damage clear, and 5+ games played.
+
+Validation: `cd apps/network && pnpm vitest run` (pass). Stored hivemind learning and reported completion via `openclaw system event`.
