@@ -30,10 +30,19 @@ export function AgentCard({ agent, expanded, isAdmin, onToggle, onLoadEnvironmen
           <Heartbeat active={loopActive} />
           <span className="agent-card-name">{agent.displayName}</span>
           <div style={{ flex: 1 }} />
+          {agent.config?.profile?.mood && (
+            <Badge variant="dim">{agent.config.profile.mood}</Badge>
+          )}
           {agent.config?.specialty && (
             <Badge variant="dim">{agent.config.specialty}</Badge>
           )}
         </div>
+        {(agent.config?.profile?.status || agent.config?.profile?.currentFocus) && (
+          <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--fg-dim)', padding: '0.125rem 0 0 1.5rem' }}>
+            {agent.config.profile.status && <div>{agent.config.profile.status}</div>}
+            {agent.config.profile.currentFocus && <div style={{ opacity: 0.7 }}>{agent.config.profile.currentFocus}</div>}
+          </div>
+        )}
         <div className="agent-card-meta">
           {agent.did && (
             <span

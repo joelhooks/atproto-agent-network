@@ -12,6 +12,14 @@ export type AgentGoal = {
   completedAt?: number
 }
 
+export type AgentProfile = {
+  status?: string
+  currentFocus?: string
+  mood?: string
+  avatar?: string
+  updatedAt?: number
+}
+
 export type AgentConfig = {
   name: string
   personality: string
@@ -22,6 +30,7 @@ export type AgentConfig = {
   goals: AgentGoal[]
   enabledTools: string[]
   webhookUrl?: string
+  profile?: AgentProfile
 }
 
 export type AgentLoop = {

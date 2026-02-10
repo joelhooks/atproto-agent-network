@@ -2,6 +2,14 @@ import type { AgentCardState } from '../lib/types'
 import { Badge } from './ui/Badge'
 import { EnvironmentCard } from './EnvironmentCard'
 
+function formatRelativeTime(epoch: number): string {
+  const diff = Date.now() - epoch
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return `${Math.floor(diff / 86_400_000)}d ago`
+}
+
 export interface AgentDetailProps {
   agent: AgentCardState
   isAdmin: boolean
@@ -15,6 +23,30 @@ export function AgentDetail({ agent, isAdmin }: AgentDetailProps) {
 
   return (
     <div className="agent-detail">
+      {/* Profile */}
+      {config?.profile && (config.profile.status || config.profile.currentFocus || config.profile.mood) && (
+        <div className="agent-detail-section">
+          <div className="agent-detail-title">Profile</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            {config.profile.status && (
+              <div className="agent-detail-row"><span className="label">Status</span><span className="value">{config.profile.status}</span></div>
+            )}
+            {config.profile.currentFocus && (
+              <div className="agent-detail-row"><span className="label">Focus</span><span className="value">{config.profile.currentFocus}</span></div>
+            )}
+            {config.profile.mood && (
+              <div className="agent-detail-row"><span className="label">Mood</span><span className="value">{config.profile.mood}</span></div>
+            )}
+            {config.profile.updatedAt && (
+              <div className="agent-detail-row">
+                <span className="label">Updated</span>
+                <span className="value" style={{ opacity: 0.7 }}>{formatRelativeTime(config.profile.updatedAt)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Goals */}
       <div className="agent-detail-section">
         <div className="agent-detail-title">Goals</div>
