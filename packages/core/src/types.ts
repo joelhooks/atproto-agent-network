@@ -94,6 +94,27 @@ export interface EventError {
   retryable: boolean
 }
 
+export interface PersistentCharacter {
+  name: string
+  klass: string
+  level: number
+  xp: number
+  maxHp: number
+  maxMp: number
+  skills: Record<string, number>
+  backstory: string
+  motivation: string
+  appearance: string
+  personalityTraits: string[]
+  adventureLog: string[]
+  achievements: string[]
+  inventory: string[]
+  createdAt: number
+  updatedAt: number
+  gamesPlayed: number
+  deaths: number
+}
+
 export interface NetworkPeer {
   did: string
   relay: string

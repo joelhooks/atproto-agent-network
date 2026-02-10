@@ -41,6 +41,8 @@ export type Character = {
   /** The agent controlling this character (e.g. 'slag'). When set, turn matching uses this instead of name. */
   agent?: string
   klass: RpgClass
+  // Optional narrative fields (backwards compatible with persisted games).
+  backstory?: string
   stats: Stats
   skills: Skills
   // Optional for backwards compatibility with persisted games.
@@ -74,6 +76,16 @@ export type EnemyTactics = {
 }
 
 export type DifficultyTier = 'easy' | 'medium' | 'hard' | 'deadly' | 'boss'
+
+// ── XP + leveling ────────────────────────────────────────────────────────────
+
+export const XP_PER_ENEMY_KILL = 25
+export const XP_PER_ROOM_CLEAR = 50
+export const XP_PER_BOSS_KILL = 100
+export const XP_PER_ADVENTURE_COMPLETE = 200
+
+// XP needed to reach each level (1..10). Index is (level - 1).
+export const XP_TABLE = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500]
 
 export type BossPhase = {
   name: string
@@ -151,6 +163,17 @@ export type RpgGameState = {
   party: Character[]
   turnOrder: Character[]
   currentPlayer: string
+  // XP earned during this adventure (keyed by agent id, i.e. Character.agent).
+  // Optional for backwards compatibility with persisted games.
+  xpEarned?: Record<string, number>
+  // Optional setup interview between DM and players (only present for new characters).
+  setupPhase?: {
+    currentPlayerIndex: number
+    exchangeCount: number
+    maxExchanges: number
+    dialogues: Record<string, string[]>
+    complete: boolean
+  }
   combat?: { enemies: Enemy[] }
   // GM lookups from pdf-brain keyed by query string (optional for backwards compat).
   libraryContext?: Record<string, string>
@@ -1700,4 +1723,106 @@ export function disarmTrap(
 
   game.log.push({ at: Date.now(), who: rogueName, what: `disarmed trap (skill ${boostedSkill})` })
   return { ok: true, disarmed: result.success }
+}
+
+// ── Persistent character helpers ──────────────────────────────────────
+
+import type { PersistentCharacter } from '@atproto-agent/core'
+
+/**
+ * Convert a persistent character into an in-game Character.
+ * HP/MP are reset to max for each new adventure.
+ */
+export function persistentToGameCharacter(pc: PersistentCharacter, agent: string): Character {
+  // Use createCharacter to get proper stats for the class, then override with persistent data
+  const base = createCharacter({ name: pc.name, klass: pc.klass as RpgClass, agent })
+  return {
+    ...base,
+    ...(pc.backstory ? { backstory: pc.backstory } : {}),
+    hp: pc.maxHp,
+    maxHp: pc.maxHp,
+    mp: pc.maxMp,
+    maxMp: pc.maxMp,
+    skills: {
+      attack: pc.skills.attack ?? base.skills.attack,
+      dodge: pc.skills.dodge ?? base.skills.dodge,
+      cast_spell: pc.skills.cast_spell ?? base.skills.cast_spell,
+      use_skill: pc.skills.use_skill ?? base.skills.use_skill,
+    },
+  }
+}
+
+/**
+ * Update (or create) a persistent character from in-game state after an adventure.
+ */
+export function gameCharacterToPersistent(
+  gc: Character,
+  existing: PersistentCharacter | null,
+  adventureSummary?: string
+): PersistentCharacter {
+  const now = Date.now()
+  const fallback: PersistentCharacter = {
+    name: gc.name,
+    klass: gc.klass,
+    level: 1,
+    xp: 0,
+    maxHp: gc.maxHp,
+    maxMp: gc.maxMp,
+    skills: { ...gc.skills },
+    backstory: '',
+    motivation: '',
+    appearance: '',
+    personalityTraits: [],
+    adventureLog: [],
+    achievements: [],
+    inventory: [],
+    createdAt: now,
+    updatedAt: now,
+    gamesPlayed: 0,
+    deaths: 0,
+  }
+  const base: PersistentCharacter = existing ? { ...fallback, ...existing } : fallback
+  return {
+    ...base,
+    backstory: (gc.backstory && gc.backstory.trim()) ? gc.backstory : base.backstory,
+    skills: { ...gc.skills },
+    updatedAt: now,
+    gamesPlayed: base.gamesPlayed + 1,
+    deaths: gc.hp <= 0 ? base.deaths + 1 : base.deaths,
+    adventureLog: adventureSummary
+      ? [...base.adventureLog.slice(-9), adventureSummary]
+      : base.adventureLog,
+  }
+}
+
+export function awardXp(pc: PersistentCharacter, amount: number): { leveledUp: boolean; newLevel: number } {
+  const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
+  pc.xp = (Number.isFinite(pc.xp) ? pc.xp : 0) + amt
+
+  const startLevel = Number.isFinite(pc.level) ? Math.max(1, Math.floor(pc.level)) : 1
+  pc.level = startLevel
+
+  let leveledUp = false
+  // XP_TABLE[n] is the XP required to reach level (n+1).
+  while (pc.level < XP_TABLE.length && pc.xp >= XP_TABLE[pc.level]!) {
+    pc.level += 1
+    leveledUp = true
+
+    // Stat growth scales with the new level.
+    pc.maxHp = (Number.isFinite(pc.maxHp) ? pc.maxHp : 0) + (5 + pc.level)
+    pc.maxMp = (Number.isFinite(pc.maxMp) ? pc.maxMp : 0) + (3 + pc.level)
+
+    // +5 to a random skill (stable ordering for deterministic tests).
+    const skills = pc.skills && typeof pc.skills === 'object' ? pc.skills : {}
+    const keys = Object.keys(skills).sort()
+    if (keys.length > 0) {
+      const idx = Math.min(keys.length - 1, Math.floor(Math.random() * keys.length))
+      const k = keys[idx]!
+      const cur = Number((skills as any)[k])
+      ;(skills as any)[k] = (Number.isFinite(cur) ? cur : 0) + 5
+    }
+    pc.skills = skills
+  }
+
+  return { leveledUp, newLevel: pc.level }
 }

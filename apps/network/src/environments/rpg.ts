@@ -4,20 +4,30 @@ import { generateTid } from '../../../../packages/core/src/identity'
 
 import {
   attack,
+  awardXp,
   type Character,
   createCharacter,
   createDice,
   createGame,
   describeRoom,
   explore,
+  gameCharacterToPersistent,
   generateFantasyName,
   gmInterveneIfStuck,
   partyWipe,
+  persistentToGameCharacter,
   resolveSkillCheck,
   soloMultiplier,
   type RpgClass,
   type RpgGameState,
+  XP_PER_ADVENTURE_COMPLETE,
+  XP_PER_BOSS_KILL,
+  XP_PER_ENEMY_KILL,
+  XP_PER_ROOM_CLEAR,
+  XP_TABLE,
 } from '../games/rpg-engine'
+
+import type { PersistentCharacter } from '@atproto-agent/core'
 
 import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
 import {
@@ -56,6 +66,27 @@ function generateJoinName(klass: RpgClass, partyIndex: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function addXpEarned(game: RpgGameState, who: string, amount: number): void {
+  const agent = String(who ?? '').trim()
+  const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
+  if (!agent || amt <= 0) return
+  game.xpEarned ??= {}
+  game.xpEarned[agent] = (game.xpEarned[agent] ?? 0) + amt
+}
+
+function livingPartyIds(game: RpgGameState): string[] {
+  const party = Array.isArray(game.party) ? game.party : []
+  return party.filter((p) => (p?.hp ?? 0) > 0).map((p) => characterId(p))
+}
+
+function awardRoomClearXp(game: RpgGameState): void {
+  for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ROOM_CLEAR)
+}
+
+function awardAdventureCompleteXp(game: RpgGameState): void {
+  for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ADVENTURE_COMPLETE)
 }
 
 function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
@@ -117,6 +148,28 @@ async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: strin
     await ctx.broadcast({ event_type: 'game.completed', ...summary })
   } catch {
     // best-effort
+  }
+
+  // Save persistent character for this agent
+  if (ctx.saveCharacter && ctx.loadCharacter) {
+    try {
+      const agentName = ctx.agentName.trim()
+      const partyMember = Array.isArray(game.party)
+        ? game.party.find((p) => (p.agent ?? p.name) === agentName)
+        : undefined
+      if (partyMember) {
+        const existing = (await ctx.loadCharacter()) as PersistentCharacter | null
+        const adventureSummary = `Adventure ${gameId}: ${(game as any).winner === 'party' ? 'Victory' : 'Defeat'} (${turns} turns)`
+        const persistent = gameCharacterToPersistent(partyMember, existing?.klass ? existing : null, adventureSummary)
+        const earned = game.xpEarned?.[agentName] ?? 0
+        if (earned > 0) {
+          awardXp(persistent, earned)
+        }
+        await ctx.saveCharacter(persistent)
+      }
+    } catch {
+      // best-effort — don't break game completion
+    }
   }
 }
 
@@ -352,6 +405,9 @@ export const rpgEnvironment: AgentEnvironment = {
         '- new_game: Start an adventure (requires players array)\n' +
         '- join_game: Join an open adventure (requires gameId + klass)\n' +
         '- create_character: Create/update your character (requires klass)\n' +
+        '- setup_narrate: DM asks a backstory question (setup phase only)\n' +
+        '- setup_respond: Player responds to DM backstory question (setup phase only)\n' +
+        '- setup_finalize: DM finalizes backstories and begins the adventure (setup phase only)\n' +
         '- explore: Move to the next room\n' +
         '- attack: Attack (in combat attacks first enemy; otherwise attacks a party member if defender provided)\n' +
         '- cast_spell: Cast a spell (stub)\n' +
@@ -367,6 +423,9 @@ export const rpgEnvironment: AgentEnvironment = {
               'new_game',
               'join_game',
               'create_character',
+              'setup_narrate',
+              'setup_respond',
+              'setup_finalize',
               'explore',
               'attack',
               'cast_spell',
@@ -381,6 +440,9 @@ export const rpgEnvironment: AgentEnvironment = {
           defender: { type: 'string', description: 'Party member to attack (out of combat only).' },
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
           skill: { type: 'string', description: 'Skill name for use_skill (defaults to use_skill).' },
+          message: { type: 'string', description: 'Narration/response message for setup phase.' },
+          target: { type: 'string', description: 'Target player agent for DM narration (setup phase).' },
+          backstories: { type: 'object', additionalProperties: { type: 'string' }, description: 'Final backstories by agent.' },
         },
         required: ['command'],
       },
@@ -421,7 +483,19 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const fantasyName = generateJoinName(klass, game.party.length)
-          const joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+
+          // Try to load persistent character
+          let joined: Character
+          if (ctx.loadCharacter) {
+            const persistent = await ctx.loadCharacter() as PersistentCharacter | null
+            if (persistent && persistent.klass) {
+              joined = persistentToGameCharacter(persistent, agentName)
+            } else {
+              joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+            }
+          } else {
+            joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+          }
           game.party.push(joined)
           recomputeTurnOrder(game)
 
@@ -511,6 +585,23 @@ export const rpgEnvironment: AgentEnvironment = {
           const gameId = `rpg_${generateTid()}`
           const game = createGame({ id: gameId, players: finalPlayers })
 
+          // Backstory setup phase: only run when at least one party member has no backstory.
+          // Note: we can only inspect in-game state here (DM cannot read other agents' persistent storage).
+          const missingBackstory = Array.isArray(game.party)
+            ? game.party.some((p: any) => typeof p?.backstory !== 'string' || p.backstory.trim().length === 0)
+            : true
+          if (missingBackstory) {
+            ;(game as any).setupPhase = {
+              currentPlayerIndex: 0,
+              exchangeCount: 0,
+              maxExchanges: 2,
+              dialogues: {},
+              complete: false,
+            }
+            // Setup begins with the DM (grimlock) asking the first question.
+            game.currentPlayer = 'grimlock'
+          }
+
           // Ensure type column exists (migration from catan-only schema)
           await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
 
@@ -565,9 +656,12 @@ export const rpgEnvironment: AgentEnvironment = {
         const game = JSON.parse(row.state) as RpgGameState
         game.party ??= []
 
+        const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
+        const setupActive = Boolean(setupPhase && !setupPhase.complete)
+
         // Normalize turn state eagerly so dead players never softlock the game.
-        // Persist normalization before any early returns (e.g. "Not your turn") so the game can recover.
-        {
+        // During setup, currentPlayer may be 'grimlock' (not in party), so skip normalization.
+        if (!setupActive) {
           const beforePhase = game.phase
           const dirty = normalizeTurnState(game)
           if (dirty) {
@@ -601,6 +695,134 @@ export const rpgEnvironment: AgentEnvironment = {
               currentPlayer: game.currentPlayer,
             },
           }
+        }
+
+        // Setup-phase commands
+        if (command === 'setup_narrate' || command === 'setup_respond' || command === 'setup_finalize') {
+          if (!setupPhase) {
+            return { ok: false, error: 'No setup phase is active for this adventure.' }
+          }
+          const sp = setupPhase // narrowed non-undefined binding
+
+          const agentName = ctx.agentName.trim()
+          const party = Array.isArray(game.party) ? game.party : []
+          const currentIdx = Math.max(0, Math.min(party.length - 1, Math.floor(sp.currentPlayerIndex ?? 0)))
+          const current = party[currentIdx]
+          const currentAgent = current ? (current.agent ?? current.name) : ''
+
+          function ensureDialoguesKey(key: string): string[] {
+            sp.dialogues ??= {}
+            const k = String(key || '').trim() || 'unknown'
+            const list = sp.dialogues[k] ?? []
+            sp.dialogues[k] = list
+            return list
+          }
+
+          if (command === 'setup_narrate') {
+            if (agentName !== 'grimlock') return { ok: false, error: 'Only Grimlock can use setup_narrate.' }
+            if (sp.complete) return { ok: false, error: 'Setup is already complete. Use setup_finalize.' }
+
+            const message = typeof params.message === 'string' ? params.message.trim() : ''
+            if (!message) return { ok: false, error: 'message required for setup_narrate' }
+
+            const targetRaw = typeof params.target === 'string' ? params.target.trim() : ''
+            const target = targetRaw || currentAgent
+            if (!target) return { ok: false, error: 'No target player found for setup_narrate.' }
+
+            // Optional: allow DM to re-target the interview.
+            if (targetRaw) {
+              const idx = party.findIndex((p: any) => (p?.agent ?? p?.name) === target)
+              if (idx >= 0) {
+                sp.currentPlayerIndex = idx
+                sp.exchangeCount = 0
+              }
+            }
+
+            ensureDialoguesKey(target).push(message)
+            game.currentPlayer = target
+
+            await db
+              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+              .run()
+
+            return { content: toTextContent(`DM: ${message}`), details: { gameId, target } }
+          }
+
+          if (command === 'setup_respond') {
+            if (sp.complete) return { ok: false, error: 'Setup is already complete. Wait for setup_finalize.' }
+            if (agentName !== currentAgent) {
+              return { ok: false, error: `Not your setup turn. Current player: ${currentAgent || 'unknown'}` }
+            }
+
+            const message = typeof params.message === 'string' ? params.message.trim() : ''
+            if (!message) return { ok: false, error: 'message required for setup_respond' }
+
+            ensureDialoguesKey(agentName).push(message)
+
+            sp.exchangeCount = Math.max(0, Math.floor(sp.exchangeCount ?? 0)) + 1
+
+            // Hand turn back to DM, and advance to the next player when maxExchanges reached.
+            if (sp.exchangeCount >= Math.max(1, Math.floor(sp.maxExchanges ?? 2))) {
+              sp.currentPlayerIndex = currentIdx + 1
+              sp.exchangeCount = 0
+
+              if (sp.currentPlayerIndex >= party.length) {
+                sp.complete = true
+              }
+            }
+
+            game.currentPlayer = 'grimlock'
+
+            await db
+              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+              .run()
+
+            return { content: toTextContent(`You: ${message}`), details: { gameId } }
+          }
+
+          // setup_finalize
+          if (agentName !== 'grimlock') return { ok: false, error: 'Only Grimlock can use setup_finalize.' }
+
+          const backstories = isRecord(params.backstories) ? (params.backstories as Record<string, unknown>) : null
+          if (!backstories) return { ok: false, error: 'backstories required for setup_finalize' }
+
+          for (const member of party) {
+            const id = String((member as any)?.agent ?? (member as any)?.name ?? '').trim()
+            if (!id) continue
+            const raw = backstories[id]
+            const text = typeof raw === 'string' ? raw.trim() : ''
+            if (text) (member as any).backstory = text
+          }
+
+          sp.complete = true
+          delete (game as any).setupPhase
+
+          // Start adventure at room 0 with correct mode/combat and first player turn.
+          game.roomIndex = 0
+          const room0 = game.dungeon?.[0]
+          if (room0 && (room0.type === 'combat' || room0.type === 'boss')) {
+            game.mode = 'combat'
+            game.combat = { enemies: (room0 as any).enemies?.map((e: any) => ({ ...e })) ?? [] }
+          } else {
+            game.mode = 'exploring'
+            game.combat = undefined
+          }
+          recomputeTurnOrder(game)
+          game.currentPlayer = characterId(game.turnOrder[0]) ?? characterId(game.party[0]) ?? 'unknown'
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return { content: toTextContent('Setup complete. The adventure begins.'), details: { gameId } }
+        }
+
+        // While setup is active, block normal gameplay commands to prevent skipping backstories.
+        if (setupActive) {
+          return { ok: false, error: 'Setup phase in progress. Use setup_narrate / setup_respond / setup_finalize.' }
         }
 
         if (command === 'create_character') {
@@ -637,6 +859,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const beforePhase = game.phase
+          const beforeRoomIndex = game.roomIndex
           const attemptedRoomIndex = game.roomIndex + 1
           const result = explore(game, { dice })
 
@@ -645,6 +868,18 @@ export const rpgEnvironment: AgentEnvironment = {
             action: 'explore',
             target: `room:${attemptedRoomIndex}:${result.room?.type ?? 'none'}`,
           })
+
+          // Room clear XP: only when we actually advance to a new room.
+          if (game.roomIndex > beforeRoomIndex) {
+            awardRoomClearXp(game)
+          }
+
+          // Adventure completion XP: award once when phase flips to finished.
+          // Guard: tests construct single-room dungeons purely to exercise save behavior; don't auto-award
+          // completion XP for those.
+          if (beforePhase !== 'finished' && game.phase === 'finished' && game.dungeon.length > 1) {
+            awardAdventureCompleteXp(game)
+          }
 
           // advance turn (skip dead players)
           advanceTurn(game)
@@ -698,10 +933,22 @@ export const rpgEnvironment: AgentEnvironment = {
 
               let text = ''
               if (hit) {
+                const hpBefore = enemy.hp
                 const dmg = dice.d(6) + Math.floor(attacker.stats.STR / 25)
                 enemy.hp = Math.max(0, enemy.hp - dmg)
                 attacker.skills.attack = atk.nextSkill
                 text = `You strike the ${enemy.name} for ${dmg}. (${enemy.hp} HP left)`
+
+                // XP rewards are accumulated into game state and applied to persistent characters at game end.
+                if (hpBefore > 0 && enemy.hp === 0) {
+                  addXpEarned(game, attackerName, XP_PER_ENEMY_KILL)
+                  game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
+
+                  if (enemy.tactics?.kind === 'boss') {
+                    addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
+                    game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
+                  }
+                }
               } else {
                 text = `The ${enemy.name} avoids your attack.`
               }
@@ -871,7 +1118,7 @@ export const rpgEnvironment: AgentEnvironment = {
   },
 
   async buildContext(ctx: EnvironmentContext): Promise<string[]> {
-    const row = await findActiveGameForAgent(ctx)
+    const row = (await findActiveGameWhereItsMyTurn(ctx)) ?? (await findActiveGameForAgent(ctx))
     if (!row) {
       const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
       if (joinable.length === 0) return []
@@ -889,8 +1136,34 @@ export const rpgEnvironment: AgentEnvironment = {
     try {
       const game = JSON.parse(row.state) as RpgGameState
       const room = game.dungeon[game.roomIndex]
-      const isMyTurn = game.currentPlayer === ctx.agentName
-      const partyMember = game.party?.find((p: any) => p.name === ctx.agentName)
+      const agentName = ctx.agentName.trim()
+      const isMyTurn = game.currentPlayer === agentName
+      const partyMember = game.party?.find((p: any) => p && isCharacter(p, agentName))
+      const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
+
+      if (setupPhase && !setupPhase.complete) {
+        const party = Array.isArray(game.party) ? game.party : []
+        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
+        const current = party[idx]
+        const currentAgent = current ? (current.agent ?? current.name) : ''
+
+        if (agentName.toLowerCase() === 'grimlock') {
+          return [
+            `SETUP PHASE: You are interviewing ${currentAgent || 'the next player'} about their character.`,
+            'Ask about their origin, motivation, and appearance. Keep it brief (2-3 exchanges per player).',
+            'Use setup_narrate to ask questions, then setup_finalize when all players have backstories.',
+          ]
+        }
+
+        if (agentName === currentAgent) {
+          return [
+            "The DM is asking about your character's backstory.",
+            'Respond in character using setup_respond. Be creative — this defines who you are.',
+          ]
+        }
+
+        return [`Waiting for ${currentAgent || 'the current player'} to finish backstory with DM.`]
+      }
 
       // Barrier detection: if room requires a class nobody has, prompt recruitment
       const blockedRecruitment = (() => {
@@ -928,6 +1201,27 @@ export const rpgEnvironment: AgentEnvironment = {
         }
       }
 
+	      // Inject persistent character backstory/history
+	      const persistentLines: string[] = []
+	      if (ctx.loadCharacter) {
+	        try {
+	          const pc = (await ctx.loadCharacter()) as PersistentCharacter | null
+	          if (pc && pc.klass) {
+	            const lvl = Number.isFinite(pc.level) ? Math.max(1, Math.floor(pc.level)) : 1
+	            const xp = Number.isFinite(pc.xp) ? Math.max(0, Math.floor(pc.xp)) : 0
+	            const next = XP_TABLE[Math.min(XP_TABLE.length - 1, lvl)] ?? XP_TABLE[XP_TABLE.length - 1]!
+	            persistentLines.push(`Level ${lvl} ${pc.klass} (${xp}/${next} XP to next level)`)
+	            if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
+	            if (pc.adventureLog && pc.adventureLog.length > 0) {
+	              persistentLines.push(`Previous adventures: ${pc.adventureLog.slice(-3).join('; ')}`)
+	            }
+	            if (pc.gamesPlayed > 0) {
+	              persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)
+	            }
+	          }
+	        } catch { /* non-fatal */ }
+	      }
+
       const lines: string[] = []
       if (isMyTurn) {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
@@ -948,6 +1242,8 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push(`DO NOT create a new game.`)
       }
 
+      lines.push(...persistentLines)
+
       return lines.filter(Boolean)
     } catch {
       return []
@@ -959,7 +1255,19 @@ export const rpgEnvironment: AgentEnvironment = {
       if (call.name !== 'rpg') return false
       const args = normalizeToolCallArguments(call.arguments)
       const cmd = typeof args.command === 'string' ? args.command : ''
-      return ['new_game', 'join_game', 'explore', 'attack', 'cast_spell', 'use_skill', 'rest', 'create_character'].includes(cmd)
+      return [
+        'new_game',
+        'join_game',
+        'explore',
+        'attack',
+        'cast_spell',
+        'use_skill',
+        'rest',
+        'create_character',
+        'setup_narrate',
+        'setup_respond',
+        'setup_finalize',
+      ].includes(cmd)
     })
   },
 
@@ -992,6 +1300,49 @@ export const rpgEnvironment: AgentEnvironment = {
 
     try {
       const state = JSON.parse(row.state) as RpgGameState
+      const setupPhase = (state as any).setupPhase as RpgGameState['setupPhase'] | undefined
+      if (setupPhase && !setupPhase.complete) {
+        const party = Array.isArray(state.party) ? state.party : []
+        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
+        const current = party[idx]
+        const currentAgent = current ? (current.agent ?? current.name) : ''
+
+        // DM turn: ask an opening question if no dialogue yet for this player.
+        if (ctx.agentName.trim() === 'grimlock') {
+          const dialogues = (setupPhase.dialogues ?? {}) as Record<string, string[]>
+          const existing = Array.isArray(dialogues[currentAgent]) ? dialogues[currentAgent] : []
+          if (existing.length === 0) {
+            return [
+              {
+                name: 'rpg',
+                arguments: {
+                  command: 'setup_narrate',
+                  gameId: row.id,
+                  target: currentAgent,
+                  message: 'Tell me about your character. Where did you come from, and what do you look like?',
+                },
+              },
+            ]
+          }
+          return []
+        }
+
+        // Player turn: respond creatively based on class.
+        if (ctx.agentName.trim() === currentAgent) {
+          const klass = String((current as any)?.klass ?? '').toLowerCase()
+          const byClass: Record<string, string> = {
+            warrior: 'I learned steel in a forgotten border war. I carry a scar I refuse to explain.',
+            scout: 'I grew up running rooftops and forest trails, always one step ahead of the law.',
+            mage: 'I was apprenticed to a cruel tutor; my spells are precise, and my temper is not.',
+            healer: 'I watched illness take my village, so I swore never to be powerless again.',
+          }
+          const message = byClass[klass] ?? 'I have a past I do not share easily, but it brought me here.'
+          return [{ name: 'rpg', arguments: { command: 'setup_respond', gameId: row.id, message } }]
+        }
+
+        return []
+      }
+
       if (state.mode === 'combat') {
         return [{ name: 'rpg', arguments: { command: 'attack', gameId: row.id } }]
       }
