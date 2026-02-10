@@ -768,23 +768,11 @@ export const rpgEnvironment: AgentEnvironment = {
           const gameId = `rpg_${generateTid()}`
           const game = createGame({ id: gameId, players: finalPlayers })
 
-          // Backstory setup phase: only run when at least one party member has no backstory.
-          // Note: we can only inspect in-game state here (DM cannot read other agents' persistent storage).
-          const missingBackstory = Array.isArray(game.party)
-            ? game.party.some((p: any) => typeof p?.backstory !== 'string' || p.backstory.trim().length === 0)
-            : true
-          if (missingBackstory) {
-            ;(game as any).setupPhase = {
-              currentPlayerIndex: 0,
-              exchangeCount: 0,
-              maxExchanges: 2,
-              dialogues: {},
-              complete: false,
-            }
-            // Setup begins with the DM (grimlock) asking the first question.
-            game.phase = 'setup' as any
-            game.currentPlayer = 'grimlock'
-          }
+          // Backstory setup phase: DISABLED — kimi-k2.5 can't reliably use setup_narrate/setup_respond
+          // even with mechanical tool suppression. Agents jump straight to combat. Re-enable once
+          // model compliance improves or we switch to a more instruction-following model for DM.
+          // For now, start directly in playing phase.
+          game.phase = 'playing' as any
 
           // Ensure type column exists (migration from catan-only schema)
           await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})

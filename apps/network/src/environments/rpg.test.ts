@@ -419,10 +419,10 @@ describe('rpgEnvironment', () => {
     // Grimlock is DM, never a player — players should be the actual agents
     expect((result as any).details.players).toContain('slag')
     expect((result as any).details.players).not.toContain('grimlock')
-    expect((result as any).details.phase).toBe('setup')
+    expect((result as any).details.phase).toBe('playing')
   })
 
-  it('new_game initializes setupPhase when party characters lack a backstory', async () => {
+  it('new_game starts in playing phase (setup disabled)', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
 
@@ -441,15 +441,9 @@ describe('rpgEnvironment', () => {
     const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
-    expect(updated.setupPhase).toMatchObject({
-      currentPlayerIndex: 0,
-      exchangeCount: 0,
-      maxExchanges: 2,
-      complete: false,
-    })
-    expect(updated.setupPhase.dialogues).toEqual({})
-    // Setup starts with the DM prompting the first player.
-    expect(updated.currentPlayer).toBe('grimlock')
+    // Setup phase is disabled — game starts directly in playing
+    expect(updated.setupPhase).toBeUndefined()
+    expect(updated.phase).toBe('playing')
   })
 
   it('setup_narrate is DM-only, appends dialogue for the current player, and hands the turn to the player', async () => {
