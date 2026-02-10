@@ -274,6 +274,111 @@ describe('rpg-engine', () => {
     }
   })
 
+  it('barriers: brute force path lets any Warrior smash through at 20% max HP cost', () => {
+    const dice = makeDiceFromD100([100]) // unused for brute force
+    const warrior = createCharacter({ name: 'w', klass: 'Warrior' })
+    const scout = createCharacter({ name: 's', klass: 'Scout' })
+
+    const game = createGame({
+      id: 'rpg_barrier_bruteforce',
+      players: [warrior, scout],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'barrier', description: 'A sealed gate.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 's'
+
+    const beforeHp = warrior.hp
+    const expectedCost = Math.ceil(warrior.maxHp * 0.2)
+    const result = explore(game, { dice })
+
+    expect(result.room?.type).toBe('barrier')
+    expect(game.roomIndex).toBe(1)
+    expect(warrior.hp).toBe(beforeHp - expectedCost)
+    expect(game.log.some((e) => e.what.includes('barrier: brute_force'))).toBe(true)
+  })
+
+  it('barriers: skill check path (hard 30%) lets any class pass on success', () => {
+    const dice = makeDiceFromD100([30]) // succeed at 30%
+    const scout = createCharacter({ name: 's', klass: 'Scout' })
+    scout.mp = 0 // ensure MP sacrifice cannot happen
+
+    const game = createGame({
+      id: 'rpg_barrier_skillcheck',
+      players: [scout],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'barrier', description: 'An ancient seal.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 's'
+
+    const result = explore(game, { dice })
+    expect(result.room?.type).toBe('barrier')
+    expect(game.roomIndex).toBe(1)
+    expect(game.log.some((e) => e.what.includes('barrier: skill_check'))).toBe(true)
+  })
+
+  it('barriers: MP sacrifice path spends 50% max MP to force it open', () => {
+    const dice = makeDiceFromD100([99]) // fail skill check, then use MP sacrifice
+    const scout = createCharacter({ name: 's', klass: 'Scout' })
+
+    const game = createGame({
+      id: 'rpg_barrier_mp',
+      players: [scout],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'barrier', description: 'A rune-locked door.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 's'
+
+    const beforeMp = scout.mp
+    const expectedCost = Math.ceil(scout.maxMp * 0.5)
+    const result = explore(game, { dice })
+
+    expect(result.room?.type).toBe('barrier')
+    expect(game.roomIndex).toBe(1)
+    expect(scout.mp).toBe(beforeMp - expectedCost)
+    expect(game.log.some((e) => e.what.includes('barrier: mp_sacrifice'))).toBe(true)
+  })
+
+  it('barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier', () => {
+    const dice = makeDiceFromD100([99, 99, 99, 99, 99]) // always fail skill checks
+    const scout = createCharacter({ name: 's', klass: 'Scout' })
+    scout.mp = 0 // ensure MP sacrifice cannot happen
+
+    const game = createGame({
+      id: 'rpg_barrier_crumble',
+      players: [scout],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'barrier', description: 'A stubborn stone seal.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 's'
+
+    for (let i = 1; i <= 4; i += 1) {
+      explore(game, { dice })
+      expect(game.roomIndex).toBe(0)
+      expect((game as any).barrierAttempts?.['1']).toBe(i)
+    }
+
+    explore(game, { dice })
+    expect(game.roomIndex).toBe(1)
+    expect((game as any).barrierAttempts?.['1']).toBe(5)
+    expect(game.log.some((e) => e.what.includes('barrier: auto_crumble'))).toBe(true)
+  })
+
   it('rest rooms heal the party (capped at max)', () => {
     const dice = makeDiceFromD100([50])
     const a = createCharacter({ name: 'a', klass: 'Warrior' })

@@ -527,7 +527,7 @@
       "title": "Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble",
       "description": "When a party encounters a barrier they can't pass (wrong class), provide alternative paths instead of softlocking:\n\n1. **Brute force**: Any warrior-type can smash through at HP cost (lose 20% max HP)\n2. **Skill check**: INT or WIS check at Hard difficulty (30%) — any class can attempt\n3. **MP sacrifice**: Spend 50% max MP to magically force it open\n4. **Auto-crumble**: After 5 failed attempts on the same barrier, the GM narrates it crumbling (\"The ancient seal weakens and shatters\")\n\nIn rpg-engine.ts, modify the barrier action handler. When class doesn't match, instead of returning \"blocked\", offer alternatives and resolve them. Track attempt count per barrier in game state.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: A party without the required class can still pass any barrier via one of the 4 alternatives. Auto-crumble triggers after exactly 5 failed attempts. Test all 4 paths.",
       "priority": 52,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -597,8 +597,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 51,
-    "lastIteration": "2026-02-10T02:42:23.152Z"
+    "totalIterations": 52,
+    "lastIteration": "2026-02-10T02:52:18.622Z"
   },
   "totalStories": 11
 }

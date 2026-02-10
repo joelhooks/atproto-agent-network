@@ -77,6 +77,9 @@ export type RpgGameState = {
   turnOrder: Character[]
   currentPlayer: string
   combat?: { enemies: Enemy[] }
+  // Tracks repeated failed attempts on a given barrier room index.
+  // Optional for backwards compatibility with persisted games.
+  barrierAttempts?: Record<string, number>
   log: Array<{ at: number; who: string; what: string }>
 }
 
@@ -344,6 +347,7 @@ export function createGame(input: {
     turnOrder,
     currentPlayer: turnOrder[0]?.name ?? party[0]?.name ?? 'unknown',
     combat,
+    barrierAttempts: {},
     log: [],
   }
 }
@@ -453,16 +457,103 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
 
     if (room.type === 'barrier') {
       const requiredClass = (room as { requiredClass?: string }).requiredClass ?? ''
-      const actor = findCharacter(game, game.currentPlayer)
-      const hasRequiredClass = game.party.some(p => p.klass === requiredClass)
+      const barrierIndex = game.roomIndex
+      const barrierKey = String(barrierIndex)
+      const actor = findCharacter(game, game.currentPlayer) ?? game.party[0]
+      const hasRequiredClass = game.party.some((p) => p.klass === requiredClass)
+
       if (!hasRequiredClass) {
-        // Block: can't pass without the required class, stay on this room
-        game.roomIndex -= 1
-        game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: blocked (need ${requiredClass})` })
-        return { ok: true, room }
+        game.barrierAttempts ??= {}
+
+        // 1) Brute force: any Warrior can smash through (20% max HP)
+        const warrior =
+          (actor && actor.klass === 'Warrior' ? actor : undefined) ?? game.party.find((p) => p.klass === 'Warrior')
+        if (warrior) {
+          const cost = Math.max(1, Math.ceil(warrior.maxHp * 0.2))
+          applyDamage(warrior, cost)
+          delete game.barrierAttempts[barrierKey]
+          game.log.push({
+            at: Date.now(),
+            who: warrior.name,
+            what: `barrier: brute_force (-${cost} HP)`,
+          })
+          game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: bypassed (need ${requiredClass})` })
+        } else {
+          // 2) Skill check: INT/WIS at Hard difficulty (30%)
+          const check = resolveSkillCheck({ skill: 30, dice: input.dice })
+          if (check.success) {
+            delete game.barrierAttempts[barrierKey]
+            game.log.push({
+              at: Date.now(),
+              who: actor?.name ?? game.currentPlayer,
+              what: `barrier: skill_check success (roll ${check.roll} <= 30)`,
+            })
+            game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: bypassed (need ${requiredClass})` })
+          } else if (actor) {
+            // 3) MP sacrifice: spend 50% max MP to force it open
+            const mpCost = Math.max(0, Math.ceil(actor.maxMp * 0.5))
+            if (actor.mp >= mpCost && mpCost > 0) {
+              actor.mp = Math.max(0, actor.mp - mpCost)
+              delete game.barrierAttempts[barrierKey]
+              game.log.push({
+                at: Date.now(),
+                who: actor.name,
+                what: `barrier: mp_sacrifice (-${mpCost} MP)`,
+              })
+              game.log.push({
+                at: Date.now(),
+                who: game.currentPlayer,
+                what: `barrier: bypassed (need ${requiredClass})`,
+              })
+            } else {
+              // Failed attempt: count and potentially auto-crumble.
+              const next = (game.barrierAttempts[barrierKey] ?? 0) + 1
+              game.barrierAttempts[barrierKey] = next
+
+              // 4) Auto-crumble after 5 failed attempts.
+              if (next >= 5) {
+                game.log.push({
+                  at: Date.now(),
+                  who: game.currentPlayer,
+                  what: 'barrier: auto_crumble (The ancient seal weakens and shatters)',
+                })
+              } else {
+                // Block: can't pass yet, stay on previous room
+                game.roomIndex -= 1
+                game.log.push({
+                  at: Date.now(),
+                  who: game.currentPlayer,
+                  what: `barrier: blocked (need ${requiredClass}) attempt ${next}/5`,
+                })
+                return { ok: true, room }
+              }
+            }
+          } else {
+            // No actor; treat as a failed attempt so the barrier can still crumble.
+            const next = (game.barrierAttempts[barrierKey] ?? 0) + 1
+            game.barrierAttempts[barrierKey] = next
+            if (next >= 5) {
+              game.log.push({
+                at: Date.now(),
+                who: game.currentPlayer,
+                what: 'barrier: auto_crumble (The ancient seal weakens and shatters)',
+              })
+            } else {
+              game.roomIndex -= 1
+              game.log.push({
+                at: Date.now(),
+                who: game.currentPlayer,
+                what: `barrier: blocked (need ${requiredClass}) attempt ${next}/5`,
+              })
+              return { ok: true, room }
+            }
+          }
+        }
+      } else {
+        // Party has the class — barrier resolved, continue
+        delete game.barrierAttempts?.[barrierKey]
+        game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: resolved by ${requiredClass}` })
       }
-      // Party has the class — barrier resolved, continue
-      game.log.push({ at: Date.now(), who: game.currentPlayer, what: `barrier: resolved by ${requiredClass}` })
     }
   }
 

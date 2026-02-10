@@ -456,3 +456,31 @@ Prior failure pattern detected: `test_failure`. Mitigation: route tool names ear
 Completed: Phase 1a: Barrier class filtering — only generate barriers for party classes
 Files: apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json
 Summary: Implemented party-class-only barrier generation for RPG dungeons and added a regression test. Updated dungeon generation to accept optional partyClasses and wired createGame() to pass the party’s unique classes so barriers never require missing classes. Ran story validation, full typecheck/tests, deployed network worker to production, and verified with smoke test. Stored hivemind learning and emitted openclaw system event.
+
+---
+[2026-02-10T02:43:33.620Z]
+Failed: Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble [verification_rejected]
+Validation: ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > grimlock respects maxGamesPerDay when auto-creating dungeons 1ms
+ ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 5ms
+ ✓ |network| src/environments/registry.test.ts > envir
+Codex: Starting Phase 1b implementation: I’m going to (1) search hivemind for prior work on barrier alternatives, then (2) open the RPG engine + existing barrier tests, write failing tests for the four alternative paths, and finally implement the new barrier resolution + per-barrier attempt tracking.
+
+---
+[2026-02-10T02:52:18.625Z]
+Completed: Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble
+Files: prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts
+Summary: Prior failure pattern detected: verification_rejected. Mitigation: made concrete tool calls, wrote RED tests first, implemented the change, ran the story validation, then deployed to real Cloudflare and smoke-tested the live URL.
+
+Implemented Phase 1b barrier alternatives in the actual RPG engine file (`apps/network/src/games/rpg-engine.ts`; note the story’s referenced `apps/network/src/environments/rpg-engine.ts` does not exist).
+
+Barrier behavior when party lacks the required class:
+- Brute force: any `Warrior` in the party can smash through, costing `ceil(20% * maxHp)` HP.
+- Skill check: hard 30% check (d100 <= 30).
+- MP sacrifice: if the skill check fails, spend `ceil(50% * maxMp)` MP to force it.
+- Auto-crumble: after exactly 5 failed attempts on the same barrier (tracked per barrier room index), it crumbles and opens.
+
+Added unit tests covering all 4 paths in `apps/network/src/games/rpg-engine.test.ts`.
+
+Validation run (requested): `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30` (passes).
+
+Production verify (STONE TABLET): deployed `apps/network` via `wrangler deploy` and ran `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` (PASS).
