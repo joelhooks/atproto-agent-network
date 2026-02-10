@@ -58,6 +58,5 @@ enabled = true
 
 
 
-[[pipelines]]
-binding = "O11Y_PIPELINE"
-pipeline = "6a7c771ecbc7428bb9b3c5b7aeb8167e"
+# O11Y: writes directly to R2 BLOBS bucket under o11y/ prefix
+# (CF Pipelines v2 requires Data Catalog + Iceberg — overkill for now)

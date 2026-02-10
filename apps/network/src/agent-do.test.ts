@@ -1814,11 +1814,12 @@ describe('AgentDO', () => {
     expect(types.has('agent.cycle.end')).toBe(true)
   })
 
-  it('alarm() emits a cycle summary event to the O11Y pipeline binding when present', async () => {
-    const { state, storage } = createState('agent-alarm-o11y-pipeline')
-    const pipeline = { send: vi.fn().mockResolvedValue(undefined) }
+  it('alarm() writes a cycle summary event to R2 BLOBS o11y prefix', async () => {
+    const { state, storage } = createState('agent-alarm-o11y-r2')
+    const putFn = vi.fn().mockResolvedValue(undefined)
+    const blobs = { put: putFn, get: vi.fn(), list: vi.fn(), delete: vi.fn(), head: vi.fn() }
     const { env } = createEnv({
-      O11Y_PIPELINE: pipeline,
+      BLOBS: blobs,
       PI_AGENT_FACTORY: vi.fn().mockResolvedValue({
         prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
       }),
@@ -1833,28 +1834,30 @@ describe('AgentDO', () => {
 
     await agent.alarm()
 
-    expect(pipeline.send).toHaveBeenCalledTimes(1)
+    expect(putFn).toHaveBeenCalledTimes(1)
 
-    const call = pipeline.send.mock.calls[0]?.[0]
-    expect(Array.isArray(call)).toBe(true)
-    expect(call?.[0]).toMatchObject({
+    const [key, body] = putFn.mock.calls[0]
+    expect(key).toMatch(/^o11y\/\d{4}-\d{2}-\d{2}\/\d+-[a-f0-9]+\.json$/)
+    const parsed = JSON.parse(body)
+    expect(parsed).toMatchObject({
       event_type: 'agent.cycle',
-      agent: 'did:cf:agent-alarm-o11y-pipeline',
+      agent: 'did:cf:agent-alarm-o11y-r2',
       mode: 'think',
       toolCalls: 0,
       errors: 0,
     })
-    expect(typeof call?.[0]?.durationMs).toBe('number')
+    expect(typeof parsed.durationMs).toBe('number')
+    expect(typeof parsed._ts).toBe('string')
 
     const nextAlarm = await storage.getAlarm()
     expect(nextAlarm).not.toBeNull()
   })
 
-  it('alarm() treats O11Y pipeline send failures as non-fatal', async () => {
-    const { state, storage } = createState('agent-alarm-o11y-pipeline-failure')
-    const pipeline = { send: vi.fn().mockRejectedValue(new Error('pipeline down')) }
+  it('alarm() treats R2 o11y write failures as non-fatal', async () => {
+    const { state, storage } = createState('agent-alarm-o11y-r2-failure')
+    const blobs = { put: vi.fn().mockRejectedValue(new Error('R2 down')), get: vi.fn(), list: vi.fn(), delete: vi.fn(), head: vi.fn() }
     const { env } = createEnv({
-      O11Y_PIPELINE: pipeline,
+      BLOBS: blobs,
       PI_AGENT_FACTORY: vi.fn().mockResolvedValue({
         prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
       }),
@@ -1869,7 +1872,7 @@ describe('AgentDO', () => {
 
     await expect(agent.alarm()).resolves.toBeUndefined()
 
-    expect(pipeline.send).toHaveBeenCalledTimes(1)
+    expect(blobs.put).toHaveBeenCalledTimes(1)
     expect(await storage.getAlarm()).not.toBeNull()
   })
 

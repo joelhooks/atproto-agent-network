@@ -38,7 +38,7 @@ interface AgentEnv {
   RELAY?: DurableObjectNamespace
   VECTORIZE?: VectorizeIndex
   AI?: Ai
-  O11Y_PIPELINE?: { send(events: unknown[]): Promise<void> }
+  // O11Y now writes directly to R2 BLOBS bucket
   EMBEDDING_MODEL?: string
   VECTORIZE_DIMENSIONS?: string
   PI_AGENT_FACTORY?: PiAgentFactory
@@ -191,12 +191,13 @@ function createSpanId(): string {
   return randomHex(8)
 }
 
-async function sendO11yEvent(pipeline: unknown, event: Record<string, unknown>): Promise<void> {
-  if (!pipeline || typeof pipeline !== 'object') return
-  const send = (pipeline as { send?: unknown }).send
-  if (typeof send !== 'function') return
+async function sendO11yEvent(r2: R2Bucket | undefined, event: Record<string, unknown>): Promise<void> {
+  if (!r2) return
   try {
-    await (send as (events: unknown[]) => Promise<void>).call(pipeline, [event])
+    const ts = new Date()
+    const day = ts.toISOString().slice(0, 10)
+    const key = `o11y/${day}/${ts.getTime()}-${randomHex(4)}.json`
+    await r2.put(key, JSON.stringify({ ...event, _ts: ts.toISOString() }))
   } catch {
     // non-fatal: o11y must not break the agent loop
   }
@@ -1083,7 +1084,7 @@ export class AgentDO extends DurableObject {
         },
       })
 
-      await sendO11yEvent(this.agentEnv?.O11Y_PIPELINE, {
+      await sendO11yEvent(this.agentEnv?.BLOBS, {
         event_type: 'agent.cycle',
         agent: this.did,
         mode,
