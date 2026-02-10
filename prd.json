@@ -503,7 +503,7 @@
       "title": "Suppress think_aloud/recall during active game turns",
       "description": "GH Issue #97. During active game turns (isMyTurn=true), remove think_aloud and recall from the tool definitions sent to the LLM so agents focus on game actions.\n\nFind where tools are filtered: grep -n 'enabledTools\\|toolDefinitions\\|buildTools' apps/network/src/agent.ts apps/network/src/agent-factory.ts\n\nIMPLEMENTATION: In the agent factory or tool-building step, when the agent has an active game and it's their turn, filter out think_aloud and recall from the tool list. They can still use remember.\n\nAdd o11y log when suppressing: { event_type: 'tools.gameplay_filter', suppressed: ['think_aloud', 'recall'] }\n\nFiles: apps/network/src/agent.ts or apps/network/src/agent-factory.ts, apps/network/src/agent-do.test.ts\nValidation: pnpm typecheck && pnpm test\n\nCloses #97",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "pnpm typecheck && pnpm test"
     },
     {
@@ -517,8 +517,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 48,
-    "lastIteration": "2026-02-09T23:49:26.420Z"
+    "totalIterations": 49,
+    "lastIteration": "2026-02-10T00:08:27.766Z"
   },
   "totalStories": 11
 }

@@ -421,3 +421,24 @@ Summary: Implemented GH Issue #98 (story-mlft5kxr): when an RPG finishes, we now
 Completed: Grimlock inbox webhook bridge — POST messages to webhookUrl
 Files: apps/network/src/agent.ts, packages/core/src/types.ts, packages/dashboard/src/lib/types.ts, .ralph-context.json, .ralph-iterations.jsonl, prd.json
 Summary: Implemented GH Issue #99 (story-mlft5llk): when `/inbox` receives an `agent.comms.message` and `AgentConfig.webhookUrl` is set, AgentDO now POSTs `{ type: 'inbox', message: <validated message> }` to that URL (fire-and-forget). Added config patch support for `webhookUrl`, updated shared `AgentConfig` types, and added a unit test mocking `fetch` to assert the webhook call/payload. Ran `pnpm typecheck && pnpm test`, deployed `apps/network` to production, and verified via `./scripts/smoke-test.sh`.
+
+---
+[2026-02-10T00:00:00.027Z]
+Failed: Suppress think_aloud/recall during active game turns [timeout]
+Validation: > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network
+> turbo typecheck
+
+@atproto-agent/core:build: 
+@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core
+@atproto-agent/core:build: > tsup src/index.ts 
+Codex: Starting story #97: I’m going to locate where the LLM tool definitions are built, add a failing test proving think_aloud/recall are suppressed when `isMyTurn=true`, then implement the filter + o11y log and run `pnpm typecheck && pnpm test`.
+
+---
+[2026-02-10T00:08:27.768Z]
+Completed: Suppress think_aloud/recall during active game turns
+Files: apps/network/src/agent-factory.ts, apps/network/src/agent.ts, .ralph-context.json, .ralph-iterations.jsonl, progress.txt
+Summary: Prior failure pattern detected: timeout/build_error/test_failure. Mitigation: kept scope strictly to story #97 behavior, relied on existing targeted unit test coverage, and ran full repo validation once the tool-filter path was confirmed.
+
+Verified that during active game turns (intervalReason === 'my_turn', derived from environment context), AgentDO suppresses `think_aloud` and `recall` from LLM tool definitions by setting `agent.state.suppressedTools = ['think_aloud','recall']`, and emits o11y log `{ event_type: 'tools.gameplay_filter', suppressed: [...] }`. OpenRouter agent factory filters both tool definitions and tool execution against that suppression.
+
+Validation: `pnpm typecheck && pnpm test` passed. Ran required follow-ups: `swarm memory store ...` and `openclaw system event ...`.
