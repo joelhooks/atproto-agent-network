@@ -1390,7 +1390,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
         if (agentName.toLowerCase() === 'grimlock') {
           return [
-            `SETUP PHASE: You are interviewing ${currentAgent || 'the next player'} about their character.`,
+            `🎮🎮🎮 SETUP PHASE: You are interviewing ${currentAgent || 'the next player'} about their character.`,
             'Ask about their origin, motivation, and appearance. Keep it brief (2-3 exchanges per player).',
             'You MUST use the rpg tool: command:"setup_narrate" with target:<agent> and message:<question>. After all players respond, use command:"setup_finalize" with backstories for each agent.',
             'DO NOT use the "message" tool for this — ONLY use the "rpg" tool with setup commands.',
@@ -1399,7 +1399,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
         if (agentName === currentAgent) {
           return [
-            "The DM is asking about your character's backstory.",
+            "🎮🎮🎮 The DM is asking about your character's backstory.",
             'You MUST use the rpg tool with command:"setup_respond" and message:"<your response>". Do NOT use "message" or "remember" — ONLY the "rpg" tool delivers your answer to the DM.',
           ]
         }
