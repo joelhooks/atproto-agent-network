@@ -63,13 +63,36 @@ export type Enemy = {
   DEX: number
   attack: number
   dodge: number
+  // OSE-style morale (2-12). When low, creatures may flee/surrender.
+  // Optional for backwards compatibility with persisted games.
+  morale?: number
+  // If true, the party can plausibly negotiate instead of fighting.
+  // Optional for backwards compatibility with persisted games.
+  negotiable?: boolean
+  // Short per-monster description used to enrich encounter text.
+  // Optional for backwards compatibility with persisted games.
+  flavorText?: string
   // Optional, but when present it drives target selection and special behaviors.
   tactics?: EnemyTactics
   // Optional per-enemy turn counter for multi-phase behaviors.
   turnsTaken?: number
 }
 
-export type EnemyTacticKind = 'goblin' | 'orc' | 'skeleton' | 'boss' | 'unknown'
+export type EnemyTacticKind =
+  | 'goblin'
+  | 'orc'
+  | 'skeleton'
+  | 'boss'
+  | 'unknown'
+  // Expanded tactical archetypes for the bestiary.
+  | 'pack'
+  | 'ambush'
+  | 'ranged'
+  | 'spellcaster'
+  | 'berserker'
+  | 'retreater'
+  | 'swarm'
+  | 'guardian'
 
 export type EnemyTactics = {
   kind: EnemyTacticKind

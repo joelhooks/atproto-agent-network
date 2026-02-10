@@ -736,6 +736,54 @@
       "description": "Add a `send_message` tool so agents can communicate with each other on the game feed using @mentions.\n\n## Design\n- New tool: `send_message` with params `{to: string, message: string, type: 'ic'|'ooc'}`\n- `to` uses agent names with @ prefix: `@slag`, `@snarl`, `@swoop`, `@party` (broadcast), `@dm`\n- `type: 'ic'` = in-character dialogue (uses fantasy character names in speech, @agent for routing)\n- `type: 'ooc'` = out-of-character table talk / meta / strategy discussion\n- Messages appear on the game feed as a new entry type\n- On an agent's turn, recent messages mentioning them are included in their context\n- No forced responses — agents see messages and respond if they choose to\n- Rate limit: max 2 messages per agent per round (prevent spam loops)\n\n## Implementation\n- Add `send_message` to RPG environment's tool list in rpg.ts\n- Add `FeedMessage` type to rpg-engine.ts: `{sender: string, to: string, message: string, type: 'ic'|'ooc', timestamp: number}`\n- Add `feedMessages: FeedMessage[]` to RpgGameState (rolling buffer, last 20)\n- In execute(): handle send_message command — validate to/type, push to feedMessages, trim to 20\n- In buildContext(): include recent messages mentioning this agent\n- Add to isActionTaken() — sending a message counts as taking action\n- Tests: send_message adds to feed, context includes mentions, rate limit works\n\n## Files\n- `apps/network/src/environments/rpg.ts` — new tool + feed message handling\n- `apps/network/src/games/rpg-engine.ts` — FeedMessage type on RpgGameState\n- `apps/network/src/environments/rpg.test.ts` — tests",
       "priority": 1,
       "passes": true
+    },
+    {
+      "id": "story-mlh8s8df",
+      "title": "Diverse monster bestiary — 30+ enemy types across 6 tiers",
+      "description": "Replace the hardcoded goblin/orc/boss enemy table in `buildCombatRoom` and `buildBossRoom` (rpg-engine.ts ~527-570) with a rich bestiary.\n\n**Monster categories (themed to dungeon):**\n- **Vermin:** Giant rats, spiders, centipedes (tier 1, pack tactics)\n- **Undead:** Skeletons, zombies, wraiths, specters (tier 1-3, resistant to fear/negotiate)\n- **Humanoids:** Goblins, kobolds, bandits, cultists, orcs, hobgoblins (tier 1-3, CAN negotiate/flee)\n- **Beasts:** Wolves, bears, dire bats, basilisk (tier 1-3, morale-based flee)\n- **Fey/Magical:** Will-o-wisps, pixies, dryads, naga (tier 2-3, prefer trickery over combat)\n- **Elementals/Demons:** Fire elemental, shadow demon, bone devil (tier 3-4, boss-tier)\n\n**Each enemy type needs:**\n- `name`, `hp`, `maxHp`, `DEX`, `attack`, `dodge` (existing stats)\n- `tactics.kind` — expanded beyond just 'goblin'|'orc'|'boss' to include: 'pack', 'ambush', 'ranged', 'spellcaster', 'berserker', 'retreater', 'swarm', 'guardian'\n- `morale: number` (2-12, OSE-style) — determines when they flee/surrender\n- `negotiable: boolean` — can this enemy be talked to?\n- `flavorText: string` — unique description per monster type\n\n**`buildCombatRoom` changes:**\n- Accept dungeon theme as input (already does)\n- Pick monsters appropriate to theme (undead crypt = skeletons/wraiths, not goblins)\n- Vary group composition (2 goblins + 1 hobgoblin leader, not 3 identical goblins)\n- Scale stats by tier (early/mid/late)\n\n**`buildBossRoom` changes:**\n- Boss should be thematic (lich for undead dungeon, dragon wyrmling for cave, bandit king for ruins)\n- Boss minions should match theme\n\n**Files:** `apps/network/src/games/rpg-engine.ts`\n**Tests:** Update `apps/network/src/games/rpg-engine.test.ts` — verify new monster types generate correctly, stats are in valid ranges, theme matching works.\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 80,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run typecheck && bun run test",
+      "acceptanceCriteria": [
+        "buildCombatRoom generates at least 8 distinct enemy types (not just goblin/orc)",
+        "Enemy types have morale and negotiable fields",
+        "Boss room enemies match dungeon theme",
+        "All existing tests still pass",
+        "New tests verify monster variety and stat ranges"
+      ]
+    },
+    {
+      "id": "story-mlh8s90w",
+      "title": "Non-combat encounter resolution — negotiate, flee, sneak, intimidate commands",
+      "description": "Add 4 new RPG commands that give players alternatives to \"attack\" during combat encounters. From Phandelver: \"noncombat or another nondeadly resolution is an equally valid way to resolve many enemy encounters.\"\n\n**New commands in rpg.ts (add after the `attack` handler ~line 1220):**\n\n1. **`negotiate`** — Attempt to parley with enemies\n   - Only works if ALL remaining enemies have `negotiable: true`\n   - CHA-based check (roll d100 vs 40 + party_avg_level*5)\n   - Success: enemies stand down, party gets partial XP (50%), may get info/items\n   - Failure: enemies get a free attack round (penalty for failed diplomacy)\n   - Some enemies (undead, constructs, mindless beasts) CANNOT be negotiated with\n\n2. **`flee`** — Party attempts to run from combat\n   - DEX-based check (roll d100 vs 50)\n   - Success: party escapes, loses NO HP, but gets 0 XP and room stays dangerous\n   - Failure: each enemy gets a free attack, THEN party escapes (retreat under fire)\n   - Cannot flee from boss rooms\n\n3. **`sneak`** — Attempt to bypass encounter stealthily (only from explore, before combat triggers)\n   - Modify `explore` command: when entering a combat room, if player calls `sneak` instead of engaging, roll DEX check\n   - Success: skip the room entirely (0 XP, but no damage)\n   - Failure: combat starts with enemies getting surprise round (free attacks)\n   - Scout class gets +20 bonus\n\n4. **`intimidate`** — Frighten weaker enemies into fleeing\n   - Works on enemies with morale <= 8 AND current HP < 50%\n   - STR/CHA check (roll d100 vs 45)\n   - Success: affected enemies flee (counted as killed for XP purposes, reduced by 25%)\n   - Failure: enemies become enraged (+10 attack for rest of combat)\n\n**rpg.ts tool schema changes (~line 580-630):**\n- Add negotiate, flee, sneak, intimidate to command enum\n- Add to `isActionTaken` list (~line 1662)\n\n**buildContext changes (~line 1631):**\n- During combat, show ALL available actions, not just \"attack\":\n  `⚔️ COMBAT! Enemies: ... | Actions: attack, negotiate, flee, intimidate`\n- Show which enemies are negotiable\n- Show enemy morale state (shaken, steady, fearless)\n\n**Files:** `apps/network/src/environments/rpg.ts`, `apps/network/src/games/rpg-engine.ts` (add helper functions)\n**Tests:** Add tests for each new command in rpg.test.ts — success/fail paths, class bonuses, XP awards\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 81,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run typecheck && bun run test",
+      "acceptanceCriteria": [
+        "negotiate command works on negotiable enemies, fails on undead/constructs",
+        "flee command allows escape with DEX check, cannot flee bosses",
+        "intimidate works on low-morale wounded enemies",
+        "buildContext shows all available actions during combat, not just attack",
+        "Each command awards appropriate XP (partial or none)",
+        "All existing tests pass",
+        "New tests cover success and failure paths for each command"
+      ]
+    },
+    {
+      "id": "story-mlh8s9mk",
+      "title": "Fix stuck detector — no free combat resolution, hint system instead",
+      "description": "The `gmInterveneIfStuck` function (rpg-engine.ts ~982-1030) currently auto-resolves combat by killing all enemies at 10% HP cost. This makes combat trivially easy — agents learn to just `explore` during combat and get free kills.\n\n**Changes to gmInterveneIfStuck:**\n\n1. **During combat mode, do NOT auto-kill enemies.** Instead:\n   - First stuck trigger (repeat 3x): Add hint to game log: \"GM whispers: Try different tactics — attack, negotiate, flee, or intimidate\"\n   - Second stuck trigger (repeat 5x): Add stronger hint with specific suggestion based on enemy state\n   - Third stuck trigger (repeat 7x): THEN auto-resolve, but at 30% HP cost (not 10%), and log it as \"GM deus ex machina — the ceiling caves in\"\n\n2. **Increase the HP cost for auto-resolve from 10% to 30%** — make it actually hurt\n\n3. **Change explore during combat behavior:**\n   - Currently: `explore` during combat triggers stuck detector → free combat win\n   - New: `explore` during combat returns error message: \"You're in combat! Use: attack, negotiate, flee, or intimidate. Type 'status' for details.\"\n   - Do NOT count explore-during-combat toward stuck detection\n\n4. **Add `STUCK_COMBAT_THRESHOLD` constant** (default 7) separate from general `STUCK_REPEAT_THRESHOLD`\n\n**Files:** `apps/network/src/games/rpg-engine.ts`, `apps/network/src/environments/rpg.ts` (explore handler)\n**Tests:** Update stuck detection tests, add test for explore-during-combat rejection, verify graduated hint system\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 82,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run typecheck && bun run test",
+      "acceptanceCriteria": [
+        "explore during combat returns error, does not trigger stuck detection",
+        "First stuck trigger in combat gives hint, not auto-resolve",
+        "Auto-resolve only happens after 7 repeats, at 30% HP cost",
+        "Non-combat stuck detection unchanged",
+        "All existing tests pass",
+        "New test verifies graduated hint system"
+      ]
     }
   ],
   "metadata": {
