@@ -1328,6 +1328,34 @@ export class AgentDO extends DurableObject {
     // (Tool execution is also guarded in the OpenRouter factory based on state.)
     const suppressGameplayTools = this.intervalReason === 'my_turn'
     const isSetupPhase = prompt.includes('SETUP PHASE')
+
+    // Phase-based tool restriction: if any environment has an active phase machine,
+    // compute allowed tools as a whitelist. All other tools are suppressed.
+    let phaseWhitelist: string[] | null = null
+    if (isSetupPhase) {
+      try {
+        const { getAllEnvironments } = await import('./environments/registry')
+        const agentName = this.config?.name ?? ''
+        const envCtx = {
+          agentName,
+          agentDid: this.did,
+          db: this.agentEnv.DB,
+          broadcast: async () => {},
+        }
+        for (const env of getAllEnvironments()) {
+          if (typeof env.getPhaseTools === 'function') {
+            const tools = await env.getPhaseTools(agentName, envCtx as any)
+            if (tools !== null) {
+              phaseWhitelist = tools
+              break
+            }
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
     const suppressed = suppressGameplayTools
       ? isSetupPhase
         ? ['think_aloud', 'recall', 'message', 'remember', 'gm']
@@ -1338,6 +1366,10 @@ export class AgentDO extends DurableObject {
       const inner = this.agent.getAgent() as any
       if (inner?.state && typeof inner.state === 'object') {
         inner.state.suppressedTools = suppressed
+        // Phase whitelist: if set, the factory will use this to filter tools
+        if (phaseWhitelist !== null) {
+          inner.state.phaseWhitelist = phaseWhitelist
+        }
       }
     } catch {
       // Non-fatal: custom factories used in tests may not support stateful tool policy.
@@ -1351,6 +1383,7 @@ export class AgentDO extends DurableObject {
         did: this.did,
         session_id: await this.getOrCreateSessionId(),
         suppressed,
+        phaseWhitelist,
       })
     }
 
@@ -1491,25 +1524,6 @@ export class AgentDO extends DurableObject {
 	        }
 
 	        for (const env of environments) {
-	          // Setup phase override: inject setup actions even if model already called
-	          // other rpg commands (which get rejected during setup anyway).
-	          if (typeof env.getSetupOverrideActions === 'function') {
-	            const overrides = await env.getSetupOverrideActions(envCtx)
-	            if (overrides.length > 0) {
-	              selected.push(...overrides)
-	              const safetyDebug = {
-	                agent: agentName,
-	                environment: env.type,
-	                injectedActions: overrides.map((a: any) => a.name),
-	                modelToolCalls: selected.map(c => c.name),
-	                ts: Date.now(),
-	                reason: 'setup_override',
-	              }
-	              console.log('Setup override injection:', safetyDebug)
-	              await this.ctx.storage.put('debug:autoPlay', safetyDebug)
-	              break
-	            }
-	          }
 
 	          // Route misnamed tool calls for this environment when deciding if an action was taken,
 	          // otherwise auto-play can incorrectly inject extra moves (e.g. roll_dice/end_turn).

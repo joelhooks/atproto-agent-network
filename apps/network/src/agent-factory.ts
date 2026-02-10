@@ -86,7 +86,7 @@ export function createOpenRouterAgentFactory(
     // Mutable runtime tool policy hook:
     // AgentDO can set `agent.state.suppressedTools = ['think_aloud', 'recall']` before a prompt
     // (e.g. during active gameplay turns) to keep the model focused on actions.
-    const state: { messages: unknown[]; suppressedTools?: unknown } = { messages: [] }
+    const state: { messages: unknown[]; suppressedTools?: unknown; phaseWhitelist?: unknown } = { messages: [] }
     const messages: OpenRouterMessage[] = [{ role: 'system', content: systemPrompt }]
 
     const baseUrl = getOpenRouterViaAiGatewayBaseUrl(env)
@@ -107,9 +107,21 @@ export function createOpenRouterAgentFactory(
         : []
       const suppressedSet = suppressed.length > 0 ? new Set(suppressed) : null
 
-      const effectiveTools = suppressedSet
+      // Phase whitelist: if set, ONLY these tools are available (overrides suppressedTools)
+      const whitelistRaw = state.phaseWhitelist
+      const whitelist = Array.isArray(whitelistRaw)
+        ? whitelistRaw.filter((t): t is string => typeof t === 'string' && t.length > 0)
+        : null
+      const whitelistSet = whitelist && whitelist.length > 0 ? new Set(whitelist) : null
+
+      let effectiveTools = suppressedSet
         ? baseExposedTools.filter((t) => !suppressedSet.has(t.name))
         : baseExposedTools
+
+      // Whitelist takes precedence: only expose whitelisted tools
+      if (whitelistSet) {
+        effectiveTools = effectiveTools.filter((t) => whitelistSet.has(t.name))
+      }
 
       const toolDefs: OpenRouterToolDef[] = effectiveTools.map((tool) => ({
         type: 'function' as const,
@@ -305,9 +317,20 @@ export function createOpenRouterAgentFactory(
               : []
             const suppressedSet = suppressed.length > 0 ? new Set(suppressed) : null
 
-            const effectiveTools = suppressedSet
+            // Phase whitelist for execution path
+            const whitelistRaw2 = state.phaseWhitelist
+            const whitelist2 = Array.isArray(whitelistRaw2)
+              ? whitelistRaw2.filter((t): t is string => typeof t === 'string' && t.length > 0)
+              : null
+            const whitelistSet2 = whitelist2 && whitelist2.length > 0 ? new Set(whitelist2) : null
+
+            let effectiveTools = suppressedSet
               ? baseExposedTools.filter((t) => !suppressedSet.has(t.name))
               : baseExposedTools
+
+            if (whitelistSet2) {
+              effectiveTools = effectiveTools.filter((t) => whitelistSet2.has(t.name))
+            }
 
             const tool = effectiveTools.find(t => t.name === tc.name)
             let toolResult: string

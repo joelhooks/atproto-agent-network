@@ -1,4 +1,5 @@
 import type { PiAgentTool } from '@atproto-agent/agent'
+import type { PhaseMachine } from './phase-machine'
 
 export type ToolCall = {
   name: string
@@ -36,4 +37,8 @@ export interface AgentEnvironment {
     next: string,
     detail: Record<string, unknown>
   ) => void | Promise<void>
+  /** Return the current phase machine, if one is active */
+  getPhaseMachine?: (ctx: EnvironmentContext) => PhaseMachine | null | Promise<PhaseMachine | null>
+  /** Return allowed tools for an agent in the current phase, or null for no restriction */
+  getPhaseTools?: (agentName: string, ctx: EnvironmentContext) => string[] | null | Promise<string[] | null>
 }
