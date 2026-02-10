@@ -193,7 +193,7 @@ describe('rpg-engine', () => {
   it('default dungeon includes all encounter types (combat, trap, treasure, rest, puzzle)', () => {
     // defaultDungeon() is procedural (uses Math.random), so test generateDungeon() deterministically instead.
     const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice)
+    const dungeon = generateDungeon(12, dice).rooms
 
     const types = new Set(dungeon.map((r) => r.type))
     expect(types.has('combat')).toBe(true)
@@ -207,7 +207,7 @@ describe('rpg-engine', () => {
 
   it('generateDungeon creates the requested number of rooms, contains all 4 class barriers, and ends with a boss room', () => {
     const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice)
+    const dungeon = generateDungeon(12, dice).rooms
 
     expect(dungeon).toHaveLength(12)
     expect(dungeon.at(-1)?.type).toBe('boss')
@@ -221,7 +221,7 @@ describe('rpg-engine', () => {
 
   it('generateDungeon scales enemy HP (early 6-8, mid 10-14, boss 30+)', () => {
     const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice)
+    const dungeon = generateDungeon(12, dice).rooms
 
     const last = dungeon.at(-1)
     expect(last?.type).toBe('boss')
@@ -255,6 +255,42 @@ describe('rpg-engine', () => {
         expect(e.hp).toBeLessThanOrEqual(14)
       }
     }
+  })
+
+  it('generated dungeons include a theme + backstory and room descriptions reference the theme', () => {
+    const game = createGame({ id: 'rpg_theme_default', players: ['alice', 'bob'] })
+
+    expect(game.theme.name.length).toBeGreaterThan(0)
+    expect(game.theme.backstory.length).toBeGreaterThan(0)
+
+    for (const room of game.dungeon) {
+      expect(room.description).toContain(game.theme.name)
+      expect(room.description.toLowerCase()).not.toContain('goblin prowls here')
+    }
+  })
+
+  it('10 generated dungeons can have unique themes', () => {
+    function makeThemePickingDice(themePick: number) {
+      let picked = false
+      return createTestDice({
+        d100: () => 1,
+        d: (sides: number) => {
+          if (!picked) {
+            picked = true
+            const value = Math.max(1, Math.min(sides, themePick))
+            return value
+          }
+          return 1
+        },
+      })
+    }
+
+    const themes = new Set<string>()
+    for (let i = 1; i <= 10; i += 1) {
+      const dungeon = generateDungeon(12, makeThemePickingDice(i))
+      themes.add(dungeon.theme.name)
+    }
+    expect(themes.size).toBe(10)
   })
 
   it('barrier rooms only require classes present in the party', () => {
@@ -377,6 +413,36 @@ describe('rpg-engine', () => {
     expect(game.roomIndex).toBe(1)
     expect((game as any).barrierAttempts?.['1']).toBe(5)
     expect(game.log.some((e) => e.what.includes('barrier: auto_crumble'))).toBe(true)
+  })
+
+  it('stuck detection: repeating the same action 5x triggers GM intervention and advances', () => {
+    const dice = makeDiceFromD100([99, 99, 99, 99, 99]) // always fail barrier skill checks
+    const scout = createCharacter({ name: 's', klass: 'Scout' })
+    scout.mp = 0 // ensure MP sacrifice cannot happen
+
+    const game = createGame({
+      id: 'rpg_stuck_detection',
+      players: [scout],
+      dungeon: [
+        { type: 'rest', description: 'start' },
+        { type: 'barrier', description: 'A sealed gate.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 's'
+
+    for (let i = 0; i < 4; i += 1) {
+      explore(game, { dice })
+      expect(game.roomIndex).toBe(0)
+    }
+
+    explore(game, { dice })
+    expect(game.roomIndex).toBe(1)
+
+    expect(game.log.some((e) => e.who === 'GM' && e.what.includes('warning: stuck_detected'))).toBe(true)
+    expect(game.log.some((e) => e.who === 'GM' && e.what.includes('gm: auto_resolve barrier'))).toBe(true)
+    expect(game.log.some((e) => e.who === 'GM' && e.what === 'The dungeon shifts around you, opening a new path...')).toBe(true)
   })
 
   it('rest rooms heal the party (capped at max)', () => {

@@ -535,7 +535,7 @@
       "title": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
       "description": "Track the last N actions per player in game state. If a player takes the exact same action 5 times in a row (same action type + same target), the game intervenes:\n\n1. Log a warning in the game log\n2. Auto-resolve the current obstacle (open the barrier, kill the enemy at HP cost, skip the puzzle)\n3. Add a narrative message: \"The dungeon shifts around you, opening a new path...\"\n4. Move the party forward one room\n\nThis prevents infinite loops where an agent keeps trying the same failing action. Store action history as an array of {action, target, roomIndex} in the game state.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: After 5 identical consecutive actions, the game auto-resolves and advances. Test with a mock agent repeating the same action.",
       "priority": 53,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -543,7 +543,7 @@
       "title": "Phase 1d: Enemy scaling to party size",
       "description": "Scale combat encounters based on party size:\n\n- **Solo (1 player)**: Enemies at 60% HP, 60% damage (solo penalty already adds 2x damage taken, so enemies should be weaker)\n- **Duo (2 players)**: Enemies at 80% HP, 80% damage  \n- **Full party (3+ players)**: Enemies at 100% HP, 100% damage\n- **Boss rooms**: Scale boss HP by 50% per additional player beyond 1\n\nIn generateDungeon() and combat resolution, read party size and apply multipliers. Store the scaling factors in the dungeon state so they're visible in debug output.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Solo player faces weaker enemies than a full party. Boss HP scales with party size. Test with 1, 2, and 3 player parties and assert different enemy stats.",
       "priority": 54,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -551,7 +551,7 @@
       "title": "Phase 2a: Dungeon themes and narrative arc — replace random rooms with story",
       "description": "Replace the current random room generation with themed narrative dungeons. Add a dungeon theme system:\n\n1. Add a `theme` field to dungeon state with properties: name, backstory, atmosphere, and room_flavor_seeds\n2. Create 5-10 dungeon theme templates (e.g., \"The Whispering Mines\", \"Sunken Temple of the Drowned God\", \"The Clockwork Labyrinth\")\n3. Each theme defines: room description templates, enemy types that fit the theme, barrier flavors, boss identity\n4. Room descriptions should reference the theme and build narrative tension (early rooms = exploration/mystery, mid = rising threat, late = climax)\n5. Replace static \"a goblin prowls here\" descriptions with theme-aware text\n\nThe dungeon should feel like a story: setup → rising action → climax → resolution.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Generated dungeons have a theme name and backstory. Room descriptions reference the theme. No more generic \"a goblin prowls here\" — all descriptions are thematic. Test that 10 generated dungeons each have unique themes.",
       "priority": 55,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -559,7 +559,7 @@
       "title": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
       "description": "Make room descriptions and game log entries reference what the party has actually done. When entering a new room:\n\n1. Check the game log for notable events (kills, near-deaths, barriers overcome, items found)\n2. Weave references into the next room's description: \"Slag's fireball still echoes in the tunnels ahead\" or \"The blood from your last fight has attracted something...\"\n3. Add a `narrativeContext` array to game state that tracks key story beats\n4. Boss room description should reference the entire journey: callbacks to earlier rooms, items found, party members who nearly died\n\nThis makes the dungeon feel reactive, not static. The narrative should acknowledge the party's actual experience.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Room descriptions after room 3+ contain references to prior party actions. Boss room description references at least 2 earlier events. Test by simulating a full dungeon run and checking description content.",
       "priority": 56,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -593,12 +593,20 @@
       "priority": 60,
       "passes": false,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
+    },
+    {
+      "id": "story-mlg25sjb",
+      "title": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "description": "Bug: When a party member dies (hp=0), the turn system still assigns them as currentPlayer, softlocking the game since dead agents can't take actions.\n\nFix in rpg-engine.ts turn advancement logic:\n1. When advancing to next player, skip any player with hp <= 0\n2. If ALL players are dead, end the game (TPK — total party kill)\n3. Remove dead players from the active turn rotation but keep them in party state (for potential resurrection mechanics later)\n4. When a player dies mid-combat, immediately advance to the next living player\n5. Add a log entry when skipping a dead player: \"[name] is dead, skipping turn\"\n\nThis was observed in production: swoop died at 0 HP but currentPlayer was still \"swoop\", freezing the game loop.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Dead players (hp=0) are never assigned as currentPlayer. If a player dies during combat, turn immediately advances to next living player. TPK (all dead) ends the game. Test with a party where one member dies mid-combat and verify turn skips them.",
+      "priority": 55,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 52,
-    "lastIteration": "2026-02-10T02:52:18.622Z"
+    "totalIterations": 56,
+    "lastIteration": "2026-02-10T03:35:05.902Z"
   },
   "totalStories": 11
 }

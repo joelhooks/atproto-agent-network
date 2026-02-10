@@ -290,6 +290,18 @@ export class D1MockDatabase {
         return
       }
 
+      // UPDATE games SET state = ?, phase = ?, updated_at = datetime('now') WHERE id = ? [AND type = 'rpg']
+      // Some callers (e.g. RPG GM tooling) don't touch winner/players on persist.
+      if (normalized.includes('state = ?') && normalized.includes('phase = ?') && !normalized.includes('winner = ?')) {
+        const state = params[0]
+        const phase = params[1]
+        existing.state = String(state ?? '')
+        existing.phase = String(phase ?? '')
+        existing.updated_at = now
+        this.games.set(id, existing)
+        return
+      }
+
       // UPDATE games SET phase = 'finished', winner = 'cancelled' WHERE id = ?
       if (normalized.includes("phase = 'finished'") && normalized.includes("winner = 'cancelled'")) {
         existing.phase = 'finished'

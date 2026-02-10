@@ -850,97 +850,97 @@
     {
       "id": "story-mlfzi29l",
       "title": "Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [
         "prd.json",
         "progress.txt",
         ".ralph-context.json",
-        ".ralph-iterations.jsonl"
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts"
       ],
-      "learnings": "[verification_rejected] ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > grimlock respects maxGamesPerDay when auto-creating dungeons 1ms\n ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 5ms\n ✓ |network| src/environments/registry.test.ts > envir"
+      "learnings": "Technical Discovery: `explore()` increments `game.roomIndex` before barrier resolution; for per-barrier attempt tracking to work, compute a stable `barrierKey` from the barrier’s room index *before* decrementing `game.roomIndex` on a block, and store counts on `game.barrierAttempts` (optional for persisted-game back-compat). See `apps/network/src/games/rpg-engine.ts`.\nGotcha: When piping vitest output into `tail`, the pipeline can hide failures unless you use `set -o pipefail`; otherwise you can get a zero exit status even with failing tests.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the dungeon room logic and the barrier handler inside `explore()`. `apps/network/src/games/rpg-engine.test.ts` is the unit test suite for these mechanics and now includes coverage for brute force, skill check, MP sacrifice, and auto-crumble-at-5."
+    },
+    {
+      "id": "story-mlfzi9ki",
+      "title": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "{\"success\":false,\"summary\":\"I found the RPG engine already has scaffolding for stuck detection (`actionHistory` plus helper functions around lines ~381+). Next step is to inspect how it’s currently wired into actions like `explore()` and add a RED test that proves GM intervention after 5 identical actions, then adjust implementation if it isn’t triggering correctly or doesn’t auto-resolve the obstacle + advance rooms as required.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha"
+    },
+    {
+      "id": "story-mlfzig0p",
+      "title": "Phase 1d: Enemy scaling to party size",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 1d enemy scaling work: I’m going to (1) pull up `apps/network/src/environments/rpg-engine.ts` and existing RPG tests, and (2) run the required `swarm memory find` before writing RED tests.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlfzioik",
+      "title": "Phase 2a: Dungeon themes and narrative arc — replace random rooms with story",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 2a work: I’m going to (1) run the required `swarm memory find` for this story topic, (2) inspect `apps/network/src/environments/rpg-engine.ts` plus its existing tests, then (3) write a RED test for theme/backstory + theme-aware room descriptions + unique themes across 10 generated dungeons.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlfziw4w",
+      "title": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "{\"success\":false,\"summary\":\"Confirmed the RPG engine lives in `apps/network/src/games/rpg-engine.ts` (tests in `apps/network/src/games/rpg-engine.test.ts`), and ran the required `swarm memory find` for this story. Next I’m going to inspect the auto-crumble logic (currently failing a test) and then add new RED tests for reactive room descriptions + boss callbacks before implementing `narrativeContext`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"file"
+    },
+    {
+      "id": "story-mlfzj4xx",
+      "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] 304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > "
+    },
+    {
+      "id": "story-mlg25sjb",
+      "title": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/ca"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfaoxlf",
-      "storyTitle": "Fix Vectorize embedding dimension mismatch (768 → 1024)",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atpro",
-      "toolNames": [
-        "sed -n",
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "nl -ba",
-        "swarm memory"
-      ]
-    },
-    {
-      "storyId": "story-mlfbgyyr",
-      "storyTitle": "Goal lifecycle — prune completed goals, cap prompt bloat",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/dashboard:typecheck: > tsc --noEmit\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agen",
-      "toolNames": [
-        "sed -n",
-        "/usr/bin/zsh -lc",
-        "ls -la",
-        "rg -n",
-        "swarm memory",
-        "secrets exec",
-        "secrets lease"
-      ]
-    },
-    {
-      "storyId": "story-mlfbh5sv",
-      "storyTitle": "Enforce enabledTools strictly",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
-      "toolNames": [
-        "sed -n",
-        "ls -la",
-        "/usr/bin/zsh -lc",
-        "rg -n",
-        "git diff",
-        "swarm memory"
-      ]
-    },
-    {
-      "storyId": "story-mlfbhaur",
-      "storyTitle": "Smarter error backoff — tiered by error type",
-      "category": "verification_rejected",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlfbhaur",
-      "storyTitle": "Smarter error backoff — tiered by error type",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
-      "toolNames": [
-        "ls -la",
-        "/usr/bin/zsh -lc",
-        "nl -ba",
-        "rg -n"
-      ]
-    },
-    {
-      "storyId": "story-mlfbhfmx",
-      "storyTitle": "Clear stale game state on completion",
-      "category": "verification_rejected",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-n",
-      "toolNames": []
-    },
-    {
-      "storyId": "story-mlfbhk80",
-      "storyTitle": "Fix /games API — return all games",
-      "category": "build_error",
-      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > tsc --noEmit\n@atproto-agent/core:typecheck: \n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atpro",
-      "toolNames": [
-        "sed -n",
-        "rg -n",
-        "/usr/bin/zsh -lc",
-        "git show"
-      ]
-    },
     {
       "storyId": "story-mlfbhphy",
       "storyTitle": "Structured JSON logging for all agent lifecycle events",
@@ -1105,6 +1105,95 @@
       "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
       "toolNames": [],
       "iterationNumber": 2
+    },
+    {
+      "storyId": "story-mlfzi9ki",
+      "storyTitle": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
+      "category": "unknown",
+      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > allows first player to place settlement then road 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n ✓ |network| src/games/catan.t",
+      "toolNames": [
+        "sed -n",
+        "ls -la",
+        "/usr/bin/zsh -lc",
+        "rg -n"
+      ],
+      "iterationNumber": 4
+    },
+    {
+      "storyId": "story-mlfziw4w",
+      "storyTitle": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "category": "test_failure",
+      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier\nAssertionError: expected 4 to be 5 // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- 5\u001b[39m\n\u001b[31m+ 4\u001b[39m\n\n ❯ src/games/rpg-engine.test.ts:414:50\n    412|     explore(game, { dice })\n    413|     expect(game.roomIndex).toBe(1)\n    414|     expect",
+      "toolNames": [
+        "ls -la",
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n"
+      ],
+      "iterationNumber": 8
+    },
+    {
+      "storyId": "story-mlfziw4w",
+      "storyTitle": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "toolNames": [],
+      "iterationNumber": 9
+    },
+    {
+      "storyId": "story-mlfzj4xx",
+      "storyTitle": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "category": "unknown",
+      "error": "304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "nl -ba",
+        "ls -la"
+      ],
+      "iterationNumber": 11
+    },
+    {
+      "storyId": "story-mlg25sjb",
+      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "category": "unknown",
+      "error": "304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/12]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
+      "toolNames": [
+        "ls -la",
+        "/usr/bin/zsh -lc",
+        "swarm memory",
+        "nl -ba",
+        "rg -n"
+      ],
+      "iterationNumber": 12
+    },
+    {
+      "storyId": "story-mlg25sjb",
+      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "category": "test_failure",
+      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > stuck detection: repeating the same action 5x triggers GM intervention and advances\nAssertionError: expected false to be true // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- true\u001b[39m\n\u001b[31m+ false\u001b[39m\n\n ❯ src/games/rpg-engine.test.ts:443:96\n    441|     expect(game.roomIndex).toBe(1)\n    442| \n    443|     expect(game.log.som",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "swarm memory",
+        "nl -ba",
+        "npx vitest"
+      ],
+      "iterationNumber": 13
+    },
+    {
+      "storyId": "story-mlg25sjb",
+      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "category": "unknown",
+      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n ✓ |network| src/tools/gm-t",
+      "toolNames": [
+        "ls -la",
+        "rg -n",
+        "swarm memory",
+        "nl -ba",
+        "/usr/bin/zsh -lc"
+      ],
+      "iterationNumber": 14
     }
   ]
 }

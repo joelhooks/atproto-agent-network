@@ -4,10 +4,13 @@ import { generateTid } from '../../../../packages/core/src/identity'
 
 import {
   attack,
+  type Character,
   createCharacter,
   createDice,
   createGame,
+  describeRoom,
   explore,
+  gmInterveneIfStuck,
   partyWipe,
   resolveSkillCheck,
   soloMultiplier,
@@ -183,15 +186,124 @@ async function findJoinableGamesForAgent(
   }
 }
 
-function recomputeTurnOrder(game: RpgGameState): void {
-  game.turnOrder = [...game.party].sort((a, b) => {
+function isLiving(character: Character | null | undefined): boolean {
+  return Boolean(character) && (character!.hp ?? 0) > 0
+}
+
+function computeInitiativeOrder(party: Character[]): Character[] {
+  return [...party].sort((a, b) => {
     const dex = b.stats.DEX - a.stats.DEX
     if (dex !== 0) return dex
     return a.name.localeCompare(b.name)
   })
-  if (!game.currentPlayer || !game.party.some((p) => p.name === game.currentPlayer)) {
-    game.currentPlayer = game.turnOrder[0]?.name ?? game.party[0]?.name ?? 'unknown'
+}
+
+function logSkipDeadTurn(game: RpgGameState, name: string): void {
+  const who = String(name || '').trim()
+  if (!who) return
+  game.log ??= []
+  game.log.push({ at: Date.now(), who: 'GM', what: `${who} is dead, skipping turn` })
+}
+
+function normalizeTurnState(game: RpgGameState): boolean {
+  const before = {
+    phase: game.phase,
+    mode: game.mode,
+    currentPlayer: game.currentPlayer,
+    turnOrderNames: Array.isArray(game.turnOrder) ? game.turnOrder.map((p) => p.name) : [],
   }
+
+  game.party ??= []
+  game.log ??= []
+
+  const initiative = computeInitiativeOrder(game.party)
+  const living = initiative.filter(isLiving)
+
+  // Remove dead players from the active rotation, but keep them in the party state.
+  game.turnOrder = living
+
+  // If everyone is dead, end the game (TPK).
+  if (living.length === 0) {
+    partyWipe(game)
+    game.phase = 'finished'
+    game.mode = 'finished'
+    game.combat = undefined
+    game.currentPlayer = 'none'
+  } else {
+    const idx = initiative.findIndex((p) => p.name === game.currentPlayer)
+    const current = idx >= 0 ? initiative[idx] : undefined
+    if (!isLiving(current)) {
+      if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
+
+      if (idx < 0) {
+        game.currentPlayer = living[0]!.name
+      } else {
+        const start = idx
+        for (let offset = 1; offset <= initiative.length; offset += 1) {
+          const candidate = initiative[(start + offset) % initiative.length]
+          if (!candidate) continue
+          if (isLiving(candidate)) {
+            game.currentPlayer = candidate.name
+            break
+          }
+          logSkipDeadTurn(game, candidate.name)
+        }
+      }
+    }
+  }
+
+  const after = {
+    phase: game.phase,
+    mode: game.mode,
+    currentPlayer: game.currentPlayer,
+    turnOrderNames: game.turnOrder.map((p) => p.name),
+  }
+
+  return (
+    before.phase !== after.phase ||
+    before.mode !== after.mode ||
+    before.currentPlayer !== after.currentPlayer ||
+    JSON.stringify(before.turnOrderNames) !== JSON.stringify(after.turnOrderNames)
+  )
+}
+
+function advanceTurn(game: RpgGameState): void {
+  game.party ??= []
+  game.log ??= []
+
+  const initiative = computeInitiativeOrder(game.party)
+  const living = initiative.filter(isLiving)
+  game.turnOrder = living
+
+  if (living.length === 0) {
+    partyWipe(game)
+    game.phase = 'finished'
+    game.mode = 'finished'
+    game.combat = undefined
+    game.currentPlayer = 'none'
+    return
+  }
+
+  const idx = initiative.findIndex((p) => p.name === game.currentPlayer)
+  const current = idx >= 0 ? initiative[idx] : undefined
+  if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
+
+  const start = idx >= 0 ? idx : -1
+  for (let offset = 1; offset <= initiative.length; offset += 1) {
+    const candidate = initiative[(start + offset) % initiative.length]
+    if (!candidate) continue
+    if (isLiving(candidate)) {
+      game.currentPlayer = candidate.name
+      return
+    }
+    logSkipDeadTurn(game, candidate.name)
+  }
+
+  game.currentPlayer = living[0]!.name
+}
+
+function recomputeTurnOrder(game: RpgGameState): void {
+  normalizeTurnState(game)
 }
 
 export const rpgEnvironment: AgentEnvironment = {
@@ -376,7 +488,7 @@ export const rpgEnvironment: AgentEnvironment = {
           return {
             content: toTextContent(
               `Adventure created: ${gameId}\nPlayers: ${players.join(', ')}\n\n` +
-                `Room 1/${game.dungeon.length}: ${game.dungeon[0]?.description ?? ''}`
+                `Room 1/${game.dungeon.length}: ${describeRoom(game, 0)}`
             ),
             details: { gameId, type: 'rpg', players, phase: game.phase },
           }
@@ -411,14 +523,31 @@ export const rpgEnvironment: AgentEnvironment = {
 
         const game = JSON.parse(row.state) as RpgGameState
 
+        // Normalize turn state eagerly so dead players never softlock the game.
+        // Persist normalization before any early returns (e.g. "Not your turn") so the game can recover.
+        {
+          const beforePhase = game.phase
+          const dirty = normalizeTurnState(game)
+          if (dirty) {
+            await db
+              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+              .run()
+            if (beforePhase !== 'finished' && game.phase === 'finished') {
+              await emitGameCompleted(ctx, { gameId, game })
+            }
+          }
+        }
+
         if (command === 'status') {
           const room = game.dungeon[game.roomIndex]
+          const description = describeRoom(game, game.roomIndex)
           return {
             content: toTextContent(
               `Adventure: ${gameId}\n` +
                 `Mode: ${game.mode} | Phase: ${game.phase}\n` +
                 `Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}\n` +
-                `${room?.description ?? ''}\n\n` +
+                `${description}\n\n` +
                 `Current player: ${game.currentPlayer}\n` +
                 `Party: ${summarizeParty(game)}`
             ),
@@ -465,13 +594,17 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const beforePhase = game.phase
+          const attemptedRoomIndex = game.roomIndex + 1
           const result = explore(game, { dice })
 
-          // advance turn
-          recomputeTurnOrder(game)
-          const idx = Math.max(0, game.turnOrder.findIndex((p) => p.name === game.currentPlayer))
-          const next = game.turnOrder[(idx + 1) % Math.max(1, game.turnOrder.length)]
-          game.currentPlayer = next?.name ?? game.currentPlayer
+          gmInterveneIfStuck(game, {
+            player: ctx.agentName.trim() || 'unknown',
+            action: 'explore',
+            target: `room:${attemptedRoomIndex}:${result.room?.type ?? 'none'}`,
+          })
+
+          // advance turn (skip dead players)
+          advanceTurn(game)
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -484,11 +617,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
           return {
             content: toTextContent(
-              result.room
-                ? `You enter: ${result.room.type}\n${result.room.description}\n\nParty: ${summarizeParty(game)}`
-                : 'The adventure is complete.'
+              (() => {
+                if (game.phase !== 'playing') return 'The adventure is complete.'
+                const roomNow = game.dungeon[game.roomIndex]
+                if (!roomNow) return 'The adventure is complete.'
+                return `You enter: ${roomNow.type}\n${describeRoom(game, game.roomIndex)}\n\nParty: ${summarizeParty(game)}`
+              })()
             ),
-            details: { gameId, room: result.room, mode: game.mode },
+            details: { gameId, room: game.phase === 'playing' ? game.dungeon[game.roomIndex] ?? null : null, mode: game.mode },
           }
         }
 
@@ -551,6 +687,15 @@ export const rpgEnvironment: AgentEnvironment = {
                 text += '\nCombat ends.'
               }
 
+              gmInterveneIfStuck(game, {
+                player: ctx.agentName.trim() || 'unknown',
+                action: 'attack',
+                target: `enemy:${enemy.name}`,
+              })
+
+              // advance turn (skip dead players)
+              advanceTurn(game)
+
               await db
                 .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
@@ -559,12 +704,6 @@ export const rpgEnvironment: AgentEnvironment = {
               if (beforePhase !== 'finished' && game.phase === 'finished') {
                 await emitGameCompleted(ctx, { gameId, game })
               }
-
-              // advance turn
-              recomputeTurnOrder(game)
-              const idx = Math.max(0, game.turnOrder.findIndex((p) => p.name === game.currentPlayer))
-              const next = game.turnOrder[(idx + 1) % Math.max(1, game.turnOrder.length)]
-              game.currentPlayer = next?.name ?? game.currentPlayer
 
               return { content: toTextContent(`${text}\n\nParty: ${summarizeParty(game)}`), details: { gameId } }
             }
@@ -575,11 +714,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
           const result = attack(game, { attacker: ctx.agentName.trim() || 'unknown', defender, dice })
 
-          // advance turn
-          recomputeTurnOrder(game)
-          const idx = Math.max(0, game.turnOrder.findIndex((p) => p.name === game.currentPlayer))
-          const next = game.turnOrder[(idx + 1) % Math.max(1, game.turnOrder.length)]
-          game.currentPlayer = next?.name ?? game.currentPlayer
+          gmInterveneIfStuck(game, {
+            player: ctx.agentName.trim() || 'unknown',
+            action: 'attack',
+            target: `party:${defender}`,
+          })
+
+          // advance turn (skip dead players)
+          advanceTurn(game)
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -599,6 +741,9 @@ export const rpgEnvironment: AgentEnvironment = {
         if (command === 'rest') {
           const actor = game.party.find((p) => p.name === (ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before resting')
+          if ((actor.hp ?? 0) <= 0) {
+            return { ok: false, error: 'You are dead. You cannot rest until revived.' }
+          }
 
           actor.hp = Math.min(actor.maxHp, actor.hp + 2)
           actor.mp = Math.min(actor.maxMp, actor.mp + 1)
@@ -629,6 +774,12 @@ export const rpgEnvironment: AgentEnvironment = {
             ;(actor.skills as any)[skillName] = check.nextSkill
           }
 
+          gmInterveneIfStuck(game, {
+            player: ctx.agentName.trim() || 'unknown',
+            action: 'use_skill',
+            target: `skill:${skillName}`,
+          })
+
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
@@ -653,6 +804,12 @@ export const rpgEnvironment: AgentEnvironment = {
 
           const check = resolveSkillCheck({ skill: actor.skills.cast_spell, dice })
           if (check.success) actor.skills.cast_spell = check.nextSkill
+
+          gmInterveneIfStuck(game, {
+            player: ctx.agentName.trim() || 'unknown',
+            action: 'cast_spell',
+            target: `spell:${spell}`,
+          })
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")

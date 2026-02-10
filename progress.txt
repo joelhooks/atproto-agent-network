@@ -484,3 +484,121 @@ Added unit tests covering all 4 paths in `apps/network/src/games/rpg-engine.test
 Validation run (requested): `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30` (passes).
 
 Production verify (STONE TABLET): deployed `apps/network` via `wrangler deploy` and ran `./scripts/smoke-test.sh --url https://agent-network.joelhooks.workers.dev` (PASS).
+
+---
+[2026-02-10T03:02:54.729Z]
+Failed: Phase 1c: Stuck detection — same action 5x triggers GM intervention [unknown]
+Validation: ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > allows first player to place settlement then road 1ms
+ ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms
+ ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase 
+Codex: Starting Phase 1c stuck-detection work: I’m going to (1) pull up the RPG engine + its tests, and (2) run `swarm memory find` for this story topic before writing RED tests.
+
+---
+[2026-02-10T03:09:38.890Z]
+Completed: Phase 1c: Stuck detection — same action 5x triggers GM intervention
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: I found the RPG engine already has scaffolding for stuck detection (`actionHistory` plus helper functions around lines ~381+). Next step is to inspect how it’s currently wired into actions like `explore()` and add a RED test that proves GM intervention after 5 identical actions, then adjust implementation if it isn’t triggering correctly or doesn’t auto-resolve the obstacle + advance rooms as required.
+⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-10T03:14:45.724Z]
+Completed: Phase 1d: Enemy scaling to party size
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Starting Phase 1d enemy scaling work: I’m going to (1) pull up `apps/network/src/environments/rpg-engine.ts` and existing RPG tests, and (2) run the required `swarm memory find` before writing RED tests.
+⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-10T03:22:51.339Z]
+Completed: Phase 2a: Dungeon themes and narrative arc — replace random rooms with story
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Starting Phase 2a work: I’m going to (1) run the required `swarm memory find` for this story topic, (2) inspect `apps/network/src/environments/rpg-engine.ts` plus its existing tests, then (3) write a RED test for theme/backstory + theme-aware room descriptions + unique themes across 10 generated dungeons.
+⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-10T03:33:28.343Z]
+Failed: Phase 2b: Room descriptions reference party actions — dynamic narrative [test_failure]
+Validation: 292|     }
+    293|     expect(themes.size).toBe(10)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier
+AssertionError: expected 4 to be 5 // Object.is equality
+
+[32m- Expe
+Codex: Starting Phase 2b work: I’m going to (1) run `swarm memory find` for the story topic, then (2) inspect `apps/network/src/environments/rpg-engine.ts` and existing RPG environment tests to write a failing test before implementing narrativeContext + reactive room descriptions.
+
+---
+[2026-02-10T03:34:09.327Z]
+Failed: Phase 2b: Room descriptions reference party actions — dynamic narrative [verification_rejected]
+Validation: 292|     }
+    293|     expect(themes.size).toBe(10)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier
+AssertionError: expected 4 to be 5 // Object.is equality
+
+[32m- Expe
+Codex: Starting Phase 2b implementation. First step: run the required `swarm memory find` for this story topic, then inspect the RPG engine code + tests and write a RED test that asserts room 3+ descriptions include references to earlier logged events and boss room references at least two prior events.
+
+---
+[2026-02-10T03:35:05.906Z]
+Completed: Phase 2b: Room descriptions reference party actions — dynamic narrative
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Confirmed the RPG engine lives in `apps/network/src/games/rpg-engine.ts` (tests in `apps/network/src/games/rpg-engine.test.ts`), and ran the required `swarm memory find` for this story. Next I’m going to inspect the auto-crumble logic (currently failing a test) and then add new RED tests for reactive room descriptions + boss callbacks before implementing `narrativeContext`.
+⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-10T03:45:43.900Z]
+Failed: Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication [unknown]
+Validation: 304| 
+ ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19
+ ❯ persistRpgGame src/tools/gm-tool.ts:56:6
+ ❯ Object.execute src/tools/gm-tool.ts:197:15
+ ❯ src/tools/gm-tool.test.ts:133:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+ FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > 
+Codex: Starting story story-mlfzj4xx (Phase 3a GM tool). First step: run the required `swarm memory find` for this story topic, then inspect existing tool registry and RPG D1 game state code to write failing tests before implementing the tool and access control.
+
+---
+[2026-02-10T03:56:08.157Z]
+Failed: Fix: Skip dead players in turn order — don't assign turns to 0 HP players [unknown]
+Validation: 304| 
+ ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19
+ ❯ persistRpgGame src/tools/gm-tool.ts:56:6
+ ❯ Object.execute src/tools/gm-tool.ts:197:15
+ ❯ src/tools/gm-tool.test.ts:133:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/12]⎯
+
+ FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > 
+Codex: Found that turn rotation is advanced in `apps/network/src/environments/rpg.ts` (multiple modulo-based next-player blocks) and the core RPG engine is `apps/network/src/games/rpg-engine.ts`. Next step is to inspect both for where HP reaches 0 and add a failing test that proves dead players are skipped and TPK ends the game.
+
+---
+[2026-02-10T04:06:32.372Z]
+Failed: Fix: Skip dead players in turn order — don't assign turns to 0 HP players [test_failure]
+Validation: 292|     }
+    293|     expect(themes.size).toBe(10)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > stuck detection: repeating the same action 5x triggers GM intervention and advances
+AssertionError: expected false to be true // Object.is equality
+
+[32
+Codex: Confirmed RPG engine is `apps/network/src/games/rpg-engine.ts` and it has `turnOrder` + `currentPlayer`. Next I’ll open the relevant sections around turn order computation and action handling, then add RED tests for skipping dead players + TPK + immediate advance on death.
+
+---
+[2026-02-10T04:16:56.263Z]
+Failed: Fix: Skip dead players in turn order — don't assign turns to 0 HP players [unknown]
+Validation: ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms
+ ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms
+ ✓ |network| src/games/ca
+Codex: 
+
+---
+[2026-02-10T04:17:13.771Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
