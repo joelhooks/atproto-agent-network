@@ -1327,7 +1327,7 @@ export class AgentDO extends DurableObject {
     const isSetupPhase = prompt.includes('SETUP PHASE')
     const suppressed = suppressGameplayTools
       ? isSetupPhase
-        ? ['think_aloud', 'recall', 'message', 'remember']
+        ? ['think_aloud', 'recall', 'message', 'remember', 'gm']
         : ['think_aloud', 'recall']
       : []
     try {
