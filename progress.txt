@@ -602,3 +602,58 @@ Codex:
 ---
 [2026-02-10T04:17:13.771Z]
 Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:18:46.647Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:18:57.217Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:07.224Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:16.869Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:26.801Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:36.764Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:46.791Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:19:56.385Z]
+Skipped: Fix: Skip dead players in turn order — don't assign turns to 0 HP players — exceeded 3 retries, needs human review
+
+---
+[2026-02-10T04:30:44.986Z]
+Failed: Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication [unknown]
+Validation: ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms
+ ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms
+ ✓ |network| src/games/ca
+Codex: Starting Phase 3a GM tool story. First I’m going to (1) run the required `swarm memory find` for this story topic, then (2) inspect the existing tool registry + RPG D1 persistence so the GM tool can reuse the supported D1Mock SQL shapes and avoid the prior failure in `persistRpgGame`.
+
+---
+[2026-02-10T04:35:06.070Z]
+Completed: Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, apps/network/src/tools/index.ts, packages/core/src/d1-mock.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
+Summary: Prior failure pattern detected: test_failure/unknown (D1MockStatement.run from unsupported SQL shape in gm-tool persistence). Mitigation: ensure GM tool reads/writes RPG state using SQL patterns supported by `packages/core/src/d1-mock.ts` (simple `SELECT ... FROM games ...` + `UPDATE games SET state=?, phase=?, updated_at=datetime('now') WHERE id=?`).
+
+GM tool is present, registered, and grimlock-only:
+- Tool: `apps/network/src/tools/gm-tool.ts` (`narrate`, `adjust_difficulty`, `add_event`, `review_party`), all actions append to the game log with `[GM]` and persist via D1 `games.state` JSON.
+- Registry/gating: `apps/network/src/tools/index.ts` only returns the tool when `enabledTools` includes `gm` *and* `agentName` is Grimlock; `gm` tool also throws `tool not available` if executed by a non-Grimlock identity.
+- Tests: `apps/network/src/tools/gm-tool.test.ts` covers each action + access control.
+
+Validation (as requested): `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30` passed (18 files passed, 211 tests passed).
+
+Note: `git status` shows unrelated local modifications (including `prd.json`, `progress.txt`, `.ralph-context.json`, `.ralph-iterations.jsonl`, `apps/network/src/agent.ts`, `apps/network/src/agent-do.test.ts`). I did not change or revert these; tell me if you want them reset/stashed.

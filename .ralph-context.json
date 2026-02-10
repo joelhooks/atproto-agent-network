@@ -930,7 +930,7 @@
       "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[unknown] 304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > "
+      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/ca"
     },
     {
       "id": "story-mlg25sjb",
@@ -941,19 +941,6 @@
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfbhphy",
-      "storyTitle": "Structured JSON logging for all agent lifecycle events",
-      "category": "timeout",
-      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\nstderr | src/agent-do.test.ts > AgentDO > tiered backoff: transient (rate limit/timeout) goes 15s→30s→60s (cap) and resets on success\nAgentDO think failed {\n  did: \u001b[32m'did:cf:agent-backoff-transient'\u001b[39m,\n  category",
-      "toolNames": [
-        "sed -n",
-        "ls -la",
-        "rg -n",
-        "/usr/bin/zsh -lc"
-      ],
-      "iterationNumber": 1
-    },
     {
       "storyId": "story-mlfbhphy",
       "storyTitle": "Structured JSON logging for all agent lifecycle events",
@@ -1194,6 +1181,19 @@
         "/usr/bin/zsh -lc"
       ],
       "iterationNumber": 14
+    },
+    {
+      "storyId": "story-mlfzj4xx",
+      "storyTitle": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "category": "unknown",
+      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n ✓ |network| src/auth.test.",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n",
+        "bash -lc"
+      ],
+      "iterationNumber": 1
     }
   ]
 }

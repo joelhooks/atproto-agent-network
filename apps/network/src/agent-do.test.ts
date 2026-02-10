@@ -314,6 +314,100 @@ describe('AgentDO', () => {
     )
   })
 
+  it('enables the gm tool by default only for grimlock', async () => {
+    const { state: stateGrimlock } = createState('agent-gm-grimlock')
+    const { env: envGrimlock } = createEnv()
+    const { AgentDO } = await import('./agent')
+    const grimlock = new AgentDO(stateGrimlock as never, envGrimlock as never)
+
+    const grimlockConfigRes = await grimlock.fetch(new Request('https://example/agents/grimlock/config'))
+    const grimlockConfig = (await grimlockConfigRes.json()) as { enabledTools?: unknown }
+    expect(Array.isArray(grimlockConfig.enabledTools)).toBe(true)
+    expect(grimlockConfig.enabledTools).toEqual(expect.arrayContaining(['gm']))
+
+    const { state: stateOther } = createState('agent-gm-other')
+    const { env: envOther } = createEnv()
+    const other = new AgentDO(stateOther as never, envOther as never)
+
+    const otherConfigRes = await other.fetch(new Request('https://example/agents/slag/config'))
+    const otherConfig = (await otherConfigRes.json()) as { enabledTools?: unknown }
+    expect(Array.isArray(otherConfig.enabledTools)).toBe(true)
+    expect(otherConfig.enabledTools).not.toEqual(expect.arrayContaining(['gm']))
+  })
+
+  it('allows grimlock to call gm tool via /execute and persists narration into the RPG game log', async () => {
+    const { state } = createState('agent-gm-execute')
+    const { env, db } = createEnv()
+
+    const game = createRpgGame({
+      id: 'rpg_gm_execute_1',
+      players: ['grimlock', 'alice'],
+      dungeon: [{ type: 'rest', description: 'start' }],
+    })
+    await (db as any)
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(game.id, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock', 'alice']))
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Ensure config exists for grimlock (so enabledTools includes gm).
+    await agent.fetch(new Request('https://example/agents/grimlock/config'))
+
+    const execRes = await agent.fetch(
+      new Request('https://example/agents/grimlock/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toolCalls: [
+            {
+              name: 'gm',
+              arguments: { command: 'narrate', gameId: game.id, text: 'The torchlight bends like it is afraid.' },
+            },
+          ],
+        }),
+      })
+    )
+    const execBody = (await execRes.json()) as { steps?: Array<{ name: string; ok: boolean; error?: string }> }
+    expect(execRes.status).toBe(200)
+    expect(execBody.steps?.[0]?.name).toBe('gm')
+    expect(execBody.steps?.[0]?.ok).toBe(true)
+
+    const stored = await (db as any).prepare('SELECT state FROM games WHERE id = ?').bind(game.id).first<{ state: string }>()
+    const next = JSON.parse(String(stored?.state ?? '{}')) as any
+    expect(Array.isArray(next.log)).toBe(true)
+    expect(next.log.some((e: any) => e.who === 'GM' && String(e.what).startsWith('[GM]') && String(e.what).includes('torchlight'))).toBe(true)
+  })
+
+  it('non-grimlock calling gm via /execute gets tool not available', async () => {
+    const { state } = createState('agent-gm-deny')
+    const { env } = createEnv()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    // Initialize config for a non-grimlock name
+    await agent.fetch(new Request('https://example/agents/slag/config'))
+
+    const execRes = await agent.fetch(
+      new Request('https://example/agents/slag/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toolCalls: [{ name: 'gm', arguments: { command: 'review_party', gameId: 'does_not_matter' } }],
+        }),
+      })
+    )
+    const body = (await execRes.json()) as { steps?: Array<{ name: string; ok: boolean; error?: string }> }
+    expect(execRes.status).toBe(200)
+    expect(body.steps?.[0]?.name).toBe('gm')
+    expect(body.steps?.[0]?.ok).toBe(false)
+    expect(String(body.steps?.[0]?.error ?? '')).toContain('tool not available')
+  })
+
   it('registers with the relay public key directory', async () => {
     const { state } = createState('agent-register')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })

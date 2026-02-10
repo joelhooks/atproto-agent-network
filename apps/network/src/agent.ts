@@ -30,6 +30,7 @@ import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../..
 
 import { withErrorHandling } from './http-errors'
 import { createLogger, logEvent, toErrorDetails } from './logger'
+import { createGmTool } from './tools/gm-tool'
 
 interface AgentEnv {
   AGENTS?: DurableObjectNamespace
@@ -171,6 +172,10 @@ function extractAgentNameFromPath(pathname: string): string | undefined {
     return parts[1]
   }
   return undefined
+}
+
+function isGrimlock(name: string | undefined | null): boolean {
+  return String(name ?? '').trim().toLowerCase() === 'grimlock'
 }
 
 function randomHex(bytes: number): string {
@@ -1388,6 +1393,7 @@ export class AgentDO extends DurableObject {
     const toolCalls = Array.isArray(thought.toolCalls) ? thought.toolCalls : []
     const configuredAllowlist = this.config?.enabledTools ?? []
     const allowlist = configuredAllowlist.length > 0 ? new Set(configuredAllowlist) : null
+    const actingIsGrimlock = isGrimlock(this.config?.name)
 
     const steps: ActResult['steps'] = []
     let truncated = false
@@ -1520,6 +1526,15 @@ export class AgentDO extends DurableObject {
 	      const originalName = call.name
 	      const name = routeToolName(activeEnvironmentType, originalName)
 
+        // Hard auth guard: GM tool is Grimlock-only even if someone tries to force-enable it.
+        if (name === 'gm' && !actingIsGrimlock) {
+          steps.push({ name, ok: false, error: 'tool not available' })
+          outcomes.push({ tool: name, success: false, timestamp: Date.now() })
+          if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+          await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+          continue
+        }
+
 	      if (name !== originalName) {
 	        logEvent({
 	          level: 'info',
@@ -1550,7 +1565,7 @@ export class AgentDO extends DurableObject {
         allowlist.has(name) ||
         (name !== originalName && allowlist.has(originalName))
       if (!allowlisted) {
-        steps.push({ name, ok: false, error: 'Tool not enabled' })
+        steps.push({ name, ok: false, error: name === 'gm' ? 'tool not available' : 'Tool not enabled' })
         outcomes.push({ tool: name, success: false, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
         await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
@@ -1559,7 +1574,7 @@ export class AgentDO extends DurableObject {
 
       const tool = this.tools.find((t) => t.name === name)
       if (!tool || typeof tool.execute !== 'function') {
-        steps.push({ name, ok: false, error: 'Tool not found' })
+        steps.push({ name, ok: false, error: name === 'gm' ? 'tool not available' : 'Tool not found' })
         outcomes.push({ tool: name, success: false, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
         await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
@@ -1707,6 +1722,7 @@ export class AgentDO extends DurableObject {
   }
 
   private createDefaultConfig(name: string): AgentConfig {
+    const grimlock = isGrimlock(name)
     return {
       name,
       personality: this.agentEnv.PI_SYSTEM_PROMPT ?? DEFAULT_AGENT_SYSTEM_PROMPT,
@@ -1726,6 +1742,7 @@ export class AgentDO extends DurableObject {
         'think_aloud',
         'game',
         'rpg',
+        ...(grimlock ? (['gm'] as const) : []),
         'publish',
         'write_extension',
         'list_extensions',
@@ -1802,9 +1819,25 @@ export class AgentDO extends DurableObject {
     const stored = await this.ctx.storage.get<AgentConfig>('config')
     if (stored) {
       const normalized = await this.pruneAndArchiveCompletedGoals(stored)
-      this.config = normalized
-      if (agentName && normalized.name !== agentName) {
-        const renamed = await this.pruneAndArchiveCompletedGoals({ ...normalized, name: agentName })
+      // Migration: ensure Grimlock always has the gm tool enabled when loading older configs.
+      const migrated =
+        isGrimlock(agentName ?? normalized.name) && !normalized.enabledTools?.includes('gm')
+          ? { ...normalized, enabledTools: [...(normalized.enabledTools ?? []), 'gm'] }
+          : normalized
+      if (migrated !== normalized) {
+        await this.ctx.storage.put('config', migrated)
+      }
+
+      this.config = migrated
+      if (agentName && migrated.name !== agentName) {
+        const renamedBase = await this.pruneAndArchiveCompletedGoals({ ...migrated, name: agentName })
+        const renamed =
+          isGrimlock(agentName) && !renamedBase.enabledTools?.includes('gm')
+            ? { ...renamedBase, enabledTools: [...(renamedBase.enabledTools ?? []), 'gm'] }
+            : renamedBase
+        if (renamed !== renamedBase) {
+          await this.ctx.storage.put('config', renamed)
+        }
         this.config = renamed
       }
       return this.config
@@ -2977,6 +3010,15 @@ export class AgentDO extends DurableObject {
             }
           },
         } as PiAgentTool
+      })(),
+      // GM tool: registered but only enabled for Grimlock via config.enabledTools.
+      ...(() => {
+        const agentName = this.config?.name ?? ''
+        const enabled = Array.isArray(this.config?.enabledTools) ? this.config!.enabledTools : []
+        if (!enabled.includes('gm')) return []
+        if (!isGrimlock(agentName)) return []
+        const gmCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent }
+        return [createGmTool(gmCtx as any)]
       })(),
     ]
   }

@@ -567,7 +567,7 @@
       "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
       "description": "Create a new `gm` tool that only Grimlock can use. Actions:\n\n1. `narrate` — Add a narrative message to the game log (GM flavor text, descriptions, dramatic moments)\n2. `adjust_difficulty` — Modify a room's enemy stats, barrier difficulty, or add/remove hazards mid-dungeon\n3. `add_event` — Inject an emergent event into the current room (NPC encounter, environmental hazard, loot drop, plot twist)\n4. `review_party` — Get a summary of party status (HP, MP, inventory, rooms cleared, deaths, near-deaths)\n\nRegister the tool in the tool registry but ONLY enable it for grimlock agent config. Other agents should never see this tool.\n\nThe GM tool operates on active RPG games. It reads/writes to the same D1 game state that rpg-engine uses. Actions are logged in the game log with a [GM] prefix.\n\nFiles: apps/network/src/tools/gm-tool.ts (new), apps/network/src/tools/index.ts, apps/network/src/environments/rpg-engine.ts\n\nAcceptance: GM tool registered and callable. Only grimlock can use it (other agents get \"tool not available\"). narrate adds to game log, adjust_difficulty modifies room state, review_party returns party summary. Tests for each action + access control test.",
       "priority": 57,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -599,14 +599,14 @@
       "title": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
       "description": "Bug: When a party member dies (hp=0), the turn system still assigns them as currentPlayer, softlocking the game since dead agents can't take actions.\n\nFix in rpg-engine.ts turn advancement logic:\n1. When advancing to next player, skip any player with hp <= 0\n2. If ALL players are dead, end the game (TPK — total party kill)\n3. Remove dead players from the active turn rotation but keep them in party state (for potential resurrection mechanics later)\n4. When a player dies mid-combat, immediately advance to the next living player\n5. Add a log entry when skipping a dead player: \"[name] is dead, skipping turn\"\n\nThis was observed in production: swoop died at 0 HP but currentPlayer was still \"swoop\", freezing the game loop.\n\nFiles: apps/network/src/environments/rpg-engine.ts\n\nAcceptance: Dead players (hp=0) are never assigned as currentPlayer. If a player dies during combat, turn immediately advances to next living player. TPK (all dead) ends the game. Test with a party where one member dies mid-combat and verify turn skips them.",
       "priority": 55,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 56,
-    "lastIteration": "2026-02-10T03:35:05.902Z"
+    "totalIterations": 57,
+    "lastIteration": "2026-02-10T04:35:06.067Z"
   },
   "totalStories": 11
 }
