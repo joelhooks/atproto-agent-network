@@ -31,6 +31,24 @@ function makeDiceFromD100(rolls: number[]) {
   })
 }
 
+function makeDice(input: { d100Rolls: number[]; dRolls?: number[]; defaultDRoll?: number }) {
+  const { d100Rolls, dRolls = [], defaultDRoll = 1 } = input
+  let i = 0
+  let j = 0
+  return createTestDice({
+    d100: () => {
+      const next = d100Rolls[i++]
+      if (next == null) return 100
+      return next
+    },
+    d: (_sides: number) => {
+      const next = dRolls[j++]
+      if (next == null) return defaultDRoll
+      return next
+    },
+  })
+}
+
 describe('rpg-engine', () => {
   it('soloMultiplier scales danger for smaller parties', () => {
     expect(soloMultiplier(1)).toBe(2.0)
@@ -116,6 +134,107 @@ describe('rpg-engine', () => {
 
     const after = game.party.find((p) => p.name === 'a')!.skills.attack
     expect(after).toBe(before + 1)
+  })
+
+  it('opposed rolls: both succeed compares margins; defender wins ties', () => {
+    // attacker attack 60 roll 45 => margin 15
+    // defender dodge 40 roll 25 => margin 15 (tie => miss)
+    const dice = makeDice({ d100Rolls: [45, 25] })
+    const attacker = createCharacter({ name: 'a', klass: 'Warrior' })
+    const defender = createCharacter({ name: 'd', klass: 'Scout' })
+    attacker.skills.attack = 60
+    defender.skills.dodge = 40
+    defender.hp = 30
+
+    const game = createGame({ id: 'rpg_1', players: [attacker, defender] })
+    const before = game.party.find((p) => p.name === 'd')!.hp
+
+    const result = attack(game, { attacker: 'a', defender: 'd', dice })
+    expect(result.ok).toBe(true)
+    expect(result.hit).toBe(false)
+    const after = game.party.find((p) => p.name === 'd')!.hp
+    expect(after).toBe(before)
+  })
+
+  it('opposed rolls: both fail is always a miss', () => {
+    const dice = makeDice({ d100Rolls: [90, 90] })
+    const attacker = createCharacter({ name: 'a', klass: 'Warrior' })
+    const defender = createCharacter({ name: 'd', klass: 'Scout' })
+    attacker.skills.attack = 10
+    defender.skills.dodge = 10
+    defender.hp = 30
+
+    const game = createGame({ id: 'rpg_1', players: [attacker, defender] })
+    const before = game.party.find((p) => p.name === 'd')!.hp
+
+    const result = attack(game, { attacker: 'a', defender: 'd', dice })
+    expect(result.ok).toBe(true)
+    expect(result.hit).toBe(false)
+    const after = game.party.find((p) => p.name === 'd')!.hp
+    expect(after).toBe(before)
+  })
+
+  it('critical hits (roll <= skill/5) deal double damage', () => {
+    // attack skill 50 => crit on 10 or less. Defender fails dodge.
+    // base damage: d6(6) + STR bonus(3) = 9; crit => 18
+    const dice = makeDice({ d100Rolls: [10, 100], dRolls: [6] })
+    const attacker = createCharacter({ name: 'a', klass: 'Warrior' })
+    const defender = createCharacter({ name: 'd', klass: 'Warrior' })
+    attacker.skills.attack = 50
+    defender.skills.dodge = 1
+    defender.hp = 30
+
+    const game = createGame({ id: 'rpg_crit', players: [attacker, defender] })
+    const before = game.party.find((p) => p.name === 'd')!.hp
+
+    const result = attack(game, { attacker: 'a', defender: 'd', dice })
+    expect(result.ok).toBe(true)
+    expect(result.hit).toBe(true)
+    const after = game.party.find((p) => p.name === 'd')!.hp
+    expect(after).toBe(before - 18)
+  })
+
+  it('fumbles (roll 96+) cause the attacker to hurt themselves for half damage', () => {
+    // attacker fumbles on 96; self damage is floor((d6(6) + STR bonus(3)) / 2) = 4
+    const dice = makeDice({ d100Rolls: [96, 1], dRolls: [6] })
+    const attacker = createCharacter({ name: 'a', klass: 'Warrior' })
+    const defender = createCharacter({ name: 'd', klass: 'Warrior' })
+    attacker.skills.attack = 99
+    attacker.hp = 30
+    defender.skills.dodge = 1
+    defender.hp = 30
+
+    const game = createGame({ id: 'rpg_fumble', players: [attacker, defender] })
+    const beforeAttacker = game.party.find((p) => p.name === 'a')!.hp
+    const beforeDefender = game.party.find((p) => p.name === 'd')!.hp
+
+    const result = attack(game, { attacker: 'a', defender: 'd', dice })
+    expect(result.ok).toBe(true)
+    expect(result.hit).toBe(false)
+    const afterAttacker = game.party.find((p) => p.name === 'a')!.hp
+    const afterDefender = game.party.find((p) => p.name === 'd')!.hp
+    expect(afterAttacker).toBe(beforeAttacker - 4)
+    expect(afterDefender).toBe(beforeDefender)
+  })
+
+  it('damage calculation applies armor reduction when present', () => {
+    // base damage: d6(6) + STR bonus(3) = 9; armor 2 => 7
+    const dice = makeDice({ d100Rolls: [20, 100], dRolls: [6] })
+    const attacker = createCharacter({ name: 'a', klass: 'Warrior' })
+    const defender = createCharacter({ name: 'd', klass: 'Warrior' })
+    attacker.skills.attack = 60
+    defender.skills.dodge = 1
+    defender.armor = 2
+    defender.hp = 30
+
+    const game = createGame({ id: 'rpg_armor', players: [attacker, defender] })
+    const before = game.party.find((p) => p.name === 'd')!.hp
+
+    const result = attack(game, { attacker: 'a', defender: 'd', dice })
+    expect(result.ok).toBe(true)
+    expect(result.hit).toBe(true)
+    const after = game.party.find((p) => p.name === 'd')!.hp
+    expect(after).toBe(before - 7)
   })
 
   it('explore advances rooms and sets combat mode on combat rooms', () => {

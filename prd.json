@@ -615,7 +615,7 @@
       "title": "Phase 4b-2: BRP-informed combat — opposed rolls, crits, fumbles",
       "description": "Upgrade combat resolution in rpg-engine.ts to use BRP-style mechanics:\n\n1. **Opposed rolls**: Attacker rolls against attack skill, defender rolls against dodge. Both succeed = compare margins. Both fail = miss.\n2. **Critical hits**: Roll <= skill/5 = double damage\n3. **Fumbles**: Roll 96-00 = bad thing happens (attacker hits self for half damage, or drops weapon losing next turn)\n4. **Damage calculation**: Base damage + STR bonus - armor (if any)\n\nReplace the current simple \"roll vs attack\" with these mechanics. Keep it deterministic enough to test.\n\nFiles: apps/network/src/games/rpg-engine.ts, apps/network/src/games/rpg-engine.test.ts\n\nAcceptance: Combat uses opposed rolls. Crits at skill/5 do double damage. Fumbles at 96+ cause self-harm. Tests for each mechanic with seeded random.",
       "priority": 62,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -30"
     },
     {
@@ -637,8 +637,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 60,
-    "lastIteration": "2026-02-10T05:39:07.149Z"
+    "totalIterations": 61,
+    "lastIteration": "2026-02-10T05:49:19.840Z"
   },
   "totalStories": 11
 }

@@ -41,6 +41,8 @@ export type Character = {
   klass: RpgClass
   stats: Stats
   skills: Skills
+  // Optional for backwards compatibility with persisted games.
+  armor?: number
   hp: number
   maxHp: number
   mp: number
@@ -335,6 +337,7 @@ export function createCharacter(input: { name: string; klass: RpgClass }): Chara
     klass: input.klass,
     stats,
     skills,
+    armor: 0,
     hp: maxHp,
     maxHp,
     mp: maxMp,
@@ -886,18 +889,50 @@ export function attack(
   const atk = resolveSkillCheck({ skill: attacker.skills.attack, dice: input.dice })
   const dod = resolveSkillCheck({ skill: defender.skills.dodge, dice: input.dice })
 
-  // BRP-inspired opposed roll: success beats failure; if both succeed, margin decides.
-  const atkMargin = atk.success ? attacker.skills.attack - atk.roll : -Infinity
-  const dodMargin = dod.success ? defender.skills.dodge - dod.roll : -Infinity
+  // BRP-informed combat:
+  // - Opposed rolls: success beats failure; if both succeed, compare margins.
+  // - Critical hits: roll <= skill/5 => double damage.
+  // - Fumbles: roll 96-00 => attacker hurts themselves for half damage.
 
-  const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+  const atkSkill = clampSkill(attacker.skills.attack)
+  const dodSkill = clampSkill(defender.skills.dodge)
+  const strBonus = Math.floor(attacker.stats.STR / 25)
+  const armorRaw = (defender as any).armor
+  const armor = Number.isFinite(armorRaw) ? Math.max(0, Math.floor(armorRaw as number)) : 0
+
+  const isFumble = atk.roll >= 96
+  const critThreshold = Math.max(1, Math.floor(atkSkill / 5))
+  const isCrit = !isFumble && atk.roll <= critThreshold
+
+  if (isFumble) {
+    const base = rollDie(input.dice, 6) + strBonus
+    const selfDamage = Math.max(1, Math.floor(base / 2))
+    applyDamage(attacker, selfDamage)
+    partyWipe(game)
+    game.log.push({ at: Date.now(), who: attacker.name, what: `fumble: hurt self for ${selfDamage}` })
+    return { ok: true, hit: false, detail: 'fumble' }
+  }
+
+  const atkMargin = atk.success ? atkSkill - atk.roll : -Infinity
+  const dodMargin = dod.success ? dodSkill - dod.roll : -Infinity
+
+  const hit =
+    atk.success &&
+    (!dod.success || isCrit || atkMargin > dodMargin)
+
   if (hit) {
-    const damage = input.dice.d(6) + Math.floor(attacker.stats.STR / 25)
+    const base = rollDie(input.dice, 6) + strBonus
+    const raw = (isCrit ? base * 2 : base) - armor
+    const damage = Math.max(0, raw)
     applyDamage(defender, damage)
     partyWipe(game)
     attacker.skills.attack = atk.nextSkill
-    game.log.push({ at: Date.now(), who: attacker.name, what: `hit ${defender.name} for ${damage}` })
-    return { ok: true, hit: true, detail: 'hit' }
+    game.log.push({
+      at: Date.now(),
+      who: attacker.name,
+      what: isCrit ? `critical hit ${defender.name} for ${damage}` : `hit ${defender.name} for ${damage}`,
+    })
+    return { ok: true, hit: true, detail: isCrit ? 'critical' : 'hit' }
   }
 
   if (dod.success) {
