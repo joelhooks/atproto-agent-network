@@ -14,6 +14,7 @@ import {
   gameCharacterToPersistent,
   generateFantasyName,
   gmInterveneIfStuck,
+  livingParty,
   partyWipe,
   persistentToGameCharacter,
   resolveSkillCheck,
@@ -1263,21 +1264,30 @@ export const rpgEnvironment: AgentEnvironment = {
                 text = `The ${enemy.name} avoids your attack.`
               }
 
-              if (enemy.hp > 0 && game.phase === 'playing') {
-                const counterAtk = resolveSkillCheck({ skill: enemy.attack, dice })
-                const counterDod = resolveSkillCheck({ skill: attacker.skills.dodge, dice })
-                const atkMargin = counterAtk.success ? enemy.attack - counterAtk.roll : -Infinity
-                const dodMargin = counterDod.success ? attacker.skills.dodge - counterDod.roll : -Infinity
-                const counterHit = counterAtk.success && (!counterDod.success || atkMargin > dodMargin)
+              // ALL living enemies counter-attack (action economy!)
+              // From "The Monsters Know": monsters that can attack, will attack.
+              const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
+              for (const foe of livingEnemies) {
+                if (game.phase !== 'playing') break
+                // Each enemy targets a random party member
+                const targets = livingParty(game.party)
+                if (targets.length === 0) break
+                const target = targets[dice.d(targets.length) - 1]!
+
+                const counterAtk = resolveSkillCheck({ skill: foe.attack, dice })
+                const counterDod = resolveSkillCheck({ skill: target.skills.dodge, dice })
+                const atkMarg = counterAtk.success ? foe.attack - counterAtk.roll : -Infinity
+                const dodMarg = counterDod.success ? target.skills.dodge - counterDod.roll : -Infinity
+                const counterHit = counterAtk.success && (!counterDod.success || atkMarg > dodMarg)
 
                 if (counterHit) {
                   const raw = dice.d(6)
-                  const dmg = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
-                  attacker.hp = Math.max(0, attacker.hp - dmg)
-                  text += `\nThe ${enemy.name} counter-attacks for ${dmg}. (HP ${attacker.hp}/${attacker.maxHp})`
+                  const dmg = Math.max(1, raw) // minimum 1 damage on hit
+                  target.hp = Math.max(0, target.hp - dmg)
+                  text += `\n${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`
                   partyWipe(game)
                 } else {
-                  text += `\nThe ${enemy.name} counter-attacks but misses.`
+                  text += `\n${foe.name} swings at ${target.name} but misses.`
                 }
               }
 

@@ -549,9 +549,19 @@ function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: Dung
 }
 
 function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
-  const hp = 29 + rollDie(dice, 20) // 30+
-  const enemy: Enemy = { name: 'Dungeon Boss', hp, maxHp: hp, DEX: 55, attack: 55, dodge: 35, tactics: { kind: 'boss', specialEveryTurns: 3 } }
-  return { type: 'boss', description: withThemeDescription(theme, 'A hulking presence fills the chamber.'), enemies: [enemy] }
+  const hp = 35 + rollDie(dice, 20) // 36-55
+  const boss: Enemy = { name: 'Dungeon Boss', hp, maxHp: hp, DEX: 60, attack: 60, dodge: 40, tactics: { kind: 'boss', specialEveryTurns: 2 } }
+  // Boss always has minions — from "The Monsters Know": never run a solo boss
+  const minionCount = 1 + (rollDie(dice, 2) === 2 ? 1 : 0) // 1-2 minions
+  const minions: Enemy[] = Array.from({ length: minionCount }, (_, i) => {
+    const mhp = 6 + rollDie(dice, 4)
+    return { name: `Guardian ${i + 1}`, hp: mhp, maxHp: mhp, DEX: 45, attack: 40, dodge: 25, tactics: { kind: 'orc' as const } }
+  })
+  return {
+    type: 'boss',
+    description: withThemeDescription(theme, 'A hulking presence fills the chamber, flanked by loyal guardians.'),
+    enemies: [boss, ...minions],
+  }
 }
 
 function clampLibrarySnippet(text: string, max = 220): string {
@@ -1128,7 +1138,7 @@ function inferEnemyTactics(enemy: Enemy): EnemyTactics {
   return { kind: 'unknown' }
 }
 
-function livingParty(party: Character[]): Character[] {
+export function livingParty(party: Character[]): Character[] {
   return (Array.isArray(party) ? party : []).filter((p) => p && (p.hp ?? 0) > 0)
 }
 
@@ -1474,6 +1484,17 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
   if (room.type === 'combat' || room.type === 'boss') {
     game.mode = 'combat'
     game.combat = { enemies: room.enemies.map((e) => ({ ...e })) }
+    // Environmental hazard on combat entry: 50% chance of ambush damage
+    // From "The Monsters Know": intelligent monsters set ambushes and use terrain.
+    if (rollDie(input.dice, 2) === 1) {
+      const victim = livingParty(game.party)[rollDie(input.dice, livingParty(game.party).length) - 1]
+      if (victim) {
+        const hazardDmg = rollDie(input.dice, 4) + 1 // d4+1 environmental
+        applyDamage(victim, hazardDmg)
+        game.log.push({ at: Date.now(), who: 'Environment', what: `ambush! ${victim.name} takes ${hazardDmg} damage from a trap/hazard` })
+        partyWipe(game)
+      }
+    }
   } else {
     game.mode = 'exploring'
     game.combat = undefined
@@ -1505,7 +1526,9 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
         if (check.success) {
           actor.skills.use_skill = check.nextSkill
         } else {
-          applyDamage(actor, 2 * soloMultiplier(game.party.length))
+          // Traps should HURT. d6+2 damage, potentially lethal.
+          const trapDmg = rollDie(input.dice, 6) + 2
+          applyDamage(actor, trapDmg)
           partyWipe(game)
           if (actor.hp > 0 && actor.hp <= Math.max(1, Math.ceil(actor.maxHp * 0.2))) {
             game.log.push({ at: Date.now(), who: 'GM', what: `near-death: ${actor.name}` })

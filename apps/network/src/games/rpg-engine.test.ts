@@ -261,11 +261,11 @@ describe('rpg-engine', () => {
     expect(game.mode).toBe('combat')
   })
 
-  it('traps deal double damage when solo', () => {
+  it('traps deal d6+2 damage on failed check', () => {
     const dice = makeDiceFromD100([100]) // force fail on trap use_skill
     const solo = createCharacter({ name: 'alice', klass: 'Warrior' })
     solo.skills.use_skill = 1
-    solo.hp = 10
+    solo.hp = 15
 
     const game = createGame({
       id: 'rpg_trap_solo',
@@ -279,7 +279,9 @@ describe('rpg-engine', () => {
 
     const before = game.party[0]!.hp
     explore(game, { dice })
-    expect(game.party[0]!.hp).toBe(before - 4) // base 2 * soloMultiplier(1)=2.0
+    const dmgTaken = before - game.party[0]!.hp
+    expect(dmgTaken).toBeGreaterThanOrEqual(3) // d6+2 = 3-8
+    expect(dmgTaken).toBeLessThanOrEqual(8)
   })
 
   it('partyWipe finishes the adventure when everyone hits 0 HP', () => {
