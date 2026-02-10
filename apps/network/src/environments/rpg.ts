@@ -633,7 +633,7 @@ export const rpgEnvironment: AgentEnvironment = {
       },
       execute: async (_toolCallId: string, rawParams: unknown) => {
         const params = normalizeToolCallArguments(rawParams)
-        const command = typeof params.command === 'string' ? params.command : ''
+        let command = typeof params.command === 'string' ? params.command : ''
         const db = ctx.db
         const dice = createDice()
 
@@ -877,6 +877,35 @@ export const rpgEnvironment: AgentEnvironment = {
               roomIndex: game.roomIndex,
               currentPlayer: game.currentPlayer,
             },
+          }
+        }
+
+        // Setup command coercion: if setup is active and agent sends a non-setup command
+        // (e.g., explore, attack), redirect to the correct setup command based on phase machine.
+        // This is necessary because models like kimi-k2.5 ignore prompts and call gameplay commands.
+        const setupCommands = ['setup_narrate', 'setup_respond', 'setup_finalize', 'status', 'new_game', 'join_game', 'message']
+        if (setupActive && !setupCommands.includes(command)) {
+          const pmData = (game as any).phaseMachine
+          if (pmData) {
+            const pm = deserializePhaseMachine(pmData)
+            const currentPhase = pm.getCurrentPhase()
+            const agentName = ctx.agentName.trim()
+            if (currentPhase && pm.isActiveAgent(agentName)) {
+              const setupCmd = currentPhase.transitionOn
+              const msgText = typeof params.message === 'string' ? params.message : ''
+              const coercedMessage = msgText || 'Tell me about your character — what brought you to this dark place?'
+              console.log('setup-coerce: command redirect', { from: command, to: setupCmd, agent: agentName })
+              command = setupCmd
+              params.command = setupCmd
+              if (setupCmd === 'setup_narrate') {
+                const targetMatch = currentPhase.name.match(/setup_narrate_(\w+)_/)
+                if (targetMatch) params.target = targetMatch[1]
+                params.message = coercedMessage
+              } else if (setupCmd === 'setup_respond') {
+                params.message = coercedMessage
+              }
+              // Fall through to setup handlers below with corrected command
+            }
           }
         }
 
