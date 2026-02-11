@@ -73,16 +73,17 @@
     {
       "id": "story-mlh8s9mk",
       "title": "Fix stuck detector — no free combat resolution, hint system instead",
-      "status": "failed",
+      "status": "completed",
       "filesModified": [
         ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts",
         "apps/network/src/games/rpg-engine.ts",
-        "prd.json",
         "progress.txt",
-        ".ralph-iterations.jsonl"
+        "prd.json"
       ],
-      "learnings": "[test_failure] $ turbo typecheck\n• turbo 2.8.3\n$ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mism"
+      "learnings": "Technical Discovery: `gmInterveneIfStuck` is safest when modeled as discrete trigger points for combat (3/5/7) rather than continuously logging/intervening each repeat. This preserves non-combat stuck semantics and prevents accidental early combat resolution.\nGotcha: `rpgEnvironment` can hold `mode === 'combat'` with no living enemies in edge setups (for example, room index forced to final room in tests). Gating `explore` on `mode` alone causes false 'in combat' rejection and flaky completion-event behavior.\nFiles Context: `apps/network/src/games/rpg-engine.ts` owns stuck detection thresholds and intervention effects (`gmInterveneIfStuck`). `apps/network/src/environments/rpg.ts` owns command-level gating/error messaging for `explore`, including whether combat should block command execution."
     }
   ],
   "failures": [

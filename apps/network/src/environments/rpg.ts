@@ -709,7 +709,7 @@ export const rpgEnvironment: AgentEnvironment = {
           if (!row) throw new Error(`Adventure ${gameId} not found`)
 
           const game = JSON.parse(row.state) as RpgGameState
-          if (game.phase !== 'playing') {
+          if (game.phase !== 'playing' && game.phase !== 'setup') {
             return { ok: false, error: `Adventure ${gameId} is not joinable (phase: ${game.phase})` }
           }
 
