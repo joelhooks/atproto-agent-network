@@ -879,3 +879,13 @@ Completed: Diverse monster bestiary — populate buildCombatRoom and buildBossRo
 Files: .ralph-iterations.jsonl, apps/network/src/games/rpg-engine.ts, prd.json, .ralph-context.json
 Summary: Gathering context: run hivemind lookup and locate buildCombatRoom/buildBossRoom + relevant types in rpg-engine.ts before editing.
 ⚠️ LAZY LEARNINGS: Structured learnings too short (0 chars, minimum 50)
+
+---
+[2026-02-11T00:12:55.524Z]
+Failed: Non-combat encounter resolution — negotiate, flee, sneak, intimidate commands [test_failure]
+Validation: $ turbo typecheck
+• turbo 2.8.3
+$ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'
+stderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)
+Vectorize embedding dimension mism
+Codex: Starting story-mlh8s90w. Prior failure pattern detected: timeout and test_failure. Mitigation: run tests in smaller scopes first (single-file vitest), use PTY polling for long commands, and keep dice rolls deterministic to avoid flaky expectations. Next step: run required `swarm memory find`, then inspect `apps/network/src/environments/rpg.ts`, `apps/network/src/games/rpg-engine.ts`, and `apps/network/src/environments/rpg.test.ts` to write failing tests first.

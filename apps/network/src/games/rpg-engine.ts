@@ -94,6 +94,83 @@ export type EnemyTacticKind =
   | 'swarm'
   | 'guardian'
 
+export type EnemyMoraleState = 'shaken' | 'steady' | 'fearless'
+
+function clampEnemyStat(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(1, Math.min(100, Math.floor(n)))
+}
+
+function clampMorale(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(2, Math.min(12, Math.floor(n)))
+}
+
+export function enemyMoraleState(enemy: Enemy): EnemyMoraleState {
+  const morale = clampMorale(enemy.morale, 9)
+  if (morale <= 6) return 'shaken'
+  if (morale >= 11) return 'fearless'
+  return 'steady'
+}
+
+export function enemyIsMindless(enemy: Enemy): boolean {
+  const kind = enemy.tactics?.kind ?? 'unknown'
+  if (kind === 'skeleton' || kind === 'guardian' || kind === 'swarm') return true
+  const name = String(enemy.name || '').toLowerCase()
+  // Heuristic: keep simple and test-friendly.
+  if (name.includes('skeleton') || name.includes('zombie') || name.includes('golem') || name.includes('construct')) return true
+  if (name.includes('wolf') || name.includes('bear') || name.includes('spider') || name.includes('rat') || name.includes('boar')) return true
+  return false
+}
+
+export function enemyIsNegotiable(enemy: Enemy): boolean {
+  if (enemyIsMindless(enemy)) return false
+  if (enemy.negotiable === true) return true
+  if (enemy.negotiable === false) return false
+  const kind = enemy.tactics?.kind ?? 'unknown'
+  // Default: humanoids and intelligent foes can be negotiated with.
+  if (kind === 'goblin' || kind === 'orc' || kind === 'ranged' || kind === 'spellcaster' || kind === 'berserker' || kind === 'ambush' || kind === 'retreater') {
+    return true
+  }
+  return false
+}
+
+export function normalizeEnemyForCombat(enemy: Enemy): Enemy {
+  const kind = enemy.tactics?.kind ?? 'unknown'
+  const maxHp = Number.isFinite(enemy.maxHp) ? Math.max(1, Math.floor(enemy.maxHp as number)) : Math.max(1, Math.floor(enemy.hp))
+  const moraleDefault =
+    kind === 'goblin' ? 6 :
+    kind === 'orc' ? 8 :
+    kind === 'boss' ? 12 :
+    kind === 'skeleton' ? 12 :
+    kind === 'guardian' ? 12 :
+    kind === 'swarm' ? 10 :
+    9
+
+  const morale = clampMorale(enemy.morale, moraleDefault)
+  const attack = clampEnemyStat(enemy.attack, 30)
+  const dodge = clampEnemyStat(enemy.dodge, 20)
+  const DEX = clampEnemyStat(enemy.DEX, 40)
+  const negotiable = enemy.negotiable ?? enemyIsNegotiable(enemy)
+
+  return {
+    ...enemy,
+    maxHp,
+    morale,
+    attack,
+    dodge,
+    DEX,
+    negotiable,
+  }
+}
+
+export function cloneEnemiesForCombat(enemies: Enemy[]): Enemy[] {
+  const list = Array.isArray(enemies) ? enemies : []
+  return list.map((e) => normalizeEnemyForCombat({ ...e }))
+}
+
 export type EnemyTactics = {
   kind: EnemyTacticKind
   // Boss-only knob: special ability cadence in phase 1.
@@ -1114,7 +1191,7 @@ export function createGame(input: {
     initialRoom?.type === 'combat' || initialRoom?.type === 'boss' ? 'combat' : 'exploring'
   const combat =
     initialMode === 'combat' && (initialRoom?.type === 'combat' || initialRoom?.type === 'boss')
-      ? { enemies: initialRoom.enemies.map((e) => ({ ...e })) }
+      ? { enemies: cloneEnemiesForCombat(initialRoom.enemies) }
       : undefined
 
   return {
@@ -1186,7 +1263,7 @@ function setRoomModeFromIndex(game: RpgGameState, roomIndex: number): void {
   const room = game.dungeon[roomIndex]
   if (room && (room.type === 'combat' || room.type === 'boss')) {
     game.mode = 'combat'
-    game.combat = { enemies: room.enemies.map((e) => ({ ...e })) }
+    game.combat = { enemies: cloneEnemiesForCombat(room.enemies) }
   } else if (game.phase === 'playing') {
     game.mode = 'exploring'
     game.combat = undefined
@@ -1697,7 +1774,7 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
 
   if (room.type === 'combat' || room.type === 'boss') {
     game.mode = 'combat'
-    game.combat = { enemies: room.enemies.map((e) => ({ ...e })) }
+    game.combat = { enemies: cloneEnemiesForCombat(room.enemies) }
     // Environmental hazard on combat entry: 50% chance of ambush damage
     // From "The Monsters Know": intelligent monsters set ambushes and use terrain.
     if (rollDie(input.dice, 2) === 1) {

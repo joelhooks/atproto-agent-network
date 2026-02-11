@@ -1117,24 +1117,16 @@
         ".ralph-context.json"
       ],
       "learnings": "{\"success\":false,\"summary\":\"Gathering context: run hivemind lookup and locate buildCombatRoom/buildBossRoom + relevant types in rpg-engine.ts before editing.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+    },
+    {
+      "id": "story-mlh8s90w",
+      "title": "Non-combat encounter resolution — negotiate, flee, sneak, intimidate commands",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[test_failure] $ turbo typecheck\n• turbo 2.8.3\n$ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mism"
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlfedrp4",
-      "storyTitle": "Store ActionOutcome after each tool call in act()",
-      "category": "test_failure",
-      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |network| src/agent-do.test.ts > AgentDO > validates lexicon records passed to the remember tool\nAssertionError: promise resolved \"{ content: [ { …(2) } ], …(1) }\" instead of reje",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "ls -la",
-        "rg -n",
-        "sed -n",
-        "nl -ba",
-        "swarm memory"
-      ],
-      "iterationNumber": 3
-    },
     {
       "storyId": "story-mlfedsg1",
       "storyTitle": "Add extension tools to all agents' default enabledTools",
@@ -1373,6 +1365,19 @@
         "rg -n"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlh8s90w",
+      "storyTitle": "Non-combat encounter resolution — negotiate, flee, sneak, intimidate commands",
+      "category": "test_failure",
+      "error": "$ turbo typecheck\n• turbo 2.8.3\n$ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\nstderr | src/agent-do.test.ts > AgentDO > alarm() treats O11Y pipeline failures as non-fatal\no11y ",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "ls -la",
+        "rg -n",
+        "nl -ba"
+      ],
+      "iterationNumber": 2
     }
   ]
 }
