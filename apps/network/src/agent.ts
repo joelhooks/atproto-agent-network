@@ -460,6 +460,7 @@ export class AgentDO extends DurableObject {
             const lastThinkRaw = await this.ctx.storage.get('debug:lastThinkRaw')
             const lastOpenRouterReq = await this.ctx.storage.get('debug:lastOpenRouterReq')
             const autoPlay = await this.ctx.storage.get('debug:autoPlay')
+            const rpgCharacter = await this.ctx.storage.get('rpg:character')
             const loopTranscript = await this.ctx.storage.get('debug:loopTranscript') ?? null
             const lastPrompt = await this.ctx.storage.get('debug:lastPrompt') ?? null
             const lastError = await this.ctx.storage.get('debug:lastError') ?? null
@@ -469,6 +470,7 @@ export class AgentDO extends DurableObject {
               lastThinkRaw: lastThinkRaw ?? null,
               lastOpenRouterReq: lastOpenRouterReq ?? null,
               autoPlay: autoPlay ?? null,
+              rpgCharacter: rpgCharacter ?? null,
               loopTranscript,
               lastPrompt,
               lastError,

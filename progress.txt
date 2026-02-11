@@ -89,3 +89,9 @@ Validation run:
 Required post-work commands completed:
 - Stored hivemind learning via `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`.
 - Sent completion event via `openclaw system event --mode now --text "Ralph: completed Permadeath + Resurrection system — BRP-style death is permanent"`.
+
+---
+[2026-02-11T14:17:12.130Z]
+Completed: Fix debug endpoint — surface rpg:character in /agents/{name}/debug
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, packages/core/src/types.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts
+Summary: Implemented the debug endpoint fix so `/agents/{name}/debug` now returns persisted `rpg:character` data from Durable Object storage. Added a regression assertion in `apps/network/src/agent-do.test.ts` (RED first, then GREEN) to verify `debug.rpgCharacter` matches stored character data. Also completed required post-work commands: stored hivemind learning and sent the OpenClaw completion event.

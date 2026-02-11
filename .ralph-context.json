@@ -88,9 +88,19 @@
     {
       "id": "story-mli3k0ny",
       "title": "Permadeath + Resurrection system — BRP-style death is permanent",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[unknown] Test Files  20 passed | 2 skipped (22)\n      Tests  283 passed | 6 skipped (289)\n   Start at  06:11:13\n   Duration  7.42s (transform 2.55s, setup 0ms, collect 4.41s, tests 7.90s, environment 7ms, prepare 3.08s)"
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "packages/core/src/types.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `markCharacterDeath()` in `apps/network/src/games/rpg-engine.ts` centralizes per-adventure death flags (`diedThisAdventure`, `deathCause`, `deathNarrated`) and narrative beats, and `gameCharacterToPersistent()` is where permanent-death state (`dead`, `diedAt`, `causeOfDeath`, inventory wipe) is finalized for cross-adventure persistence.\nGotcha: Join-time reroll must happen in `apps/network/src/environments/rpg.ts` before calling `persistentToGameCharacter()`. If a dead persistent character is passed through normal load flow, old progression can leak; use `buildRerolledPersistentCharacter()` and save immediately to reset storage while preserving legacy log/achievements/death count.\nFiles Context: `packages/core/src/types.ts` defines persistent schema. `apps/network/src/games/rpg-engine.ts` owns death bookkeeping and persistent conversion. `apps/network/src/environments/rpg.ts` owns runtime command gating (`resurrect`), join reroll behavior, and combat death handling/logging."
     }
   ],
   "failures": [

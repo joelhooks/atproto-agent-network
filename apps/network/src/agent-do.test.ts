@@ -503,7 +503,7 @@ describe('AgentDO', () => {
   })
 
   it('stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug', async () => {
-    const { state } = createState('agent-debug-o11y')
+    const { state, storage } = createState('agent-debug-o11y')
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
@@ -553,6 +553,8 @@ describe('AgentDO', () => {
 
     const { AgentDO } = await import('./agent')
     const agent = new AgentDO(state as never, env as never)
+    const character = { name: 'Rook', level: 2 }
+    await storage.put('rpg:character', character)
 
     const promptRes = await agent.fetch(
       new Request('https://example/agents/debuggy/prompt', {
@@ -574,6 +576,7 @@ describe('AgentDO', () => {
     expect('consecutiveErrors' in debug).toBe(true)
     expect('lastError' in debug).toBe(true)
     expect('extensionMetrics' in debug).toBe(true)
+    expect(debug.rpgCharacter).toEqual(character)
   })
 
   it('stores encrypted memory and retrieves decrypted records', async () => {

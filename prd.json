@@ -821,7 +821,7 @@
       "title": "Fix debug endpoint — surface rpg:character in /agents/{name}/debug",
       "description": "The `/agents/{name}/debug` endpoint returns `rpgCharacter: null` even though `/agents/{name}/character` returns the full persistent character. The debug endpoint needs to actually read `rpg:character` from DO storage.\n\n**Fix:** In `apps/network/src/agent.ts`, find the debug handler and ensure it reads `await this.ctx.storage.get('rpg:character')` and includes it in the response.\n\n**Files:** `apps/network/src/agent.ts`",
       "priority": 84,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/agent.ts"
@@ -866,8 +866,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 74,
-    "lastIteration": "2026-02-11T14:13:57.490Z"
+    "totalIterations": 75,
+    "lastIteration": "2026-02-11T14:17:12.128Z"
   },
   "totalStories": 11
 }
