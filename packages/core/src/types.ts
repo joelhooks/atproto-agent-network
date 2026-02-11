@@ -113,6 +113,9 @@ export interface PersistentCharacter {
   updatedAt: number
   gamesPlayed: number
   deaths: number
+  dead: boolean
+  diedAt?: number
+  causeOfDeath?: string
 }
 
 export interface NetworkPeer {

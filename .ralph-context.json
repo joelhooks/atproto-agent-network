@@ -84,6 +84,13 @@
         "prd.json"
       ],
       "learnings": "Technical Discovery: `gmInterveneIfStuck` is safest when modeled as discrete trigger points for combat (3/5/7) rather than continuously logging/intervening each repeat. This preserves non-combat stuck semantics and prevents accidental early combat resolution.\nGotcha: `rpgEnvironment` can hold `mode === 'combat'` with no living enemies in edge setups (for example, room index forced to final room in tests). Gating `explore` on `mode` alone causes false 'in combat' rejection and flaky completion-event behavior.\nFiles Context: `apps/network/src/games/rpg-engine.ts` owns stuck detection thresholds and intervention effects (`gmInterveneIfStuck`). `apps/network/src/environments/rpg.ts` owns command-level gating/error messaging for `explore`, including whether combat should block command execution."
+    },
+    {
+      "id": "story-mli3k0ny",
+      "title": "Permadeath + Resurrection system — BRP-style death is permanent",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] Test Files  20 passed | 2 skipped (22)\n      Tests  283 passed | 6 skipped (289)\n   Start at  06:11:13\n   Duration  7.42s (transform 2.55s, setup 0ms, collect 4.41s, tests 7.90s, environment 7ms, prepare 3.08s)"
     }
   ],
   "failures": [
@@ -96,6 +103,20 @@
         "/usr/bin/zsh -lc",
         "sed -n",
         "nl -ba",
+        "rg -n"
+      ],
+      "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mli3k0ny",
+      "storyTitle": "Permadeath + Resurrection system — BRP-style death is permanent",
+      "category": "unknown",
+      "error": "Test Files  20 passed | 2 skipped (22)\n      Tests  283 passed | 6 skipped (289)\n   Start at  06:11:13\n   Duration  7.42s (transform 2.55s, setup 0ms, collect 4.41s, tests 7.90s, environment 7ms, prepare 3.08s)",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "nl -ba",
+        "ls apps/network/src/games",
+        "ls apps/network/src/environments",
         "rg -n"
       ],
       "iterationNumber": 1

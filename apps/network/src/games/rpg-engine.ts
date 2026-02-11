@@ -53,6 +53,12 @@ export type Character = {
   maxMp: number
   level?: number
   xp?: number
+  // Adventure-local death/resurrection state (optional for persisted compatibility).
+  diedThisAdventure?: boolean
+  deathCause?: string
+  deathNarrated?: boolean
+  resurrectionFailedThisAdventure?: boolean
+  resurrectionWeakness?: number
 }
 
 export type Enemy = {
@@ -498,7 +504,7 @@ export type RpgActionHistoryEntry = {
   roomIndex: number
 }
 
-export type NarrativeBeatKind = 'kill' | 'near_death' | 'barrier' | 'treasure' | 'gm'
+export type NarrativeBeatKind = 'kill' | 'near_death' | 'death' | 'barrier' | 'treasure' | 'gm'
 
 export type NarrativeBeat = {
   at: number
@@ -628,6 +634,8 @@ function formatBeatForRoom(beat: NarrativeBeat): string {
   switch (beat.kind) {
     case 'treasure':
       return `The ${beat.text} in your pack feels heavier than it should.`
+    case 'death':
+      return `${beat.text} fell once in these halls, and the memory still lingers.`
     case 'barrier':
       if (beat.text === 'brute_force') return 'Your bruised shoulder still aches from forcing the archway open.'
       if (beat.text === 'auto_crumble') return 'You can still hear stone cracking as the barrier finally gave way.'
@@ -647,6 +655,8 @@ function formatBeatForBoss(beat: NarrativeBeat): string {
   switch (beat.kind) {
     case 'treasure':
       return `The ${beat.text} you claimed whispers in your pack.`
+    case 'death':
+      return `${beat.text} crossed death's threshold and came back altered.`
     case 'barrier':
       if (beat.text === 'brute_force') return 'Your bruised shoulder recalls the archway you broke through.'
       if (beat.text === 'auto_crumble') return 'You recall the barrier crumbling at last, like a promise kept.'
@@ -700,6 +710,75 @@ export function describeRoom(game: RpgGameState, roomIndex: number): string {
   const recent = context.slice(-2)
   const echo = recent.map(formatBeatForRoom).join(' ')
   return `${base}\n\nEchoes: ${echo}`
+}
+
+function clampDeathCause(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value.trim().slice(0, 180)
+}
+
+function characterIdentity(character: Character): string {
+  const id = typeof character.agent === 'string' && character.agent.trim() ? character.agent : character.name
+  return String(id ?? '').trim()
+}
+
+export function markCharacterDeath(
+  game: RpgGameState,
+  character: Character,
+  causeOfDeath?: string
+): boolean {
+  if (!character || (character.hp ?? 0) > 0) return false
+
+  character.diedThisAdventure = true
+  const cause = clampDeathCause(causeOfDeath)
+  if (cause) {
+    character.deathCause = cause
+  } else if (!clampDeathCause(character.deathCause)) {
+    const locale = clampDeathCause(game.theme?.name) || 'the dungeon'
+    character.deathCause = `slain in ${locale}`
+  }
+
+  if (character.deathNarrated) return false
+
+  game.log.push({
+    at: Date.now(),
+    who: 'GM',
+    what: `${character.name} has fallen! Their adventure ends here.`,
+  })
+  recordNarrativeBeat(game, { kind: 'death', text: character.name, roomIndex: game.roomIndex })
+
+  const healerAlive = game.party.some((member) => {
+    if (!member || characterIdentity(member) === characterIdentity(character)) return false
+    return member.klass === 'Healer' && (member.hp ?? 0) > 0
+  })
+  if (healerAlive) {
+    game.log.push({
+      at: Date.now(),
+      who: 'GM',
+      what: 'A resurrection may yet be possible...',
+    })
+  }
+
+  character.deathNarrated = true
+  return true
+}
+
+export function markPartyDeaths(
+  game: RpgGameState,
+  causesByCharacterId?: Record<string, string>
+): string[] {
+  const fallen: string[] = []
+  const map = causesByCharacterId ?? {}
+
+  for (const member of game.party) {
+    if (!member || (member.hp ?? 0) > 0) continue
+    const id = characterIdentity(member)
+    const cause = map[id] ?? map[member.name]
+    const newlyMarked = markCharacterDeath(game, member, cause)
+    if (newlyMarked) fallen.push(id)
+  }
+
+  return fallen
 }
 
 export function soloMultiplier(partySize: number): number {
@@ -1636,6 +1715,7 @@ export function gmInterveneIfStuck(
     if (actor && cost > 0) {
       applyDamage(actor, cost)
       partyWipe(game)
+      markPartyDeaths(game, { [characterIdentity(actor)]: `crushed by falling stone in ${game.theme?.name ?? 'the dungeon'}` })
     }
     for (const enemy of game.combat.enemies) {
       enemy.hp = 0
@@ -1722,6 +1802,7 @@ export function attack(
     const selfDamage = Math.max(1, Math.floor(base / 2))
     applyDamage(attacker, selfDamage)
     partyWipe(game)
+    markPartyDeaths(game, { [characterIdentity(attacker)]: `${attacker.name} fell to a catastrophic fumble in ${game.theme?.name ?? 'the dungeon'}` })
     game.log.push({ at: Date.now(), who: attacker.name, what: `fumble: hurt self for ${selfDamage}` })
     return { ok: true, hit: false, detail: 'fumble' }
   }
@@ -1739,6 +1820,7 @@ export function attack(
     const damage = Math.max(0, raw)
     applyDamage(defender, damage)
     partyWipe(game)
+    markPartyDeaths(game, { [characterIdentity(defender)]: `slain by ${attacker.name} in ${game.theme?.name ?? 'the dungeon'}` })
     attacker.skills.attack = atk.nextSkill
     game.log.push({
       at: Date.now(),
@@ -1979,12 +2061,15 @@ export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; 
       const perTarget = Math.floor(enraged / 2)
 
       const damageByTarget: Record<string, number> = {}
+      const deathCauses: Record<string, string> = {}
       const targets = party.map((p) => p.name)
       for (const member of party) {
         applyDamage(member, perTarget)
         damageByTarget[member.name] = perTarget
+        deathCauses[characterIdentity(member)] = `slain by ${enemy.name} in ${game.theme?.name ?? 'the dungeon'}`
       }
       partyWipe(game)
+      markPartyDeaths(game, deathCauses)
       game.log.push({ at: Date.now(), who: enemy.name, what: `aoe ${perTarget} to all (enraged)` })
       return { ok: true, action: 'attack', enemy: enemy.name, targets, damageByTarget, detail: 'enraged_aoe' }
     }
@@ -1999,6 +2084,7 @@ export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; 
       const damage = scaled + 4
       applyDamage(target, damage)
       partyWipe(game)
+      markPartyDeaths(game, { [characterIdentity(target)]: `slain by ${enemy.name} in ${game.theme?.name ?? 'the dungeon'}` })
       game.log.push({ at: Date.now(), who: enemy.name, what: `special hit ${target.name} for ${damage}` })
       return {
         ok: true,
@@ -2021,6 +2107,7 @@ export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; 
       const scaled = Math.max(0, Math.floor(raw * soloMultiplier(game.party.length)))
       applyDamage(target, scaled)
       partyWipe(game)
+      markPartyDeaths(game, { [characterIdentity(target)]: `slain by ${enemy.name} in ${game.theme?.name ?? 'the dungeon'}` })
       game.log.push({ at: Date.now(), who: enemy.name, what: `hit ${target.name} for ${scaled}` })
       return {
         ok: true,
@@ -2056,6 +2143,7 @@ export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; 
     const damage = scaled + damageBonus
     applyDamage(target, damage)
     partyWipe(game)
+    markPartyDeaths(game, { [characterIdentity(target)]: `slain by ${enemy.name} in ${game.theme?.name ?? 'the dungeon'}` })
     game.log.push({ at: Date.now(), who: enemy.name, what: `hit ${target.name} for ${damage}` })
     return {
       ok: true,
@@ -2149,6 +2237,7 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
         applyDamage(victim, hazardDmg)
         game.log.push({ at: Date.now(), who: 'Environment', what: `ambush! ${victim.name} takes ${hazardDmg} damage from a trap/hazard` })
         partyWipe(game)
+        markPartyDeaths(game, { [characterIdentity(victim)]: `slain by a dungeon hazard in ${game.theme?.name ?? 'the dungeon'}` })
       }
     }
   } else {
@@ -2186,6 +2275,7 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
           const trapDmg = rollDie(input.dice, 6) + 2
           applyDamage(actor, trapDmg)
           partyWipe(game)
+          markPartyDeaths(game, { [characterIdentity(actor)]: `slain by a trap in ${game.theme?.name ?? 'the dungeon'}` })
           if (actor.hp > 0 && actor.hp <= Math.max(1, Math.ceil(actor.maxHp * 0.2))) {
             game.log.push({ at: Date.now(), who: 'GM', what: `near-death: ${actor.name}` })
             recordNarrativeBeat(game, { kind: 'near_death', text: actor.name, roomIndex: game.roomIndex })
@@ -2228,6 +2318,7 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
         if (warrior) {
           const cost = Math.max(1, Math.ceil(warrior.maxHp * 0.2))
           applyDamage(warrior, cost)
+          markPartyDeaths(game, { [characterIdentity(warrior)]: `slain while forcing a barrier in ${game.theme?.name ?? 'the dungeon'}` })
           delete game.barrierAttempts[barrierKey]
           game.log.push({
             at: Date.now(),
@@ -2448,6 +2539,10 @@ import type { PersistentCharacter } from '@atproto-agent/core'
  * HP/MP are reset to max for each new adventure.
  */
 export function persistentToGameCharacter(pc: PersistentCharacter, agent: string): Character {
+  if (pc.dead === true) {
+    return createCharacter({ name: pc.name, klass: pc.klass as RpgClass, agent })
+  }
+
   // Use createCharacter to get proper stats for the class, then override with persistent data
   const base = createCharacter({ name: pc.name, klass: pc.klass as RpgClass, agent })
   return {
@@ -2475,6 +2570,12 @@ export function gameCharacterToPersistent(
   adventureSummary?: string
 ): PersistentCharacter {
   const now = Date.now()
+  const isDead = (gc.hp ?? 0) <= 0
+  const deathCauseFromCharacter = clampDeathCause(gc.deathCause)
+  const deathCauseFallback = adventureSummary
+    ? `fell during: ${String(adventureSummary).slice(0, 140)}`
+    : `${gc.name} fell in battle`
+  const deathCause = isDead ? (deathCauseFromCharacter || deathCauseFallback) : undefined
   const fallback: PersistentCharacter = {
     name: gc.name,
     klass: gc.klass,
@@ -2494,6 +2595,7 @@ export function gameCharacterToPersistent(
     updatedAt: now,
     gamesPlayed: 0,
     deaths: 0,
+    dead: false,
   }
   const base: PersistentCharacter = existing ? { ...fallback, ...existing } : fallback
   return {
@@ -2502,7 +2604,11 @@ export function gameCharacterToPersistent(
     skills: { ...gc.skills },
     updatedAt: now,
     gamesPlayed: base.gamesPlayed + 1,
-    deaths: gc.hp <= 0 ? base.deaths + 1 : base.deaths,
+    deaths: isDead ? base.deaths + 1 : base.deaths,
+    dead: isDead,
+    diedAt: isDead ? now : undefined,
+    causeOfDeath: deathCause,
+    inventory: isDead ? [] : base.inventory,
     adventureLog: adventureSummary
       ? [...base.adventureLog.slice(-9), adventureSummary]
       : base.adventureLog,

@@ -802,12 +802,72 @@
       "acceptanceAssertions": [
         "gmInterveneIfStuck"
       ]
+    },
+    {
+      "id": "story-mli3k0ny",
+      "title": "Permadeath + Resurrection system — BRP-style death is permanent",
+      "description": "Currently death has no consequences — the PersistentCharacter survives intact, just incrementing a `deaths` counter. Implement real permadeath with an optional resurrection mechanic.\n\n**BRP Death Rules (from pdf-brain):**\n- 0 HP = dead. No death saves, no coming back easily.\n- \"Let the dice fall where they may\" — death makes the game meaningful.\n\n**Implementation:**\n\n1. **PersistentCharacter changes:**\n   - Add `dead: boolean` field to PersistentCharacter interface in `packages/core/src/types.ts`\n   - Add `diedAt?: number` timestamp\n   - Add `causeOfDeath?: string` (e.g. \"slain by Cave Troll in Ashen Reliquary\")\n\n2. **On character death (in `gameCharacterToPersistent`):**\n   - When `gc.hp <= 0`, set `dead = true`, record `diedAt` and `causeOfDeath`\n   - Clear inventory (loot is lost with the body)\n   - Keep adventureLog and achievements (legacy lives on)\n\n3. **On game join (in `persistentToGameCharacter` and RPG env join logic):**\n   - If `persistent.dead === true`, DO NOT load the old character\n   - Instead, create a brand new Level 1 character with `createCharacter()`\n   - Log: \"Your previous character [name] fell in battle. A new hero rises.\"\n   - Reset the persistent storage with the new character\n\n4. **Resurrection mechanic (Healer class only):**\n   - Add `resurrect` command to RPG tool (only usable in combat/exploring mode)\n   - Requires: Healer class, 4+ MP cost, target must have died THIS adventure (not previous games)\n   - Skill check: `cast_spell` at -20 penalty (difficult)\n   - On success: target revives at 1 HP, loses 50% of their XP earned this adventure\n   - On failure: MP is spent, target stays dead, no retry this adventure\n   - Cannot resurrect yourself (you're dead)\n   - BRP-inspired: \"returning from the dead is quite exhausting\" — revived character has -10 to all skills for rest of adventure\n\n5. **Death narrative:**\n   - Record a narrative beat of kind 'death' when a character dies\n   - Log the death prominently: \"[Character] has fallen! Their adventure ends here.\"\n   - If Healer is alive, hint: \"A resurrection may yet be possible...\"\n\n6. **Existing `deaths` counter:** Keep it, but now it means \"number of permanent deaths / rerolls\"\n\n**Files to modify:**\n- `packages/core/src/types.ts` — PersistentCharacter interface\n- `apps/network/src/games/rpg-engine.ts` — persistentToGameCharacter, gameCharacterToPersistent, add resurrect spell logic\n- `apps/network/src/environments/rpg.ts` — join logic (detect dead char, reroll), resurrect command handler, death handling in combat\n\n**Test approach:**\n- Test that dead character creates new Level 1 on next join\n- Test resurrection success/failure paths\n- Test that inventory is cleared on death\n- Test XP penalty on resurrection\n- Test skill debuff on resurrected characters",
+      "priority": 83,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "packages/core/src/types.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "apps/network/src/environments/rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mli3k7wh",
+      "title": "Fix debug endpoint — surface rpg:character in /agents/{name}/debug",
+      "description": "The `/agents/{name}/debug` endpoint returns `rpgCharacter: null` even though `/agents/{name}/character` returns the full persistent character. The debug endpoint needs to actually read `rpg:character` from DO storage.\n\n**Fix:** In `apps/network/src/agent.ts`, find the debug handler and ensure it reads `await this.ctx.storage.get('rpg:character')` and includes it in the response.\n\n**Files:** `apps/network/src/agent.ts`",
+      "priority": 84,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/agent.ts"
+      ]
+    },
+    {
+      "id": "story-mli3kg7t",
+      "title": "Sync xpEarned to in-game Character during play",
+      "description": "Currently `game.xpEarned` accumulates XP per agent, but in-game `Character.xp` and `Character.level` stay at their initial values during play. Agents see \"Level 1, 0 XP\" the entire game even while earning thousands of XP.\n\n**Fix:** After every XP award (in `addXpEarned`), also update the corresponding party member's `Character.xp` and check for level-up using `XP_TABLE`. When a character levels up mid-dungeon, apply the stat growth (maxHp, maxMp, skill boost) and log it prominently.\n\nThis gives agents real-time feedback: \"Kaelen the Bold reaches Level 2! (+7 HP, +5 MP)\"\n\n**Files:**\n- `apps/network/src/environments/rpg.ts` — modify `addXpEarned` to sync to Character, add mid-game level-up logic\n- `apps/network/src/games/rpg-engine.ts` — may need to export level-up helper for in-game use",
+      "priority": 85,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/environments/rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mli3kxn1",
+      "title": "Loot table system — tiered treasure generation with stat-affecting items",
+      "description": "Currently treasure rooms give flavor text only (\"soot-black opal\") with no mechanical effect and nothing added to inventory. Implement a real loot system inspired by OSE treasure tables.\n\n**Implementation:**\n\n1. **Item types and effects** (in `rpg-engine.ts`):\n   ```\n   type ItemRarity = 'common' | 'uncommon' | 'rare' | 'legendary'\n   type ItemSlot = 'weapon' | 'armor' | 'consumable' | 'trinket'\n   type LootItem = {\n     name: string\n     rarity: ItemRarity\n     slot: ItemSlot\n     effects: { stat: string; bonus: number }[]  // e.g. [{stat: 'attack', bonus: 5}]\n     consumable?: { type: 'heal' | 'mp' | 'buff'; amount: number }\n     gold?: number  // gold value\n     description: string\n   }\n   ```\n\n2. **Loot tables by tier:**\n   - **Early rooms**: Common items — minor potions (heal 1d6), copper coins (5-20 gold), rusty weapons (+2 attack)\n   - **Mid rooms**: Uncommon items — healing potions (heal 2d6+3), silver (+5 attack/dodge), gems (20-50 gold)\n   - **Boss rooms**: Rare/legendary — magic weapons (+10 attack), enchanted armor (+5 armor), scrolls (one-time spell), large gold haul (50-200)\n\n3. **Treasure room resolution** (modify `explore` in rpg.ts):\n   - Roll on loot table based on room position in dungeon (early/mid/late)\n   - Add items to the acting character's inventory (or party shared — current player picks up)\n   - Log: \"Found: Silvered Shortsword (+5 attack) and 30 gold pieces\"\n\n4. **Combat drops** — small chance (20%) enemies drop loot on kill:\n   - Early enemies: copper (1-5 gold), occasional potion\n   - Mid enemies: silver (5-15 gold), uncommon items\n   - Boss: guaranteed rare+ drop\n\n5. **Gold as a resource** — track `gold` on Character (add to Character type):\n   - Earned from treasure rooms and enemy drops\n   - Spendable at rest rooms: buy healing potions, identify items\n\n6. **Consumable usage** — add `use_item` command:\n   - `use_item potion` — use a healing potion from inventory\n   - Items consumed on use, removed from inventory\n\n7. **Inventory persistence** — items carry to PersistentCharacter at game end (for living characters). Dead characters lose all items (ties into permadeath story).\n\n**Files:**\n- `apps/network/src/games/rpg-engine.ts` — LootItem type, loot tables, generateLoot function, Character.gold field\n- `apps/network/src/environments/rpg.ts` — treasure room loot generation, combat drops, use_item command, rest room shop\n- `packages/core/src/types.ts` — PersistentCharacter inventory type update (string[] → LootItem[])",
+      "priority": 86,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/games/rpg-engine.ts",
+        "apps/network/src/environments/rpg.ts",
+        "packages/core/src/types.ts"
+      ]
+    },
+    {
+      "id": "story-mli3l69p",
+      "title": "Milestone XP bonuses — reward non-combat encounters",
+      "description": "Add XP rewards for non-combat activities to incentivize diverse play:\n\n- **Trap disarmed**: 25 XP to the disarmer (Scout)\n- **Barrier cleared**: 25 XP to the class that clears it (or 15 XP to brute-forcer)\n- **Puzzle solved**: 30 XP to party\n- **Successful negotiation**: 75% of combat XP value (incentivize diplomacy)\n- **Successful intimidation**: 50% of combat XP value\n- **Successful flee**: 10 XP consolation (you survived)\n- **Rest room used**: 0 XP (no reward for resting)\n- **Treasure found**: 10 XP per item found\n\nAdd constants `XP_PER_TRAP_DISARM`, `XP_PER_BARRIER_CLEAR`, `XP_PER_PUZZLE`, `XP_PER_TREASURE_FIND` to rpg-engine.ts. Wire them into the corresponding room/action handlers in rpg.ts.\n\n**Files:**\n- `apps/network/src/games/rpg-engine.ts` — new XP constants\n- `apps/network/src/environments/rpg.ts` — wire XP awards into trap, barrier, puzzle, negotiate handlers",
+      "priority": 87,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/games/rpg-engine.ts",
+        "apps/network/src/environments/rpg.ts"
+      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 73,
-    "lastIteration": "2026-02-11T04:03:43.597Z"
+    "totalIterations": 74,
+    "lastIteration": "2026-02-11T14:13:57.490Z"
   },
   "totalStories": 11
 }

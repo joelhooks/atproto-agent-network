@@ -1254,6 +1254,86 @@ describe('rpgEnvironment', () => {
     expect(alice.skills.attack).toBe(70)
   })
 
+  it('join_game rerolls a new level 1 character when persistent data is marked dead', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const saveCharacter = vi.fn()
+
+    const persistentChar = {
+      name: 'Fallen Hero',
+      klass: 'Warrior',
+      level: 7,
+      xp: 2400,
+      maxHp: 44,
+      maxMp: 16,
+      skills: { attack: 90, dodge: 70, cast_spell: 20, use_skill: 65 },
+      backstory: 'A legend now gone.',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: ['Defeated the Bone Regent'],
+      achievements: ['Legend'],
+      inventory: ['Relic Blade'],
+      createdAt: 1000,
+      updatedAt: 2000,
+      gamesPlayed: 12,
+      deaths: 4,
+      dead: true,
+      diedAt: 1700000000000,
+      causeOfDeath: 'slain by Cave Troll in Ashen Reliquary',
+    }
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      loadCharacter: vi.fn().mockResolvedValue(persistentChar),
+      saveCharacter,
+    }
+
+    const gameId = 'rpg_test_join_reroll_dead_persist'
+    const game = createGame({
+      id: gameId,
+      players: ['grimlock'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute!('call-reroll', { command: 'join_game', gameId, klass: 'Mage' })
+    const text = String((result as any)?.content?.[0]?.text ?? '')
+
+    const updatedRow = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updatedGame = JSON.parse(updatedRow!.state)
+    const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
+
+    expect(alice).toBeDefined()
+    expect(alice.name).not.toBe('Fallen Hero')
+    expect(alice.klass).toBe('Mage')
+    expect(alice.maxHp).toBeLessThan(44)
+    expect(text).toContain('fell in battle')
+    expect(text).toContain('A new hero rises')
+
+    expect(saveCharacter).toHaveBeenCalledTimes(1)
+    expect(saveCharacter.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        dead: false,
+        deaths: 4,
+        achievements: ['Legend'],
+        adventureLog: ['Defeated the Bone Regent'],
+      })
+    )
+  })
+
   it('join_game creates a fresh character when loadCharacter returns null', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
@@ -1295,6 +1375,194 @@ describe('rpgEnvironment', () => {
     expect(alice.klass).toBe('Mage')
     expect(typeof alice.name).toBe('string')
     expect(alice.name.length).toBeGreaterThan(0)
+  })
+
+  it('resurrect succeeds for Healer, revives at 1 HP, halves adventure XP, and applies a skill debuff', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_resurrect_success'
+    const game = createGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'combat', description: 'A crypt battle', enemies: [{ name: 'Skeleton', hp: 5, DEX: 30, attack: 30, dodge: 20 }] },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.currentPlayer = 'alice'
+
+    const healer = findCharacter(game, 'alice')!
+    healer.klass = 'Healer'
+    healer.mp = 6
+    healer.skills.cast_spell = 85
+
+    const target = findCharacter(game, 'bob')!
+    const skillsBefore = { ...target.skills }
+    target.hp = 0
+    ;(target as any).diedThisAdventure = true
+    ;(game as any).xpEarned = { bob: 101 }
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.01)
+    try {
+      const tool = rpgEnvironment.getTool(ctx as any)
+      const result = await tool.execute('toolcall-resurrect', { command: 'resurrect', gameId, target: 'bob' })
+      const text = String((result as any)?.content?.[0]?.text ?? '')
+      expect(text).toContain('returns to life')
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    const revived = updated.party.find((p: any) => (p.agent ?? p.name) === 'bob')
+    const updatedHealer = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+
+    expect(revived.hp).toBe(1)
+    expect(revived.skills.attack).toBe(Math.max(1, skillsBefore.attack - 10))
+    expect(revived.skills.dodge).toBe(Math.max(1, skillsBefore.dodge - 10))
+    expect(revived.skills.cast_spell).toBe(Math.max(1, skillsBefore.cast_spell - 10))
+    expect(revived.skills.use_skill).toBe(Math.max(1, skillsBefore.use_skill - 10))
+    expect(updated.xpEarned.bob).toBe(50)
+    expect(updatedHealer.mp).toBe(2)
+  })
+
+  it('resurrect failure spends MP and blocks retry for the rest of the adventure', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_resurrect_failure'
+    const game = createGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'combat', description: 'A crypt battle', enemies: [{ name: 'Skeleton', hp: 5, DEX: 30, attack: 30, dodge: 20 }] },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.currentPlayer = 'alice'
+
+    const healer = findCharacter(game, 'alice')!
+    healer.klass = 'Healer'
+    healer.mp = 8
+    healer.skills.cast_spell = 35
+
+    const target = findCharacter(game, 'bob')!
+    target.hp = 0
+    ;(target as any).diedThisAdventure = true
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    try {
+      const tool = rpgEnvironment.getTool(ctx as any)
+      await tool.execute('toolcall-resurrect-fail-1', { command: 'resurrect', gameId, target: 'bob' })
+      const retry = await tool.execute('toolcall-resurrect-fail-2', { command: 'resurrect', gameId, target: 'bob' })
+      expect(retry).toMatchObject({ ok: false })
+      expect(String((retry as any).error)).toContain('no retry')
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    const stillDead = updated.party.find((p: any) => (p.agent ?? p.name) === 'bob')
+    const updatedHealer = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+
+    expect(stillDead.hp).toBe(0)
+    expect(updatedHealer.mp).toBe(4)
+  })
+
+  it('logs a death beat when a character falls and hints resurrection if a healer is alive', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const ctx = {
+      agentName: 'healer',
+      agentDid: 'did:cf:healer',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_death_narrative'
+    const game = createGame({
+      id: gameId,
+      players: ['healer', 'victim'],
+      dungeon: [{ type: 'combat', description: 'ambush', enemies: [{ name: 'Orc', hp: 20, DEX: 40, attack: 100, dodge: 1 }] }],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.currentPlayer = 'healer'
+
+    const healer = findCharacter(game, 'healer')!
+    healer.klass = 'Healer'
+    healer.skills.attack = 1
+
+    const victim = findCharacter(game, 'victim')!
+    victim.hp = 1
+    victim.skills.dodge = 1
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'healer', JSON.stringify(game), game.phase, JSON.stringify(['healer', 'victim']))
+      .run()
+
+    const rolls = [
+      0.99999, // attacker d100 -> miss
+      0.0, // enemy dodge d100
+      0.99999, // enemy target d2 -> victim
+      0.0, // enemy attack d100 -> hit
+      0.99999, // victim dodge d100 -> fail
+      0.99999, // damage d6 -> 6
+    ]
+    let idx = 0
+    const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => rolls[idx++] ?? 0.0)
+    try {
+      const tool = rpgEnvironment.getTool(ctx as any)
+      await tool.execute('toolcall-death', { command: 'attack', gameId })
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    const deadChar = updated.party.find((p: any) => (p.agent ?? p.name) === 'victim')
+    const logText = updated.log.map((e: any) => String(e.what))
+
+    expect(logText.some((line: string) => line.includes(`${deadChar.name} has fallen! Their adventure ends here.`))).toBe(true)
+    expect(logText.some((line: string) => line.includes('A resurrection may yet be possible'))).toBe(true)
+    expect(Array.isArray(updated.narrativeContext)).toBe(true)
+    expect(updated.narrativeContext.some((b: any) => b.kind === 'death' && b.text === deadChar.name)).toBe(true)
   })
 
   it('on game completion, saves the updated persistent character when saveCharacter is available', async () => {

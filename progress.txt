@@ -61,3 +61,31 @@ Operational requirements completed:
 - Stored learning via `swarm memory store`.
 - Sent progress event via `openclaw system event`.
 
+
+---
+[2026-02-11T14:11:21.589Z]
+Failed: Permadeath + Resurrection system — BRP-style death is permanent [unknown]
+Validation: Test Files  20 passed | 2 skipped (22)
+      Tests  283 passed | 6 skipped (289)
+   Start at  06:11:13
+   Duration  7.42s (transform 2.55s, setup 0ms, collect 4.41s, tests 7.90s, environment 7ms, prepare 3.08s)
+Codex: The one regression in an existing completion-event test is fixed (final-room explore now normalizes stale combat state). I’m rerunning the full RPG engine/environment suites to confirm green before running the user-requested validation command.
+
+---
+[2026-02-11T14:13:57.492Z]
+Completed: Permadeath + Resurrection system — BRP-style death is permanent
+Files: apps/network/src/environments/rpg.ts, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, packages/core/src/types.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: test_failure. Mitigation: I validated the permadeath/resurrection implementation already present in the working tree against the story requirements, then ran the exact required validation command.
+
+Confirmed in required files:
+- `packages/core/src/types.ts:97` includes `dead`, `diedAt`, and `causeOfDeath` on `PersistentCharacter`.
+- `apps/network/src/games/rpg-engine.ts:2541` and `apps/network/src/games/rpg-engine.ts:2567` enforce dead-character reroll behavior and persistent death metadata/inventory wipe on death.
+- `apps/network/src/environments/rpg.ts:751`, `apps/network/src/environments/rpg.ts:1860`, and `apps/network/src/environments/rpg.ts:725` implement dead-character join reroll, `resurrect` command rules, and death narrative/beat handling.
+
+Validation run:
+- `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5`
+- Result: `20 passed | 2 skipped` files, `283 passed | 6 skipped` tests.
+
+Required post-work commands completed:
+- Stored hivemind learning via `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`.
+- Sent completion event via `openclaw system event --mode now --text "Ralph: completed Permadeath + Resurrection system — BRP-style death is permanent"`.

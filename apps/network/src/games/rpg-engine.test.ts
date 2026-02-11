@@ -1018,6 +1018,7 @@ describe('persistentToGameCharacter', () => {
       updatedAt: 2000,
       gamesPlayed: 5,
       deaths: 1,
+      dead: false,
     }
     const gc = persistentToGameCharacter(pc, 'player1')
     expect(gc.hp).toBe(20)
@@ -1026,6 +1027,36 @@ describe('persistentToGameCharacter', () => {
     expect(gc.maxMp).toBe(5)
     expect(gc.agent).toBe('player1')
     expect(gc.skills.attack).toBe(60)
+  })
+
+  it('does not revive a dead persistent character', () => {
+    const pc = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 6,
+      xp: 2000,
+      maxHp: 45,
+      maxMp: 20,
+      skills: { attack: 95, dodge: 80, cast_spell: 10, use_skill: 60 },
+      backstory: 'Veteran',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: ['A final stand'],
+      achievements: ['Dragon Slayer'],
+      inventory: ['Legendary Axe'],
+      createdAt: 1000,
+      updatedAt: 2000,
+      gamesPlayed: 9,
+      deaths: 3,
+      dead: true,
+    } as any as PersistentCharacter
+
+    const gc = persistentToGameCharacter(pc, 'player1')
+
+    expect(gc.maxHp).toBeLessThan(45)
+    expect(gc.maxMp).toBeLessThan(20)
+    expect(gc.skills.attack).toBeLessThan(95)
   })
 })
 
@@ -1052,6 +1083,7 @@ describe('gameCharacterToPersistent', () => {
       updatedAt: 1000,
       gamesPlayed: 3,
       deaths: 1,
+      dead: false,
     }
     const result = gameCharacterToPersistent(gc, existing, 'Defeated by dragon')
     expect(result.gamesPlayed).toBe(4)
@@ -1086,10 +1118,48 @@ describe('gameCharacterToPersistent', () => {
       updatedAt: 1000,
       gamesPlayed: 12,
       deaths: 0,
+      dead: false,
     }
     const result = gameCharacterToPersistent(gc, existing, 'New adventure')
     expect(result.adventureLog.length).toBe(10)
     expect(result.adventureLog[9]).toBe('New adventure')
+  })
+
+  it('marks permanent death metadata and clears inventory on death', () => {
+    const gc = createCharacter({ name: 'Thorin', klass: 'Warrior', agent: 'p1' })
+    gc.hp = 0
+    ;(gc as any).deathCause = 'slain by Cave Troll in Ashen Reliquary'
+
+    const existing: PersistentCharacter = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 2,
+      xp: 220,
+      maxHp: gc.maxHp,
+      maxMp: gc.maxMp,
+      skills: { ...gc.skills },
+      backstory: '',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: ['Won a duel'],
+      achievements: ['Bronze Hero'],
+      inventory: ['Axe', 'Torch'],
+      createdAt: 1000,
+      updatedAt: 1000,
+      gamesPlayed: 3,
+      deaths: 1,
+      dead: false,
+    }
+
+    const result = gameCharacterToPersistent(gc, existing, 'Defeated by dragon')
+
+    expect(result.dead).toBe(true)
+    expect(typeof result.diedAt).toBe('number')
+    expect(result.causeOfDeath).toContain('Cave Troll')
+    expect(result.inventory).toEqual([])
+    expect(result.adventureLog).toEqual(expect.arrayContaining(['Won a duel', 'Defeated by dragon']))
+    expect(result.achievements).toEqual(['Bronze Hero'])
   })
 })
 
@@ -1119,6 +1189,7 @@ describe('awardXp', () => {
       updatedAt: now,
       gamesPlayed: 0,
       deaths: 0,
+      dead: false,
       ...partial,
     }
   }

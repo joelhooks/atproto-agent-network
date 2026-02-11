@@ -22,6 +22,7 @@ import {
   gmInterveneIfStuck,
   isBossEncounterRoom,
   livingParty,
+  markCharacterDeath,
   nextEncounterRoomIndex,
   partyWipe,
   partyAverageLevel,
@@ -117,6 +118,53 @@ function listLivingEnemies(game: RpgGameState): Enemy[] {
   return (game.combat?.enemies ?? []).filter((enemy) => (enemy?.hp ?? 0) > 0)
 }
 
+function deathLocale(game: RpgGameState): string {
+  const locale = typeof game.theme?.name === 'string' ? game.theme.name.trim() : ''
+  return locale || 'the dungeon'
+}
+
+function deathCauseFromAttacker(game: RpgGameState, attackerName: string): string {
+  return `slain by ${attackerName} in ${deathLocale(game)}`
+}
+
+function applyResurrectionWeakness(target: Character): void {
+  target.skills.attack = clampSkill(target.skills.attack - 10)
+  target.skills.dodge = clampSkill(target.skills.dodge - 10)
+  target.skills.cast_spell = clampSkill(target.skills.cast_spell - 10)
+  target.skills.use_skill = clampSkill(target.skills.use_skill - 10)
+  target.resurrectionWeakness = 10
+}
+
+function buildRerolledPersistentCharacter(
+  previous: PersistentCharacter,
+  fresh: Character,
+): PersistentCharacter {
+  const now = Date.now()
+  const adventureLog = Array.isArray(previous.adventureLog) ? [...previous.adventureLog] : []
+  const achievements = Array.isArray(previous.achievements) ? [...previous.achievements] : []
+  return {
+    name: fresh.name,
+    klass: fresh.klass,
+    level: 1,
+    xp: 0,
+    maxHp: fresh.maxHp,
+    maxMp: fresh.maxMp,
+    skills: { ...fresh.skills },
+    backstory: '',
+    motivation: '',
+    appearance: '',
+    personalityTraits: [],
+    adventureLog,
+    achievements,
+    inventory: [],
+    createdAt: now,
+    updatedAt: now,
+    gamesPlayed: Number.isFinite(previous.gamesPlayed) ? Math.max(0, Math.floor(previous.gamesPlayed)) : 0,
+    deaths: Number.isFinite(previous.deaths) ? Math.max(0, Math.floor(previous.deaths)) : 0,
+    dead: false,
+  }
+}
+
 function runEnemyFreeAttackRound(game: RpgGameState, dice: ReturnType<typeof createDice>): string[] {
   const lines: string[] = []
   const livingEnemies = listLivingEnemies(game)
@@ -138,6 +186,7 @@ function runEnemyFreeAttackRound(game: RpgGameState, dice: ReturnType<typeof cre
       target.hp = Math.max(0, target.hp - dmg)
       lines.push(`${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`)
       partyWipe(game)
+      markCharacterDeath(game, target, deathCauseFromAttacker(game, foe.name))
     } else {
       lines.push(`${foe.name} swings at ${target.name} but misses.`)
     }
@@ -645,6 +694,7 @@ export const rpgEnvironment: AgentEnvironment = {
         '- flee: Attempt to retreat from combat (not allowed in boss rooms)\n' +
         '- sneak: Attempt to bypass the next combat encounter before it starts\n' +
         '- intimidate: Frighten wounded low-morale enemies into fleeing\n' +
+        '- resurrect: Healer-only revival for allies who died this adventure (high risk)\n' +
         '- cast_spell: Cast a spell (fireball, ice_lance, lightning, heal, shield, smite)\n' +
         '- use_skill: Use a class ability (power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect)\n' +
         '- rest: Recover some HP/MP\n' +
@@ -668,6 +718,7 @@ export const rpgEnvironment: AgentEnvironment = {
               'flee',
               'sneak',
               'intimidate',
+              'resurrect',
               'cast_spell',
               'use_skill',
               'rest',
@@ -681,12 +732,12 @@ export const rpgEnvironment: AgentEnvironment = {
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
           skill: { type: 'string', description: 'Skill name for use_skill (defaults to use_skill).' },
           message: { type: 'string', description: 'Narration/response message for setup phase.' },
+          target: { type: 'string', description: 'Target player agent for DM narration or resurrect target.' },
           to: {
             type: 'string',
             description: 'Routing target: @agent, @party (broadcast), or @dm.',
           },
           type: { type: 'string', enum: ['ic', 'ooc'], description: 'ic = in-character, ooc = table talk.' },
-          target: { type: 'string', description: 'Target player agent for DM narration (setup phase).' },
           backstories: { type: 'object', additionalProperties: { type: 'string' }, description: 'Final backstories by agent.' },
         },
         required: ['command'],
@@ -731,10 +782,20 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // Try to load persistent character
           let joined: Character
+          let rerollNotice = ''
           if (ctx.loadCharacter) {
             const persistent = await ctx.loadCharacter() as PersistentCharacter | null
             if (persistent && persistent.klass) {
-              joined = persistentToGameCharacter(persistent, agentName)
+              if (persistent.dead === true) {
+                joined = createCharacter({ name: fantasyName, klass, agent: agentName })
+                rerollNotice = `Your previous character ${persistent.name} fell in battle. A new hero rises.\n`
+                if (ctx.saveCharacter) {
+                  const rerolled = buildRerolledPersistentCharacter(persistent, joined)
+                  await ctx.saveCharacter(rerolled)
+                }
+              } else {
+                joined = persistentToGameCharacter(persistent, agentName)
+              }
             } else {
               joined = createCharacter({ name: fantasyName, klass, agent: agentName })
             }
@@ -757,7 +818,7 @@ export const rpgEnvironment: AgentEnvironment = {
           })
 
           return {
-            content: toTextContent(`Joined adventure: ${gameId} as ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
+            content: toTextContent(`${rerollNotice}Joined adventure: ${gameId} as ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
             details: { gameId, joined },
           }
         }
@@ -1227,6 +1288,12 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.currentPlayer !== ctx.agentName.trim()) {
             return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
           }
+          const atDungeonEnd = game.roomIndex >= Math.max(0, game.dungeon.length - 1)
+          if (atDungeonEnd) {
+            // Allow completion from final room even if stale combat state leaked in.
+            game.mode = 'exploring'
+            game.combat = undefined
+          }
           const combatActive = game.mode === 'combat' && (game.combat?.enemies ?? []).some((enemy) => (enemy?.hp ?? 0) > 0)
           if (combatActive) {
             return {
@@ -1358,6 +1425,7 @@ export const rpgEnvironment: AgentEnvironment = {
                   target.hp = Math.max(0, target.hp - dmg)
                   text += `\n${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`
                   partyWipe(game)
+                  markCharacterDeath(game, target, deathCauseFromAttacker(game, foe.name))
                 } else {
                   text += `\n${foe.name} swings at ${target.name} but misses.`
                 }
@@ -1789,6 +1857,101 @@ export const rpgEnvironment: AgentEnvironment = {
           }
         }
 
+        if (command === 'resurrect') {
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+          if (game.mode !== 'combat' && game.mode !== 'exploring') {
+            return { ok: false, error: 'You can only resurrect during active exploration or combat.' }
+          }
+
+          const beforePhase = game.phase
+          const actorName = ctx.agentName.trim() || 'unknown'
+          const actor = game.party.find((p) => isCharacter(p, actorName))
+          if (!actor) throw new Error('Create your character before resurrecting')
+          if (actor.klass !== 'Healer') return { ok: false, error: 'Only a Healer can perform resurrection.' }
+          if ((actor.hp ?? 0) <= 0) return { ok: false, error: 'You are dead. You cannot resurrect yourself.' }
+          if (actor.mp < 4) return { ok: false, error: `Not enough MP for resurrection (need 4, have ${actor.mp}).` }
+
+          const targetIdentity = typeof params.target === 'string' ? params.target.trim() : ''
+          if (!targetIdentity) return { ok: false, error: 'target required for resurrect.' }
+          const target = game.party.find((p) => isCharacter(p, targetIdentity))
+          if (!target) return { ok: false, error: `Unknown target: ${targetIdentity}` }
+          if (isCharacter(target, actorName)) return { ok: false, error: 'You cannot resurrect yourself.' }
+          if ((target.hp ?? 0) > 0) return { ok: false, error: `${target.name} is not dead.` }
+          if (target.diedThisAdventure !== true) {
+            return { ok: false, error: `${target.name} did not die this adventure and cannot be resurrected.` }
+          }
+          if (target.resurrectionFailedThisAdventure === true) {
+            return { ok: false, error: `${target.name} has already resisted resurrection; no retry this adventure.` }
+          }
+
+          actor.mp -= 4
+          const skillTarget = clampSkill(actor.skills.cast_spell - 20)
+          const check = resolveSkillCheck({ skill: skillTarget, dice })
+          const lines: string[] = []
+          let xpLoss = 0
+
+          if (check.success) {
+            actor.skills.cast_spell = check.nextSkill
+            const targetId = characterId(target)
+            const currentAdventureXp = Math.max(0, Math.floor(game.xpEarned?.[targetId] ?? 0))
+            const reducedXp = Math.max(0, Math.floor(currentAdventureXp * 0.5))
+            xpLoss = currentAdventureXp - reducedXp
+            if (game.xpEarned && Object.prototype.hasOwnProperty.call(game.xpEarned, targetId)) {
+              game.xpEarned[targetId] = reducedXp
+            }
+
+            target.hp = 1
+            target.deathCause = undefined
+            target.deathNarrated = false
+            target.resurrectionFailedThisAdventure = false
+            applyResurrectionWeakness(target)
+
+            lines.push(`${target.name} returns to life at 1 HP.`)
+            lines.push('Returning from death is exhausting: -10 to all skills for this adventure.')
+            if (xpLoss > 0) lines.push(`${target.name} loses ${xpLoss} XP from this adventure.`)
+            game.log.push({
+              at: Date.now(),
+              who: actorName,
+              what: `resurrection: ${target.name} revived at 1 HP (-10 skills${xpLoss > 0 ? `, -${xpLoss} XP` : ''})`,
+            })
+          } else {
+            target.resurrectionFailedThisAdventure = true
+            lines.push(`Resurrection fails (${check.roll} > ${skillTarget}).`)
+            lines.push('MP is spent. The soul slips away, and no retry is possible this adventure.')
+            game.log.push({
+              at: Date.now(),
+              who: actorName,
+              what: `resurrection failed on ${target.name} (roll ${check.roll} > ${skillTarget}); no retry this adventure`,
+            })
+          }
+
+          gmInterveneIfStuck(game, {
+            player: actorName,
+            action: 'resurrect',
+            target: target.name,
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
+
+          return {
+            content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
+            details: { gameId, success: check.success, roll: check.roll, target: skillTarget, xpLoss },
+          }
+        }
+
         if (command === 'cast_spell') {
           const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before casting')
@@ -2063,7 +2226,7 @@ export const rpgEnvironment: AgentEnvironment = {
           lines.push('')
           if (partyMember) lines.push(buildAbilityMenu(partyMember))
           lines.push('')
-          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, negotiate, flee, intimidate`)
+          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, negotiate, flee, intimidate, resurrect`)
           lines.push(`Example: rpg({"command":"cast_spell","spell":"fireball","gameId":"${row.id}"})`)
         } else {
           lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
@@ -2104,6 +2267,7 @@ export const rpgEnvironment: AgentEnvironment = {
         'flee',
         'sneak',
         'intimidate',
+        'resurrect',
         'cast_spell',
         'use_skill',
         'rest',
