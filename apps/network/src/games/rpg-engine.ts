@@ -137,6 +137,43 @@ export function enemyIsNegotiable(enemy: Enemy): boolean {
   return false
 }
 
+export function partyAverageLevel(party: Character[]): number {
+  const list = Array.isArray(party) ? party : []
+  if (list.length === 0) return 1
+  const total = list.reduce((sum, member) => {
+    const level = Number.isFinite(member?.level) ? Math.max(1, Math.floor(member.level as number)) : 1
+    return sum + level
+  }, 0)
+  return Math.max(1, Math.floor(total / list.length))
+}
+
+export function encounterXpValue(enemies: Enemy[]): number {
+  // Used by non-lethal resolutions (e.g. negotiate) to derive partial encounter XP.
+  const list = Array.isArray(enemies) ? enemies : []
+  let total = 0
+  for (const enemy of list) {
+    total += XP_PER_ENEMY_KILL
+    if (enemy?.tactics?.kind === 'boss') total += XP_PER_BOSS_KILL
+  }
+  return total
+}
+
+export function nextEncounterRoomIndex(game: RpgGameState): number | null {
+  if (game.phase !== 'playing') return null
+  const next = game.roomIndex + 1
+  if (next < 0 || next >= game.dungeon.length) return null
+  const room = game.dungeon[next]
+  if (room?.type === 'combat' || room?.type === 'boss') return next
+  return null
+}
+
+export function isBossEncounterRoom(game: RpgGameState): boolean {
+  const room = game.dungeon[game.roomIndex]
+  if (room?.type === 'boss') return true
+  const enemies = game.combat?.enemies ?? []
+  return enemies.some((enemy) => (enemy?.hp ?? 0) > 0 && enemy?.tactics?.kind === 'boss')
+}
+
 export function normalizeEnemyForCombat(enemy: Enemy): Enemy {
   const kind = enemy.tactics?.kind ?? 'unknown'
   const maxHp = Number.isFinite(enemy.maxHp) ? Math.max(1, Math.floor(enemy.maxHp as number)) : Math.max(1, Math.floor(enemy.hp))
@@ -1413,6 +1450,18 @@ function normalizeEnemyMaxHp(enemy: Enemy): number {
     typeof raw === 'number' && Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : Math.max(1, Math.floor(enemy.hp ?? 1))
   if (!Number.isFinite((enemy as any).maxHp)) enemy.maxHp = maxHp
   return maxHp
+}
+
+export function findIntimidatableEnemies(enemies: Enemy[]): Enemy[] {
+  // Candidates for the intimidate command: low morale and already bloodied.
+  const list = Array.isArray(enemies) ? enemies : []
+  return list.filter((enemy) => {
+    if ((enemy?.hp ?? 0) <= 0) return false
+    const morale = clampMorale(enemy.morale, 9)
+    if (morale > 8) return false
+    const maxHp = normalizeEnemyMaxHp(enemy)
+    return maxHp > 0 && enemy.hp < Math.ceil(maxHp * 0.5)
+  })
 }
 
 function inferEnemyTactics(enemy: Enemy): EnemyTactics {

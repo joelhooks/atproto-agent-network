@@ -6,16 +6,25 @@ import {
   attack,
   awardXp,
   type Character,
+  type Enemy,
+  cloneEnemiesForCombat,
   createCharacter,
   createDice,
   createGame,
   describeRoom,
+  encounterXpValue,
+  enemyIsNegotiable,
+  enemyMoraleState,
   explore,
+  findIntimidatableEnemies,
   gameCharacterToPersistent,
   generateFantasyName,
   gmInterveneIfStuck,
+  isBossEncounterRoom,
   livingParty,
+  nextEncounterRoomIndex,
   partyWipe,
+  partyAverageLevel,
   persistentToGameCharacter,
   resolveSkillCheck,
   soloMultiplier,
@@ -92,6 +101,43 @@ function awardRoomClearXp(game: RpgGameState): void {
 
 function awardAdventureCompleteXp(game: RpgGameState): void {
   for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ADVENTURE_COMPLETE)
+}
+
+function clampSkill(value: number): number {
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.min(100, Math.floor(value)))
+}
+
+function listLivingEnemies(game: RpgGameState): Enemy[] {
+  return (game.combat?.enemies ?? []).filter((enemy) => (enemy?.hp ?? 0) > 0)
+}
+
+function runEnemyFreeAttackRound(game: RpgGameState, dice: ReturnType<typeof createDice>): string[] {
+  const lines: string[] = []
+  const livingEnemies = listLivingEnemies(game)
+  for (const foe of livingEnemies) {
+    if (game.phase !== 'playing') break
+    const targets = livingParty(game.party)
+    if (targets.length === 0) break
+    const target = targets[dice.d(targets.length) - 1]!
+
+    const attackSkill = clampSkill(Number(foe.attack))
+    const counterAtk = resolveSkillCheck({ skill: attackSkill, dice })
+    const counterDod = resolveSkillCheck({ skill: target.skills.dodge, dice })
+    const atkMarg = counterAtk.success ? attackSkill - counterAtk.roll : -Infinity
+    const dodMarg = counterDod.success ? target.skills.dodge - counterDod.roll : -Infinity
+    const counterHit = counterAtk.success && (!counterDod.success || atkMarg > dodMarg)
+
+    if (counterHit) {
+      const dmg = Math.max(1, dice.d(6))
+      target.hp = Math.max(0, target.hp - dmg)
+      lines.push(`${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`)
+      partyWipe(game)
+    } else {
+      lines.push(`${foe.name} swings at ${target.name} but misses.`)
+    }
+  }
+  return lines
 }
 
 function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
@@ -590,6 +636,10 @@ export const rpgEnvironment: AgentEnvironment = {
         '- setup_finalize: DM finalizes backstories and begins the adventure (setup phase only)\n' +
         '- explore: Move to the next room\n' +
         '- attack: Attack (in combat attacks first enemy; otherwise attacks a party member if defender provided)\n' +
+        '- negotiate: Attempt diplomacy in combat (only if all enemies are negotiable)\n' +
+        '- flee: Attempt to retreat from combat (not allowed in boss rooms)\n' +
+        '- sneak: Attempt to bypass the next combat encounter before it starts\n' +
+        '- intimidate: Frighten wounded low-morale enemies into fleeing\n' +
         '- cast_spell: Cast a spell (stub)\n' +
         '- use_skill: Attempt a generic skill check\n' +
         '- rest: Recover some HP/MP\n' +
@@ -609,6 +659,10 @@ export const rpgEnvironment: AgentEnvironment = {
               'setup_finalize',
               'explore',
               'attack',
+              'negotiate',
+              'flee',
+              'sneak',
+              'intimidate',
               'cast_spell',
               'use_skill',
               'rest',
@@ -1348,6 +1402,298 @@ export const rpgEnvironment: AgentEnvironment = {
           }
         }
 
+        if (command === 'negotiate') {
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+          if (game.mode !== 'combat') {
+            return { ok: false, error: 'You can only negotiate during combat.' }
+          }
+
+          const beforePhase = game.phase
+          const actorName = ctx.agentName.trim() || 'unknown'
+          const actor = game.party.find((p) => isCharacter(p, actorName))
+          if (!actor) throw new Error('Create your character before negotiating')
+
+          const enemies = listLivingEnemies(game)
+          if (enemies.length === 0) {
+            game.mode = 'exploring'
+            game.combat = undefined
+            return { ok: false, error: 'There are no enemies to negotiate with.' }
+          }
+
+          if (enemies.some((enemy) => enemy.negotiable !== true || !enemyIsNegotiable(enemy))) {
+            return { ok: false, error: 'Negotiation fails: some enemies are mindless or unwilling to parley.' }
+          }
+
+          const target = clampSkill(40 + partyAverageLevel(game.party) * 5)
+          const roll = dice.d100()
+          const success = roll <= target
+          const lines: string[] = []
+
+          if (success) {
+            const encounterXp = encounterXpValue(enemies)
+            const partialXp = Math.max(0, Math.floor(encounterXp * 0.5))
+            for (const id of livingPartyIds(game)) addXpEarned(game, id, partialXp)
+
+            game.mode = 'exploring'
+            game.combat = undefined
+
+            const boon = dice.d(2) === 1
+              ? 'The foes trade safe-passage terms and reveal a useful route ahead.'
+              : 'The foes accept terms and leave behind a small cache of supplies.'
+            lines.push(`Negotiation succeeds (${roll} <= ${target}). The enemies stand down.`)
+            lines.push(boon)
+            if (partialXp > 0) {
+              lines.push(`Party gains ${partialXp} XP (diplomatic resolution).`)
+              game.log.push({ at: Date.now(), who: actorName, what: `gained ${partialXp} XP (negotiate)` })
+            }
+          } else {
+            lines.push(`Negotiation fails (${roll} > ${target}). The enemies seize the initiative!`)
+            lines.push(...runEnemyFreeAttackRound(game, dice))
+          }
+
+          gmInterveneIfStuck(game, {
+            player: actorName,
+            action: 'negotiate',
+            target: enemies.map((enemy) => enemy.name).join(','),
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
+
+          return {
+            content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
+            details: { gameId, success, roll, target },
+          }
+        }
+
+        if (command === 'flee') {
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+          if (game.mode !== 'combat') {
+            return { ok: false, error: 'You can only flee during combat.' }
+          }
+          if (isBossEncounterRoom(game)) {
+            return { ok: false, error: 'You cannot flee from a boss encounter.' }
+          }
+
+          const beforePhase = game.phase
+          const actorName = ctx.agentName.trim() || 'unknown'
+          const actor = game.party.find((p) => isCharacter(p, actorName))
+          if (!actor) throw new Error('Create your character before fleeing')
+
+          const roll = dice.d100()
+          const target = 50
+          const success = roll <= target
+          const lines: string[] = []
+
+          if (success) {
+            lines.push(`Retreat succeeds (${roll} <= ${target}). The party escapes without taking damage.`)
+          } else {
+            lines.push(`Retreat falters (${roll} > ${target}). You escape under enemy fire.`)
+            lines.push(...runEnemyFreeAttackRound(game, dice))
+          }
+
+          if (game.phase === 'playing') {
+            game.mode = 'exploring'
+            game.combat = undefined
+            if (game.roomIndex > 0) game.roomIndex -= 1
+          }
+
+          gmInterveneIfStuck(game, {
+            player: actorName,
+            action: 'flee',
+            target: `room:${game.roomIndex}`,
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
+
+          lines.push('No XP awarded. The encounter remains dangerous.')
+          return {
+            content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
+            details: { gameId, success, roll, target },
+          }
+        }
+
+        if (command === 'sneak') {
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+          if (game.mode === 'combat') {
+            return { ok: false, error: 'Too late to sneak. Combat has already started.' }
+          }
+
+          const beforePhase = game.phase
+          const actorName = ctx.agentName.trim() || 'unknown'
+          const actor = game.party.find((p) => isCharacter(p, actorName))
+          if (!actor) throw new Error('Create your character before sneaking')
+
+          const encounterIndex = nextEncounterRoomIndex(game)
+          if (encounterIndex == null) {
+            return { ok: false, error: 'There is no encounter ahead to sneak past.' }
+          }
+          const encounterRoom = game.dungeon[encounterIndex]
+          if (!encounterRoom || (encounterRoom.type !== 'combat' && encounterRoom.type !== 'boss')) {
+            return { ok: false, error: 'There is no encounter ahead to sneak past.' }
+          }
+
+          const scoutBonus = actor.klass === 'Scout' ? 20 : 0
+          const target = clampSkill(50 + scoutBonus)
+          const roll = dice.d100()
+          const success = roll <= target
+          const lines: string[] = []
+
+          if (success) {
+            const skippedTo = encounterIndex + 1
+            if (skippedTo >= game.dungeon.length) {
+              game.phase = 'finished'
+              game.mode = 'finished'
+              game.combat = undefined
+              lines.push(`Sneak succeeds (${roll} <= ${target}). You bypass the encounter and reach the dungeon exit.`)
+            } else {
+              game.roomIndex = skippedTo
+              const landed = game.dungeon[game.roomIndex]
+              if (landed && (landed.type === 'combat' || landed.type === 'boss')) {
+                game.mode = 'combat'
+                game.combat = { enemies: cloneEnemiesForCombat(landed.enemies) }
+              } else {
+                game.mode = 'exploring'
+                game.combat = undefined
+              }
+              lines.push(`Sneak succeeds (${roll} <= ${target}). You bypass the encounter unseen.`)
+              lines.push(`You move to: ${landed?.description ?? 'the next chamber'} (type: ${landed?.type ?? 'unknown'}).`)
+            }
+          } else {
+            game.roomIndex = encounterIndex
+            game.mode = 'combat'
+            game.combat = { enemies: cloneEnemiesForCombat(encounterRoom.enemies) }
+            lines.push(`Sneak fails (${roll} > ${target}). The enemies spot you and strike first!`)
+            lines.push(...runEnemyFreeAttackRound(game, dice))
+          }
+
+          gmInterveneIfStuck(game, {
+            player: actorName,
+            action: 'sneak',
+            target: `room:${encounterIndex}`,
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
+
+          return {
+            content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
+            details: { gameId, success, roll, target },
+          }
+        }
+
+        if (command === 'intimidate') {
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+          if (game.mode !== 'combat') {
+            return { ok: false, error: 'You can only intimidate during combat.' }
+          }
+
+          const beforePhase = game.phase
+          const actorName = ctx.agentName.trim() || 'unknown'
+          const actor = game.party.find((p) => isCharacter(p, actorName))
+          if (!actor) throw new Error('Create your character before intimidating')
+
+          const livingEnemies = listLivingEnemies(game)
+          const eligible = findIntimidatableEnemies(livingEnemies)
+          if (eligible.length === 0) {
+            return { ok: false, error: 'No enemies are shaken and wounded enough to intimidate.' }
+          }
+
+          const roll = dice.d100()
+          const target = 45
+          const success = roll <= target
+          const lines: string[] = []
+
+          if (success) {
+            let awarded = 0
+            for (const enemy of eligible) {
+              enemy.hp = 0
+              ;(enemy as any).fled = true
+              const base = XP_PER_ENEMY_KILL + (enemy.tactics?.kind === 'boss' ? XP_PER_BOSS_KILL : 0)
+              awarded += Math.max(0, Math.floor(base * 0.75))
+            }
+            if (awarded > 0) {
+              addXpEarned(game, actorName, awarded)
+              game.log.push({ at: Date.now(), who: actorName, what: `gained ${awarded} XP (intimidate)` })
+            }
+            lines.push(`Intimidation succeeds (${roll} <= ${target}). ${eligible.length} enemy(s) flee in panic.`)
+            if (awarded > 0) lines.push(`You gain ${awarded} XP (reduced for routed foes).`)
+            if ((game.combat?.enemies ?? []).every((enemy) => enemy.hp <= 0)) {
+              game.mode = 'exploring'
+              game.combat = undefined
+              lines.push('Combat ends.')
+            }
+          } else {
+            for (const enemy of livingEnemies) {
+              enemy.attack = clampSkill(enemy.attack + 10)
+            }
+            lines.push(`Intimidation fails (${roll} > ${target}). The enemies become enraged (+10 attack).`)
+          }
+
+          gmInterveneIfStuck(game, {
+            player: actorName,
+            action: 'intimidate',
+            target: eligible.map((enemy) => enemy.name).join(','),
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          if (beforePhase !== 'finished' && game.phase === 'finished') {
+            await emitGameCompleted(ctx, { gameId, game })
+          }
+
+          return {
+            content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
+            details: { gameId, success, roll, target, affected: eligible.map((enemy) => enemy.name) },
+          }
+        }
+
         if (command === 'rest') {
           const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before resting')
@@ -1629,12 +1975,24 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push(...roleSkillLines)
         lines.push('')
         if (game.mode === 'combat') {
-          const enemies = game.combat?.enemies?.filter(e => e.hp > 0).map(e => `${e.name} (HP:${e.hp}/${e.maxHp})`).join(', ') ?? 'unknown'
-          lines.push(`⚔️ COMBAT! Enemies: ${enemies}`)
-          lines.push(`Your action: rpg({"command":"attack","gameId":"${row.id}"})`)
-          lines.push(`DO NOT use explore during combat. You must ATTACK.`)
+          const livingEnemies = listLivingEnemies(game)
+          const enemies = livingEnemies
+            .map((enemy) => {
+              const negotiable = enemyIsNegotiable(enemy) ? 'yes' : 'no'
+              const morale = enemyMoraleState(enemy)
+              return `${enemy.name} (HP:${enemy.hp}/${enemy.maxHp}, negotiable:${negotiable}, morale:${morale})`
+            })
+            .join(', ') || 'unknown'
+          const negotiableNow = livingEnemies.filter((enemy) => enemyIsNegotiable(enemy)).map((enemy) => enemy.name)
+          lines.push(`⚔️ COMBAT! Enemies: ${enemies} | Actions: attack, negotiate, flee, intimidate`)
+          lines.push(`Negotiable now: ${negotiableNow.length > 0 ? negotiableNow.join(', ') : 'none'}`)
+          if (isBossEncounterRoom(game)) lines.push('Boss encounter: flee is unavailable.')
+          lines.push(`Your action: rpg({"command":"attack","gameId":"${row.id}"}) or choose negotiate/flee/intimidate.`)
         } else {
           lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
+          if (nextEncounterRoomIndex(game) != null) {
+            lines.push(`Optional: rpg({"command":"sneak","gameId":"${row.id}"}) to bypass the next encounter.`)
+          }
         }
         lines.push(`DO NOT create a new game.`)
       } else {
@@ -1665,6 +2023,10 @@ export const rpgEnvironment: AgentEnvironment = {
         'join_game',
         'explore',
         'attack',
+        'negotiate',
+        'flee',
+        'sneak',
+        'intimidate',
         'cast_spell',
         'use_skill',
         'rest',

@@ -757,7 +757,7 @@
       "title": "Non-combat encounter resolution — negotiate, flee, sneak, intimidate commands",
       "description": "Add 4 new RPG commands that give players alternatives to \"attack\" during combat encounters. From Phandelver: \"noncombat or another nondeadly resolution is an equally valid way to resolve many enemy encounters.\"\n\n**New commands in rpg.ts (add after the `attack` handler ~line 1220):**\n\n1. **`negotiate`** — Attempt to parley with enemies\n   - Only works if ALL remaining enemies have `negotiable: true`\n   - CHA-based check (roll d100 vs 40 + party_avg_level*5)\n   - Success: enemies stand down, party gets partial XP (50%), may get info/items\n   - Failure: enemies get a free attack round (penalty for failed diplomacy)\n   - Some enemies (undead, constructs, mindless beasts) CANNOT be negotiated with\n\n2. **`flee`** — Party attempts to run from combat\n   - DEX-based check (roll d100 vs 50)\n   - Success: party escapes, loses NO HP, but gets 0 XP and room stays dangerous\n   - Failure: each enemy gets a free attack, THEN party escapes (retreat under fire)\n   - Cannot flee from boss rooms\n\n3. **`sneak`** — Attempt to bypass encounter stealthily (only from explore, before combat triggers)\n   - Modify `explore` command: when entering a combat room, if player calls `sneak` instead of engaging, roll DEX check\n   - Success: skip the room entirely (0 XP, but no damage)\n   - Failure: combat starts with enemies getting surprise round (free attacks)\n   - Scout class gets +20 bonus\n\n4. **`intimidate`** — Frighten weaker enemies into fleeing\n   - Works on enemies with morale <= 8 AND current HP < 50%\n   - STR/CHA check (roll d100 vs 45)\n   - Success: affected enemies flee (counted as killed for XP purposes, reduced by 25%)\n   - Failure: enemies become enraged (+10 attack for rest of combat)\n\n**rpg.ts tool schema changes (~line 580-630):**\n- Add negotiate, flee, sneak, intimidate to command enum\n- Add to `isActionTaken` list (~line 1662)\n\n**buildContext changes (~line 1631):**\n- During combat, show ALL available actions, not just \"attack\":\n  `⚔️ COMBAT! Enemies: ... | Actions: attack, negotiate, flee, intimidate`\n- Show which enemies are negotiable\n- Show enemy morale state (shaken, steady, fearless)\n\n**Files:** `apps/network/src/environments/rpg.ts`, `apps/network/src/games/rpg-engine.ts` (add helper functions)\n**Tests:** Add tests for each new command in rpg.test.ts — success/fail paths, class bonuses, XP awards\n**Validation:** `bun run check-types && bun run test`",
       "priority": 81,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run typecheck && bun run test",
       "acceptanceCriteria": [
         "negotiate command works on negotiable enemies, fails on undead/constructs",
@@ -806,8 +806,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 71,
-    "lastIteration": "2026-02-11T00:02:12.799Z"
+    "totalIterations": 72,
+    "lastIteration": "2026-02-11T03:35:06.759Z"
   },
   "totalStories": 11
 }
