@@ -856,7 +856,7 @@
       "title": "Milestone XP bonuses — reward non-combat encounters",
       "description": "Add XP rewards for non-combat activities to incentivize diverse play:\n\n- **Trap disarmed**: 25 XP to the disarmer (Scout)\n- **Barrier cleared**: 25 XP to the class that clears it (or 15 XP to brute-forcer)\n- **Puzzle solved**: 30 XP to party\n- **Successful negotiation**: 75% of combat XP value (incentivize diplomacy)\n- **Successful intimidation**: 50% of combat XP value\n- **Successful flee**: 10 XP consolation (you survived)\n- **Rest room used**: 0 XP (no reward for resting)\n- **Treasure found**: 10 XP per item found\n\nAdd constants `XP_PER_TRAP_DISARM`, `XP_PER_BARRIER_CLEAR`, `XP_PER_PUZZLE`, `XP_PER_TREASURE_FIND` to rpg-engine.ts. Wire them into the corresponding room/action handlers in rpg.ts.\n\n**Files:**\n- `apps/network/src/games/rpg-engine.ts` — new XP constants\n- `apps/network/src/environments/rpg.ts` — wire XP awards into trap, barrier, puzzle, negotiate handlers",
       "priority": 87,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/games/rpg-engine.ts",
@@ -891,8 +891,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 77,
-    "lastIteration": "2026-02-11T14:36:16.002Z"
+    "totalIterations": 78,
+    "lastIteration": "2026-02-11T14:45:32.894Z"
   },
   "totalStories": 11
 }

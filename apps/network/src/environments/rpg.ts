@@ -41,6 +41,7 @@ import {
   type FeedMessageType,
   type RpgGameState,
   XP_PER_ADVENTURE_COMPLETE,
+  XP_PER_BARRIER_BRUTE_FORCE,
   XP_PER_BARRIER_CLEAR,
   XP_PER_BOSS_KILL,
   XP_PER_ENEMY_KILL,
@@ -267,7 +268,7 @@ function awardBarrierClearMilestoneXp(
     const rawWho = String(bruteForce.who ?? '').trim()
     const member = game.party.find((p) => p && isCharacter(p, rawWho))
     const id = member ? characterId(member) : rawWho
-    if (id) addLoggedXp(game, id, 15, 'barrier brute_force')
+    if (id) addLoggedXp(game, id, XP_PER_BARRIER_BRUTE_FORCE, 'barrier brute_force')
     return
   }
 

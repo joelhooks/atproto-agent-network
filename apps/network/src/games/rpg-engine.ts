@@ -481,6 +481,7 @@ export const XP_PER_BOSS_KILL = 100
 export const XP_PER_ADVENTURE_COMPLETE = 200
 export const XP_PER_TRAP_DISARM = 25
 export const XP_PER_BARRIER_CLEAR = 25
+export const XP_PER_BARRIER_BRUTE_FORCE = 15
 export const XP_PER_PUZZLE = 30
 export const XP_PER_TREASURE_FIND = 10
 

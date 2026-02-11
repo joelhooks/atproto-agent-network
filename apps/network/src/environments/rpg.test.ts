@@ -1016,7 +1016,7 @@ describe('rpgEnvironment', () => {
     )
   })
 
-  it.skip('awards trap-disarm milestone XP to the acting scout', async () => {
+  it('awards trap-disarm milestone XP to the acting scout', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const gameId = 'rpg_test_xp_trap_disarm'
@@ -1057,7 +1057,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 75 })
   })
 
-  it.skip('awards class barrier-clear milestone XP when the required class resolves the barrier', async () => {
+  it('awards class barrier-clear milestone XP when the required class resolves the barrier', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const gameId = 'rpg_test_xp_barrier_required_class'
@@ -1092,7 +1092,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 75 })
   })
 
-  it.skip('awards reduced barrier-clear XP for brute-force clears', async () => {
+  it('awards reduced barrier-clear XP for brute-force clears', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const gameId = 'rpg_test_xp_barrier_bruteforce'
@@ -1126,7 +1126,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 65 })
   })
 
-  it.skip('awards puzzle milestone XP to the full living party on a solved puzzle', async () => {
+  it('awards puzzle milestone XP to the full living party on a solved puzzle', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const gameId = 'rpg_test_xp_puzzle_party'
@@ -1165,7 +1165,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 80, bob: 80 })
   })
 
-  it.skip('awards treasure-find XP per item found', async () => {
+  it('awards treasure-find XP per item found', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const gameId = 'rpg_test_xp_treasure_find'
@@ -1198,7 +1198,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 60 })
   })
 
-  it.skip('awards 75% encounter XP for successful negotiation and 50% for successful intimidation', async () => {
+  it('awards 75% encounter XP for successful negotiation and 50% for successful intimidation', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
@@ -1257,7 +1257,7 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 30 })
   })
 
-  it.skip('awards flee consolation XP on successful retreat and grants no XP for resting', async () => {
+  it('awards flee consolation XP on successful retreat and grants no XP for resting', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
     const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
