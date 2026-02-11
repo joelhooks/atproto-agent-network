@@ -291,14 +291,13 @@ describe('rpgEnvironment', () => {
     const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
-    // GM should have advanced the party one room.
-    expect(updated.roomIndex).toBe(1)
-    expect(updated.mode).toBe('exploring')
-    expect(updated.combat).toBeUndefined()
+    // GM should NOT auto-resolve combat — instead provides graduated hints.
+    // Party stays in the same room, still in combat mode.
+    expect(updated.roomIndex).toBe(0)
+    expect(updated.mode).toBe('combat')
 
-    // GM should log a warning + narrative line.
-    expect(updated.log.some((e: any) => String(e.what).includes('stuck'))).toBe(true)
-    expect(updated.log.some((e: any) => String(e.what).includes('The dungeon shifts around you'))).toBe(true)
+    // GM should log a hint (whisper) instead of auto-resolving.
+    expect(updated.log.some((e: any) => String(e.what).includes('GM whispers'))).toBe(true)
 
     // Action history should be stored per-player and reflect 5 identical actions.
     expect(updated.actionHistory?.alice).toHaveLength(5)

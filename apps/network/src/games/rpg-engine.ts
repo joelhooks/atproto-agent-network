@@ -1260,6 +1260,8 @@ export function findCharacter(game: RpgGameState, name: string): Character | und
 
 const ACTION_HISTORY_LIMIT = 25
 const STUCK_REPEAT_THRESHOLD = 5
+const STUCK_COMBAT_THRESHOLD = 7
+const STUCK_COMBAT_HINT_THRESHOLD = 3
 
 function clampActionToken(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -1283,6 +1285,7 @@ export function recordActionHistory(
     list.splice(0, list.length - ACTION_HISTORY_LIMIT)
   }
 
+  const maxRepeatThreshold = Math.max(STUCK_REPEAT_THRESHOLD, STUCK_COMBAT_THRESHOLD)
   let repeatCount = 1
   for (let i = list.length - 2; i >= 0; i -= 1) {
     const prev = list[i]
@@ -1290,7 +1293,7 @@ export function recordActionHistory(
     if (prev.action !== action) break
     if (prev.target !== target) break
     repeatCount += 1
-    if (repeatCount >= STUCK_REPEAT_THRESHOLD) break
+    if (repeatCount >= maxRepeatThreshold) break
   }
 
   return { repeatCount, stuck: repeatCount >= STUCK_REPEAT_THRESHOLD }
@@ -1307,6 +1310,40 @@ function setRoomModeFromIndex(game: RpgGameState, roomIndex: number): void {
   }
 }
 
+function buildCombatStuckHint(game: RpgGameState, enemies: Enemy[]): string {
+  const livingEnemies = (Array.isArray(enemies) ? enemies : []).filter((enemy) => (enemy?.hp ?? 0) > 0)
+  if (livingEnemies.length === 0) {
+    return 'GM whispers: Press the attack now and end this quickly.'
+  }
+
+  const intimidatable = findIntimidatableEnemies(livingEnemies)
+  if (intimidatable.length > 0) {
+    const target = intimidatable[0]?.name ?? 'the weakest foe'
+    return `GM whispers: ${target} is bloodied and wavering. Try intimidate now.`
+  }
+
+  if (livingEnemies.every((enemy) => enemyIsNegotiable(enemy))) {
+    return 'GM whispers: They might bargain. Try negotiate before this gets worse.'
+  }
+
+  const weakestEnemy = [...livingEnemies].sort((a, b) => {
+    const hpDiff = (a.hp ?? 0) - (b.hp ?? 0)
+    if (hpDiff !== 0) return hpDiff
+    return String(a.name ?? '').localeCompare(String(b.name ?? ''))
+  })[0]
+
+  const woundedPartyMember = livingParty(game.party).some((member) => member.hp <= Math.ceil(member.maxHp * 0.35))
+  if (woundedPartyMember || isBossEncounterRoom(game)) {
+    return "GM whispers: You're getting overwhelmed. Try flee, regroup, and re-engage."
+  }
+
+  if (weakestEnemy) {
+    return `GM whispers: Focus your attacks on ${weakestEnemy.name} to break their line.`
+  }
+
+  return 'GM whispers: Break the pattern with attack, negotiate, flee, or intimidate.'
+}
+
 export function gmInterveneIfStuck(
   game: RpgGameState,
   input: { player: string; action: string; target: string }
@@ -1316,19 +1353,43 @@ export function gmInterveneIfStuck(
   const target = clampActionToken(input.target)
 
   const recorded = recordActionHistory(game, { player, action, target })
-  if (!recorded.stuck) return { intervened: false, repeatCount: recorded.repeatCount }
-
-  game.log.push({
-    at: Date.now(),
-    who: 'GM',
-    what: `warning: stuck_detected (${player} repeated ${action} ${recorded.repeatCount}x; target=${target || 'none'})`,
-  })
-
-  // Auto-resolve the current obstacle.
   const actor = findCharacter(game, player) ?? findCharacter(game, game.currentPlayer) ?? game.party[0]
   if (game.mode === 'combat' && game.combat?.enemies?.some((e) => (e?.hp ?? 0) > 0)) {
-    // Kill everything in the room at a small HP cost to keep the story moving.
-    const cost = actor ? Math.max(1, Math.ceil(actor.maxHp * 0.1)) : 0
+    const repeat = recorded.repeatCount
+    if (repeat < STUCK_COMBAT_HINT_THRESHOLD) {
+      return { intervened: false, repeatCount: repeat }
+    }
+
+    game.log.push({
+      at: Date.now(),
+      who: 'GM',
+      what: `warning: stuck_detected (${player} repeated ${action} ${repeat}x; target=${target || 'none'})`,
+    })
+
+    if (repeat === STUCK_COMBAT_HINT_THRESHOLD) {
+      game.log.push({
+        at: Date.now(),
+        who: 'GM',
+        what: 'GM whispers: Try different tactics — attack, negotiate, flee, or intimidate',
+      })
+      return { intervened: false, repeatCount: repeat }
+    }
+
+    if (repeat === STUCK_REPEAT_THRESHOLD) {
+      game.log.push({
+        at: Date.now(),
+        who: 'GM',
+        what: buildCombatStuckHint(game, game.combat.enemies),
+      })
+      return { intervened: false, repeatCount: repeat }
+    }
+
+    if (repeat < STUCK_COMBAT_THRESHOLD) {
+      return { intervened: false, repeatCount: repeat }
+    }
+
+    // Last resort at 7 repeats: force resolution with a significant HP penalty.
+    const cost = actor ? Math.max(1, Math.ceil(actor.maxHp * 0.3)) : 0
     if (actor && cost > 0) {
       applyDamage(actor, cost)
       partyWipe(game)
@@ -1341,9 +1402,17 @@ export function gmInterveneIfStuck(
     game.log.push({
       at: Date.now(),
       who: 'GM',
-      what: cost > 0 ? `gm: auto_resolve combat (enemy slain at -${cost} HP)` : 'gm: auto_resolve combat (enemy slain)',
+      what: cost > 0 ? `GM deus ex machina — the ceiling caves in (-${cost} HP)` : 'GM deus ex machina — the ceiling caves in',
     })
+  } else if (!recorded.stuck) {
+    return { intervened: false, repeatCount: recorded.repeatCount }
   } else {
+    game.log.push({
+      at: Date.now(),
+      who: 'GM',
+      what: `warning: stuck_detected (${player} repeated ${action} ${recorded.repeatCount}x; target=${target || 'none'})`,
+    })
+
     const nextRoom = game.dungeon[game.roomIndex + 1]
     const currentRoom = game.dungeon[game.roomIndex]
     if (nextRoom?.type === 'barrier') {
@@ -1769,6 +1838,10 @@ export function enemyTakeTurn(game: RpgGameState, input: { enemyIndex?: number; 
 export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; room: Room | null } {
   if (game.phase !== 'playing') {
     return { ok: true, room: null }
+  }
+  if (game.mode === 'combat') {
+    // Command-level handlers should reject explore during combat; keep engine behavior side-effect free.
+    return { ok: true, room: game.dungeon[game.roomIndex] ?? null }
   }
 
   // Stuck detection: if an agent repeats the same failing "explore next room" action,
