@@ -180,6 +180,36 @@
       "status": "failed",
       "filesModified": [],
       "learnings": "[unknown] Test Files  20 passed | 2 skipped (22)\n      Tests  299 passed | 6 skipped (305)\n   Start at  06:56:11\n   Duration  6.46s (transform 1.98s, setup 0ms, collect 3.51s, tests 6.64s, environment 6ms, prepare 2.78s)"
+    },
+    {
+      "id": "story-mli4kg2l",
+      "title": "anet v2 — pure agent o11y and debugging CLI",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/migrations/0001_rename_games_to_environments.sql",
+        "apps/network/schema.sql",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/catan.test.ts",
+        "apps/network/src/environments/catan.ts",
+        "apps/network/src/environments/observe.test.ts",
+        "apps/network/src/environments/observe.ts",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/schema.test.ts",
+        "apps/network/src/tools/gm-tool.pdfbrain.live.test.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "packages/core/src/d1-mock.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/types.ts"
+      ],
+      "learnings": "Technical Discovery: `debug.loopTranscript` in this codebase is populated from `apps/network/src/agent-factory.ts` and includes `totalDurationMs`, `totalToolCalls`, and per-step `toolResults.durationMs`; network-level loop/trace analytics in `apps/network/src/index.ts` should parse that structure first, then fall back to `__internal/analytics.actionOutcomes` when transcript data is missing.\nGotcha: `/agents/:name/trace` must be routed before the generic `/agents/*` forwarding block in `apps/network/src/index.ts`; otherwise requests are forwarded to AgentDO (which has no `trace` leaf) and return 404.\nFiles Context: `apps/network/src/index.ts` now contains o11y parsing helpers plus new endpoints `GET /admin/errors`, `GET /admin/loops?agent=`, and `GET /agents/:name/trace`, and enriches `/environments/:id` with optional `debugView`. `apps/network/src/environments/types.ts` defines `EnvironmentDebugInput` and optional `AgentEnvironment.debugView`. `apps/network/src/index.test.ts` adds coverage for the new endpoints. `/home/joel/.local/bin/anet` is now observability-first (`health/debug/transcript/config/errors/loops/trace/slow/stuck/envs/env/deploy/reset`)."
     }
   ],
   "failures": [

@@ -537,7 +537,8 @@ function hasBossKill(game: RpgGameState): boolean {
  */
 export function compactAdventureLog(game: RpgGameState): string {
   const names = formatPartyNames((Array.isArray(game.party) ? game.party : []).map((p) => p?.name ?? '').filter(Boolean))
-  const theme = capChars(String((game as any).theme ?? 'mysterious').trim(), 32)
+  const rawTheme = (game as any).theme
+  const theme = capChars(String(typeof rawTheme === 'object' && rawTheme?.name ? rawTheme.name : rawTheme ?? 'mysterious').trim(), 32)
 
   const roomsCleared = Math.max(0, Math.min((game.roomIndex ?? 0) + 1, (game.dungeon?.length ?? 0)))
   const dead = (Array.isArray(game.party) ? game.party : []).filter((p) => (p?.hp ?? 0) <= 0).length

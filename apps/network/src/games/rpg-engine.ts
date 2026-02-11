@@ -2881,6 +2881,8 @@ export function persistentToGameCharacter(pc: PersistentCharacter, agent: string
   return {
     ...base,
     ...(pc.backstory ? { backstory: pc.backstory } : {}),
+    level: Number.isFinite(pc.level) ? Math.max(1, pc.level) : base.level,
+    xp: Number.isFinite(pc.xp) ? Math.max(0, pc.xp) : base.xp,
     hp: pc.maxHp,
     maxHp: pc.maxHp,
     mp: pc.maxMp,
