@@ -369,16 +369,18 @@ describe('rpg-engine', () => {
     for (const room of earlyCombats) {
       if (room.type !== 'combat') continue
       for (const e of room.enemies) {
-        expect(e.hp).toBeGreaterThanOrEqual(6)
-        expect(e.hp).toBeLessThanOrEqual(8)
+        // Bestiary: early enemies range from Kobold (hp 3+1d2=4-5) to Carcass Crawler (hp 10+1d6=11-16)
+        expect(e.hp).toBeGreaterThanOrEqual(4)
+        expect(e.hp).toBeLessThanOrEqual(20)
       }
     }
 
     for (const room of midCombats) {
       if (room.type !== 'combat') continue
       for (const e of room.enemies) {
-        expect(e.hp).toBeGreaterThanOrEqual(10)
-        expect(e.hp).toBeLessThanOrEqual(14)
+        // Bestiary: mid enemies range from Hobgoblin (hp 8+1d4=9-12) to Ogre (hp 16+1d8=17-24)
+        expect(e.hp).toBeGreaterThanOrEqual(8)
+        expect(e.hp).toBeLessThanOrEqual(30)
       }
     }
   })

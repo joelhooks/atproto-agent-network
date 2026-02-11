@@ -547,42 +547,233 @@ function withThemeDescription(theme: DungeonTheme, description: string): string 
   return `${theme.name}: ${base}`
 }
 
+// ── BESTIARY ─────────────────────────────────────────────────────────────────
+// Stats sourced from OSE Classic Fantasy Rules Tome + Advanced Expansion Set.
+// Tactical behaviors from "The Monsters Know What They're Doing" (Keith Ammann).
+// Morale scores use the OSE 2-12 scale (2d6 vs morale; higher = braver).
+//
+// Our combat uses BRP-style d100 skill checks, so we map OSE HD/THAC0 to:
+//   attack = 25 + (HD * 5), dodge = 15 + (HD * 3), DEX = 30 + (HD * 4)
+//   HP = OSE average hp ± dice variance for variety.
+
+type BestiaryEntry = {
+  name: string
+  /** Base HP (dice roll added on top) */
+  hp: number
+  /** Extra random HP via rollDie(dice, hpDie) */
+  hpDie: number
+  DEX: number
+  attack: number
+  dodge: number
+  morale: number
+  negotiable: boolean
+  tactics: EnemyTactics
+  flavorText: string
+}
+
+// ── EARLY TIER (HD 1-2): dungeon fodder ──────────────────────────────────────
+// From OSE: Goblin HD 1-1 (ML 7), Kobold HD ½ (ML 6), Skeleton HD 1 (ML 12),
+// Fire Beetle HD 1+2 (ML 7), Giant Rat HD ½ (ML 8), Stirge HD 1* (ML 9),
+// Giant Centipede HD ½ (ML 7), Zombie HD 2 (ML 12), Bat Swarm HD 2 (ML 6)
+
+const EARLY_ENEMIES: BestiaryEntry[] = [
+  // OSE: Goblin AC 6[13], HD 1-1 (3hp), Att 1×weapon (1d6), ML 7
+  // Monsters Know: goblins are sneaky ambushers, use hit-and-run, never fight fair
+  { name: 'Goblin', hp: 4, hpDie: 3, DEX: 35, attack: 30, dodge: 22, morale: 7, negotiable: true,
+    tactics: { kind: 'goblin' }, flavorText: 'A wiry goblin crouches in shadow, blade drawn, eyes glinting.' },
+  // OSE: Kobold AC 7[12], HD ½ (2hp), Att 1×weapon (1d4), ML 6
+  // Monsters Know: kobolds use traps and pack tactics, flee when cornered alone
+  { name: 'Kobold', hp: 3, hpDie: 2, DEX: 32, attack: 25, dodge: 18, morale: 6, negotiable: true,
+    tactics: { kind: 'pack' }, flavorText: 'A small, scaly kobold clutches a crude spear, yipping to its fellows.' },
+  // OSE: Skeleton AC 7[12], HD 1 (4hp), Att 1×weapon (1d6), ML 12 (undead, fights to destruction)
+  { name: 'Skeleton', hp: 4, hpDie: 3, DEX: 30, attack: 30, dodge: 18, morale: 12, negotiable: false,
+    tactics: { kind: 'skeleton' }, flavorText: 'Bones clatter as a skeletal warrior rises, weapon in hand.' },
+  // OSE: Fire Beetle AC 4[15], HD 1+2 (6hp), Att 1×bite (2d4), ML 7
+  { name: 'Fire Beetle', hp: 5, hpDie: 4, DEX: 34, attack: 32, dodge: 20, morale: 7, negotiable: false,
+    tactics: { kind: 'swarm' }, flavorText: 'A dog-sized beetle with glowing nodules scuttles forward, mandibles snapping.' },
+  // OSE: Giant Rat AC 7[12], HD ½ (2hp), Att 1×bite (1d3 + disease), ML 8
+  { name: 'Giant Rat', hp: 3, hpDie: 2, DEX: 38, attack: 25, dodge: 20, morale: 8, negotiable: false,
+    tactics: { kind: 'swarm' }, flavorText: 'A mangy rat the size of a terrier bares yellowed fangs.' },
+  // OSE: Stirge AC 7[12], HD 1* (4hp), Att 1×proboscis (1d3 + blood drain), ML 9
+  { name: 'Stirge', hp: 4, hpDie: 2, DEX: 40, attack: 33, dodge: 25, morale: 9, negotiable: false,
+    tactics: { kind: 'ambush' }, flavorText: 'A bat-winged mosquito-thing drops from the ceiling, proboscis extended.' },
+  // OSE: Giant Centipede AC 9[10], HD ½ (2hp), Att 1×bite (poison), ML 7
+  { name: 'Giant Centipede', hp: 3, hpDie: 2, DEX: 36, attack: 28, dodge: 18, morale: 7, negotiable: false,
+    tactics: { kind: 'ambush' }, flavorText: 'A segmented horror as long as your arm writhes out of a crack in the wall.' },
+  // OSE: Zombie AC 8[11], HD 2 (9hp), Att 1×weapon (1d8), ML 12 (undead)
+  { name: 'Zombie', hp: 8, hpDie: 4, DEX: 25, attack: 30, dodge: 15, morale: 12, negotiable: false,
+    tactics: { kind: 'berserker' }, flavorText: 'A shambling corpse lurches forward, dead eyes fixed on the living.' },
+  // OSE: Bat Swarm - Normal Bat AC 6[13], HD 2 (as swarm), Att confusion, ML 6
+  { name: 'Bat Swarm', hp: 6, hpDie: 4, DEX: 42, attack: 28, dodge: 30, morale: 6, negotiable: false,
+    tactics: { kind: 'swarm' }, flavorText: 'A cloud of shrieking bats erupts from the darkness, filling the passage.' },
+  // OSE: Carcass Crawler (Carrion Crawler) AC 7[12], HD 3+1 (14hp), Att 8×tentacle (paralysis), ML 9
+  // Slightly tough for early but keeps things spicy
+  { name: 'Carcass Crawler', hp: 10, hpDie: 6, DEX: 35, attack: 35, dodge: 22, morale: 9, negotiable: false,
+    tactics: { kind: 'ambush' }, flavorText: 'A pale, segmented worm with writhing tentacles drops from above.' },
+]
+
+// ── MID TIER (HD 3-5): dungeon threats ───────────────────────────────────────
+// From OSE: Orc HD 1 but tougher group (ML 8), Bugbear HD 3+1 (ML 9),
+// Hobgoblin HD 1+1 (ML 8), Ghoul HD 2* (ML 9), Gnoll HD 2 (ML 8),
+// Ogre HD 4+1 (ML 10), Wight HD 3* (ML 12), Gargoyle HD 4** (ML 11),
+// Gelatinous Cube HD 4* (ML 12), Ghast HD 4* (ML 9)
+
+const MID_ENEMIES: BestiaryEntry[] = [
+  // OSE: Orc AC 6[13], HD 1 (4hp), Att 1×weapon (1d6), ML 8 (but we scale up for mid-tier)
+  // Monsters Know: orcs are aggressive, fight in groups, press advantage on weakest
+  { name: 'Orc Warrior', hp: 10, hpDie: 6, DEX: 40, attack: 42, dodge: 25, morale: 8, negotiable: true,
+    tactics: { kind: 'orc' }, flavorText: 'A brutish orc with a notched blade snarls a challenge.' },
+  // OSE: Bugbear HD 3+1 (14hp), Att 1×weapon (2d4), ML 9
+  // Monsters Know: bugbears are stealthy brutes, surprise attack then press
+  { name: 'Bugbear', hp: 12, hpDie: 6, DEX: 38, attack: 45, dodge: 25, morale: 9, negotiable: false,
+    tactics: { kind: 'ambush' }, flavorText: 'A hulking, hairy goblinoid emerges from hiding, mace raised high.' },
+  // OSE: Hobgoblin AC 6[13], HD 1+1 (5hp), Att 1×weapon (1d8), ML 8
+  // Monsters Know: disciplined soldiers, fight in formation, use tactics
+  { name: 'Hobgoblin', hp: 8, hpDie: 4, DEX: 38, attack: 40, dodge: 24, morale: 8, negotiable: true,
+    tactics: { kind: 'guardian' }, flavorText: 'A heavily-armored hobgoblin stands in disciplined formation.' },
+  // OSE: Ghoul AC 6[13], HD 2* (9hp), Att 2×claw (1d3 + paralysis), 1×bite (1d3 + paralysis), ML 9
+  { name: 'Ghoul', hp: 9, hpDie: 4, DEX: 42, attack: 40, dodge: 24, morale: 9, negotiable: false,
+    tactics: { kind: 'pack' }, flavorText: 'A hunched, grey-skinned corpse-eater licks its claws, reeking of the grave.' },
+  // OSE: Gnoll HD 2 (9hp), Att 1×weapon (2d4 or by weapon +1), ML 8
+  { name: 'Gnoll', hp: 9, hpDie: 5, DEX: 38, attack: 42, dodge: 22, morale: 8, negotiable: true,
+    tactics: { kind: 'pack' }, flavorText: 'A hyena-headed gnoll lopes forward, flind bar crackling with menace.' },
+  // OSE: Ogre HD 4+1 (18hp), Att 1×club (1d10), ML 10
+  // Monsters Know: ogres are stupid but strong, charge the biggest target
+  { name: 'Ogre', hp: 16, hpDie: 8, DEX: 35, attack: 48, dodge: 22, morale: 10, negotiable: true,
+    tactics: { kind: 'berserker' }, flavorText: 'A massive ogre fills the corridor, dragging a tree-trunk club.' },
+  // OSE: Wight AC 5[14], HD 3* (13hp), Att 1×touch (energy drain), ML 12 (undead)
+  { name: 'Wight', hp: 12, hpDie: 6, DEX: 40, attack: 45, dodge: 28, morale: 12, negotiable: false,
+    tactics: { kind: 'guardian' }, flavorText: 'A fell presence in corroded armor, its touch drains life itself.' },
+  // OSE: Gargoyle AC 5[14], HD 4** (18hp), Att 2×claw (1d3), 1×bite (1d6), 1×horn (1d4), ML 11
+  { name: 'Gargoyle', hp: 15, hpDie: 6, DEX: 42, attack: 46, dodge: 30, morale: 11, negotiable: false,
+    tactics: { kind: 'ambush' }, flavorText: 'Stone wings unfold as a gargoyle drops from its perch, talons extended.' },
+  // OSE: Gelatinous Cube AC 8[11], HD 4* (18hp), Att 1×touch (2d4 + paralysis), ML 12
+  { name: 'Gelatinous Cube', hp: 16, hpDie: 6, DEX: 15, attack: 35, dodge: 8, morale: 12, negotiable: false,
+    tactics: { kind: 'guardian' }, flavorText: 'A translucent cube of quivering jelly fills the passage, bones floating within.' },
+  // Advanced OSE: Ghast AC 3[16], HD 4* (18hp), Att 2×claw (1d4+paralysis), 1×bite (1d8+paralysis), ML 9
+  { name: 'Ghast', hp: 14, hpDie: 6, DEX: 44, attack: 48, dodge: 28, morale: 9, negotiable: false,
+    tactics: { kind: 'pack' }, flavorText: 'A foul stench precedes this grotesque undead, stronger and fouler than any ghoul.' },
+]
+
+// ── BOSS TIER (HD 6+): dungeon lords ─────────────────────────────────────────
+// From OSE: Troll HD 6+3 (ML 10), Wraith HD 4** (ML 12), Minotaur HD 6 (ML 12),
+// Manticore HD 6+1 (ML 9), Owlbear HD 5 (ML 9), Basilisk HD 6** (ML 9),
+// Hydra HD 5-12 (ML 9+), Black Pudding HD 10* (ML 12)
+
+type BossEntry = BestiaryEntry & { minionPool: BestiaryEntry[] }
+
+const BOSS_ENEMIES: BossEntry[] = [
+  // OSE: Troll HD 6+3 (30hp), Att 2×claw (1d6), 1×bite (1d10), ML 10
+  // Monsters Know: trolls regenerate, fight recklessly, focus one target
+  { name: 'Cave Troll', hp: 30, hpDie: 12, DEX: 48, attack: 55, dodge: 35, morale: 10, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'A lanky, green-skinned troll unfolds to its full height, wounds already closing.',
+    minionPool: [MID_ENEMIES[0]!, MID_ENEMIES[4]!] }, // Orc Warriors + Gnolls
+  // OSE: Wraith AC 3[16], HD 4** (18hp), Att 1×touch (1d6 + energy drain), ML 12
+  { name: 'Tomb Wraith', hp: 28, hpDie: 10, DEX: 55, attack: 58, dodge: 40, morale: 12, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'A shrieking specter in tattered robes, its mere presence saps warmth from the air.',
+    minionPool: [EARLY_ENEMIES[2]!, EARLY_ENEMIES[7]!] }, // Skeletons + Zombies
+  // OSE: Minotaur HD 6 (27hp), Att 1×gore (1d6), 1×bite (1d6) or weapon (1d6+2), ML 12
+  // Monsters Know: minotaurs are territorial, charge, use labyrinth knowledge
+  { name: 'Minotaur', hp: 28, hpDie: 10, DEX: 50, attack: 56, dodge: 32, morale: 12, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'A bull-headed horror snorts in rage, lowering its horns for a devastating charge.',
+    minionPool: [EARLY_ENEMIES[0]!, EARLY_ENEMIES[1]!] }, // Goblins + Kobolds (enslaved servants)
+  // OSE: Manticore HD 6+1 (28hp), Att 2×claw (1d4), 1×bite (2d4) or 6×tail spikes (1d6 each), ML 9
+  { name: 'Manticore', hp: 26, hpDie: 12, DEX: 52, attack: 54, dodge: 35, morale: 9, negotiable: true,
+    tactics: { kind: 'boss', specialEveryTurns: 3 },
+    flavorText: 'A lion-bodied beast with a human face grins wickedly, tail bristling with spikes.',
+    minionPool: [EARLY_ENEMIES[4]!, EARLY_ENEMIES[5]!] }, // Giant Rats + Stirges
+  // OSE: Owlbear HD 5 (22hp), Att 2×claw (1d8), 1×bite (1d8), ML 9
+  { name: 'Owlbear', hp: 24, hpDie: 10, DEX: 45, attack: 52, dodge: 30, morale: 9, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'A feathered ursine monstrosity shrieks with an owl\'s cry and charges.',
+    minionPool: [EARLY_ENEMIES[3]!, EARLY_ENEMIES[6]!] }, // Fire Beetles + Giant Centipedes
+  // OSE: Basilisk AC 4[15], HD 6+1** (28hp), Att 1×bite (1d10 + petrification gaze), ML 9
+  { name: 'Basilisk', hp: 26, hpDie: 10, DEX: 35, attack: 50, dodge: 28, morale: 9, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'An eight-legged serpent with deadly eyes. Do NOT meet its gaze.',
+    minionPool: [EARLY_ENEMIES[6]!, EARLY_ENEMIES[8]!] }, // Giant Centipedes + Bat Swarms
+  // Advanced OSE: Demonic Knight HD 10*** (45hp), Att 1×magic sword (1d8+6), ML 12
+  { name: 'Demonic Knight', hp: 40, hpDie: 15, DEX: 55, attack: 60, dodge: 40, morale: 12, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 2 },
+    flavorText: 'A fell warrior in black plate, undead flame burning behind its visor.',
+    minionPool: [MID_ENEMIES[6]!, EARLY_ENEMIES[2]!] }, // Wights + Skeletons
+  // OSE: Hydra HD 5-12, Att 5-12×bite (1d10 each), ML 11
+  { name: 'Hydra', hp: 35, hpDie: 15, DEX: 40, attack: 55, dodge: 30, morale: 11, negotiable: false,
+    tactics: { kind: 'boss', specialEveryTurns: 1 },
+    flavorText: 'Multiple serpentine heads weave and strike from a massive reptilian body.',
+    minionPool: [EARLY_ENEMIES[4]!, EARLY_ENEMIES[3]!] }, // Giant Rats + Fire Beetles
+]
+
+function pickFromPool<T>(pool: T[], dice: Dice): T {
+  return pool[rollDie(dice, pool.length) - 1]!
+}
+
+function spawnEnemy(entry: BestiaryEntry, dice: Dice, index: number): Enemy {
+  const hp = entry.hp + rollDie(dice, entry.hpDie)
+  return {
+    name: index === 0 ? entry.name : `${entry.name} ${index + 1}`,
+    hp, maxHp: hp,
+    DEX: entry.DEX, attack: entry.attack, dodge: entry.dodge,
+    morale: entry.morale, negotiable: entry.negotiable,
+    flavorText: entry.flavorText,
+    tactics: { ...entry.tactics },
+  }
+}
+
 function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: DungeonTheme }): Room {
   const { tier, dice, theme } = input
 
   // Multiple enemies per room — action economy matters!
   // From "The Monsters Know": never pit a solo creature against a party.
-  if (tier === 'early') {
-    const count = 2 + (rollDie(dice, 2) === 2 ? 1 : 0) // 2-3 goblins
-    const enemies: Enemy[] = Array.from({ length: count }, (_, i) => {
-      const hp = 5 + rollDie(dice, 3)
-      return { name: i === 0 ? 'Goblin' : `Goblin ${i + 1}`, hp, maxHp: hp, DEX: 40, attack: 35, dodge: 25, tactics: { kind: 'goblin' as const } }
-    })
-    const desc = count === 2 ? 'A pair of goblins lurk in ambush.' : 'A pack of goblins blocks the passage, weapons drawn.'
-    return { type: 'combat', description: withThemeDescription(theme, desc), enemies }
+  const pool = tier === 'early' ? EARLY_ENEMIES : MID_ENEMIES
+  const template = pickFromPool(pool, dice)
+
+  // Vary group size: 2-3 for early, 1-3 for mid (tougher creatures appear in fewer numbers)
+  const count = tier === 'early'
+    ? 2 + (rollDie(dice, 2) === 2 ? 1 : 0)  // 2-3
+    : 1 + (rollDie(dice, 3) >= 2 ? 1 : 0)   // 1-2
+
+  const enemies: Enemy[] = Array.from({ length: count }, (_, i) => spawnEnemy(template, dice, i))
+
+  // Sometimes add a second type for mixed encounters (from Phandelver: varied groups are more interesting)
+  if (rollDie(dice, 4) === 1 && pool.length > 1) {
+    let other = pickFromPool(pool, dice)
+    // Avoid duplicates
+    let attempts = 0
+    while (other.name === template.name && attempts < 3) { other = pickFromPool(pool, dice); attempts++ }
+    if (other.name !== template.name) {
+      enemies.push(spawnEnemy(other, dice, 0))
+    }
   }
 
-  const count = 1 + (rollDie(dice, 3) >= 2 ? 1 : 0) // 1-2 orcs
-  const enemies: Enemy[] = Array.from({ length: count }, (_, i) => {
-    const hp = 10 + rollDie(dice, 6)
-    return { name: i === 0 ? 'Orc' : `Orc ${i + 1}`, hp, maxHp: hp, DEX: 45, attack: 45, dodge: 25, tactics: { kind: 'orc' as const } }
-  })
-  const desc = count === 1 ? 'A hulking orc blocks the way, battle-scarred and furious.' : 'Two orcs stand ready, aggression burning in their eyes.'
+  // Build thematic description
+  const names = [...new Set(enemies.map(e => e.name.replace(/ \d+$/, '')))]
+  const nameList = names.join(' and ')
+  const desc = enemies.length === 1
+    ? `A lone ${nameList} blocks the passage.`
+    : `${enemies.length} creatures — ${nameList} — lurk ahead.`
+
   return { type: 'combat', description: withThemeDescription(theme, desc), enemies }
 }
 
 function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
-  const hp = 35 + rollDie(dice, 20) // 36-55
-  const boss: Enemy = { name: 'Dungeon Boss', hp, maxHp: hp, DEX: 60, attack: 60, dodge: 40, tactics: { kind: 'boss', specialEveryTurns: 2 } }
+  const bossTemplate = pickFromPool(BOSS_ENEMIES, dice)
+  const boss = spawnEnemy(bossTemplate, dice, 0)
+
   // Boss always has minions — from "The Monsters Know": never run a solo boss
   const minionCount = 1 + (rollDie(dice, 2) === 2 ? 1 : 0) // 1-2 minions
-  const minions: Enemy[] = Array.from({ length: minionCount }, (_, i) => {
-    const mhp = 6 + rollDie(dice, 4)
-    return { name: `Guardian ${i + 1}`, hp: mhp, maxHp: mhp, DEX: 45, attack: 40, dodge: 25, tactics: { kind: 'orc' as const } }
-  })
+  const minionTemplate = pickFromPool(bossTemplate.minionPool, dice)
+  const minions: Enemy[] = Array.from({ length: minionCount }, (_, i) =>
+    spawnEnemy(minionTemplate, dice, i)
+  )
+
+  const desc = `${boss.name} dominates the chamber${minions.length > 0 ? `, flanked by ${minions.map(m => m.name).join(' and ')}` : ''}.`
   return {
     type: 'boss',
-    description: withThemeDescription(theme, 'A hulking presence fills the chamber, flanked by loyal guardians.'),
+    description: withThemeDescription(theme, desc),
     enemies: [boss, ...minions],
   }
 }
