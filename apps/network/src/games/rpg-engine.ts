@@ -1260,8 +1260,10 @@ export function findCharacter(game: RpgGameState, name: string): Character | und
 
 const ACTION_HISTORY_LIMIT = 25
 const STUCK_REPEAT_THRESHOLD = 5
+const STUCK_COMBAT_FIRST_HINT_THRESHOLD = 3
+const STUCK_COMBAT_SECOND_HINT_THRESHOLD = 5
 const STUCK_COMBAT_THRESHOLD = 7
-const STUCK_COMBAT_HINT_THRESHOLD = 3
+const STUCK_COMBAT_AUTO_RESOLVE_HP_COST = 0.3
 
 function clampActionToken(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -1356,17 +1358,16 @@ export function gmInterveneIfStuck(
   const actor = findCharacter(game, player) ?? findCharacter(game, game.currentPlayer) ?? game.party[0]
   if (game.mode === 'combat' && game.combat?.enemies?.some((e) => (e?.hp ?? 0) > 0)) {
     const repeat = recorded.repeatCount
-    if (repeat < STUCK_COMBAT_HINT_THRESHOLD) {
+    if (repeat < STUCK_COMBAT_FIRST_HINT_THRESHOLD) {
       return { intervened: false, repeatCount: repeat }
     }
 
-    game.log.push({
-      at: Date.now(),
-      who: 'GM',
-      what: `warning: stuck_detected (${player} repeated ${action} ${repeat}x; target=${target || 'none'})`,
-    })
-
-    if (repeat === STUCK_COMBAT_HINT_THRESHOLD) {
+    if (repeat === STUCK_COMBAT_FIRST_HINT_THRESHOLD) {
+      game.log.push({
+        at: Date.now(),
+        who: 'GM',
+        what: `warning: stuck_detected (${player} repeated ${action} ${repeat}x; target=${target || 'none'})`,
+      })
       game.log.push({
         at: Date.now(),
         who: 'GM',
@@ -1375,7 +1376,12 @@ export function gmInterveneIfStuck(
       return { intervened: false, repeatCount: repeat }
     }
 
-    if (repeat === STUCK_REPEAT_THRESHOLD) {
+    if (repeat === STUCK_COMBAT_SECOND_HINT_THRESHOLD) {
+      game.log.push({
+        at: Date.now(),
+        who: 'GM',
+        what: `warning: stuck_detected (${player} repeated ${action} ${repeat}x; target=${target || 'none'})`,
+      })
       game.log.push({
         at: Date.now(),
         who: 'GM',
@@ -1389,7 +1395,13 @@ export function gmInterveneIfStuck(
     }
 
     // Last resort at 7 repeats: force resolution with a significant HP penalty.
-    const cost = actor ? Math.max(1, Math.ceil(actor.maxHp * 0.3)) : 0
+    game.log.push({
+      at: Date.now(),
+      who: 'GM',
+      what: `warning: stuck_detected (${player} repeated ${action} ${repeat}x; target=${target || 'none'})`,
+    })
+
+    const cost = actor ? Math.max(1, Math.ceil(actor.maxHp * STUCK_COMBAT_AUTO_RESOLVE_HP_COST)) : 0
     if (actor && cost > 0) {
       applyDamage(actor, cost)
       partyWipe(game)
@@ -1402,7 +1414,7 @@ export function gmInterveneIfStuck(
     game.log.push({
       at: Date.now(),
       who: 'GM',
-      what: cost > 0 ? `GM deus ex machina — the ceiling caves in (-${cost} HP)` : 'GM deus ex machina — the ceiling caves in',
+      what: 'GM deus ex machina — the ceiling caves in',
     })
   } else if (!recorded.stuck) {
     return { intervened: false, repeatCount: recorded.repeatCount }

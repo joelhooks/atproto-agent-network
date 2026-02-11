@@ -1222,11 +1222,16 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.currentPlayer !== ctx.agentName.trim()) {
             return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
           }
-          if (game.mode === 'combat') {
+          const combatActive = game.mode === 'combat' && (game.combat?.enemies ?? []).some((enemy) => (enemy?.hp ?? 0) > 0)
+          if (combatActive) {
             return {
               ok: false,
               error: "You're in combat! Use: attack, negotiate, flee, or intimidate. Type 'status' for details.",
             }
+          }
+          if (game.mode === 'combat') {
+            game.mode = 'exploring'
+            game.combat = undefined
           }
 
           const beforePhase = game.phase

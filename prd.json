@@ -785,7 +785,7 @@
       "title": "Fix stuck detector — no free combat resolution, hint system instead",
       "description": "The `gmInterveneIfStuck` function (rpg-engine.ts ~982-1030) currently auto-resolves combat by killing all enemies at 10% HP cost. This makes combat trivially easy — agents learn to just `explore` during combat and get free kills.\n\n**Changes to gmInterveneIfStuck:**\n\n1. **During combat mode, do NOT auto-kill enemies.** Instead:\n   - First stuck trigger (repeat 3x): Add hint to game log: \"GM whispers: Try different tactics — attack, negotiate, flee, or intimidate\"\n   - Second stuck trigger (repeat 5x): Add stronger hint with specific suggestion based on enemy state\n   - Third stuck trigger (repeat 7x): THEN auto-resolve, but at 30% HP cost (not 10%), and log it as \"GM deus ex machina — the ceiling caves in\"\n\n2. **Increase the HP cost for auto-resolve from 10% to 30%** — make it actually hurt\n\n3. **Change explore during combat behavior:**\n   - Currently: `explore` during combat triggers stuck detector → free combat win\n   - New: `explore` during combat returns error message: \"You're in combat! Use: attack, negotiate, flee, or intimidate. Type 'status' for details.\"\n   - Do NOT count explore-during-combat toward stuck detection\n\n4. **Add `STUCK_COMBAT_THRESHOLD` constant** (default 7) separate from general `STUCK_REPEAT_THRESHOLD`\n\n**Files:** `apps/network/src/games/rpg-engine.ts`, `apps/network/src/environments/rpg.ts` (explore handler)\n**Tests:** Update stuck detection tests, add test for explore-during-combat rejection, verify graduated hint system\n**Validation:** `bun run check-types && bun run test`",
       "priority": 82,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run typecheck && bun run test",
       "acceptanceCriteria": [
         "explore during combat returns error, does not trigger stuck detection",
@@ -806,8 +806,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 72,
-    "lastIteration": "2026-02-11T03:35:06.759Z"
+    "totalIterations": 73,
+    "lastIteration": "2026-02-11T04:03:43.597Z"
   },
   "totalStories": 11
 }

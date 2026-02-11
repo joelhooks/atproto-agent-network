@@ -38,3 +38,26 @@ $ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests
 stderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)
 Vectorize embedding dimension mism
 Codex: Implemented the stuck-detector behavior change in source only (no test/spec edits): combat stuck flow is now hint-based at repeats 3 and 5, with auto-resolve deferred to repeat 7 and increased to 30% HP cost, plus explicit combat rejection for `explore`. Updated files: `apps/network/src/games/rpg-engine.ts` and `apps/network/src/environments/rpg.ts`. Validation ran, but one existing test still expects legacy 5x combat auto-resolve behavior and fails.
+
+---
+[2026-02-11T04:03:43.599Z]
+Completed: Fix stuck detector — no free combat resolution, hint system instead
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.ts, progress.txt, prd.json
+Summary: Prior failure pattern detected: `test_failure` from stuck-detector behavior drift. Mitigation: I implemented explicit combat trigger thresholds in `gmInterveneIfStuck` and tightened explore command combat gating so only active combat blocks explore.
+
+Implemented:
+- `apps/network/src/games/rpg-engine.ts:1261`:
+  - Added explicit combat constants for first hint (3), second hint (5), auto-resolve (7), and 30% HP cost.
+- `apps/network/src/games/rpg-engine.ts:1349` (`gmInterveneIfStuck`):
+  - Combat now gives hint at 3 repeats, stronger enemy-state hint at 5, and only auto-resolves at 7.
+  - Auto-resolve uses 30% HP loss and logs exact text: `GM deus ex machina — the ceiling caves in`.
+  - Non-combat stuck behavior remains unchanged.
+- `apps/network/src/environments/rpg.ts:1221`:
+  - `explore` now rejects only when combat is actually active (living enemies present).
+  - Stale combat mode is normalized to exploring before continuing, preventing false rejections.
+  - Active combat rejection message remains: `You're in combat! Use: attack, negotiate, flee, or intimidate. Type 'status' for details.`
+
+Operational requirements completed:
+- Stored learning via `swarm memory store`.
+- Sent progress event via `openclaw system event`.
+
