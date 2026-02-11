@@ -187,6 +187,239 @@ function withDeprecationHeaders(response: Response, replacementPath: string): Re
   })
 }
 
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readTimestampMs(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.length > 0) {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value)
+      out.push(value)
+    }
+  }
+  return out
+}
+
+type ParsedToolResult = {
+  name: string
+  durationMs: number
+}
+
+type ParsedLoopStep = {
+  timestamp: number | null
+  durationMs: number
+  toolResults: ParsedToolResult[]
+  toolCallNames: string[]
+}
+
+type ParsedLoopTranscript = {
+  startedAt: number
+  totalDurationMs: number
+  totalSteps: number
+  totalToolCalls: number
+  model: string | null
+  steps: ParsedLoopStep[]
+}
+
+function parseToolResults(value: unknown): ParsedToolResult[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+      const record = entry as Record<string, unknown>
+      const name = typeof record.name === 'string' && record.name.length > 0 ? record.name : null
+      if (!name) return null
+      const durationMs = readFiniteNumber(record.durationMs) ?? 0
+      return { name, durationMs }
+    })
+    .filter((entry): entry is ParsedToolResult => entry !== null)
+}
+
+function parseToolCallNames(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  const response = value as Record<string, unknown>
+  if (!Array.isArray(response.toolCalls)) return []
+
+  return response.toolCalls
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+      const name = (entry as Record<string, unknown>).name
+      return typeof name === 'string' && name.length > 0 ? name : null
+    })
+    .filter((name): name is string => name !== null)
+}
+
+function parseLoopStep(value: unknown): ParsedLoopStep | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const step = value as Record<string, unknown>
+
+  const durationMs = readFiniteNumber(step.durationMs) ?? 0
+  const toolResults = parseToolResults(step.toolResults)
+  const toolCallNames = uniqueStrings([
+    ...parseToolCallNames(step.modelResponse),
+    ...toolResults.map((result) => result.name),
+  ])
+
+  return {
+    timestamp: readTimestampMs(step.timestamp),
+    durationMs,
+    toolResults,
+    toolCallNames,
+  }
+}
+
+function parseLoopTranscript(value: unknown): ParsedLoopTranscript | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const transcript = value as Record<string, unknown>
+
+  const stepsRaw = Array.isArray(transcript.steps) ? transcript.steps : []
+  const steps = stepsRaw.map(parseLoopStep).filter((step): step is ParsedLoopStep => step !== null)
+  if (steps.length === 0 && readFiniteNumber(transcript.totalDurationMs) == null) return null
+
+  const startedAt =
+    readTimestampMs(transcript.startedAt) ??
+    steps[0]?.timestamp ??
+    Date.now()
+
+  const totalDurationMs =
+    readFiniteNumber(transcript.totalDurationMs) ??
+    steps.reduce((total, step) => total + step.durationMs, 0)
+
+  const totalToolCalls =
+    readFiniteNumber(transcript.totalToolCalls) ??
+    steps.reduce((total, step) => total + step.toolCallNames.length, 0)
+
+  const totalSteps =
+    readFiniteNumber(transcript.totalSteps) ??
+    steps.length
+
+  return {
+    startedAt,
+    totalDurationMs,
+    totalToolCalls,
+    totalSteps,
+    model: typeof transcript.model === 'string' ? transcript.model : null,
+    steps,
+  }
+}
+
+function parseActionOutcomes(value: unknown): Array<{ success: boolean }> {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+      const success = (entry as Record<string, unknown>).success
+      return typeof success === 'boolean' ? { success } : null
+    })
+    .filter((entry): entry is { success: boolean } => entry !== null)
+}
+
+function parseLoopStatus(value: unknown): { loopRunning: boolean; loopCount: number | null; nextAlarm: number | null } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { loopRunning: false, loopCount: null, nextAlarm: null }
+  }
+
+  const status = value as Record<string, unknown>
+  return {
+    loopRunning: Boolean(status.loopRunning),
+    loopCount: readFiniteNumber(status.loopCount),
+    nextAlarm: readTimestampMs(status.nextAlarm),
+  }
+}
+
+function parseLastError(value: unknown): {
+  category: string
+  ts: number
+  streak: number | null
+  backoffMs: number | null
+  lastPhase: string | null
+  lastMessage: string | null
+} | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const record = value as Record<string, unknown>
+  const category =
+    typeof record.category === 'string' && record.category.length > 0
+      ? record.category
+      : 'unknown'
+  const ts = readTimestampMs(record.ts) ?? readTimestampMs(record.timestamp) ?? readTimestampMs(record.at) ?? 0
+
+  return {
+    category,
+    ts,
+    streak: readFiniteNumber(record.streak),
+    backoffMs: readFiniteNumber(record.backoffMs),
+    lastPhase: typeof record.lastPhase === 'string' ? record.lastPhase : null,
+    lastMessage: typeof record.lastMessage === 'string' ? record.lastMessage : null,
+  }
+}
+
+function buildDecisionTrace(debugPayload: unknown): {
+  startedAt: number
+  endedAt: number
+  totalDurationMs: number
+  totalSteps: number
+  totalToolCalls: number
+  model: string | null
+  chain: Array<{
+    phase: 'observe' | 'think' | 'act' | 'reflect'
+    at: number
+    durationMs: number | null
+    toolCalls?: string[]
+  }>
+} | null {
+  if (!debugPayload || typeof debugPayload !== 'object' || Array.isArray(debugPayload)) return null
+  const debug = debugPayload as Record<string, unknown>
+  const transcript = parseLoopTranscript(debug.loopTranscript)
+  if (!transcript) return null
+
+  const actDurationMs = transcript.steps.reduce(
+    (total, step) => total + step.toolResults.reduce((stepTotal, tool) => stepTotal + tool.durationMs, 0),
+    0
+  )
+  const stepDurationMs = transcript.steps.reduce((total, step) => total + step.durationMs, 0)
+  const thinkDurationMs = Math.max(0, stepDurationMs - actDurationMs)
+  const totalDurationMs = transcript.totalDurationMs > 0 ? transcript.totalDurationMs : stepDurationMs
+  const startedAt = transcript.startedAt
+  const endedAt = startedAt + totalDurationMs
+  const reflectAt = readTimestampMs((debug.lastReflection as Record<string, unknown> | null | undefined)?.at) ?? endedAt
+  const reflectDurationMs = reflectAt > endedAt ? reflectAt - endedAt : 0
+  const toolCalls = uniqueStrings(transcript.steps.flatMap((step) => step.toolCallNames))
+
+  return {
+    startedAt,
+    endedAt,
+    totalDurationMs,
+    totalSteps: transcript.totalSteps,
+    totalToolCalls: transcript.totalToolCalls,
+    model: transcript.model,
+    chain: [
+      { phase: 'observe', at: startedAt, durationMs: null },
+      { phase: 'think', at: startedAt, durationMs: thinkDurationMs },
+      { phase: 'act', at: startedAt + thinkDurationMs, durationMs: actDurationMs, toolCalls },
+      { phase: 'reflect', at: reflectAt, durationMs: reflectDurationMs },
+    ],
+  }
+}
+
+async function fetchAgentJson(agent: DurableObjectStub, path: string): Promise<unknown | null> {
+  const response = await agent.fetch(new Request(`https://agent${path}`))
+  if (!response.ok) return null
+  return response.json().catch(() => null)
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -376,6 +609,41 @@ export default {
               return Response.json(payload)
             },
             { route: 'network.agents.root', request }
+          )
+        }
+
+        const traceMatch = normalizedPathname.match(/^\/agents\/([^/]+)\/trace$/)
+        if (traceMatch) {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'GET') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const agentName = decodeURIComponent(traceMatch[1] ?? '')
+              if (!agentName) {
+                return new Response('Agent name required', { status: 400 })
+              }
+
+              const registered = await getAgentRegistryRow(env.DB, agentName)
+              if (!registered) {
+                return Response.json({ error: 'Agent not found' }, { status: 404 })
+              }
+
+              const agentId = env.AGENTS.idFromName(agentName)
+              const agent = env.AGENTS.get(agentId)
+              const debugPayload = await fetchAgentJson(agent, `/agents/${encodeURIComponent(agentName)}/debug`)
+              const trace = buildDecisionTrace(debugPayload)
+              if (!trace) {
+                return Response.json({ error: 'Trace not available' }, { status: 404 })
+              }
+
+              return Response.json({
+                agent: agentName,
+                trace,
+              })
+            },
+            { route: 'network.agents.trace', request }
           )
         }
 
@@ -655,17 +923,41 @@ export default {
                 typeof (row as any).type === 'string' && (row as any).type.trim().length > 0
                   ? (row as any).type
                   : inferEnvironmentTypeFromId(String((row as any).id))
+              const players = safeJsonParseArray((row as any).players)
+
+              let debugView: Record<string, unknown> | null = null
+              const environment = getEnvironment(rowType)
+              if (environment?.debugView) {
+                try {
+                  const rendered = await environment.debugView({
+                    id: String((row as any).id),
+                    type: rowType,
+                    hostAgent: typeof (row as any).host_agent === 'string' ? (row as any).host_agent : null,
+                    phase: typeof (row as any).phase === 'string' ? (row as any).phase : null,
+                    players,
+                    winner: typeof (row as any).winner === 'string' ? (row as any).winner : null,
+                    state,
+                  })
+                  debugView =
+                    rendered && typeof rendered === 'object' && !Array.isArray(rendered)
+                      ? (rendered as Record<string, unknown>)
+                      : { value: rendered ?? null }
+                } catch (error) {
+                  debugView = { error: error instanceof Error ? error.message : String(error) }
+                }
+              }
 
               return Response.json({
                 id: (row as any).id,
                 type: rowType,
                 hostAgent: (row as any).host_agent,
                 phase: (row as any).phase,
-                players: safeJsonParseArray((row as any).players),
+                players,
                 winner: (row as any).winner ?? null,
                 createdAt: (row as any).created_at,
                 updatedAt: (row as any).updated_at,
                 state,
+                debugView,
               })
             },
             { route: 'network.environments.detail', request }
@@ -748,6 +1040,177 @@ export default {
                     }
                   })
                 )
+
+                return Response.json({ agents })
+              }
+
+              if (normalizedPathname === '/admin/errors') {
+                if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+                const registry = await listAgentRegistryRows(env.DB)
+                const grouped = new Map<
+                  string,
+                  {
+                    category: string
+                    lastSeenTs: number
+                    agents: Array<{
+                      name: string
+                      did: string
+                      ts: number
+                      streak: number | null
+                      backoffMs: number | null
+                      lastPhase: string | null
+                      lastMessage: string | null
+                    }>
+                  }
+                >()
+
+                await Promise.all(
+                  registry.map(async (row) => {
+                    try {
+                      const agentId = env.AGENTS.idFromName(row.name)
+                      const agent = env.AGENTS.get(agentId)
+                      const payload = await fetchAgentJson(agent, `/agents/${encodeURIComponent(row.name)}/debug`)
+                      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+
+                      const record = payload as Record<string, unknown>
+                      const lastError = parseLastError(record.lastError)
+                      if (!lastError) return
+
+                      const category = lastError.category
+                      const bucket = grouped.get(category) ?? {
+                        category,
+                        lastSeenTs: 0,
+                        agents: [],
+                      }
+
+                      bucket.lastSeenTs = Math.max(bucket.lastSeenTs, lastError.ts)
+                      bucket.agents.push({
+                        name: row.name,
+                        did: row.did,
+                        ts: lastError.ts,
+                        streak: lastError.streak ?? readFiniteNumber(record.consecutiveErrors),
+                        backoffMs: lastError.backoffMs,
+                        lastPhase: lastError.lastPhase,
+                        lastMessage: lastError.lastMessage,
+                      })
+
+                      grouped.set(category, bucket)
+                    } catch {
+                      // Ignore per-agent failures so one bad DO doesn't block aggregated diagnostics.
+                    }
+                  })
+                )
+
+                const groups = Array.from(grouped.values())
+                  .map((entry) => ({
+                    category: entry.category,
+                    count: entry.agents.length,
+                    lastSeenAt: entry.lastSeenTs > 0 ? new Date(entry.lastSeenTs).toISOString() : null,
+                    agents: entry.agents.sort((a, b) => {
+                      if (a.ts !== b.ts) return b.ts - a.ts
+                      return a.name.localeCompare(b.name)
+                    }),
+                    _lastSeenTs: entry.lastSeenTs,
+                  }))
+                  .sort((a, b) => {
+                    if (a._lastSeenTs !== b._lastSeenTs) return b._lastSeenTs - a._lastSeenTs
+                    return a.category.localeCompare(b.category)
+                  })
+                  .map(({ _lastSeenTs, ...entry }) => entry)
+
+                return Response.json({
+                  groups,
+                  totalGroups: groups.length,
+                  totalErrors: groups.reduce((total, group) => total + group.count, 0),
+                })
+              }
+
+              if (normalizedPathname === '/admin/loops') {
+                if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+                const filterName = url.searchParams.get('agent')?.trim()
+                const registry = await listAgentRegistryRows(env.DB)
+                const selected = filterName
+                  ? registry.filter((row) => row.name === filterName)
+                  : registry
+
+                if (filterName && selected.length === 0) {
+                  return Response.json({ error: 'Agent not found' }, { status: 404 })
+                }
+
+                const agents = await Promise.all(
+                  selected.map(async (row) => {
+                    try {
+                      const agentId = env.AGENTS.idFromName(row.name)
+                      const agent = env.AGENTS.get(agentId)
+                      const encodedName = encodeURIComponent(row.name)
+
+                      const [loopStatusPayload, debugPayload, analyticsPayload] = await Promise.all([
+                        fetchAgentJson(agent, `/agents/${encodedName}/loop/status`),
+                        fetchAgentJson(agent, `/agents/${encodedName}/debug`),
+                        fetchAgentJson(agent, '/__internal/analytics'),
+                      ])
+
+                      const loopStatus = parseLoopStatus(loopStatusPayload)
+                      const debugRecord =
+                        debugPayload && typeof debugPayload === 'object' && !Array.isArray(debugPayload)
+                          ? (debugPayload as Record<string, unknown>)
+                          : null
+                      const analyticsRecord =
+                        analyticsPayload && typeof analyticsPayload === 'object' && !Array.isArray(analyticsPayload)
+                          ? (analyticsPayload as Record<string, unknown>)
+                          : null
+
+                      const transcript = parseLoopTranscript(debugRecord?.loopTranscript)
+                      const outcomes = parseActionOutcomes(analyticsRecord?.actionOutcomes)
+                      const successfulOutcomes = outcomes.filter((entry) => entry.success).length
+                      const successRate =
+                        outcomes.length > 0 ? Number((successfulOutcomes / outcomes.length).toFixed(3)) : null
+
+                      return {
+                        name: row.name,
+                        did: row.did,
+                        loopRunning: loopStatus.loopRunning,
+                        loopCount: loopStatus.loopCount,
+                        nextAlarm: loopStatus.nextAlarm,
+                        avgDurationMs: transcript?.totalDurationMs ?? null,
+                        toolCallsPerLoop:
+                          transcript?.totalToolCalls ??
+                          (loopStatus.loopCount && loopStatus.loopCount > 0
+                            ? Number((outcomes.length / loopStatus.loopCount).toFixed(3))
+                            : null),
+                        successRate,
+                        sampleSize: outcomes.length,
+                        consecutiveErrors:
+                          readFiniteNumber(debugRecord?.consecutiveErrors) ??
+                          readFiniteNumber(analyticsRecord?.consecutiveErrors),
+                      }
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : String(error)
+                      return {
+                        name: row.name,
+                        did: row.did,
+                        loopRunning: false,
+                        loopCount: null,
+                        nextAlarm: null,
+                        avgDurationMs: null,
+                        toolCallsPerLoop: null,
+                        successRate: null,
+                        sampleSize: 0,
+                        consecutiveErrors: null,
+                        error: message,
+                      }
+                    }
+                  })
+                )
+
+                agents.sort((a, b) => {
+                  const aDuration = a.avgDurationMs ?? -1
+                  const bDuration = b.avgDurationMs ?? -1
+                  if (aDuration !== bDuration) return bDuration - aDuration
+                  return a.name.localeCompare(b.name)
+                })
 
                 return Response.json({ agents })
               }

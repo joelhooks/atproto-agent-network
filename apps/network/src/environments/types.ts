@@ -19,6 +19,16 @@ export type EnvironmentContext = {
   saveCharacter?: (character: unknown) => Promise<void>
 }
 
+export type EnvironmentDebugInput = {
+  id: string
+  type: string
+  hostAgent: string | null
+  phase: string | null
+  players: string[]
+  winner: string | null
+  state: unknown
+}
+
 export interface AgentEnvironment {
   type: string
   label: string
@@ -41,4 +51,6 @@ export interface AgentEnvironment {
   getPhaseMachine?: (ctx: EnvironmentContext) => PhaseMachine | null | Promise<PhaseMachine | null>
   /** Return allowed tools for an agent in the current phase, or null for no restriction */
   getPhaseTools?: (agentName: string, ctx: EnvironmentContext) => string[] | null | Promise<string[] | null>
+  /** Optional environment-specific observability payload for `/environments/:id` debug dumps. */
+  debugView?: (input: EnvironmentDebugInput) => Record<string, unknown> | Promise<Record<string, unknown>>
 }

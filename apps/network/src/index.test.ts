@@ -1042,6 +1042,258 @@ describe('admin analytics endpoint', () => {
   })
 })
 
+describe('admin observability endpoints', () => {
+  it('GET /admin/errors aggregates agent errors by category and sorts groups by recency', async () => {
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+    await registerAgent(db, { name: 'bob', did: 'did:cf:bob' })
+    await registerAgent(db, { name: 'charlie', did: 'did:cf:charlie' })
+
+    const errorByAgent: Record<string, unknown> = {
+      alice: {
+        consecutiveErrors: 2,
+        lastError: {
+          ts: 1_700_000_002_000,
+          category: 'transient',
+          streak: 2,
+          backoffMs: 30_000,
+          lastPhase: 'think',
+          lastMessage: 'rate limited',
+        },
+      },
+      bob: {
+        consecutiveErrors: 1,
+        lastError: {
+          ts: 1_700_000_001_000,
+          category: 'persistent',
+          streak: 1,
+          backoffMs: 60_000,
+          lastPhase: 'config',
+          lastMessage: 'invalid model',
+        },
+      },
+      charlie: {
+        consecutiveErrors: 4,
+        lastError: {
+          ts: 1_700_000_003_000,
+          category: 'transient',
+          streak: 4,
+          backoffMs: 60_000,
+          lastPhase: 'act',
+          lastMessage: 'tool timed out',
+        },
+      },
+    }
+
+    const env = createHealthEnv({
+      DB: db,
+      AGENTS: {
+        idFromName: vi.fn((name: string) => name),
+        get: vi.fn((id: unknown) => {
+          const name = String(id)
+          return {
+            fetch: vi.fn(async (req: Request) => {
+              const url = new URL(req.url)
+              if (url.pathname.endsWith('/debug')) {
+                return Response.json(errorByAgent[name] ?? { consecutiveErrors: 0, lastError: null })
+              }
+              return new Response('Not found', { status: 404 })
+            }),
+          }
+        }),
+      },
+    })
+
+    const { default: worker } = await import('./index')
+    const res = await worker.fetch(
+      new Request('https://example.com/admin/errors', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: 'transient', count: 2 }),
+        expect.objectContaining({ category: 'persistent', count: 1 }),
+      ])
+    )
+    expect(body.groups[0].category).toBe('transient')
+    expect(body.groups[0].agents.map((agent: any) => agent.name)).toEqual(['charlie', 'alice'])
+  })
+
+  it('GET /admin/loops supports agent filtering and returns loop metrics', async () => {
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+    await registerAgent(db, { name: 'bob', did: 'did:cf:bob' })
+
+    const env = createHealthEnv({
+      DB: db,
+      AGENTS: {
+        idFromName: vi.fn((name: string) => name),
+        get: vi.fn((id: unknown) => {
+          const name = String(id)
+          return {
+            fetch: vi.fn(async (req: Request) => {
+              const url = new URL(req.url)
+              if (url.pathname.endsWith('/debug')) {
+                if (name === 'alice') {
+                  return Response.json({
+                    consecutiveErrors: 2,
+                    loopTranscript: {
+                      startedAt: 1_700_000_000_000,
+                      totalDurationMs: 42_000,
+                      totalSteps: 2,
+                      totalToolCalls: 3,
+                      model: 'moonshotai/kimi-k2.5',
+                      steps: [
+                        {
+                          step: 1,
+                          timestamp: 1_700_000_000_000,
+                          durationMs: 21_000,
+                          toolResults: [{ name: 'remember', durationMs: 3_000, resultPreview: 'ok' }],
+                        },
+                        {
+                          step: 2,
+                          timestamp: 1_700_000_021_000,
+                          durationMs: 21_000,
+                          toolResults: [{ name: 'message', durationMs: 2_000, resultPreview: 'ok' }],
+                        },
+                      ],
+                    },
+                  })
+                }
+                return Response.json({ consecutiveErrors: 0, loopTranscript: null })
+              }
+              if (url.pathname.endsWith('/loop/status')) {
+                return Response.json({
+                  loopRunning: true,
+                  loopCount: name === 'alice' ? 12 : 4,
+                  nextAlarm: 1_700_000_060_000,
+                })
+              }
+              if (url.pathname === '/__internal/analytics') {
+                return Response.json({
+                  actionOutcomes: name === 'alice'
+                    ? [
+                        { tool: 'remember', success: true, timestamp: 1_700_000_000_100 },
+                        { tool: 'message', success: false, timestamp: 1_700_000_000_200 },
+                      ]
+                    : [{ tool: 'observe', success: true, timestamp: 1_700_000_000_300 }],
+                })
+              }
+              return new Response('Not found', { status: 404 })
+            }),
+          }
+        }),
+      },
+    })
+
+    const { default: worker } = await import('./index')
+    const res = await worker.fetch(
+      new Request('https://example.com/admin/loops?agent=alice', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.agents).toHaveLength(1)
+    expect(body.agents[0]).toMatchObject({
+      name: 'alice',
+      loopCount: 12,
+      avgDurationMs: 42_000,
+      toolCallsPerLoop: 3,
+      successRate: 0.5,
+      consecutiveErrors: 2,
+    })
+  })
+})
+
+describe('agent trace endpoint', () => {
+  it('GET /agents/:name/trace returns observe→think→act→reflect chain with timing', async () => {
+    const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'alice', did: 'did:cf:alice' })
+
+    const env = createHealthEnv({
+      DB: db,
+      AGENTS: {
+        idFromName: vi.fn((name: string) => name),
+        get: vi.fn(() => ({
+          fetch: vi.fn(async (req: Request) => {
+            const url = new URL(req.url)
+            if (url.pathname.endsWith('/debug')) {
+              return Response.json({
+                loopTranscript: {
+                  startedAt: 1_700_000_000_000,
+                  totalDurationMs: 1_600,
+                  totalSteps: 2,
+                  totalToolCalls: 1,
+                  model: 'moonshotai/kimi-k2.5',
+                  steps: [
+                    {
+                      step: 1,
+                      timestamp: 1_700_000_000_000,
+                      durationMs: 1_000,
+                      modelResponse: {
+                        role: 'assistant',
+                        content: 'calling remember',
+                        toolCalls: [{ name: 'remember', arguments: { key: 'x' } }],
+                      },
+                      toolResults: [{ name: 'remember', durationMs: 200, resultPreview: '{"ok":true}' }],
+                    },
+                    {
+                      step: 2,
+                      timestamp: 1_700_000_001_000,
+                      durationMs: 500,
+                      modelResponse: { role: 'assistant', content: 'done' },
+                    },
+                  ],
+                },
+                lastReflection: { at: 1_700_000_002_000 },
+              })
+            }
+            return new Response('Not found', { status: 404 })
+          }),
+        })),
+      },
+    })
+
+    const { default: worker } = await import('./index')
+    const res = await worker.fetch(
+      new Request('https://example.com/agents/alice/trace', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({
+      agent: 'alice',
+      trace: expect.objectContaining({
+        totalDurationMs: 1_600,
+        chain: expect.arrayContaining([
+          expect.objectContaining({ phase: 'observe' }),
+          expect.objectContaining({ phase: 'think' }),
+          expect.objectContaining({ phase: 'act' }),
+          expect.objectContaining({ phase: 'reflect' }),
+        ]),
+      }),
+    })
+
+    const phases = body.trace.chain.map((step: any) => step.phase)
+    expect(phases).toEqual(['observe', 'think', 'act', 'reflect'])
+    expect(body.trace.chain.find((step: any) => step.phase === 'act')).toMatchObject({
+      toolCalls: ['remember'],
+      durationMs: 200,
+    })
+  })
+})
+
 describe('agent internal endpoints', () => {
   it('requires admin auth for GET /agents/:name/__internal/analytics (should not be publicly readable)', async () => {
     const db = new D1MockDatabase()

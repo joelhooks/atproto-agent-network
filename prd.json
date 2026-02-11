@@ -881,7 +881,7 @@
       "title": "anet v2 — pure agent o11y and debugging CLI",
       "description": "Rethink anet as a pure agent observability and debugging CLI. NOT a game/env CLI. It answers: Are agents healthy? What are they thinking? Where are they stuck? What went wrong?\n\n**Keep/improve:**\n- `anet health` — agent health (errors, loop count, uptime)\n- `anet debug <agent>` — full debug dump\n- `anet transcript <agent>` — last loop transcript\n- `anet config <agent> [json]` — get/patch config\n- `anet deploy` — deploy worker\n- `anet reset/reset-all` — reset DOs\n\n**New o11y commands:**\n- `anet errors` — aggregate errors across all agents, grouped by category, sorted by recency\n- `anet loops [agent]` — loop performance: avg duration, tool calls per loop, success rate\n- `anet trace <agent>` — last decision chain: observe→think→act→reflect with timing\n- `anet slow` — find agents with degraded performance (>30s avg, increasing errors)\n- `anet stuck` — detect agents in error backoff or repeating same action\n\n**Environment views (generic):**\n- `anet envs` — list active environments (replaces `games`)\n- `anet env <id>` — dump env state (generic JSON, env provides its own debugView)\n- Environments register a `debugView()` on AgentEnvironment interface that returns structured o11y data. anet renders it without knowing RPG/Catan internals.\n\n**Remove RPG-specific commands from anet core:**\n- party, char, campaign, rpg, log → not agent o11y. Can live as separate convenience scripts.\n\n**Output:**\n- `--json` flag on all commands for scripting\n- Color-coded health (green/yellow/red via tput)\n- Compact tables for multi-agent views\n\n**New API endpoints needed:**\n- `GET /admin/errors` — aggregated errors across agents\n- `GET /admin/loops?agent=X` — loop performance metrics\n- `GET /agents/:name/trace` — last decision chain with timing\nAdd to `apps/network/src/index.ts`\n\n**Files:**\n- `~/.local/bin/anet` — CLI rewrite\n- `apps/network/src/index.ts` — new admin endpoints\n- `apps/network/src/environments/types.ts` — debugView on AgentEnvironment",
       "priority": 92,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/index.ts",
@@ -891,8 +891,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 79,
-    "lastIteration": "2026-02-11T15:04:26.648Z"
+    "totalIterations": 80,
+    "lastIteration": "2026-02-11T15:14:28.071Z"
   },
   "totalStories": 11
 }
