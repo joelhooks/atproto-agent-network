@@ -1319,6 +1319,7 @@ export const rpgEnvironment: AgentEnvironment = {
                 enemy.hp = Math.max(0, enemy.hp - dmg)
                 attacker.skills.attack = atk.nextSkill
                 text = `You strike the ${enemy.name} for ${dmg}. (${enemy.hp} HP left)`
+                game.log.push({ at: Date.now(), who: attackerName, what: `attack: hit ${enemy.name} for ${dmg} (${enemy.hp} HP left)` })
 
                 // XP rewards are accumulated into game state and applied to persistent characters at game end.
                 if (hpBefore > 0 && enemy.hp === 0) {
@@ -1332,6 +1333,7 @@ export const rpgEnvironment: AgentEnvironment = {
                 }
               } else {
                 text = `The ${enemy.name} avoids your attack.`
+                game.log.push({ at: Date.now(), who: attackerName, what: `attack: missed ${enemy.name}` })
               }
 
               // ALL living enemies counter-attack (action economy!)
@@ -1779,6 +1781,8 @@ export const rpgEnvironment: AgentEnvironment = {
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
+          game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `use_skill ${abilityName}: ${result.narrative.slice(0, 120)}` })
+
           return {
             content: toTextContent(result.narrative),
             details: { gameId, ability: abilityName, success: result.success, damage: result.damage, healed: result.healed },
@@ -1828,6 +1832,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
           advanceTurn(game)
 
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `cast_spell ${spell}: ${result.narrative.slice(0, 120)}` })
+
+          // Re-save after log update
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
