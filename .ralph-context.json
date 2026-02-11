@@ -5,14 +5,14 @@
       "title": "Wire real turbo scripts or remove turbo",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Prior failure pattern detected: **unknown**. Mitigation: run the validation suite without `| grep` first to confirm real Vitest pass/fail, then run the exact piped validation command; also complete the mandatory `swarm memory store ...` + `openclaw system event ...` steps so the iteration doesn’t get marked “unknown” due to missing side-effects."
+      "learnings": "Prior failure pattern detected: **unknown**. Mitigation: run the validation suite without `| grep` first to confirm real Vitest pass/fail, then run the exact piped validation command; also complete the mandatory `swarm memory store ...` + `openclaw system event ...` steps so the iteration doesn\u2019t get marked \u201cunknown\u201d due to missing side-effects."
     },
     {
       "id": "lexicon-validation",
       "title": "Wire up Zod lexicon validation at API boundaries",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Full test run is failing on pre-existing “sharing” tests (`EncryptedMemory.share/retrieveShared/listShared` and AgentDO `/share` + `/shared` routes). I’m implementing those missing pieces minimally so `pnpm vitest run --passWithNoTests` goes green again."
+      "learnings": "Full test run is failing on pre-existing \u201csharing\u201d tests (`EncryptedMemory.share/retrieveShared/listShared` and AgentDO `/share` + `/shared` routes). I\u2019m implementing those missing pieces minimally so `pnpm vitest run --passWithNoTests` goes green again."
     },
     {
       "id": "memory-list-update-delete",
@@ -23,7 +23,7 @@
     },
     {
       "id": "shared-records",
-      "title": "Implement shared_records — encrypted record sharing between agents",
+      "title": "Implement shared_records \u2014 encrypted record sharing between agents",
       "status": "completed",
       "filesModified": [],
       "learnings": "Using skills `envelope-encryption`, `d1-patterns`, and `cloudflare-do` because this story touches record encryption formats, D1 persistence, and AgentDO HTTP routes for sharing.`"
@@ -33,7 +33,7 @@
       "title": "Implement relay agent registry and public key directory",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Now that the tests are in place and failing, I’m implementing the RelayDO `/agents` + `/keys/:did` registry directory (backed by DO storage), and wiring AgentDO to (a) register its keys with the relay and (b) expose `/share` + `/shared` routes using the existing `EncryptedMemory.share/retrieveShared/listShared` APIs."
+      "learnings": "Now that the tests are in place and failing, I\u2019m implementing the RelayDO `/agents` + `/keys/:did` registry directory (backed by DO storage), and wiring AgentDO to (a) register its keys with the relay and (b) expose `/share` + `/shared` routes using the existing `EncryptedMemory.share/retrieveShared/listShared` APIs."
     },
     {
       "id": "agent-inbox",
@@ -68,7 +68,7 @@
       "title": "Install Vitest and create root config",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Vitest + root config are already in place, and the story’s validation now passes.\n\n- Root config: `vitest.config.ts` (multi-project via `test.projects`)\n- Vitest install: `package.json` includes `vitest` + `@vitest/coverage-v8`\n- Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)\n\n**Files modified (and why)**\n- None for this story’s code/config (already implemented in existing commits)."
+      "learnings": "Vitest + root config are already in place, and the story\u2019s validation now passes.\n\n- Root config: `vitest.config.ts` (multi-project via `test.projects`)\n- Vitest install: `package.json` includes `vitest` + `@vitest/coverage-v8`\n- Validation: `pnpm test --pass-with-no-tests ... || pnpm vitest run --passWithNoTests` runs and passes (`pnpm vitest run --passWithNoTests` executed successfully)\n\n**Files modified (and why)**\n- None for this story\u2019s code/config (already implemented in existing commits)."
     },
     {
       "id": "identity-tests",
@@ -82,7 +82,7 @@
       "title": "Add turbo task for test",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Validation passes already: `pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|✓|PASS)' && echo PASS` prints `PASS`.\n\n- **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `\"test\": \"vitest run\"`, so Turbo can run tests for `@atproto-agent/core`.\n- **Tests added/modified:** None.\n- **What I learned:** `pnpm turbo test --filter=@atproto-agent/core` runs the filtered package’s `test` script and Vitest’s stan"
+      "learnings": "Validation passes already: `pnpm turbo test --filter=@atproto-agent/core 2>&1 | grep -qE '(passed|\u2713|PASS)' && echo PASS` prints `PASS`.\n\n- **Files modified (and why):** None. `turbo.json` already defines a `test` task, and `packages/core/package.json` already has `\"test\": \"vitest run\"`, so Turbo can run tests for `@atproto-agent/core`.\n- **Tests added/modified:** None.\n- **What I learned:** `pnpm turbo test --filter=@atproto-agent/core` runs the filtered package\u2019s `test` script and Vitest\u2019s stan"
     },
     {
       "id": "test-utilities",
@@ -96,7 +96,7 @@
       "title": "Add CI workflow (GitHub Actions)",
       "status": "completed",
       "filesModified": [],
-      "learnings": "Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.\n\n**Files modified (and why)**\n- None; `.github/workflows/ci.yml` already exists and runs `pnpm test` on `push`/`pull_request`.\n\n**Tests added/modified**\n- None.\n\n**What I learned**\n- The repo’s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config.ts` (covers `packages/*` and `apps/*`).\n\n**Gotchas**\n- Root `pnpm test` only runs Vitest if `vitest"
+      "learnings": "Validation: `test -f .github/workflows/ci.yml && echo PASS` => `PASS`.\n\n**Files modified (and why)**\n- None; `.github/workflows/ci.yml` already exists and runs `pnpm test` on `push`/`pull_request`.\n\n**Tests added/modified**\n- None.\n\n**What I learned**\n- The repo\u2019s CI can be a single `pnpm test` step because root `pnpm test` runs `vitest run --passWithNoTests` using the multi-project `vitest.config.ts` (covers `packages/*` and `apps/*`).\n\n**Gotchas**\n- Root `pnpm test` only runs Vitest if `vitest"
     },
     {
       "id": "pre-commit-hooks",
@@ -110,7 +110,7 @@
       "title": "Implement generateX25519Keypair",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`generateX25519Keypair` is already implemented and the story’s validation passes.\n\n- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'` (pass)\n- **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)\n- **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)\n- **What I learned:** Node WebCrypto can generate an extractable X25519 `CryptoKeyPair` via `crypto.subtle.genera"
+      "learnings": "`generateX25519Keypair` is already implemented and the story\u2019s validation passes.\n\n- **Validation:** `pnpm vitest run packages/core/src/crypto.test.ts -t 'generateX25519Keypair'` (pass)\n- **Files modified (and why):** None (implementation already present in `packages/core/src/crypto.ts`)\n- **Tests added/modified:** None (coverage already present in `packages/core/src/crypto.test.ts`)\n- **What I learned:** Node WebCrypto can generate an extractable X25519 `CryptoKeyPair` via `crypto.subtle.genera"
     },
     {
       "id": "generate-ed25519",
@@ -145,7 +145,7 @@
       "title": "Create D1 schema for encrypted records",
       "status": "completed",
       "filesModified": [],
-      "learnings": "### Technical Discovery\n`apps/network/src/schema.test.ts` normali\n`apps/network/src/schema.test.ts` normali\nThe command in AGENTS.md, `swarm hive cells --status open`, is outdated; use `swarm cells --status open` instead (the former errors with “Unknown command: hive”)."
+      "learnings": "### Technical Discovery\n`apps/network/src/schema.test.ts` normali\n`apps/network/src/schema.test.ts` normali\nThe command in AGENTS.md, `swarm hive cells --status open`, is outdated; use `swarm cells --status open` instead (the former errors with \u201cUnknown command: hive\u201d)."
     },
     {
       "id": "pi-agent-wrapper",
@@ -159,7 +159,7 @@
       "title": "Implement EncryptedMemory class in packages/agent",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`packages/agent/src/memory.ts` implements envelope-encrypted storage using `packages/core/src/crypto.ts` (`generateDek`/`generateNonce`, `encryptWithDek`/`decryptWithDek`, and `encryptDekForPublicKey`/`decryptDekWithPrivateKey`) and stores ciphertext + encrypted DEK in `records`, with sharing via `shared_records` by re-encrypting the DEK for the recipient. Updates intentionally reuse the existing encrypted DEK so existing shares keep decrypting after updates.\nIf you change the DEK on update, any existing `shared_records.encrypted_dek` becomes invalid; the current implementation avoids this by decrypting and reusing the original DEK during `update()`. Also, in this runner you need to poll long-running commands (like Vitest) to avoid the “no output captured” failure mode."
+      "learnings": "`packages/agent/src/memory.ts` implements envelope-encrypted storage using `packages/core/src/crypto.ts` (`generateDek`/`generateNonce`, `encryptWithDek`/`decryptWithDek`, and `encryptDekForPublicKey`/`decryptDekWithPrivateKey`) and stores ciphertext + encrypted DEK in `records`, with sharing via `shared_records` by re-encrypting the DEK for the recipient. Updates intentionally reuse the existing encrypted DEK so existing shares keep decrypting after updates.\nIf you change the DEK on update, any existing `shared_records.encrypted_dek` becomes invalid; the current implementation avoids this by decrypting and reusing the original DEK during `update()`. Also, in this runner you need to poll long-running commands (like Vitest) to avoid the \u201cno output captured\u201d failure mode."
     },
     {
       "id": "wire-up-agentdo",
@@ -173,7 +173,7 @@
       "title": "Setup integration test harness (D1 mock)",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`vitest.config.integration.ts` is a standalone Vitest config that runs only `packages/*/src/**/*.integration.test.ts` and `apps/*/src/**/*.integration.test.ts`; the current integration suite includes `packages/core/src/d1-mock.integration.test.ts` which validates `D1MockDatabase` works with the repo’s prepared-statement patterns.\nThe story validation uses a `| grep ...` pipe, which can hide the underlying Vitest failure output; when debugging, run `pnpm vitest run --config vitest.config.integration.ts` without piping to see full errors and the real exit code."
+      "learnings": "`vitest.config.integration.ts` is a standalone Vitest config that runs only `packages/*/src/**/*.integration.test.ts` and `apps/*/src/**/*.integration.test.ts`; the current integration suite includes `packages/core/src/d1-mock.integration.test.ts` which validates `D1MockDatabase` works with the repo\u2019s prepared-statement patterns.\nThe story validation uses a `| grep ...` pipe, which can hide the underlying Vitest failure output; when debugging, run `pnpm vitest run --config vitest.config.integration.ts` without piping to see full errors and the real exit code."
     },
     {
       "id": "e2e-test-harness",
@@ -201,7 +201,7 @@
       "title": "Create production-ready wrangler.toml with real resource placeholders",
       "status": "completed",
       "filesModified": [],
-      "learnings": "### Technical Discovery\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`database_id = \"REPLACE_WITH_D1_ID\"` is intentionally non-real; any `wrangler deploy` (including `--dry-run`) may fail until it’s replaced with the actual D1 UUID from `wrangler d1 create`."
+      "learnings": "### Technical Discovery\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`apps/network/src/index.ts` expects bindings named `AGENTS`, `RELAY`, `DB`, `BLOBS`, `VECTORI\n`database_id = \"REPLACE_WITH_D1_ID\"` is intentionally non-real; any `wrangler deploy` (including `--dry-run`) may fail until it\u2019s replaced with the actual D1 UUID from `wrangler d1 create`."
     },
     {
       "id": "health-endpoint",
@@ -215,49 +215,49 @@
       "title": "Verify wrangler build succeeds locally",
       "status": "completed",
       "filesModified": [],
-      "learnings": "### Technical Discovery\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\n\n### Gotcha for Next Iteration\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected “Total Upload” / “--dry-run: exiting now.” output, even with the “multiple environments defined” warning coming from `apps/network/wrangler.toml`.\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `"
+      "learnings": "### Technical Discovery\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected \u201cTotal Upload\u201d / \u201c--dry-run: exiting now.\u201d output, even with the \u201cmultiple environments defined\u201d warning coming from `apps/network/wrangler.toml`.\n\n### Gotcha for Next Iteration\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `\n`apps/network` builds successfully via `npx wrangler deploy --dry-run --outdir /tmp/agent-network-dist` and emits the expected \u201cTotal Upload\u201d / \u201c--dry-run: exiting now.\u201d output, even with the \u201cmultiple environments defined\u201d warning coming from `apps/network/wrangler.toml`.\nIf the validation is piped through `grep -q`, rerun the same `wrangler deploy --dry-run` unpiped first to see real config/build errors. Also, when running `swarm memory store ...` from `"
     },
     {
       "id": "github-actions-deploy",
       "title": "Create GitHub Actions deploy workflow",
       "status": "completed",
       "filesModified": [],
-      "learnings": "GitHub Actions can deploy this monorepo Worker via `cloudflare/wrangler-action@v3` by setting `workingDirectory: apps/network` and selecting the Wrangler env with a `workflow_dispatch` input in `.github/workflows/deploy.yml`.\nThe story validation is silent on failure; if it doesn’t print `PASS`, immediately `ls -la .github/workflows` and `rg -n 'wrangler-action' .github/workflows/deploy.yml` to see what’s wrong (don’t debug via quiet greps/pipes)."
+      "learnings": "GitHub Actions can deploy this monorepo Worker via `cloudflare/wrangler-action@v3` by setting `workingDirectory: apps/network` and selecting the Wrangler env with a `workflow_dispatch` input in `.github/workflows/deploy.yml`.\nThe story validation is silent on failure; if it doesn\u2019t print `PASS`, immediately `ls -la .github/workflows` and `rg -n 'wrangler-action' .github/workflows/deploy.yml` to see what\u2019s wrong (don\u2019t debug via quiet greps/pipes)."
     },
     {
       "id": "smoke-test-script",
       "title": "Create post-deploy smoke test script",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`apps/network/src/index.ts` exposes unauthenticated `GET /health` returning `{ status: \"ok\"|\"error\", missing: string[], uptimeMs }`; the smoke test should assert both HTTP 200 and the JSON fields, not just a 200.\nDon’t rely on brittle `grep`-only checks of JSON; prefer parsing (Node is usually available in CI), and print the response body on failure to avoid “no output captured” debugging loops."
+      "learnings": "`apps/network/src/index.ts` exposes unauthenticated `GET /health` returning `{ status: \"ok\"|\"error\", missing: string[], uptimeMs }`; the smoke test should assert both HTTP 200 and the JSON fields, not just a 200.\nDon\u2019t rely on brittle `grep`-only checks of JSON; prefer parsing (Node is usually available in CI), and print the response body on failure to avoid \u201cno output captured\u201d debugging loops."
     },
     {
       "id": "story-mlde1mhv",
       "title": "Install Pi deps + replace AI SDK wrapper",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n\u2022 Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n\u2022 Running typecheck in 5 packages\n\u2022 Remote caching disabled\n@atp"
     },
     {
       "id": "story-mlde1tos",
       "title": "Agent config schema + DO storage",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`apps/network/src/agent.ts` implements config as a structured-cloneable `AgentConfig` stored in Durable Object storage under `config`, with defaults (`moonshotai/kimi-k2.5`, `google/gemini-2.0-flash-001`, `60000`) applied in `createDefaultConfig()`. `handleConfig()` supports GET and PATCH merge semantics, and `apps/network/src/agent-do.test.ts` asserts persistence across new `AgentDO` instances using the same fake storage.\nDurable Object storage values must be structured-cloneable; keep `AgentConfig` JSON-only (no `CryptoKey`, functions, class instances). Also, validate failures by running commands directly (avoid `| grep -q`), otherwise Turbo/Vitest output can be swallowed and misclassified as “no output captured”."
+      "learnings": "`apps/network/src/agent.ts` implements config as a structured-cloneable `AgentConfig` stored in Durable Object storage under `config`, with defaults (`moonshotai/kimi-k2.5`, `google/gemini-2.0-flash-001`, `60000`) applied in `createDefaultConfig()`. `handleConfig()` supports GET and PATCH merge semantics, and `apps/network/src/agent-do.test.ts` asserts persistence across new `AgentDO` instances using the same fake storage.\nDurable Object storage values must be structured-cloneable; keep `AgentConfig` JSON-only (no `CryptoKey`, functions, class instances). Also, validate failures by running commands directly (avoid `| grep -q`), otherwise Turbo/Vitest output can be swallowed and misclassified as \u201cno output captured\u201d."
     },
     {
       "id": "story-mlde2057",
       "title": "Pi session persistence in DO storage",
       "status": "completed",
       "filesModified": [],
-      "learnings": "`PiAgentWrapper` forwards `initialState.messages` directly from its constructor options, so `apps/network/src/agent.ts` must `loadSession()` before instantiating `PiAgentWrapper` to restore conversation history. Archiving overflow via `EncryptedMemory.store({ $type: 'agent.session.archive', messages })` ensures D1 rows remain encrypted (`public=0`, `encrypted_dek` set).\nDo not trim the session on DO init: trimming only during `saveSession()` is important (tests expect the overflow archive to contain the original oldest messages). Prior failure pattern detected: `test_failure`/“no output captured”. Mitigation: run unpiped, targeted `pnpm vitest run ...` while iterating to see real failures."
+      "learnings": "`PiAgentWrapper` forwards `initialState.messages` directly from its constructor options, so `apps/network/src/agent.ts` must `loadSession()` before instantiating `PiAgentWrapper` to restore conversation history. Archiving overflow via `EncryptedMemory.store({ $type: 'agent.session.archive', messages })` ensures D1 rows remain encrypted (`public=0`, `encrypted_dek` set).\nDo not trim the session on DO init: trimming only during `saveSession()` is important (tests expect the overflow archive to contain the original oldest messages). Prior failure pattern detected: `test_failure`/\u201cno output captured\u201d. Mitigation: run unpiped, targeted `pnpm vitest run ...` while iterating to see real failures."
     },
     {
       "id": "story-mlde2anm",
       "title": "Alarm-driven Pi agent loop",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n• Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n• Running typecheck in 5 packages\n• Remote caching disabled\n@atp"
+      "learnings": "[build_error] \n> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n\u2022 Packages in scope: @atproto-agent/agent, @atproto-agent/cli, @atproto-agent/core, @atproto-agent/dashboard, @atproto-agent/network\n\u2022 Running typecheck in 5 packages\n\u2022 Remote caching disabled\n@atp"
     },
     {
       "id": "story-4a-alarm-chain",
@@ -268,11 +268,11 @@
         "apps/network/src/index.ts",
         "apps/network/wrangler.toml"
       ],
-      "learnings": "Technical Discovery: `wrangler deploy` for `apps/network` can fail resolving Node builtins (e.g. \"http\", \"https\") under `nodejs_compat` unless `apps/network/wrangler.toml` uses `compatibility_date >= 2024-09-23`.\nAlso, `secrets lease` outputs JSON by default; use `--raw` when setting `CLOUDFLARE_API_TOKEN` (otherwise Wrangler gets an invalid Bearer header).\nGotcha: Prod verification of admin-protected routes depends on Cloudflare’s configured `ADMIN_TOKEN`; `secrets lease atproto-agents::admin_token` may not match what’s currently set in production, causing `401 Unauthorized` even when endpoints are correct.\nFiles Context: `apps/network/src/agent.ts`: Durable Object implementation (added alarm chain + loop start/stop/status routes and min interval clamp).\n`apps/network/src/index.ts`: Worker entrypoint that forwards `/agents/:name/*` to the AgentDO and enforces admin bearer auth.\n`apps/network/wrangler.toml`: Worker compatibility settings; `compatibility_date` impacts Node builtin resolution under `nodejs_compat` during deploy."
+      "learnings": "Technical Discovery: `wrangler deploy` for `apps/network` can fail resolving Node builtins (e.g. \"http\", \"https\") under `nodejs_compat` unless `apps/network/wrangler.toml` uses `compatibility_date >= 2024-09-23`.\nAlso, `secrets lease` outputs JSON by default; use `--raw` when setting `CLOUDFLARE_API_TOKEN` (otherwise Wrangler gets an invalid Bearer header).\nGotcha: Prod verification of admin-protected routes depends on Cloudflare\u2019s configured `ADMIN_TOKEN`; `secrets lease atproto-agents::admin_token` may not match what\u2019s currently set in production, causing `401 Unauthorized` even when endpoints are correct.\nFiles Context: `apps/network/src/agent.ts`: Durable Object implementation (added alarm chain + loop start/stop/status routes and min interval clamp).\n`apps/network/src/index.ts`: Worker entrypoint that forwards `/agents/:name/*` to the AgentDO and enforces admin bearer auth.\n`apps/network/wrangler.toml`: Worker compatibility settings; `compatibility_date` impacts Node builtin resolution under `nodejs_compat` during deploy."
     },
     {
       "id": "story-4b-observe",
-      "title": "4b: Observe phase — inbox + event collection",
+      "title": "4b: Observe phase \u2014 inbox + event collection",
       "status": "completed",
       "filesModified": [
         "prd.json",
@@ -282,11 +282,11 @@
         "apps/network/src/agent-do.test.ts",
         "apps/network/src/agent.ts"
       ],
-      "learnings": "Technical Discovery: `EncryptedMemory.update()` requires an `EncryptedMemoryRecord` with a guaranteed `$type`; in `apps/network/src/agent.ts` observe() you must cast the updated inbox record after verifying `$type === 'agent.comms.message'`, otherwise `@atproto-agent/network` typecheck fails with TS2345.\nGotcha: Production verification of admin-protected endpoints is currently blocked: `secrets lease atproto-agents::admin_token` yielded a token that still gets `401 Unauthorized` from `https://agent-network.joelhooks.workers.dev` (observed on 2026-02-08), so story-specific live tests that require auth can’t be completed until the secret store and the Worker `ADMIN_TOKEN` are aligned.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO runtime (alarm loop + new observe() + inbox processing + pendingEvents drain). `apps/network/src/agent-do.test.ts` is the Vitest suite asserting encrypted inbox semantics and now observe/alarm wiring."
+      "learnings": "Technical Discovery: `EncryptedMemory.update()` requires an `EncryptedMemoryRecord` with a guaranteed `$type`; in `apps/network/src/agent.ts` observe() you must cast the updated inbox record after verifying `$type === 'agent.comms.message'`, otherwise `@atproto-agent/network` typecheck fails with TS2345.\nGotcha: Production verification of admin-protected endpoints is currently blocked: `secrets lease atproto-agents::admin_token` yielded a token that still gets `401 Unauthorized` from `https://agent-network.joelhooks.workers.dev` (observed on 2026-02-08), so story-specific live tests that require auth can\u2019t be completed until the secret store and the Worker `ADMIN_TOKEN` are aligned.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO runtime (alarm loop + new observe() + inbox processing + pendingEvents drain). `apps/network/src/agent-do.test.ts` is the Vitest suite asserting encrypted inbox semantics and now observe/alarm wiring."
     },
     {
       "id": "story-4c-think-act-reflect",
-      "title": "4c: Think/Act/Reflect — Pi loop cycle",
+      "title": "4c: Think/Act/Reflect \u2014 Pi loop cycle",
       "status": "failed",
       "filesModified": [],
       "learnings": "[timeout] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
@@ -304,7 +304,7 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "[test_failure] • turbo 2.8.3\n\n⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]\nError: Transform failed with 1 error:\n/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected \")\" but found end "
+      "learnings": "[test_failure] \u2022 turbo 2.8.3\n\n\u23af\u23af\u23af\u23af\u23af\u23af Failed Suites 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |@atproto-agent/network| src/agent-do.test.ts [ apps/network/src/agent-do.test.ts ]\nError: Transform failed with 1 error:\n/home/joel/Code/joelhooks/atproto-agent-network/apps/network/src/agent-do.test.ts:1472:0: ERROR: Expected \")\" but found end "
     },
     {
       "id": "story-mlde2jqb",
@@ -321,7 +321,7 @@
         "apps/network/src/relay.ts",
         "packages/agent/src/agent.ts"
       ],
-      "learnings": "Technical Discovery: Pi AgentTool results are best represented as `{ content: TextContent[], details: any }` (LLM-facing vs UI-facing). For network message delivery, it’s cleaner to route through RelayDO so delivery + firehose fanout happen in one place: implement `POST /relay/message` in `apps/network/src/relay.ts` and have the AgentDO `message` tool call it from `apps/network/src/agent.ts`.\nGotcha: Changing Durable Object constructors (like `RelayDO`) requires updating all unit tests that instantiate them directly; otherwise `tsc` will fail even if the new env fields aren’t used in most routes. Also keep message delivery strict: check non-2xx from relay and throw so the agent loop doesn’t silently continue on failed deliveries.\nFiles Context: `apps/network/src/agent.ts`: `AgentDO.buildTools()` defines the 6 Pi tools; `message` now prefers RELAY `/relay/message` and falls back to direct AGENTS delivery.\n`apps/network/src/relay.ts`: RelayDO now supports `POST /relay/message` to forward messages to recipient agent inbox and fanout an `agent.comms.message` event.\n`apps/network/src/agent-do.test.ts`: updated message-tool test to exercise RELAY-based delivery.\n`apps/network/src/relay.test.ts`: updated constructor calls to pass required `AGENTS` env stub."
+      "learnings": "Technical Discovery: Pi AgentTool results are best represented as `{ content: TextContent[], details: any }` (LLM-facing vs UI-facing). For network message delivery, it\u2019s cleaner to route through RelayDO so delivery + firehose fanout happen in one place: implement `POST /relay/message` in `apps/network/src/relay.ts` and have the AgentDO `message` tool call it from `apps/network/src/agent.ts`.\nGotcha: Changing Durable Object constructors (like `RelayDO`) requires updating all unit tests that instantiate them directly; otherwise `tsc` will fail even if the new env fields aren\u2019t used in most routes. Also keep message delivery strict: check non-2xx from relay and throw so the agent loop doesn\u2019t silently continue on failed deliveries.\nFiles Context: `apps/network/src/agent.ts`: `AgentDO.buildTools()` defines the 6 Pi tools; `message` now prefers RELAY `/relay/message` and falls back to direct AGENTS delivery.\n`apps/network/src/relay.ts`: RelayDO now supports `POST /relay/message` to forward messages to recipient agent inbox and fanout an `agent.comms.message` event.\n`apps/network/src/agent-do.test.ts`: updated message-tool test to exercise RELAY-based delivery.\n`apps/network/src/relay.test.ts`: updated constructor calls to pass required `AGENTS` env stub."
     },
     {
       "id": "story-mlde2raq",
@@ -374,7 +374,7 @@
     },
     {
       "id": "story-mlepe7gy",
-      "title": "RPG dungeon crawl environment — BRP engine + AgentEnvironment",
+      "title": "RPG dungeon crawl environment \u2014 BRP engine + AgentEnvironment",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-factory.ts",
@@ -386,7 +386,7 @@
     },
     {
       "id": "story-mlerh2h4",
-      "title": "Stalemate detection — end Catan games early when stuck",
+      "title": "Stalemate detection \u2014 end Catan games early when stuck",
       "status": "completed",
       "filesModified": [
         "apps/network/package.json",
@@ -398,25 +398,25 @@
         "packages/agent/src/agent.ts",
         "prd.json"
       ],
-      "learnings": "Technical Discovery: In `apps/network/src/games/catan.ts`, using `state.log` to detect whether `build_settlement`/`build_road` occurred on the just-ended turn avoids off-by-one semantics: `end_turn` can set `staleTurns = 0` when a build happened in that turn, otherwise increment and trigger stalemate at the threshold. Also, emitting `stalemate: true` on the `ActionResult` and passing it through `apps/network/src/environments/catan.ts` (tool `details` + `game.finished` broadcast context) is the simplest way to inform agents/dashboard of the end condition.\nGotcha: Prior failure pattern detected: `unknown` (Turbo filter couldn’t find `network`). Mitigation applied: `apps/network/package.json` is now named `network`, so `npx turbo test --filter=network` works. Also, Catan tests that call `roll_dice` are inherently flaky because `distributeResources()` depends on a randomized board/dice; avoid `roll_dice` in tests that assert exact resource totals (e.g. bank/trade). Separate note: `pnpm -C apps/network typecheck` currently fails due to pre-existing errors in `apps/network/src/environments/rpg.ts`; I did not address those in this story.\nFiles Context: `apps/network/src/games/catan.ts`: game state + reducer; added `staleTurns`, stalemate threshold check in `end_turn`, and `stalemate` on game-over result.\n`apps/network/src/games/catan.test.ts`: added stalemate tests and de-flaked existing bank/trade tests by removing unnecessary `roll_dice` calls.\n`apps/network/src/environments/catan.ts`: plumbs `stalemate` through tool response details and `game.finished` event context.\n`apps/network/package.json` + `apps/network/vitest.config.ts`: renamed package/test label to `network` to satisfy the story’s validation command filter."
+      "learnings": "Technical Discovery: In `apps/network/src/games/catan.ts`, using `state.log` to detect whether `build_settlement`/`build_road` occurred on the just-ended turn avoids off-by-one semantics: `end_turn` can set `staleTurns = 0` when a build happened in that turn, otherwise increment and trigger stalemate at the threshold. Also, emitting `stalemate: true` on the `ActionResult` and passing it through `apps/network/src/environments/catan.ts` (tool `details` + `game.finished` broadcast context) is the simplest way to inform agents/dashboard of the end condition.\nGotcha: Prior failure pattern detected: `unknown` (Turbo filter couldn\u2019t find `network`). Mitigation applied: `apps/network/package.json` is now named `network`, so `npx turbo test --filter=network` works. Also, Catan tests that call `roll_dice` are inherently flaky because `distributeResources()` depends on a randomized board/dice; avoid `roll_dice` in tests that assert exact resource totals (e.g. bank/trade). Separate note: `pnpm -C apps/network typecheck` currently fails due to pre-existing errors in `apps/network/src/environments/rpg.ts`; I did not address those in this story.\nFiles Context: `apps/network/src/games/catan.ts`: game state + reducer; added `staleTurns`, stalemate threshold check in `end_turn`, and `stalemate` on game-over result.\n`apps/network/src/games/catan.test.ts`: added stalemate tests and de-flaked existing bank/trade tests by removing unnecessary `roll_dice` calls.\n`apps/network/src/environments/catan.ts`: plumbs `stalemate` through tool response details and `game.finished` event context.\n`apps/network/package.json` + `apps/network/vitest.config.ts`: renamed package/test label to `network` to satisfy the story\u2019s validation command filter."
     },
     {
       "id": "story-mlerl07f",
-      "title": "Agent factory o11y — full think prompt, loop transcript, and timing",
+      "title": "Agent factory o11y \u2014 full think prompt, loop transcript, and timing",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[test_failure] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n• turbo 2.8.3\nnetwork:test: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/in"
+      "learnings": "[test_failure] npm warn Unknown project config \"confirmModulesPurge\". This will stop working in the next major version of npm.\n\u2022 turbo 2.8.3\nnetwork:test: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/in"
     },
     {
       "id": "story-mlfaoxlf",
-      "title": "Fix Vectorize embedding dimension mismatch (768 → 1024)",
+      "title": "Fix Vectorize embedding dimension mismatch (768 \u2192 1024)",
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:typecheck: \n@atproto-agent/core:typecheck: > @atproto-agent/core@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:typecheck: > ts"
     },
     {
       "id": "story-mlfbgyyr",
-      "title": "Goal lifecycle — prune completed goals, cap prompt bloat",
+      "title": "Goal lifecycle \u2014 prune completed goals, cap prompt bloat",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-do.test.ts",
@@ -427,7 +427,7 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` implements goal lifecycle in `pruneAndArchiveCompletedGoals()`: it sorts completed goals by `completedAt ?? createdAt`, keeps only the N most-recent completed (from `config.maxCompletedGoals`), persists the pruned config back to DO storage (`config`), and appends overflow completed goals into a structured-clone-safe archive array at storage key `goalsArchive` (deduped by goal id). This is invoked on config load, config PATCH/POST create, `set_goal`, and `reflect()` goal updates, so goals don’t accumulate indefinitely.\nGotcha: The AGENTS.md instruction `swarm hive cells --status open` no longer exists (command is `swarm cells --status open`). Also note the worktree currently shows dirty `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt`; avoid accidentally committing these tracking files when making future changes.\nFiles Context: `apps/network/src/agent.ts` contains `AgentConfig.maxCompletedGoals`, `selectGoalsForPrompt()`, and `pruneAndArchiveCompletedGoals()` plus the DO storage key `goalsArchive`. `apps/network/src/agent-do.test.ts` includes the regression test `prunes completed goals to maxCompletedGoals and archives overflow in DO storage` asserting both stored config pruning and that the Pi prompt excludes archived goal text."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` implements goal lifecycle in `pruneAndArchiveCompletedGoals()`: it sorts completed goals by `completedAt ?? createdAt`, keeps only the N most-recent completed (from `config.maxCompletedGoals`), persists the pruned config back to DO storage (`config`), and appends overflow completed goals into a structured-clone-safe archive array at storage key `goalsArchive` (deduped by goal id). This is invoked on config load, config PATCH/POST create, `set_goal`, and `reflect()` goal updates, so goals don\u2019t accumulate indefinitely.\nGotcha: The AGENTS.md instruction `swarm hive cells --status open` no longer exists (command is `swarm cells --status open`). Also note the worktree currently shows dirty `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt`; avoid accidentally committing these tracking files when making future changes.\nFiles Context: `apps/network/src/agent.ts` contains `AgentConfig.maxCompletedGoals`, `selectGoalsForPrompt()`, and `pruneAndArchiveCompletedGoals()` plus the DO storage key `goalsArchive`. `apps/network/src/agent-do.test.ts` includes the regression test `prunes completed goals to maxCompletedGoals and archives overflow in DO storage` asserting both stored config pruning and that the Pi prompt excludes archived goal text."
     },
     {
       "id": "story-mlfbh5sv",
@@ -442,11 +442,11 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: Prior failure pattern detected: build_error. Mitigation: run the requested validation commands explicitly (`pnpm typecheck` then `pnpm test`) and capture full output.\n\nTool exposure is enforced in two layers:\n- `apps/network/src/agent.ts` wraps the OpenRouter factory in `rebuildAgentWrapper()` to inject `initialState.enabledTools = config.enabledTools` so the DO’s persisted config drives tool exposure.\n- `apps/network/src/agent-factory.ts` filters tool definitions sent to OpenRouter to the allowlist when non-empty, and also refuses to execute tool calls for tools not in the allowlist (so hallucinated tool calls cannot run).\nGotcha: `swarm hive ...` is no longer a valid command; use `swarm cells ...` for the hive database. Also, don’t accidentally commit Ralph tracking files: `progress.txt`, `.ralph-context.json`, `.ralph-iterations.jsonl` are currently modified in the working tree and should stay out of commits unless explicitly requested.\nFiles Context: `apps/network/src/agent-factory.ts`: OpenRouter tool allowlisting (filter tool defs + block disabled tool execution).\n`apps/network/src/agent.ts`: Passes the agent’s persisted `config.enabledTools` down into the OpenRouter factory in `rebuildAgentWrapper()`.\n`apps/network/src/agent-factory.test.ts`: Unit coverage for tool exposure/back-compat + disabled tool execution.\n`apps/network/src/agent-do.test.ts`: DO-level regression test asserting the OpenRouter request only includes allowlisted tools when config.enabledTools is set."
+      "learnings": "Technical Discovery: Prior failure pattern detected: build_error. Mitigation: run the requested validation commands explicitly (`pnpm typecheck` then `pnpm test`) and capture full output.\n\nTool exposure is enforced in two layers:\n- `apps/network/src/agent.ts` wraps the OpenRouter factory in `rebuildAgentWrapper()` to inject `initialState.enabledTools = config.enabledTools` so the DO\u2019s persisted config drives tool exposure.\n- `apps/network/src/agent-factory.ts` filters tool definitions sent to OpenRouter to the allowlist when non-empty, and also refuses to execute tool calls for tools not in the allowlist (so hallucinated tool calls cannot run).\nGotcha: `swarm hive ...` is no longer a valid command; use `swarm cells ...` for the hive database. Also, don\u2019t accidentally commit Ralph tracking files: `progress.txt`, `.ralph-context.json`, `.ralph-iterations.jsonl` are currently modified in the working tree and should stay out of commits unless explicitly requested.\nFiles Context: `apps/network/src/agent-factory.ts`: OpenRouter tool allowlisting (filter tool defs + block disabled tool execution).\n`apps/network/src/agent.ts`: Passes the agent\u2019s persisted `config.enabledTools` down into the OpenRouter factory in `rebuildAgentWrapper()`.\n`apps/network/src/agent-factory.test.ts`: Unit coverage for tool exposure/back-compat + disabled tool execution.\n`apps/network/src/agent-do.test.ts`: DO-level regression test asserting the OpenRouter request only includes allowlisted tools when config.enabledTools is set."
     },
     {
       "id": "story-mlfbhaur",
-      "title": "Smarter error backoff — tiered by error type",
+      "title": "Smarter error backoff \u2014 tiered by error type",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-do.test.ts",
@@ -455,7 +455,7 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` alarm cycles can “fail” without throwing: `act()` often returns `steps` with `{ ok: false }` instead of throwing, so backoff logic must treat failed tool steps as an error signal (and can derive game-context errors by checking `steps.some(s => s.name === 'game' && !s.ok)`). Persisting `{category, streak}` in DO storage (`errorBackoff`) makes category-specific escalation stable across hibernation/restarts.\nGotcha: Wrangler deploy in non-interactive mode requires an *exported* `CLOUDFLARE_API_TOKEN` (a plain shell variable assignment is not enough). Also, `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt` may appear modified locally; do not stage/commit them per workspace rules.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO alarm loop, error categorization (`categorizeAlarmError`), and tier computation (`computeTieredBackoffMs`) plus storage keys (`errorBackoff`, `consecutiveErrors`). `apps/network/src/agent-do.test.ts` has the AgentDO alarm/backoff tests validating transient/persistent/game tiers and reset-on-success behavior."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` alarm cycles can \u201cfail\u201d without throwing: `act()` often returns `steps` with `{ ok: false }` instead of throwing, so backoff logic must treat failed tool steps as an error signal (and can derive game-context errors by checking `steps.some(s => s.name === 'game' && !s.ok)`). Persisting `{category, streak}` in DO storage (`errorBackoff`) makes category-specific escalation stable across hibernation/restarts.\nGotcha: Wrangler deploy in non-interactive mode requires an *exported* `CLOUDFLARE_API_TOKEN` (a plain shell variable assignment is not enough). Also, `.ralph-context.json`, `.ralph-iterations.jsonl`, and `progress.txt` may appear modified locally; do not stage/commit them per workspace rules.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO alarm loop, error categorization (`categorizeAlarmError`), and tier computation (`computeTieredBackoffMs`) plus storage keys (`errorBackoff`, `consecutiveErrors`). `apps/network/src/agent-do.test.ts` has the AgentDO alarm/backoff tests validating transient/persistent/game tiers and reset-on-success behavior."
     },
     {
       "id": "story-mlfbhfmx",
@@ -471,7 +471,7 @@
     },
     {
       "id": "story-mlfbhk80",
-      "title": "Fix /games API — return all games",
+      "title": "Fix /games API \u2014 return all games",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -481,14 +481,14 @@
         "apps/network/src/index.test.ts",
         "apps/network/src/index.ts"
       ],
-      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlfbhk80: I’m going to (1) pull hivemind context for the /games list bug, then (2) inspect the current /games handler, schema, and existing index tests, and (3) write a failing test before patching the D1 query and adding pagination.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlfbhk80: I\u2019m going to (1) pull hivemind context for the /games list bug, then (2) inspect the current /games handler, schema, and existing index tests, and (3) write a failing test before patching the D1 query and adding pagination.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     },
     {
       "id": "story-mlfbhphy",
       "title": "Structured JSON logging for all agent lifecycle events",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[type_error] • turbo 2.8.3\nnetwork:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\nnetwork#typecheck: command (/home/joel/Code/joelhooks/atproto-"
+      "learnings": "[type_error] \u2022 turbo 2.8.3\nnetwork:typecheck: ERROR: command finished with error: command (/home/joel/Code/joelhooks/atproto-agent-network/apps/network) /home/joel/.local/share/fnm/node-versions/v24.13.0/installation/bin/pnpm run typecheck exited (2)\nnetwork#typecheck: command (/home/joel/Code/joelhooks/atproto-"
     },
     {
       "id": "story-mlfbhwfc",
@@ -499,14 +499,14 @@
     },
     {
       "id": "story-mlfbi0o4",
-      "title": "Adaptive alarm interval — faster when it's your turn in a game",
+      "title": "Adaptive alarm interval \u2014 faster when it's your turn in a game",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[test_failure] • turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tes"
+      "learnings": "[test_failure] \u2022 turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tes"
     },
     {
       "id": "story-mlfbi54u",
-      "title": "Post-game summary — log structured outcome when game finishes",
+      "title": "Post-game summary \u2014 log structured outcome when game finishes",
       "status": "failed",
       "filesModified": [],
       "learnings": "[build_error] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/"
@@ -521,7 +521,7 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: In `apps/network/src/agent.ts`, `AgentDO.alarm()` is the right place to persist long-lived loop state via `this.ctx.storage` before the `setAlarm()` scheduling block; storing `alarmMode` there makes it deterministic across hibernation/restarts and easy to assert via the existing `FakeStorage` in `apps/network/src/agent-do.test.ts`.\nGotcha: The stored `alarmMode` is the *next cycle’s* mode (written at the end of a cycle). If you assert rotation, read `storage.get('alarmMode')` after each `agent.alarm()` call; otherwise you’ll be off by one and the 7-cycle expectation won’t match.\nFiles Context: `apps/network/src/agent.ts` contains the Durable Object alarm loop and rescheduling logic; `apps/network/src/agent-do.test.ts` provides `FakeStorage`/helpers and is the canonical place to test alarm-cycle persistence behavior without real Cloudflare."
+      "learnings": "Technical Discovery: In `apps/network/src/agent.ts`, `AgentDO.alarm()` is the right place to persist long-lived loop state via `this.ctx.storage` before the `setAlarm()` scheduling block; storing `alarmMode` there makes it deterministic across hibernation/restarts and easy to assert via the existing `FakeStorage` in `apps/network/src/agent-do.test.ts`.\nGotcha: The stored `alarmMode` is the *next cycle\u2019s* mode (written at the end of a cycle). If you assert rotation, read `storage.get('alarmMode')` after each `agent.alarm()` call; otherwise you\u2019ll be off by one and the 7-cycle expectation won\u2019t match.\nFiles Context: `apps/network/src/agent.ts` contains the Durable Object alarm loop and rescheduling logic; `apps/network/src/agent-do.test.ts` provides `FakeStorage`/helpers and is the canonical place to test alarm-cycle persistence behavior without real Cloudflare."
     },
     {
       "id": "story-mlfedrp4",
@@ -538,7 +538,7 @@
         "apps/network/src/agent.ts",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `actionOutcomes` is persisted in DO storage and should be read via a type guard (`unknown` -> `ActionOutcome[]`) to tolerate older/invalid stored values; keeping outcomes structured-cloneable (no tool result blobs) makes it safe to embed into prompts/debug state. See `apps/network/src/agent.ts` (`ActionOutcome`, `buildThinkPrompt()`, `act()`, `reflect()`).\nGotcha: Prior failure pattern detected: test_failure (Vectorize dimension mismatch log noise). Mitigation: the ActionOutcome test uses only local tools (`think_aloud`, `set_goal`) so it doesn’t touch Vectorize/embeddings; if you add tests that exercise `recall`/Vectorize, ensure embedding dims/model are explicitly mocked to avoid flaky dimension mismatches.\nFiles Context: `apps/network/src/agent.ts`: AgentDO loop stages; `buildThinkPrompt()` now surfaces recent tool outcomes; `act()` persists `actionOutcomes` after each tool step; `reflect()` stores `recentActionOutcomes` in `lastReflection`. `apps/network/src/agent-do.test.ts`: AgentDO alarm-cycle tests, including the `actionOutcomes` persistence assertion."
+      "learnings": "Technical Discovery: `actionOutcomes` is persisted in DO storage and should be read via a type guard (`unknown` -> `ActionOutcome[]`) to tolerate older/invalid stored values; keeping outcomes structured-cloneable (no tool result blobs) makes it safe to embed into prompts/debug state. See `apps/network/src/agent.ts` (`ActionOutcome`, `buildThinkPrompt()`, `act()`, `reflect()`).\nGotcha: Prior failure pattern detected: test_failure (Vectorize dimension mismatch log noise). Mitigation: the ActionOutcome test uses only local tools (`think_aloud`, `set_goal`) so it doesn\u2019t touch Vectorize/embeddings; if you add tests that exercise `recall`/Vectorize, ensure embedding dims/model are explicitly mocked to avoid flaky dimension mismatches.\nFiles Context: `apps/network/src/agent.ts`: AgentDO loop stages; `buildThinkPrompt()` now surfaces recent tool outcomes; `act()` persists `actionOutcomes` after each tool step; `reflect()` stores `recentActionOutcomes` in `lastReflection`. `apps/network/src/agent-do.test.ts`: AgentDO alarm-cycle tests, including the `actionOutcomes` persistence assertion."
     },
     {
       "id": "story-mlfedsg1",
@@ -551,11 +551,11 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already contains (1) default `enabledTools` entries for the three extension tools, (2) a `buildThinkPrompt()` hint gated on whether any extension tool is enabled, and (3) concrete tool implementations for `write_extension`, `list_extensions`, `remove_extension`. `apps/network/src/agent-do.test.ts` already has a unit test verifying default enabledTools contains extension tools via `GET /config`.\nGotcha: This story may appear “missing” from the issue description, but the code already includes it; the real work may be unblocking repo-wide `pnpm typecheck && pnpm test` failures unrelated to the change. Run validations first and capture full output so you don’t chase phantom TODOs.\nFiles Context: `apps/network/src/agent.ts` holds agent config defaults (`enabledTools`), prompt building (`buildThinkPrompt()`), and extension tool implementations. `apps/network/src/agent-do.test.ts` contains the default-config test (`includes extension tools in the default enabledTools config`)."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already contains (1) default `enabledTools` entries for the three extension tools, (2) a `buildThinkPrompt()` hint gated on whether any extension tool is enabled, and (3) concrete tool implementations for `write_extension`, `list_extensions`, `remove_extension`. `apps/network/src/agent-do.test.ts` already has a unit test verifying default enabledTools contains extension tools via `GET /config`.\nGotcha: This story may appear \u201cmissing\u201d from the issue description, but the code already includes it; the real work may be unblocking repo-wide `pnpm typecheck && pnpm test` failures unrelated to the change. Run validations first and capture full output so you don\u2019t chase phantom TODOs.\nFiles Context: `apps/network/src/agent.ts` holds agent config defaults (`enabledTools`), prompt building (`buildThinkPrompt()`), and extension tool implementations. `apps/network/src/agent-do.test.ts` contains the default-config test (`includes extension tools in the default enabledTools config`)."
     },
     {
       "id": "story-mlfedt6k",
-      "title": "Housekeeping mode — prune old goals and stale memories",
+      "title": "Housekeeping mode \u2014 prune old goals and stale memories",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-do.test.ts",
@@ -564,11 +564,11 @@
         ".ralph-iterations.jsonl",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already rotates `alarmMode` and persists it in DO storage; adding a `housekeeping` branch is safe as long as it still reaches the shared reschedule block. Using `loadOrCreateConfig()` inside housekeeping ensures the DO’s in-memory `this.config` stays consistent when mutating `config` in storage.\nGotcha: Housekeeping runs without calling the model, so any tests that assume a model call every alarm cycle (or assume backoff behavior immediately after a success) can break once `alarmMode` rotation introduces a housekeeping cycle between think/reflection.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.alarm()` (mode routing + rescheduling) and `runHousekeeping()` (goal/outcome pruning + logging). `apps/network/src/agent-do.test.ts` uses `FakeStorage` + direct `storage.put('alarmMode', ...)` to deterministically assert Durable Object alarm-mode behavior."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already rotates `alarmMode` and persists it in DO storage; adding a `housekeeping` branch is safe as long as it still reaches the shared reschedule block. Using `loadOrCreateConfig()` inside housekeeping ensures the DO\u2019s in-memory `this.config` stays consistent when mutating `config` in storage.\nGotcha: Housekeeping runs without calling the model, so any tests that assume a model call every alarm cycle (or assume backoff behavior immediately after a success) can break once `alarmMode` rotation introduces a housekeeping cycle between think/reflection.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.alarm()` (mode routing + rescheduling) and `runHousekeeping()` (goal/outcome pruning + logging). `apps/network/src/agent-do.test.ts` uses `FakeStorage` + direct `storage.put('alarmMode', ...)` to deterministically assert Durable Object alarm-mode behavior."
     },
     {
       "id": "story-mlfedtxx",
-      "title": "Reflection mode — self-assessment from recent action outcomes",
+      "title": "Reflection mode \u2014 self-assessment from recent action outcomes",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-do.test.ts",
@@ -588,7 +588,7 @@
         ".ralph-iterations.jsonl",
         "prd.json"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` executes extensions during agent rebuild in `loadExtensionsIntoTools()` by dynamic-importing the R2 module and calling `activate(agent)`. This is the correct choke point to record per-extension activation metrics in DO storage (`extensionMetrics:${name}`) without needing to modify Pi’s tool execution internals. Exposing metrics on `/debug` is easiest via `ctx.storage.list({ prefix: 'extensionMetrics:' })`.\nGotcha: Extension activation can happen more than once (initial `initialize()` and any later `rebuildAgentWrapper()` via `extensionsReloadNeeded`), so `totalCalls` will increment on each activation attempt. If you add more `/debug` fields backed by DO storage listing, ensure the test harness `FakeStorage` implements the corresponding storage APIs (at minimum `list({ prefix })`) or `/debug` tests will throw at runtime.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO implementation: `/debug` endpoint wiring, extension load path (`loadExtensionsIntoTools()`), and DO storage usage. `apps/network/src/agent-do.test.ts` contains the DO unit tests and the `FakeStorage` harness used to simulate `ctx.storage` behavior (now including `list()`)."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` executes extensions during agent rebuild in `loadExtensionsIntoTools()` by dynamic-importing the R2 module and calling `activate(agent)`. This is the correct choke point to record per-extension activation metrics in DO storage (`extensionMetrics:${name}`) without needing to modify Pi\u2019s tool execution internals. Exposing metrics on `/debug` is easiest via `ctx.storage.list({ prefix: 'extensionMetrics:' })`.\nGotcha: Extension activation can happen more than once (initial `initialize()` and any later `rebuildAgentWrapper()` via `extensionsReloadNeeded`), so `totalCalls` will increment on each activation attempt. If you add more `/debug` fields backed by DO storage listing, ensure the test harness `FakeStorage` implements the corresponding storage APIs (at minimum `list({ prefix })`) or `/debug` tests will throw at runtime.\nFiles Context: `apps/network/src/agent.ts` contains the AgentDO implementation: `/debug` endpoint wiring, extension load path (`loadExtensionsIntoTools()`), and DO storage usage. `apps/network/src/agent-do.test.ts` contains the DO unit tests and the `FakeStorage` harness used to simulate `ctx.storage` behavior (now including `list()`)."
     },
     {
       "id": "story-mlfedv85",
@@ -599,11 +599,11 @@
         ".ralph-context.json",
         ".ralph-iterations.jsonl"
       ],
-      "learnings": "Technical Discovery: Cloudflare Pipelines bindings can be treated as an optional env object with a single `send(events: unknown[]): Promise<void>` method. In `apps/network/src/agent.ts`, the safest place to emit a per-cycle summary is the `AgentDO.alarm()` scheduling block’s `finally`, so it runs after the cycle regardless of backoff/scheduling outcomes, and failures must be swallowed to keep the loop reliable.\nGotcha: `wrangler deploy` fails if referenced bindings don’t exist in the target Cloudflare account: missing Vectorize index names and missing Pipeline/Stream resources will hard-error deploy (even though the Worker code/tests are fine). For this story specifically, ensure `agent-o11y` is created via `wrangler pipelines create agent-o11y` in the same account you deploy to, and that the Vectorize index exists before attempting live verification.\nFiles Context: `apps/network/src/agent.ts` contains the `AgentEnv` interface, the `sendO11yEvent()` helper, and the `AgentDO.alarm()` loop where the `agent.cycle` summary is emitted. `apps/network/wrangler.toml` defines the `[[pipelines]]` binding (`O11Y_PIPELINE` -> `agent-o11y`). `apps/network/src/agent-do.test.ts` is the main DO test harness and now includes mocks asserting the pipeline send behavior."
+      "learnings": "Technical Discovery: Cloudflare Pipelines bindings can be treated as an optional env object with a single `send(events: unknown[]): Promise<void>` method. In `apps/network/src/agent.ts`, the safest place to emit a per-cycle summary is the `AgentDO.alarm()` scheduling block\u2019s `finally`, so it runs after the cycle regardless of backoff/scheduling outcomes, and failures must be swallowed to keep the loop reliable.\nGotcha: `wrangler deploy` fails if referenced bindings don\u2019t exist in the target Cloudflare account: missing Vectorize index names and missing Pipeline/Stream resources will hard-error deploy (even though the Worker code/tests are fine). For this story specifically, ensure `agent-o11y` is created via `wrangler pipelines create agent-o11y` in the same account you deploy to, and that the Vectorize index exists before attempting live verification.\nFiles Context: `apps/network/src/agent.ts` contains the `AgentEnv` interface, the `sendO11yEvent()` helper, and the `AgentDO.alarm()` loop where the `agent.cycle` summary is emitted. `apps/network/wrangler.toml` defines the `[[pipelines]]` binding (`O11Y_PIPELINE` -> `agent-o11y`). `apps/network/src/agent-do.test.ts` is the main DO test harness and now includes mocks asserting the pipeline send behavior."
     },
     {
       "id": "story-mlfedvzt",
-      "title": "Admin analytics endpoint — GET /admin/analytics with cycle stats",
+      "title": "Admin analytics endpoint \u2014 GET /admin/analytics with cycle stats",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent.ts",
@@ -618,7 +618,7 @@
     },
     {
       "id": "story-mlfm67k3",
-      "title": "Cooperative dungeon generator — longer dungeons with class-gated rooms",
+      "title": "Cooperative dungeon generator \u2014 longer dungeons with class-gated rooms",
       "status": "completed",
       "filesModified": [
         "apps/network/src/games/rpg-engine.ts"
@@ -627,7 +627,7 @@
     },
     {
       "id": "story-mlfm687r",
-      "title": "Role synergy — heal-other, taunt, AoE, trap-disarm",
+      "title": "Role synergy \u2014 heal-other, taunt, AoE, trap-disarm",
       "status": "completed",
       "filesModified": [
         "packages/dashboard/src/App.tsx",
@@ -641,11 +641,11 @@
         ".ralph-context.json",
         ".ralph-iterations.jsonl"
       ],
-      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlfm687r: I’m going to (1) run `swarm memory find` for the story topic per instructions, then (2) open existing `rpg-engine.ts`, `rpg.ts`, and `rpg-engine.test.ts` to understand current combat/state model, and (3) write failing tests for the four new abilities before implementing them and wiring new environment commands.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":fals"
+      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlfm687r: I\u2019m going to (1) run `swarm memory find` for the story topic per instructions, then (2) open existing `rpg-engine.ts`, `rpg.ts`, and `rpg-engine.test.ts` to understand current combat/state model, and (3) write failing tests for the four new abilities before implementing them and wiring new environment commands.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":fals"
     },
     {
       "id": "story-mlfm68ug",
-      "title": "Barrier rooms — class-gated progression",
+      "title": "Barrier rooms \u2014 class-gated progression",
       "status": "completed",
       "filesModified": [
         ".claude/.worker-tracking/c91db41a/skills_use.marker",
@@ -654,11 +654,11 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "{\"success\":true,\"summary\":\"Starting story-mlfm68ug. First I’m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "{\"success\":true,\"summary\":\"Starting story-mlfm68ug. First I\u2019m going to (1) re-run `swarm memory find` for the story topic per workspace rules, then (2) open `apps/network/src/games/rpg-engine.ts`, its tests, and `apps/network/src/environments/rpg.ts` to write the failing tests before implementing barrier blocking + resolution.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     },
     {
       "id": "story-mlfm6a4e",
-      "title": "Solo penalty — double damage when alone",
+      "title": "Solo penalty \u2014 double damage when alone",
       "status": "completed",
       "filesModified": [
         "apps/network/wrangler.toml",
@@ -671,7 +671,7 @@
     },
     {
       "id": "story-mlfm6apo",
-      "title": "Cooperation prompts — teach agents to work together",
+      "title": "Cooperation prompts \u2014 teach agents to work together",
       "status": "completed",
       "filesModified": [
         "packages/dashboard/package.json",
@@ -683,7 +683,7 @@
         "apps/network/src/agent.ts",
         "prd.json"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` non-catan gameContext is built via an array + `.filter(Boolean).join('\\n')`, so empty-string separators never survive; if you need “sections” in the prompt, inject a single multi-line string (e.g. the RPG `COOPERATION RULES` block) rather than relying on `''` entries for spacing.\nGotcha: Production deploy can fail even when tests pass if Cloudflare bindings referenced in `apps/network/wrangler.toml` don’t exist (here: Vectorize index `agent-memory`). Also, different secrets/tokens may have Workers permissions but not Vectorize permissions; use a token with both, or ensure the index exists before deploying.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.buildThinkPrompt()` which renders the RPG/Catan gameContext and loop instructions. `apps/network/src/agent-do.test.ts` exercises alarm-driven think prompting by inserting rows into `D1MockDatabase`’s `games` table and asserting on the prompt string passed to the mocked Pi agent."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` non-catan gameContext is built via an array + `.filter(Boolean).join('\\n')`, so empty-string separators never survive; if you need \u201csections\u201d in the prompt, inject a single multi-line string (e.g. the RPG `COOPERATION RULES` block) rather than relying on `''` entries for spacing.\nGotcha: Production deploy can fail even when tests pass if Cloudflare bindings referenced in `apps/network/wrangler.toml` don\u2019t exist (here: Vectorize index `agent-memory`). Also, different secrets/tokens may have Workers permissions but not Vectorize permissions; use a token with both, or ensure the index exists before deploying.\nFiles Context: `apps/network/src/agent.ts` contains `AgentDO.buildThinkPrompt()` which renders the RPG/Catan gameContext and loop instructions. `apps/network/src/agent-do.test.ts` exercises alarm-driven think prompting by inserting rows into `D1MockDatabase`\u2019s `games` table and asserting on the prompt string passed to the mocked Pi agent."
     },
     {
       "id": "story-mlfnwx08",
@@ -725,7 +725,7 @@
         "packages/dashboard/src/main.tsx",
         "packages/dashboard/vite.config.ts"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/schema.test.ts` validates D1 schema by executing `apps/network/schema.sql` into a real Miniflare D1 instance, splitting statements on semicolons and stripping `--` comments. This means new DDL must be a single valid statement terminated by `;`, and tests introspect the resulting `sqlite_master.sql` for column assertions.\nGotcha: If you paste file paths or code spans in shell commands using backticks, zsh treats them as command substitution (causing noisy `permission denied` output). For `swarm memory store ...`, use plain quotes without backticks. Also, keep mock DDL handling aligned: `packages/core/src/d1-mock.ts` is an in-memory SQL-shape emulator, so any schema DDL that tests might exec should be explicitly no-oped to avoid “Unsupported SQL” errors.\nFiles Context: `apps/network/schema.sql` is the authoritative D1 schema deployed to Cloudflare. `apps/network/src/schema.test.ts` enforces schema correctness by loading/executing that file into Miniflare D1 and asserting table/index/column presence. `packages/core/src/d1-mock.ts` is the in-memory D1 emulation used by many unit tests; it should tolerate (no-op) schema DDL that callers may apply during test setup."
+      "learnings": "Technical Discovery: `apps/network/src/schema.test.ts` validates D1 schema by executing `apps/network/schema.sql` into a real Miniflare D1 instance, splitting statements on semicolons and stripping `--` comments. This means new DDL must be a single valid statement terminated by `;`, and tests introspect the resulting `sqlite_master.sql` for column assertions.\nGotcha: If you paste file paths or code spans in shell commands using backticks, zsh treats them as command substitution (causing noisy `permission denied` output). For `swarm memory store ...`, use plain quotes without backticks. Also, keep mock DDL handling aligned: `packages/core/src/d1-mock.ts` is an in-memory SQL-shape emulator, so any schema DDL that tests might exec should be explicitly no-oped to avoid \u201cUnsupported SQL\u201d errors.\nFiles Context: `apps/network/schema.sql` is the authoritative D1 schema deployed to Cloudflare. `apps/network/src/schema.test.ts` enforces schema correctness by loading/executing that file into Miniflare D1 and asserting table/index/column presence. `packages/core/src/d1-mock.ts` is the in-memory D1 emulation used by many unit tests; it should tolerate (no-op) schema DDL that callers may apply during test setup."
     },
     {
       "id": "story-mlfo25hl",
@@ -780,7 +780,7 @@
         ".ralph-context.json",
         ".ralph-iterations.jsonl"
       ],
-      "learnings": "Technical Discovery: `packages/core/src/d1-mock.ts` is intentionally SQL-shape-specific; adding a new table requires wiring both `run()` (INSERT/UPDATE) and `all()` (SELECT) with a small parser (here `parseWorkItemConditions` + `applyWorkItemUpdate`). Keeping tool queries simple (e.g. `WHERE id = ?`, `status = 'open'`, `ORDER BY priority DESC`, `LIMIT 1`) avoids unsupported SQL like `GROUP BY` and keeps unit tests deterministic.\nGotcha: If you update `apps/network/schema.sql`, also update the corresponding D1Mock no-op DDL and supported query shapes in `packages/core/src/d1-mock.ts`; otherwise schema tests may pass (Miniflare D1) while environment/tool tests using `D1MockDatabase` will throw `Unsupported SQL ...` at runtime. Also, changing an existing tool command’s semantics (like `status`) can break older tests unless you preserve prior fields (agent identity) in the response details.\nFiles Context: - `apps/network/src/environments/ralph.ts`: Ralph environment Pi tool implementation and DB queries for work_items.\n- `apps/network/src/environments/ralph.test.ts`: End-to-end unit tests for propose/claim/submit/status flows using `D1MockDatabase`.\n- `apps/network/schema.sql`: Source-of-truth D1 schema; now includes `work_items`.\n- `apps/network/src/schema.test.ts`: Miniflare D1-backed schema validation; asserts `work_items` DDL matches expected columns/defaults.\n- `packages/core/src/d1-mock.ts`: In-memory D1 emulator; must be kept in sync with schema and tool SQL shapes."
+      "learnings": "Technical Discovery: `packages/core/src/d1-mock.ts` is intentionally SQL-shape-specific; adding a new table requires wiring both `run()` (INSERT/UPDATE) and `all()` (SELECT) with a small parser (here `parseWorkItemConditions` + `applyWorkItemUpdate`). Keeping tool queries simple (e.g. `WHERE id = ?`, `status = 'open'`, `ORDER BY priority DESC`, `LIMIT 1`) avoids unsupported SQL like `GROUP BY` and keeps unit tests deterministic.\nGotcha: If you update `apps/network/schema.sql`, also update the corresponding D1Mock no-op DDL and supported query shapes in `packages/core/src/d1-mock.ts`; otherwise schema tests may pass (Miniflare D1) while environment/tool tests using `D1MockDatabase` will throw `Unsupported SQL ...` at runtime. Also, changing an existing tool command\u2019s semantics (like `status`) can break older tests unless you preserve prior fields (agent identity) in the response details.\nFiles Context: - `apps/network/src/environments/ralph.ts`: Ralph environment Pi tool implementation and DB queries for work_items.\n- `apps/network/src/environments/ralph.test.ts`: End-to-end unit tests for propose/claim/submit/status flows using `D1MockDatabase`.\n- `apps/network/schema.sql`: Source-of-truth D1 schema; now includes `work_items`.\n- `apps/network/src/schema.test.ts`: Miniflare D1-backed schema validation; asserts `work_items` DDL matches expected columns/defaults.\n- `packages/core/src/d1-mock.ts`: In-memory D1 emulator; must be kept in sync with schema and tool SQL shapes."
     },
     {
       "id": "story-mlfo27gl",
@@ -792,22 +792,22 @@
         ".ralph-context.json",
         ".ralph-iterations.jsonl"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/environments/ralph.ts` autoplay can be implemented purely as an environment-provided `getAutoPlayActions(ctx)` that returns tool calls; it doesn’t need AgentDO changes as long as the environment query is simple and deterministic (single `SELECT ... ORDER BY ... LIMIT 1`). Also, `D1MockDatabase` is SQL-shape sensitive, so tests that depend on ordering must ensure the mock supports the specific `ORDER BY` clause used in production queries.\nGotcha: Avoid backticks in `swarm memory store` messages under zsh: they trigger command substitution and can emit `permission denied`, potentially mangling the stored learning. Also, when adding new D1 queries for tests, confirm `packages/core/src/d1-mock.ts` supports the exact `ORDER BY`/`WHERE` shape (here, missing `order by priority asc` support would make priority-selection tests flaky or wrong).\nFiles Context: `apps/network/src/environments/ralph.ts` defines the Ralph environment tool and its autoplay behavior. `packages/core/src/d1-mock.ts` emulates D1 for unit tests and must be kept in sync with the SQL shapes used by environments. `apps/network/src/agent-do.test.ts` contains AgentDO runtime tests and now includes the unit test that pins Ralph autoplay selection semantics."
+      "learnings": "Technical Discovery: `apps/network/src/environments/ralph.ts` autoplay can be implemented purely as an environment-provided `getAutoPlayActions(ctx)` that returns tool calls; it doesn\u2019t need AgentDO changes as long as the environment query is simple and deterministic (single `SELECT ... ORDER BY ... LIMIT 1`). Also, `D1MockDatabase` is SQL-shape sensitive, so tests that depend on ordering must ensure the mock supports the specific `ORDER BY` clause used in production queries.\nGotcha: Avoid backticks in `swarm memory store` messages under zsh: they trigger command substitution and can emit `permission denied`, potentially mangling the stored learning. Also, when adding new D1 queries for tests, confirm `packages/core/src/d1-mock.ts` supports the exact `ORDER BY`/`WHERE` shape (here, missing `order by priority asc` support would make priority-selection tests flaky or wrong).\nFiles Context: `apps/network/src/environments/ralph.ts` defines the Ralph environment tool and its autoplay behavior. `packages/core/src/d1-mock.ts` emulates D1 for unit tests and must be kept in sync with the SQL shapes used by environments. `apps/network/src/agent-do.test.ts` contains AgentDO runtime tests and now includes the unit test that pins Ralph autoplay selection semantics."
     },
     {
       "id": "story-mlft5kxr",
-      "title": "Auto-restart games on completion — Grimlock creates new coop dungeon",
+      "title": "Auto-restart games on completion \u2014 Grimlock creates new coop dungeon",
       "status": "completed",
       "filesModified": [
         "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts",
         "prd.json"
       ],
-      "learnings": "Technical Discovery: Prior failure pattern detected: test_failure/build_error. Mitigation: wrote failing unit tests first in `apps/network/src/environments/rpg.test.ts`, avoided fragile SQL aggregates in `D1MockDatabase` by using simple `SELECT ... LIMIT 1` and JS counting/filtering, and ran full validation before committing.\n\nTechnical Discovery: `packages/core/src/d1-mock.ts` supports a narrow set of `SELECT ... FROM games` shapes and does not emulate SQL aggregates (like `COUNT(*)`) reliably; for “count finished today” logic, selecting rows and filtering on an `updated_at` day-prefix works across both mock ISO timestamps and D1 `datetime('now')` strings.\n\nGotcha for Next Iteration: `EnvironmentContext` in `apps/network/src/environments/types.ts` does not currently carry agent/env config, so `maxGamesPerDay` is read best-effort from `(ctx as any).maxGamesPerDay` with a default of 50; plumbing a real persisted config would require passing it from `apps/network/src/agent.ts`.\n\nFiles Context: `apps/network/src/environments/rpg.ts` contains RPG tool execution, completion detection, and autoplay logic (where Grimlock auto-creates). `apps/network/src/environments/rpg.test.ts` is the unit test suite using `D1MockDatabase` for deterministic DB-backed scenarios.\nGotcha: If you add new D1 queries in environments, keep the SQL shape simple (no aggregates/group-by) unless you also extend `packages/core/src/d1-mock.ts`; otherwise network unit tests will fail even if production D1 would work.\nFiles Context: `apps/network/src/environments/rpg.ts`: emits `game.completed` via `broadcast` on phase transition to `finished`, and adds Grimlock-only autoplay new_game with daily cap.\n`apps/network/src/environments/rpg.test.ts`: asserts broadcast emission, Grimlock auto-create/no-create cases, and `maxGamesPerDay` enforcement using `D1MockDatabase`."
+      "learnings": "Technical Discovery: Prior failure pattern detected: test_failure/build_error. Mitigation: wrote failing unit tests first in `apps/network/src/environments/rpg.test.ts`, avoided fragile SQL aggregates in `D1MockDatabase` by using simple `SELECT ... LIMIT 1` and JS counting/filtering, and ran full validation before committing.\n\nTechnical Discovery: `packages/core/src/d1-mock.ts` supports a narrow set of `SELECT ... FROM games` shapes and does not emulate SQL aggregates (like `COUNT(*)`) reliably; for \u201ccount finished today\u201d logic, selecting rows and filtering on an `updated_at` day-prefix works across both mock ISO timestamps and D1 `datetime('now')` strings.\n\nGotcha for Next Iteration: `EnvironmentContext` in `apps/network/src/environments/types.ts` does not currently carry agent/env config, so `maxGamesPerDay` is read best-effort from `(ctx as any).maxGamesPerDay` with a default of 50; plumbing a real persisted config would require passing it from `apps/network/src/agent.ts`.\n\nFiles Context: `apps/network/src/environments/rpg.ts` contains RPG tool execution, completion detection, and autoplay logic (where Grimlock auto-creates). `apps/network/src/environments/rpg.test.ts` is the unit test suite using `D1MockDatabase` for deterministic DB-backed scenarios.\nGotcha: If you add new D1 queries in environments, keep the SQL shape simple (no aggregates/group-by) unless you also extend `packages/core/src/d1-mock.ts`; otherwise network unit tests will fail even if production D1 would work.\nFiles Context: `apps/network/src/environments/rpg.ts`: emits `game.completed` via `broadcast` on phase transition to `finished`, and adds Grimlock-only autoplay new_game with daily cap.\n`apps/network/src/environments/rpg.test.ts`: asserts broadcast emission, Grimlock auto-create/no-create cases, and `maxGamesPerDay` enforcement using `D1MockDatabase`."
     },
     {
       "id": "story-mlft5llk",
-      "title": "Grimlock inbox webhook bridge — POST messages to webhookUrl",
+      "title": "Grimlock inbox webhook bridge \u2014 POST messages to webhookUrl",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent.ts",
@@ -828,7 +828,7 @@
     },
     {
       "id": "story-mlft5mua",
-      "title": "Tool router — remap game↔rpg calls based on active environment",
+      "title": "Tool router \u2014 remap game\u2194rpg calls based on active environment",
       "status": "completed",
       "filesModified": [
         "apps/network/src/agent-do.test.ts",
@@ -838,18 +838,18 @@
     },
     {
       "id": "story-mlfzhu6d",
-      "title": "Phase 1a: Barrier class filtering — only generate barriers for party classes",
+      "title": "Phase 1a: Barrier class filtering \u2014 only generate barriers for party classes",
       "status": "completed",
       "filesModified": [
         "apps/network/src/games/rpg-engine.test.ts",
         "apps/network/src/games/rpg-engine.ts",
         "prd.json"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` (not `apps/network/src/environments/`) is where `Room` barriers and `generateDungeon()` live; `createGame()` was generating a dungeon without considering the party’s chosen `klass`, causing barriers to require absent classes and softlock exploration.\nGotcha: Wrangler deploy in this non-interactive environment requires `CLOUDFLARE_API_TOKEN`; the `cloudflare_api_token` secret failed auth, but `atproto-agents::cloudflare_api_key` worked as the token for deploy. Also, `createGame()` can receive `Character` objects directly; don’t mutate/reuse those across tests because they’re passed through without cloning.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains `generateDungeon()` and `createGame()` (now passes `{ partyClasses }` into the generator). `apps/network/src/games/rpg-engine.test.ts` contains the new 100-dungeon regression test ensuring barrier `requiredClass` is always in the party’s classes."
+      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` (not `apps/network/src/environments/`) is where `Room` barriers and `generateDungeon()` live; `createGame()` was generating a dungeon without considering the party\u2019s chosen `klass`, causing barriers to require absent classes and softlock exploration.\nGotcha: Wrangler deploy in this non-interactive environment requires `CLOUDFLARE_API_TOKEN`; the `cloudflare_api_token` secret failed auth, but `atproto-agents::cloudflare_api_key` worked as the token for deploy. Also, `createGame()` can receive `Character` objects directly; don\u2019t mutate/reuse those across tests because they\u2019re passed through without cloning.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains `generateDungeon()` and `createGame()` (now passes `{ partyClasses }` into the generator). `apps/network/src/games/rpg-engine.test.ts` contains the new 100-dungeon regression test ensuring barrier `requiredClass` is always in the party\u2019s classes."
     },
     {
       "id": "story-mlfzi29l",
-      "title": "Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble",
+      "title": "Phase 1b: Alternative paths for barriers \u2014 brute force, skill check, auto-crumble",
       "status": "completed",
       "filesModified": [
         "prd.json",
@@ -859,11 +859,11 @@
         "apps/network/src/games/rpg-engine.test.ts",
         "apps/network/src/games/rpg-engine.ts"
       ],
-      "learnings": "Technical Discovery: `explore()` increments `game.roomIndex` before barrier resolution; for per-barrier attempt tracking to work, compute a stable `barrierKey` from the barrier’s room index *before* decrementing `game.roomIndex` on a block, and store counts on `game.barrierAttempts` (optional for persisted-game back-compat). See `apps/network/src/games/rpg-engine.ts`.\nGotcha: When piping vitest output into `tail`, the pipeline can hide failures unless you use `set -o pipefail`; otherwise you can get a zero exit status even with failing tests.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the dungeon room logic and the barrier handler inside `explore()`. `apps/network/src/games/rpg-engine.test.ts` is the unit test suite for these mechanics and now includes coverage for brute force, skill check, MP sacrifice, and auto-crumble-at-5."
+      "learnings": "Technical Discovery: `explore()` increments `game.roomIndex` before barrier resolution; for per-barrier attempt tracking to work, compute a stable `barrierKey` from the barrier\u2019s room index *before* decrementing `game.roomIndex` on a block, and store counts on `game.barrierAttempts` (optional for persisted-game back-compat). See `apps/network/src/games/rpg-engine.ts`.\nGotcha: When piping vitest output into `tail`, the pipeline can hide failures unless you use `set -o pipefail`; otherwise you can get a zero exit status even with failing tests.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the dungeon room logic and the barrier handler inside `explore()`. `apps/network/src/games/rpg-engine.test.ts` is the unit test suite for these mechanics and now includes coverage for brute force, skill check, MP sacrifice, and auto-crumble-at-5."
     },
     {
       "id": "story-mlfzi9ki",
-      "title": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
+      "title": "Phase 1c: Stuck detection \u2014 same action 5x triggers GM intervention",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -875,7 +875,7 @@
         "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts"
       ],
-      "learnings": "{\"success\":false,\"summary\":\"I found the RPG engine already has scaffolding for stuck detection (`actionHistory` plus helper functions around lines ~381+). Next step is to inspect how it’s currently wired into actions like `explore()` and add a RED test that proves GM intervention after 5 identical actions, then adjust implementation if it isn’t triggering correctly or doesn’t auto-resolve the obstacle + advance rooms as required.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha"
+      "learnings": "{\"success\":false,\"summary\":\"I found the RPG engine already has scaffolding for stuck detection (`actionHistory` plus helper functions around lines ~381+). Next step is to inspect how it\u2019s currently wired into actions like `explore()` and add a RED test that proves GM intervention after 5 identical actions, then adjust implementation if it isn\u2019t triggering correctly or doesn\u2019t auto-resolve the obstacle + advance rooms as required.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha"
     },
     {
       "id": "story-mlfzig0p",
@@ -891,11 +891,11 @@
         "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts"
       ],
-      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 1d enemy scaling work: I’m going to (1) pull up `apps/network/src/environments/rpg-engine.ts` and existing RPG tests, and (2) run the required `swarm memory find` before writing RED tests.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 1d enemy scaling work: I\u2019m going to (1) pull up `apps/network/src/environments/rpg-engine.ts` and existing RPG tests, and (2) run the required `swarm memory find` before writing RED tests.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     },
     {
       "id": "story-mlfzioik",
-      "title": "Phase 2a: Dungeon themes and narrative arc — replace random rooms with story",
+      "title": "Phase 2a: Dungeon themes and narrative arc \u2014 replace random rooms with story",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -907,11 +907,11 @@
         "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts"
       ],
-      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 2a work: I’m going to (1) run the required `swarm memory find` for this story topic, (2) inspect `apps/network/src/environments/rpg-engine.ts` plus its existing tests, then (3) write a RED test for theme/backstory + theme-aware room descriptions + unique themes across 10 generated dungeons.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 2a work: I\u2019m going to (1) run the required `swarm memory find` for this story topic, (2) inspect `apps/network/src/environments/rpg-engine.ts` plus its existing tests, then (3) write a RED test for theme/backstory + theme-aware room descriptions + unique themes across 10 generated dungeons.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     },
     {
       "id": "story-mlfziw4w",
-      "title": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "title": "Phase 2b: Room descriptions reference party actions \u2014 dynamic narrative",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -923,11 +923,11 @@
         "apps/network/src/environments/rpg.test.ts",
         "apps/network/src/environments/rpg.ts"
       ],
-      "learnings": "{\"success\":false,\"summary\":\"Confirmed the RPG engine lives in `apps/network/src/games/rpg-engine.ts` (tests in `apps/network/src/games/rpg-engine.test.ts`), and ran the required `swarm memory find` for this story. Next I’m going to inspect the auto-crumble logic (currently failing a test) and then add new RED tests for reactive room descriptions + boss callbacks before implementing `narrativeContext`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"file"
+      "learnings": "{\"success\":false,\"summary\":\"Confirmed the RPG engine lives in `apps/network/src/games/rpg-engine.ts` (tests in `apps/network/src/games/rpg-engine.test.ts`), and ran the required `swarm memory find` for this story. Next I\u2019m going to inspect the auto-crumble logic (currently failing a test) and then add new RED tests for reactive room descriptions + boss callbacks before implementing `narrativeContext`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"file"
     },
     {
       "id": "story-mlfzj4xx",
-      "title": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "title": "Phase 3a: GM tool \u2014 Grimlock-only tool for live dungeon adjudication",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -949,14 +949,14 @@
     },
     {
       "id": "story-mlg25sjb",
-      "title": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "title": "Fix: Skip dead players in turn order \u2014 don't assign turns to 0 HP players",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[unknown] ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/ca"
+      "learnings": "[unknown] \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n \u2713 |network| src/games/ca"
     },
     {
       "id": "story-mlfzjdn8",
-      "title": "Phase 3b: Dynamic difficulty scaling — GM auto-adjusts based on party performance",
+      "title": "Phase 3b: Dynamic difficulty scaling \u2014 GM auto-adjusts based on party performance",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -966,11 +966,11 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 3b work: I’m going to (1) run the required `swarm memory find` for this story, then (2) inspect the current RPG engine and GM tool code paths where room completion and difficulty adjustments belong, and finally (3) write failing Vitest cases for breezing/struggling parties before implementing the scaling logic.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_ou"
+      "learnings": "{\"success\":true,\"summary\":\"Starting Phase 3b work: I\u2019m going to (1) run the required `swarm memory find` for this story, then (2) inspect the current RPG engine and GM tool code paths where room completion and difficulty adjustments belong, and finally (3) write failing Vitest cases for breezing/struggling parties before implementing the scaling logic.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_ou"
     },
     {
       "id": "story-mlfzjmrq",
-      "title": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "title": "Phase 4a: consult_library GM action \u2014 pdf-brain integration for RPG knowledge",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -983,18 +983,18 @@
         "apps/network/src/tools/gm-tool.test.ts",
         "apps/network/src/tools/gm-tool.ts"
       ],
-      "learnings": "Technical Discovery: The GM tool is instantiated directly inside `apps/network/src/agent.ts` (not only via `apps/network/src/tools/index.ts`), so new GM actions that depend on runtime config must have that config explicitly threaded into the GM tool context. For consult_library, `webhookUrl` must be passed from `this.config.webhookUrl` into `createGmTool()`’s ctx, otherwise it always fails at runtime even if unit tests pass.\nGotcha: Don’t compare against raw webhook URLs that include `?token=`; the runtime pattern (also used for inbox webhook delivery) is to strip the token from the URL and send it as `Authorization: Bearer ...`. If you forget to strip it, you’ll leak tokens in logs and tests will be brittle. Also, the default `apps/network/vitest.config.ts` only includes `src/**/*.test.ts`, so “live/integration” tests must either be `.test.ts` and skipped by default or run via a separate config.\nFiles Context: `apps/network/src/tools/gm-tool.ts` implements the new `consult_library` command (fetch to webhook, parse result, persist `libraryContext`). `apps/network/src/games/rpg-engine.ts` holds the `RpgGameState` type; `libraryContext` is added here for persistence/back-compat. `apps/network/src/agent.ts` is where the GM tool is wired into the DO runtime and now passes `webhookUrl` into the GM ctx. `apps/network/src/tools/gm-tool.test.ts` contains the mock-webhook TDD case. `apps/network/src/tools/gm-tool.pdfbrain.live.test.ts` is a live test gated by `GRIMLOCK_WEBHOOK_URL`."
+      "learnings": "Technical Discovery: The GM tool is instantiated directly inside `apps/network/src/agent.ts` (not only via `apps/network/src/tools/index.ts`), so new GM actions that depend on runtime config must have that config explicitly threaded into the GM tool context. For consult_library, `webhookUrl` must be passed from `this.config.webhookUrl` into `createGmTool()`\u2019s ctx, otherwise it always fails at runtime even if unit tests pass.\nGotcha: Don\u2019t compare against raw webhook URLs that include `?token=`; the runtime pattern (also used for inbox webhook delivery) is to strip the token from the URL and send it as `Authorization: Bearer ...`. If you forget to strip it, you\u2019ll leak tokens in logs and tests will be brittle. Also, the default `apps/network/vitest.config.ts` only includes `src/**/*.test.ts`, so \u201clive/integration\u201d tests must either be `.test.ts` and skipped by default or run via a separate config.\nFiles Context: `apps/network/src/tools/gm-tool.ts` implements the new `consult_library` command (fetch to webhook, parse result, persist `libraryContext`). `apps/network/src/games/rpg-engine.ts` holds the `RpgGameState` type; `libraryContext` is added here for persistence/back-compat. `apps/network/src/agent.ts` is where the GM tool is wired into the DO runtime and now passes `webhookUrl` into the GM ctx. `apps/network/src/tools/gm-tool.test.ts` contains the mock-webhook TDD case. `apps/network/src/tools/gm-tool.pdfbrain.live.test.ts` is a live test gated by `GRIMLOCK_WEBHOOK_URL`."
     },
     {
       "id": "story-mlfzjx9w",
-      "title": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
+      "title": "Phase 4b: GM-crafted dungeons \u2014 use library knowledge for encounter design",
       "status": "failed",
       "filesModified": [],
-      "learnings": "[unknown] ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n ✓ |network| src/enviro"
+      "learnings": "[unknown] \u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n \u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n \u2713 |network| src/enviro"
     },
     {
       "id": "story-mlg5r7ew",
-      "title": "Phase 4b-2: BRP-informed combat — opposed rolls, crits, fumbles",
+      "title": "Phase 4b-2: BRP-informed combat \u2014 opposed rolls, crits, fumbles",
       "status": "completed",
       "filesModified": [
         "apps/network/src/tools/gm-tool.test.ts",
@@ -1004,11 +1004,11 @@
         "apps/network/src/games/rpg-engine.test.ts",
         "apps/network/src/games/rpg-engine.ts"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` already had an opposed-roll scaffold (attack vs dodge with margin compare) but damage/crit/fumble/armor were missing. Adding optional `Character.armor` (default `0`) is backwards compatible with persisted games; damage can safely treat missing armor as `0`. For deterministic tests, a local `makeDice({ d100Rolls, dRolls })` helper in `apps/network/src/games/rpg-engine.test.ts` is simpler than mapping rng outputs and precisely controls d100 order vs d6 damage rolls.\nGotcha: The RPG environment’s enemy combat path is still inlined in `apps/network/src/environments/rpg.ts` (it does its own attack vs enemy logic and will not automatically pick up changes made to `apps/network/src/games/rpg-engine.ts::attack`). If you need BRP crit/fumble behavior against enemies, you must update that inlined section or refactor it to reuse shared engine logic. Also, when validating with `... | tail -30`, always run with `set -o pipefail` or failures can be masked by the pipe.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the core RPG rules and the `attack()` function updated for BRP-style combat (crit/fumble/armor). `apps/network/src/games/rpg-engine.test.ts` contains unit tests and now includes deterministic dice helpers plus coverage for opposed-roll ties, both-fail misses, critical double damage, fumble self-harm, and armor reduction."
+      "learnings": "Technical Discovery: `apps/network/src/games/rpg-engine.ts` already had an opposed-roll scaffold (attack vs dodge with margin compare) but damage/crit/fumble/armor were missing. Adding optional `Character.armor` (default `0`) is backwards compatible with persisted games; damage can safely treat missing armor as `0`. For deterministic tests, a local `makeDice({ d100Rolls, dRolls })` helper in `apps/network/src/games/rpg-engine.test.ts` is simpler than mapping rng outputs and precisely controls d100 order vs d6 damage rolls.\nGotcha: The RPG environment\u2019s enemy combat path is still inlined in `apps/network/src/environments/rpg.ts` (it does its own attack vs enemy logic and will not automatically pick up changes made to `apps/network/src/games/rpg-engine.ts::attack`). If you need BRP crit/fumble behavior against enemies, you must update that inlined section or refactor it to reuse shared engine logic. Also, when validating with `... | tail -30`, always run with `set -o pipefail` or failures can be masked by the pipe.\nFiles Context: `apps/network/src/games/rpg-engine.ts` contains the core RPG rules and the `attack()` function updated for BRP-style combat (crit/fumble/armor). `apps/network/src/games/rpg-engine.test.ts` contains unit tests and now includes deterministic dice helpers plus coverage for opposed-roll ties, both-fail misses, critical double damage, fumble self-harm, and armor reduction."
     },
     {
       "id": "story-mlg5rfww",
-      "title": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "title": "Phase 4b-3: Monster tactics by enemy type \u2014 goblins, orcs, boss behaviors",
       "status": "completed",
       "filesModified": [
         "apps/network/src/games/rpg-engine.test.ts",
@@ -1022,7 +1022,7 @@
     },
     {
       "id": "story-mlg5rnzm",
-      "title": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "title": "Phase 4b-4: Game Angry difficulty curve \u2014 easy\u2192medium\u2192hard\u2192deadly\u2192boss",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -1032,7 +1032,7 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlg5rnzm. I’m going to (1) run the required `swarm memory find`, (2) inspect the current RPG dungeon generation + tests, then (3) add failing Vitest cases for room difficulty/stat scaling/rest placement before implementing changes in `generateDungeon()`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
+      "learnings": "{\"success\":false,\"summary\":\"Starting story-mlg5rnzm. I\u2019m going to (1) run the required `swarm memory find`, (2) inspect the current RPG dungeon generation + tests, then (3) add failing Vitest cases for room difficulty/stat scaling/rest placement before implementing changes in `generateDungeon()`.\",\"files_modified\":[],\"learnings\":{\"technical_discovery\":\"\",\"gotcha_for_next_iteration\":\"\",\"files_context\":\"\"},\"validation_passed\":false,\"error_output\":\"\"}"
     },
     {
       "id": "story-mlguvihc",
@@ -1049,11 +1049,11 @@
         "prd.json",
         "apps/network/src/agent-do.test.ts"
       ],
-      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already had a `character` route and `handleCharacter()` implemented, but it was mutating `updatedAt` on PUT like `/profile` does. That breaks strict roundtrip expectations; storing the payload verbatim keeps the DO endpoint semantics simple and lets `apps/network/src/games/rpg-engine.ts` own timestamp updates via `gameCharacterToPersistent()`.\nGotcha: If you make `PersistentCharacter` fields required in `packages/core/src/types.ts`, you must also update any constructors/fixtures (notably `gameCharacterToPersistent()` defaults and tests) or you’ll create type drift and inconsistent stored shapes. Also, avoid hidden server-side mutations (like overriding `updatedAt`) in endpoints that are meant to roundtrip client state.\nFiles Context: `packages/core/src/types.ts` defines the canonical `PersistentCharacter` shape. `apps/network/src/agent.ts` is the AgentDO HTTP router and persists the character under `rpg:character` in DO storage. `apps/network/src/games/rpg-engine.ts` contains the conversion helpers (`persistentToGameCharacter`, `gameCharacterToPersistent`) used by the RPG environment. Tests live in `apps/network/src/games/rpg-engine.test.ts` (helper behavior) and `apps/network/src/agent-do.test.ts` (DO endpoint behavior)."
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already had a `character` route and `handleCharacter()` implemented, but it was mutating `updatedAt` on PUT like `/profile` does. That breaks strict roundtrip expectations; storing the payload verbatim keeps the DO endpoint semantics simple and lets `apps/network/src/games/rpg-engine.ts` own timestamp updates via `gameCharacterToPersistent()`.\nGotcha: If you make `PersistentCharacter` fields required in `packages/core/src/types.ts`, you must also update any constructors/fixtures (notably `gameCharacterToPersistent()` defaults and tests) or you\u2019ll create type drift and inconsistent stored shapes. Also, avoid hidden server-side mutations (like overriding `updatedAt`) in endpoints that are meant to roundtrip client state.\nFiles Context: `packages/core/src/types.ts` defines the canonical `PersistentCharacter` shape. `apps/network/src/agent.ts` is the AgentDO HTTP router and persists the character under `rpg:character` in DO storage. `apps/network/src/games/rpg-engine.ts` contains the conversion helpers (`persistentToGameCharacter`, `gameCharacterToPersistent`) used by the RPG environment. Tests live in `apps/network/src/games/rpg-engine.test.ts` (helper behavior) and `apps/network/src/agent-do.test.ts` (DO endpoint behavior)."
     },
     {
       "id": "story-mlguwnws",
-      "title": "XP and leveling system — encounter rewards + stat growth on level up",
+      "title": "XP and leveling system \u2014 encounter rewards + stat growth on level up",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
@@ -1061,11 +1061,11 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `awardXp()` in `apps/network/src/games/rpg-engine.ts` levels using `while (pc.level < XP_TABLE.length && pc.xp >= XP_TABLE[pc.level])`, applies per-level stat growth (`maxHp += 5+level`, `maxMp += 3+level`), and does a +5 bump to a random skill chosen from sorted skill keys (so tests can deterministically control it by stubbing `Math.random`).\nGotcha: RPG XP is accumulated in `game.xpEarned` during play and only applied to the current agent’s `PersistentCharacter` inside `emitGameCompleted()` in `apps/network/src/environments/rpg.ts`; if you expect all party members to persist progression, you must ensure each agent runs a completion/save path or implement a different persistence fan-out strategy.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines XP constants, `XP_TABLE`, and `awardXp()` plus persistent character conversion helpers. `apps/network/src/environments/rpg.ts` accumulates XP into `game.xpEarned` on kills/room clears/adventure completion and applies it on save in `emitGameCompleted()`, and `buildContext()` renders level/XP progress. Tests live in `apps/network/src/games/rpg-engine.test.ts` (awardXp unit tests) and `apps/network/src/environments/rpg.test.ts` (XP accumulation + buildContext coverage)."
+      "learnings": "Technical Discovery: `awardXp()` in `apps/network/src/games/rpg-engine.ts` levels using `while (pc.level < XP_TABLE.length && pc.xp >= XP_TABLE[pc.level])`, applies per-level stat growth (`maxHp += 5+level`, `maxMp += 3+level`), and does a +5 bump to a random skill chosen from sorted skill keys (so tests can deterministically control it by stubbing `Math.random`).\nGotcha: RPG XP is accumulated in `game.xpEarned` during play and only applied to the current agent\u2019s `PersistentCharacter` inside `emitGameCompleted()` in `apps/network/src/environments/rpg.ts`; if you expect all party members to persist progression, you must ensure each agent runs a completion/save path or implement a different persistence fan-out strategy.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines XP constants, `XP_TABLE`, and `awardXp()` plus persistent character conversion helpers. `apps/network/src/environments/rpg.ts` accumulates XP into `game.xpEarned` on kills/room clears/adventure completion and applies it on save in `emitGameCompleted()`, and `buildContext()` renders level/XP progress. Tests live in `apps/network/src/games/rpg-engine.test.ts` (awardXp unit tests) and `apps/network/src/environments/rpg.test.ts` (XP accumulation + buildContext coverage)."
     },
     {
       "id": "story-mlgux0y8",
-      "title": "Campaign memory — adventure log compaction + previously-on context injection",
+      "title": "Campaign memory \u2014 adventure log compaction + previously-on context injection",
       "status": "completed",
       "filesModified": [
         "prd.json",
@@ -1093,7 +1093,7 @@
     },
     {
       "id": "story-mlgxf8wb",
-      "title": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
+      "title": "Agent @mention messaging on feed \u2014 in-character dialogue + OOC table talk",
       "status": "completed",
       "filesModified": [
         "apps/network/src/environments/rpg.test.ts",
@@ -1104,7 +1104,7 @@
         "prd.json",
         "progress.txt"
       ],
-      "learnings": "Technical Discovery: `send_message` is already implemented in `apps/network/src/environments/rpg.ts` with a per-round counter stored at `game.messageRateLimit` keyed by the raw `ctx.agentName`, and the \"round\" increments inside `advanceTurn()` when initiative wraps; this makes the 2-messages-per-round guard stable across persisted games. `buildContext()` filters feed relevance by `to` (`@party`, direct `@agent`, `@dm` for Grimlock) and also by scanning message text for `@agent` mentions, rendering IC with character display names when available.\nGotcha: Cloudflare deploy can silently fall back to interactive OAuth if `CLOUDFLARE_API_TOKEN` isn’t present; and tokens/account IDs must match. Using `cloudflare_api_token` with `atproto-agents::cloudflare_account_id` produced CF API auth error 10000 (account mismatch). For non-interactive deploys, inject env vars inline with `CLOUDFLARE_API_TOKEN=\"$(secrets lease <name> --raw)\"` and `CLOUDFLARE_ACCOUNT_ID=\"$(secrets lease <name> --raw)\"` so secret values never hit stdout.\nFiles Context: `apps/network/src/environments/rpg.ts` contains the RPG tool schema, `send_message` execution (validation, persistence, trimming, rate limiting), and `buildContext()` feed-message injection. `apps/network/src/games/rpg-engine.ts` defines `FeedMessage`, `FeedMessageType`, and the `RpgGameState` fields (`feedMessages`, `messageRateLimit`, `round`). `apps/network/src/environments/rpg.test.ts` has the Vitest coverage for `send_message` behavior and context inclusion."
+      "learnings": "Technical Discovery: `send_message` is already implemented in `apps/network/src/environments/rpg.ts` with a per-round counter stored at `game.messageRateLimit` keyed by the raw `ctx.agentName`, and the \"round\" increments inside `advanceTurn()` when initiative wraps; this makes the 2-messages-per-round guard stable across persisted games. `buildContext()` filters feed relevance by `to` (`@party`, direct `@agent`, `@dm` for Grimlock) and also by scanning message text for `@agent` mentions, rendering IC with character display names when available.\nGotcha: Cloudflare deploy can silently fall back to interactive OAuth if `CLOUDFLARE_API_TOKEN` isn\u2019t present; and tokens/account IDs must match. Using `cloudflare_api_token` with `atproto-agents::cloudflare_account_id` produced CF API auth error 10000 (account mismatch). For non-interactive deploys, inject env vars inline with `CLOUDFLARE_API_TOKEN=\"$(secrets lease <name> --raw)\"` and `CLOUDFLARE_ACCOUNT_ID=\"$(secrets lease <name> --raw)\"` so secret values never hit stdout.\nFiles Context: `apps/network/src/environments/rpg.ts` contains the RPG tool schema, `send_message` execution (validation, persistence, trimming, rate limiting), and `buildContext()` feed-message injection. `apps/network/src/games/rpg-engine.ts` defines `FeedMessage`, `FeedMessageType`, and the `RpgGameState` fields (`feedMessages`, `messageRateLimit`, `round`). `apps/network/src/environments/rpg.test.ts` has the Vitest coverage for `send_message` behavior and context inclusion."
     }
   ],
   "failures": [
@@ -1112,7 +1112,7 @@
       "storyId": "story-mlfedrp4",
       "storyTitle": "Store ActionOutcome after each tool call in act()",
       "category": "test_failure",
-      "error": "• turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  |network| src/agent-do.test.ts > AgentDO > validates lexicon records passed to the remember tool\nAssertionError: promise resolved \"{ content: [ { …(2) } ], …(1) }\" instead of reje",
+      "error": "\u2022 turbo 2.8.3\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |network| src/agent-do.test.ts > AgentDO > validates lexicon records passed to the remember tool\nAssertionError: promise resolved \"{ content: [ { \u2026(2) } ], \u2026(1) }\" instead of reje",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "ls -la",
@@ -1141,7 +1141,7 @@
     },
     {
       "storyId": "story-mlfedt6k",
-      "storyTitle": "Housekeeping mode — prune old goals and stale memories",
+      "storyTitle": "Housekeeping mode \u2014 prune old goals and stale memories",
       "category": "build_error",
       "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
       "toolNames": [
@@ -1169,17 +1169,17 @@
     },
     {
       "storyId": "story-mlfzi29l",
-      "storyTitle": "Phase 1b: Alternative paths for barriers — brute force, skill check, auto-crumble",
+      "storyTitle": "Phase 1b: Alternative paths for barriers \u2014 brute force, skill check, auto-crumble",
       "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "error": "[verification_rejected] Agent made zero tool calls \u2014 likely a no-op session.",
       "toolNames": [],
       "iterationNumber": 2
     },
     {
       "storyId": "story-mlfzi9ki",
-      "storyTitle": "Phase 1c: Stuck detection — same action 5x triggers GM intervention",
+      "storyTitle": "Phase 1c: Stuck detection \u2014 same action 5x triggers GM intervention",
       "category": "unknown",
-      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > allows first player to place settlement then road 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n ✓ |network| src/games/catan.t",
+      "error": "\u2713 |network| src/games/catan.test.ts > Agents of Catan > setup phase > allows first player to place settlement then road 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n \u2713 |network| src/games/catan.t",
       "toolNames": [
         "sed -n",
         "ls -la",
@@ -1190,9 +1190,9 @@
     },
     {
       "storyId": "story-mlfziw4w",
-      "storyTitle": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "storyTitle": "Phase 2b: Room descriptions reference party actions \u2014 dynamic narrative",
       "category": "test_failure",
-      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier\nAssertionError: expected 4 to be 5 // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- 5\u001b[39m\n\u001b[31m+ 4\u001b[39m\n\n ❯ src/games/rpg-engine.test.ts:414:50\n    412|     explore(game, { dice })\n    413|     expect(game.roomIndex).toBe(1)\n    414|     expect",
+      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[5/6]\u23af\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > barriers: auto-crumble triggers after exactly 5 failed attempts on the same barrier\nAssertionError: expected 4 to be 5 // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- 5\u001b[39m\n\u001b[31m+ 4\u001b[39m\n\n \u276f src/games/rpg-engine.test.ts:414:50\n    412|     explore(game, { dice })\n    413|     expect(game.roomIndex).toBe(1)\n    414|     expect",
       "toolNames": [
         "ls -la",
         "sed -n",
@@ -1203,17 +1203,17 @@
     },
     {
       "storyId": "story-mlfziw4w",
-      "storyTitle": "Phase 2b: Room descriptions reference party actions — dynamic narrative",
+      "storyTitle": "Phase 2b: Room descriptions reference party actions \u2014 dynamic narrative",
       "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "error": "[verification_rejected] Agent made zero tool calls \u2014 likely a no-op session.",
       "toolNames": [],
       "iterationNumber": 9
     },
     {
       "storyId": "story-mlfzj4xx",
-      "storyTitle": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "storyTitle": "Phase 3a: GM tool \u2014 Grimlock-only tool for live dungeon adjudication",
       "category": "unknown",
-      "error": "304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
+      "error": "304| \n \u276f D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n \u276f persistRpgGame src/tools/gm-tool.ts:56:6\n \u276f Object.execute src/tools/gm-tool.ts:197:15\n \u276f src/tools/gm-tool.test.ts:133:5\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[10/11]\u23af\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "rg -n",
@@ -1224,9 +1224,9 @@
     },
     {
       "storyId": "story-mlg25sjb",
-      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "storyTitle": "Fix: Skip dead players in turn order \u2014 don't assign turns to 0 HP players",
       "category": "unknown",
-      "error": "304| \n ❯ D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n ❯ persistRpgGame src/tools/gm-tool.ts:56:6\n ❯ Object.execute src/tools/gm-tool.ts:197:15\n ❯ src/tools/gm-tool.test.ts:133:5\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/12]⎯\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
+      "error": "304| \n \u276f D1MockStatement.run ../../packages/core/src/d1-mock.ts:107:19\n \u276f persistRpgGame src/tools/gm-tool.ts:56:6\n \u276f Object.execute src/tools/gm-tool.ts:197:15\n \u276f src/tools/gm-tool.test.ts:133:5\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[11/12]\u23af\n\n FAIL  |network| src/tools/gm-tool.test.ts > gm tool (grimlock-only) > review_party: returns a summary including HP/MP, loot, rooms cleared, deaths, and near-deaths\nError: Unsupported SQL in D1MockDatabase.run: update games set state = ?, phase = ?, updated_at = datetime",
       "toolNames": [
         "ls -la",
         "/usr/bin/zsh -lc",
@@ -1238,9 +1238,9 @@
     },
     {
       "storyId": "story-mlg25sjb",
-      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "storyTitle": "Fix: Skip dead players in turn order \u2014 don't assign turns to 0 HP players",
       "category": "test_failure",
-      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > stuck detection: repeating the same action 5x triggers GM intervention and advances\nAssertionError: expected false to be true // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- true\u001b[39m\n\u001b[31m+ false\u001b[39m\n\n ❯ src/games/rpg-engine.test.ts:443:96\n    441|     expect(game.roomIndex).toBe(1)\n    442| \n    443|     expect(game.log.som",
+      "error": "292|     }\n    293|     expect(themes.size).toBe(10)\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[5/6]\u23af\n\n FAIL  |network| src/games/rpg-engine.test.ts > rpg-engine > stuck detection: repeating the same action 5x triggers GM intervention and advances\nAssertionError: expected false to be true // Object.is equality\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- true\u001b[39m\n\u001b[31m+ false\u001b[39m\n\n \u276f src/games/rpg-engine.test.ts:443:96\n    441|     expect(game.roomIndex).toBe(1)\n    442| \n    443|     expect(game.log.som",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "rg -n",
@@ -1252,9 +1252,9 @@
     },
     {
       "storyId": "story-mlg25sjb",
-      "storyTitle": "Fix: Skip dead players in turn order — don't assign turns to 0 HP players",
+      "storyTitle": "Fix: Skip dead players in turn order \u2014 don't assign turns to 0 HP players",
       "category": "unknown",
-      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n ✓ |network| src/tools/gm-t",
+      "error": "\u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n \u2713 |network| src/tools/gm-t",
       "toolNames": [
         "ls -la",
         "rg -n",
@@ -1266,9 +1266,9 @@
     },
     {
       "storyId": "story-mlfzj4xx",
-      "storyTitle": "Phase 3a: GM tool — Grimlock-only tool for live dungeon adjudication",
+      "storyTitle": "Phase 3a: GM tool \u2014 Grimlock-only tool for live dungeon adjudication",
       "category": "unknown",
-      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n ✓ |network| src/auth.test.",
+      "error": "\u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > ends the game by stalemate when no one builds for 20 consecutive turns 2ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > resets the stale turn counter when a road is built 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > supports player-to-player trading 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > renders the board as text 1ms\n \u2713 |network| src/auth.test.",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "sed -n",
@@ -1279,9 +1279,9 @@
     },
     {
       "storyId": "story-mlfzjmrq",
-      "storyTitle": "Phase 4a: consult_library GM action — pdf-brain integration for RPG knowledge",
+      "storyTitle": "Phase 4a: consult_library GM action \u2014 pdf-brain integration for RPG knowledge",
       "category": "unknown",
-      "error": "✓ |network| src/logger.test.ts > logger > createLogger() merges base fields into each event 1ms\n ✓ |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > overwrites environments when registering the same type twice 6ms\n ✓ |network| src/environments/registry.test.ts > environment registry > returns undefined for unknown environment types 6ms\n ✓ |network| src/deplo",
+      "error": "\u2713 |network| src/logger.test.ts > logger > createLogger() merges base fields into each event 1ms\n \u2713 |network| src/environments/registry.test.ts > environment registry > registers and retrieves environments by type 6ms\n \u2713 |network| src/environments/registry.test.ts > environment registry > overwrites environments when registering the same type twice 6ms\n \u2713 |network| src/environments/registry.test.ts > environment registry > returns undefined for unknown environment types 6ms\n \u2713 |network| src/deplo",
       "toolNames": [
         "sed -n",
         "/usr/bin/zsh -lc",
@@ -1294,13 +1294,13 @@
     },
     {
       "storyId": "story-mlfzjx9w",
-      "storyTitle": "Phase 4b: GM-crafted dungeons — use library knowledge for encounter design",
+      "storyTitle": "Phase 4b: GM-crafted dungeons \u2014 use library knowledge for encounter design",
       "category": "unknown",
-      "error": "✓ |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > non-grimlock agent calling new_game gets rejected with helpful message 1ms\n ✓ |network| src/environments/rpg.test.ts > rpgEnvironment > grimlock calling new_game ",
+      "error": "\u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > join_game adds the agent to the party with the chosen class 2ms\n \u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > new_game suggests joining an open adventure (<3 players) instead of creating a solo one 2ms\n \u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > non-grimlock agent calling new_game gets rejected with helpful message 1ms\n \u2713 |network| src/environments/rpg.test.ts > rpgEnvironment > grimlock calling new_game ",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "sed -n",
-        "ls -ლა",
+        "ls -\u10da\u10d0",
         "ls -la",
         "rg -n",
         "nl -ba"
@@ -1309,9 +1309,9 @@
     },
     {
       "storyId": "story-mlg5rfww",
-      "storyTitle": "Phase 4b-3: Monster tactics by enemy type — goblins, orcs, boss behaviors",
+      "storyTitle": "Phase 4b-3: Monster tactics by enemy type \u2014 goblins, orcs, boss behaviors",
       "category": "unknown",
-      "error": "✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n ✓ |network| src/games/catan.test.ts > Agents of Catan > playing phase > allows rolling dice and ending turn 1ms\n ✓ |network| src/games/catan.test.ts > Age",
+      "error": "\u2713 |network| src/games/catan.test.ts > Agents of Catan > setup phase > enforces distance rule in setup 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > setup phase > transitions to playing phase after all setup rounds 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > requires dice roll before building 1ms\n \u2713 |network| src/games/catan.test.ts > Agents of Catan > playing phase > allows rolling dice and ending turn 1ms\n \u2713 |network| src/games/catan.test.ts > Age",
       "toolNames": [
         "/usr/bin/zsh -lc",
         "sed -n",
@@ -1322,23 +1322,23 @@
     },
     {
       "storyId": "story-mlg5rnzm",
-      "storyTitle": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "storyTitle": "Phase 4b-4: Game Angry difficulty curve \u2014 easy\u2192medium\u2192hard\u2192deadly\u2192boss",
       "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "error": "[verification_rejected] Agent made zero tool calls \u2014 likely a no-op session.",
       "toolNames": [],
       "iterationNumber": 5
     },
     {
       "storyId": "story-mlg5rnzm",
-      "storyTitle": "Phase 4b-4: Game Angry difficulty curve — easy→medium→hard→deadly→boss",
+      "storyTitle": "Phase 4b-4: Game Angry difficulty curve \u2014 easy\u2192medium\u2192hard\u2192deadly\u2192boss",
       "category": "verification_rejected",
-      "error": "[verification_rejected] Agent made zero tool calls — likely a no-op session.",
+      "error": "[verification_rejected] Agent made zero tool calls \u2014 likely a no-op session.",
       "toolNames": [],
       "iterationNumber": 6
     },
     {
       "storyId": "story-mlguwnws",
-      "storyTitle": "XP and leveling system — encounter rewards + stat growth on level up",
+      "storyTitle": "XP and leveling system \u2014 encounter rewards + stat growth on level up",
       "category": "timeout",
       "error": "RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network/apps/network\n\nstdout | src/agent-do.test.ts > AgentDO > stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug\nTool loop step { step: \u001b[33m1\u001b[39m, toolCalls: [ \u001b[32m'think_aloud'\u001b[39m ], elapsed: \u001b[33m1\u001b[39m }\n\nstdout | src/agent-do.test.ts > AgentDO > stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug\nTool loop complete (no more tool calls) { ",
       "toolNames": [
@@ -1352,7 +1352,7 @@
     },
     {
       "storyId": "story-mlgxf8wb",
-      "storyTitle": "Agent @mention messaging on feed — in-character dialogue + OOC table talk",
+      "storyTitle": "Agent @mention messaging on feed \u2014 in-character dialogue + OOC table talk",
       "category": "timeout",
       "error": "> typecheck\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI tsup v8.5.1\n@atproto-agent/core:build: CLI Target: es2022\n@atproto-agent",
       "toolNames": [
