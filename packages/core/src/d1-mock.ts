@@ -55,6 +55,8 @@ export interface WorkItemRow {
 // Keep in sync with `apps/network/schema.sql`.
 export const D1_MOCK_GAMES_SCHEMA_SQL =
   'CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);'
+export const D1_MOCK_ENVIRONMENTS_SCHEMA_SQL =
+  'CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, type TEXT, host_agent TEXT, state TEXT, phase TEXT, players TEXT, winner TEXT, created_at TEXT, updated_at TEXT);'
 
 // Keep in sync with `apps/network/schema.sql`.
 export const D1_MOCK_WORK_ITEMS_SCHEMA_SQL =
@@ -131,14 +133,18 @@ export class D1MockDatabase {
 
   async run(sql: string, params: unknown[]): Promise<void> {
     const normalized = normalizeSql(sql)
+    const normalizedGameSql = normalized.replace(/\benvironments\b/g, 'games')
 
     // Some callers apply `apps/network/schema.sql` against the mock DB to
     // validate wiring. We don't emulate DDL; we just no-op known table creates.
     const gamesSchemaNormalized = normalizeSql(D1_MOCK_GAMES_SCHEMA_SQL.replace(/;\s*$/, ''))
+    const environmentsSchemaNormalized = normalizeSql(D1_MOCK_ENVIRONMENTS_SCHEMA_SQL.replace(/;\s*$/, ''))
     const workItemsSchemaNormalized = normalizeSql(D1_MOCK_WORK_ITEMS_SCHEMA_SQL.replace(/;\s*$/, ''))
     if (
       normalized === gamesSchemaNormalized ||
+      normalized === environmentsSchemaNormalized ||
       /^create table (if not exists )?games\b/.test(normalized) ||
+      /^create table (if not exists )?environments\b/.test(normalized) ||
       normalized === workItemsSchemaNormalized ||
       /^create table (if not exists )?work_items\b/.test(normalized)
     ) {
@@ -174,7 +180,23 @@ export class D1MockDatabase {
       return
     }
 
-    if (normalized.startsWith('insert into games')) {
+    if (normalizedGameSql.startsWith('delete from games')) {
+      const whereClause = extractWhereClause(normalizedGameSql)
+      if (!whereClause) {
+        this.games.clear()
+        return
+      }
+
+      const { conditions } = parseGameConditions(whereClause, params)
+      for (const row of Array.from(this.games.values())) {
+        if (conditions.every((condition) => matchGameCondition(row, condition))) {
+          this.games.delete(row.id)
+        }
+      }
+      return
+    }
+
+    if (normalizedGameSql.startsWith('insert into games')) {
       const now = new Date().toISOString()
 
       // Supports both:
@@ -249,8 +271,8 @@ export class D1MockDatabase {
       return
     }
 
-    if (normalized.startsWith('update games set')) {
-      const whereClause = extractWhereClause(normalized)
+    if (normalizedGameSql.startsWith('update games set')) {
+      const whereClause = extractWhereClause(normalizedGameSql)
       if (!whereClause) {
         throw new Error(`Unsupported update statement (missing where): ${normalized}`)
       }
@@ -265,10 +287,10 @@ export class D1MockDatabase {
 
       // UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?
       if (
-        normalized.includes('state = ?') &&
-        normalized.includes('phase = ?') &&
-        normalized.includes('winner = ?') &&
-        normalized.includes('players = ?')
+        normalizedGameSql.includes('state = ?') &&
+        normalizedGameSql.includes('phase = ?') &&
+        normalizedGameSql.includes('winner = ?') &&
+        normalizedGameSql.includes('players = ?')
       ) {
         const [state, phase, winner, players] = params
         existing.state = String(state ?? '')
@@ -280,7 +302,7 @@ export class D1MockDatabase {
         return
       }
 
-      if (normalized.includes('state = ?') && normalized.includes('phase = ?') && normalized.includes('winner = ?')) {
+      if (normalizedGameSql.includes('state = ?') && normalizedGameSql.includes('phase = ?') && normalizedGameSql.includes('winner = ?')) {
         const [state, phase, winner] = params
         existing.state = String(state ?? '')
         existing.phase = String(phase ?? '')
@@ -292,7 +314,7 @@ export class D1MockDatabase {
 
       // UPDATE games SET state = ?, phase = ?, updated_at = datetime('now') WHERE id = ? [AND type = 'rpg']
       // Some callers (e.g. RPG GM tooling) don't touch winner/players on persist.
-      if (normalized.includes('state = ?') && normalized.includes('phase = ?') && !normalized.includes('winner = ?')) {
+      if (normalizedGameSql.includes('state = ?') && normalizedGameSql.includes('phase = ?') && !normalizedGameSql.includes('winner = ?')) {
         const state = params[0]
         const phase = params[1]
         existing.state = String(state ?? '')
@@ -303,7 +325,7 @@ export class D1MockDatabase {
       }
 
       // UPDATE games SET phase = 'finished', winner = 'cancelled' WHERE id = ?
-      if (normalized.includes("phase = 'finished'") && normalized.includes("winner = 'cancelled'")) {
+      if (normalizedGameSql.includes("phase = 'finished'") && normalizedGameSql.includes("winner = 'cancelled'")) {
         existing.phase = 'finished'
         existing.winner = 'cancelled'
         existing.updated_at = now
@@ -374,14 +396,15 @@ export class D1MockDatabase {
 
   async all<T>(sql: string, params: unknown[]): Promise<{ results: T[] }> {
     const normalized = normalizeSql(sql)
+    const normalizedGameSql = normalized.replace(/\benvironments\b/g, 'games')
 
     if (normalized.startsWith('select') && normalized.includes('from agents')) {
       const rows = this.filterAgents(normalized, params)
       return { results: rows as T[] }
     }
 
-    if (normalized.startsWith('select') && normalized.includes('from games')) {
-      const rows = this.filterGames(normalized, params)
+    if (normalizedGameSql.startsWith('select') && normalizedGameSql.includes('from games')) {
+      const rows = this.filterGames(normalizedGameSql, params)
       return { results: rows as T[] }
     }
 

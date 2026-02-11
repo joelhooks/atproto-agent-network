@@ -7,14 +7,14 @@ import { getToolsForAgent } from './index'
 async function insertRpgGame(db: D1Database, game: RpgGameState, players: string[]): Promise<void> {
   await db
     .prepare(
-      "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
     )
     .bind(game.id, 'rpg', players[0] ?? 'unknown', JSON.stringify(game), game.phase, JSON.stringify(players))
     .run()
 }
 
 async function getStoredGame(db: D1Database, gameId: string): Promise<RpgGameState> {
-  const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+  const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
   if (!row?.state) throw new Error('missing game row')
   return JSON.parse(row.state) as RpgGameState
 }

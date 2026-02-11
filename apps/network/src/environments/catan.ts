@@ -20,7 +20,7 @@ async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow 
 
   try {
     const row = await ctx.db
-      .prepare("SELECT id, state FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+      .prepare("SELECT id, state FROM environments WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
       .first<GameRow>()
     if (!row) return null
@@ -42,7 +42,7 @@ async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<Ga
 
   try {
     const row = await ctx.db
-      .prepare("SELECT id, state FROM games WHERE phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?")
+      .prepare("SELECT id, state FROM environments WHERE phase = 'playing' AND json_extract(state, '$.currentPlayer') = ?")
       .bind(agentName)
       .first<GameRow>()
     if (!row) return null
@@ -176,7 +176,7 @@ export const catanEnvironment: AgentEnvironment = {
 
           // Block duplicate games where this agent is already a participant.
           const existingGame = await db
-            .prepare("SELECT id FROM games WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
+            .prepare("SELECT id FROM environments WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
             .bind(`%${agentName}%`)
             .first<{ id: string }>()
 
@@ -201,7 +201,7 @@ export const catanEnvironment: AgentEnvironment = {
 
           await db
             .prepare(
-              "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+              "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
             )
             .bind(gameId, agentName || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(players))
             .run()
@@ -222,7 +222,7 @@ export const catanEnvironment: AgentEnvironment = {
         const gameId = typeof params.gameId === 'string' ? params.gameId : ''
         if (!gameId) throw new Error('gameId required')
 
-        const row = await db.prepare('SELECT state, type FROM games WHERE id = ?').bind(gameId).first<{ state: string; type?: string }>()
+        const row = await db.prepare('SELECT state, type FROM environments WHERE id = ?').bind(gameId).first<{ state: string; type?: string }>()
         if (!row) throw new Error(`Game ${gameId} not found - check the game ID`)
         if (row.type && row.type !== 'catan') throw new Error(`Game ${gameId} is a ${row.type} game, not Catan. Use the ${row.type} tool instead.`)
         const game = JSON.parse(row.state) as Record<string, unknown>
@@ -275,7 +275,7 @@ export const catanEnvironment: AgentEnvironment = {
           const finishedNow = beforePhase !== 'finished' && afterPhase === 'finished'
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), (game as any).phase, (game as any).winner ?? null, gameId)
             .run()
 

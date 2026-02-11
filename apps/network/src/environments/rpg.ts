@@ -386,7 +386,7 @@ function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {}
 }
 
-type GameRow = { id: string; state: string; type?: string | null }
+type EnvironmentRow = { id: string; state: string; type?: string | null }
 
 function dayPrefixFromTimestamp(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -395,17 +395,17 @@ function dayPrefixFromTimestamp(value: unknown): string | null {
   return s.slice(0, 10)
 }
 
-function getMaxGamesPerDay(ctx: EnvironmentContext): number {
-  const raw = (ctx as any)?.maxGamesPerDay
+function getMaxEnvironmentsPerDay(ctx: EnvironmentContext): number {
+  const raw = (ctx as any)?.maxEnvironmentsPerDay ?? (ctx as any)?.maxGamesPerDay
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
   if (Number.isFinite(n) && n > 0) return Math.floor(n)
   return 50
 }
 
-async function anyPlayingRpgGamesExist(ctx: EnvironmentContext): Promise<boolean> {
+async function anyPlayingRpgEnvironmentsExist(ctx: EnvironmentContext): Promise<boolean> {
   try {
     const row = await ctx.db
-      .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
+      .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
       .first<{ id: string }>()
     return Boolean(row?.id)
   } catch {
@@ -413,11 +413,11 @@ async function anyPlayingRpgGamesExist(ctx: EnvironmentContext): Promise<boolean
   }
 }
 
-async function countFinishedRpgGamesToday(ctx: EnvironmentContext): Promise<number> {
+async function countFinishedRpgEnvironmentsToday(ctx: EnvironmentContext): Promise<number> {
   const today = new Date().toISOString().slice(0, 10)
   try {
     const { results } = await ctx.db
-      .prepare("SELECT id, updated_at FROM games WHERE type = 'rpg' AND phase = 'finished'")
+      .prepare("SELECT id, updated_at FROM environments WHERE type = 'rpg' AND phase = 'finished'")
       .all<{ id: string; updated_at: string }>()
     return (results ?? []).filter((r) => dayPrefixFromTimestamp(r?.updated_at) === today).length
   } catch {
@@ -425,7 +425,7 @@ async function countFinishedRpgGamesToday(ctx: EnvironmentContext): Promise<numb
   }
 }
 
-async function emitGameCompleted(ctx: EnvironmentContext, input: { gameId: string; game: RpgGameState }): Promise<void> {
+async function emitEnvironmentCompleted(ctx: EnvironmentContext, input: { gameId: string; game: RpgGameState }): Promise<void> {
   const { gameId, game } = input
   const turns = typeof (game as any).turn === 'number' ? (game as any).turn : game.roomIndex + 1
   const summary = {
@@ -626,40 +626,40 @@ function awardRpgAchievements(
   }
 }
 
-async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<GameRow | null> {
+async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<EnvironmentRow | null> {
   const agentName = ctx.agentName.trim()
   if (!agentName) return null
 
   try {
     // Check as player first
     const asPlayer = await ctx.db
-      .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
-      .first<GameRow>()
+      .first<EnvironmentRow>()
     if (asPlayer) return asPlayer
 
     // Check as host/DM
     const asHost = await ctx.db
-      .prepare("SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND host_agent = ? LIMIT 1")
+      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND host_agent = ? LIMIT 1")
       .bind(agentName)
-      .first<GameRow>()
+      .first<EnvironmentRow>()
     return asHost ?? null
   } catch {
     return null
   }
 }
 
-async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<GameRow | null> {
+async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<EnvironmentRow | null> {
   const agentName = ctx.agentName.trim()
   if (!agentName) return null
 
   try {
     const row = await ctx.db
       .prepare(
-        "SELECT id, state, type FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND json_extract(state, '$.currentPlayer') = ?"
+        "SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND json_extract(state, '$.currentPlayer') = ?"
       )
       .bind(agentName)
-      .first<GameRow>()
+      .first<EnvironmentRow>()
     return row ?? null
   } catch {
     return null
@@ -698,7 +698,7 @@ function pickJoinClass(game: RpgGameState): RpgClass {
   return best
 }
 
-async function findJoinableGamesForAgent(
+async function findJoinableEnvironmentsForAgent(
   ctx: EnvironmentContext,
   input: { limit?: number }
 ): Promise<Array<{ id: string; game: RpgGameState }>> {
@@ -707,8 +707,8 @@ async function findJoinableGamesForAgent(
 
   try {
     const { results } = await ctx.db
-      .prepare("SELECT id, state FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY updated_at DESC")
-      .all<GameRow>()
+      .prepare("SELECT id, state FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY updated_at DESC")
+      .all<EnvironmentRow>()
 
     const joinable: Array<{ id: string; game: RpgGameState }> = []
     const limit = Math.max(1, Math.min(20, Math.floor(input.limit ?? 5)))
@@ -950,7 +950,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const row = await db
-            .prepare("SELECT state FROM games WHERE id = ? AND type = 'rpg'")
+            .prepare("SELECT state FROM environments WHERE id = ? AND type = 'rpg'")
             .bind(gameId)
             .first<{ state: string }>()
 
@@ -1000,7 +1000,7 @@ export const rpgEnvironment: AgentEnvironment = {
           const players = game.party.map((p) => p.agent ?? p.name)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, players = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, players = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, JSON.stringify(players), gameId)
             .run()
 
@@ -1018,9 +1018,9 @@ export const rpgEnvironment: AgentEnvironment = {
         if (command === 'new_game') {
           const agentName = ctx.agentName.trim()
 
-          // Only Grimlock can create new games
+          // Only Grimlock can create new RPG environments.
           if (agentName !== 'grimlock') {
-            const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+            const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
             const lines: string[] = [
               'Only Grimlock can create new dungeons. Use join_game to join an existing adventure.',
             ]
@@ -1039,7 +1039,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // Grimlock is DM — check for ANY active RPG game (grimlock isn't in players list)
           const existing = await db
-            .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
+            .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
             .first<{ id: string }>()
             .catch(() => null)
 
@@ -1067,7 +1067,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // Prefer joining an open adventure when a solo new_game is requested.
           if (finalPlayers.length <= 1) {
-            const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+            const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
             if (joinable.length > 0) {
               const lines: string[] = []
               lines.push('Open adventures are looking for party members:')
@@ -1097,11 +1097,11 @@ export const rpgEnvironment: AgentEnvironment = {
           ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
 
           // Ensure type column exists (migration from catan-only schema)
-          await db.prepare("ALTER TABLE games ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
+          await db.prepare("ALTER TABLE environments ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
 
           await db
             .prepare(
-              "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+              "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
             )
             .bind(gameId, 'rpg', ctx.agentName.trim() || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(finalPlayers))
             .run()
@@ -1125,9 +1125,9 @@ export const rpgEnvironment: AgentEnvironment = {
         if (!gameId) {
           const row = await findActiveGameForAgent(ctx)
           if (!row) {
-            // List joinable games so agent knows what to do
+            // List joinable environments so the agent knows what to do.
             const joinable = await db
-              .prepare("SELECT id, players FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY created_at DESC LIMIT 5")
+              .prepare("SELECT id, players FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY created_at DESC LIMIT 5")
               .all<{ id: string; players: string }>()
             const listings = (joinable.results ?? [])
               .map(g => `- ${g.id} (${JSON.parse(g.players).join(', ')})`)
@@ -1141,7 +1141,7 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         const row = await db
-          .prepare("SELECT state FROM games WHERE id = ? AND type = 'rpg'")
+          .prepare("SELECT state FROM environments WHERE id = ? AND type = 'rpg'")
           .bind(gameId)
           .first<{ state: string }>()
 
@@ -1163,11 +1163,11 @@ export const rpgEnvironment: AgentEnvironment = {
           const dirty = normalizeTurnState(game)
           if (dirty) {
             await db
-              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
               .run()
             if (beforePhase !== 'finished' && game.phase === 'finished') {
-              await emitGameCompleted(ctx, { gameId, game })
+              await emitEnvironmentCompleted(ctx, { gameId, game })
             }
           }
         }
@@ -1302,7 +1302,7 @@ export const rpgEnvironment: AgentEnvironment = {
             }
 
             await db
-              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
               .run()
 
@@ -1343,7 +1343,7 @@ export const rpgEnvironment: AgentEnvironment = {
             }
 
             await db
-              .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
               .run()
 
@@ -1383,7 +1383,7 @@ export const rpgEnvironment: AgentEnvironment = {
           game.phase = 'playing'
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -1434,7 +1434,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -1467,7 +1467,7 @@ export const rpgEnvironment: AgentEnvironment = {
           recomputeTurnOrder(game)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -1559,12 +1559,12 @@ export const rpgEnvironment: AgentEnvironment = {
           advanceTurn(game)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -1679,12 +1679,12 @@ export const rpgEnvironment: AgentEnvironment = {
               advanceTurn(game)
 
               await db
-                .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
                 .run()
 
               if (beforePhase !== 'finished' && game.phase === 'finished') {
-                await emitGameCompleted(ctx, { gameId, game })
+                await emitEnvironmentCompleted(ctx, { gameId, game })
               }
 
               return { content: toTextContent(`${text}\n\nParty: ${summarizeParty(game)}`), details: { gameId } }
@@ -1706,12 +1706,12 @@ export const rpgEnvironment: AgentEnvironment = {
           advanceTurn(game)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -1782,12 +1782,12 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -1843,12 +1843,12 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           if (!success) lines.push('No XP awarded. The encounter remains dangerous.')
@@ -1925,12 +1925,12 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -2000,12 +2000,12 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -2042,7 +2042,7 @@ export const rpgEnvironment: AgentEnvironment = {
               })
 
               await db
-                .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
                 .run()
 
@@ -2071,7 +2071,7 @@ export const rpgEnvironment: AgentEnvironment = {
               })
 
               await db
-                .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
                 .run()
 
@@ -2088,7 +2088,7 @@ export const rpgEnvironment: AgentEnvironment = {
           actor.mp = Math.min(actor.maxMp, actor.mp + 1)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -2144,7 +2144,7 @@ export const rpgEnvironment: AgentEnvironment = {
           advanceTurn(game)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -2203,7 +2203,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -2294,12 +2294,12 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           if (beforePhase !== 'finished' && game.phase === 'finished') {
-            await emitGameCompleted(ctx, { gameId, game })
+            await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
@@ -2354,7 +2354,7 @@ export const rpgEnvironment: AgentEnvironment = {
           advanceTurn(game)
 
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -2362,7 +2362,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // Re-save after log update
           await db
-            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
@@ -2380,7 +2380,7 @@ export const rpgEnvironment: AgentEnvironment = {
   async buildContext(ctx: EnvironmentContext): Promise<string[]> {
     const row = (await findActiveGameWhereItsMyTurn(ctx)) ?? (await findActiveGameForAgent(ctx))
     if (!row) {
-      const joinable = await findJoinableGamesForAgent(ctx, { limit: 5 })
+      const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
       if (joinable.length === 0) return []
 
       const lines: string[] = []
@@ -2419,7 +2419,7 @@ export const rpgEnvironment: AgentEnvironment = {
           }
         }
 
-        // Fallback for games without phase machine (backward compat)
+        // Fallback for environments without phase machine (backward compat)
         const party = Array.isArray(game.party) ? game.party : []
         const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
         const current = party[idx]
@@ -2592,7 +2592,7 @@ export const rpgEnvironment: AgentEnvironment = {
             lines.push(`Optional: rpg({"command":"sneak","gameId":"${row.id}"}) to bypass the next encounter.`)
           }
         }
-        lines.push(`DO NOT create a new game.`)
+        lines.push(`DO NOT create a new environment.`)
       } else {
         lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
@@ -2602,7 +2602,7 @@ export const rpgEnvironment: AgentEnvironment = {
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
         lines.push('Wait for your turn.')
-        lines.push(`DO NOT create a new game.`)
+        lines.push(`DO NOT create a new environment.`)
       }
 
       return lines.filter(Boolean)
@@ -2674,20 +2674,20 @@ export const rpgEnvironment: AgentEnvironment = {
       const active = await findActiveGameForAgent(ctx)
       if (active) return []
 
-      // Grimlock: when there are no playing games, auto-create a fresh dungeon.
+      // Grimlock: when there are no playing environments, auto-create a fresh dungeon.
       const agentName = ctx.agentName.trim()
       if (agentName === 'grimlock') {
-        const anyPlaying = await anyPlayingRpgGamesExist(ctx)
+        const anyPlaying = await anyPlayingRpgEnvironmentsExist(ctx)
         if (anyPlaying) return []
 
-        const maxGamesPerDay = getMaxGamesPerDay(ctx)
-        const finishedToday = await countFinishedRpgGamesToday(ctx)
-        if (finishedToday >= maxGamesPerDay) return []
+        const maxEnvironmentsPerDay = getMaxEnvironmentsPerDay(ctx)
+        const finishedToday = await countFinishedRpgEnvironmentsToday(ctx)
+        if (finishedToday >= maxEnvironmentsPerDay) return []
 
         return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'] } }]
       }
 
-      const joinable = await findJoinableGamesForAgent(ctx, { limit: 1 })
+      const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 1 })
       if (joinable.length === 0) return []
 
       const candidate = joinable[0]!

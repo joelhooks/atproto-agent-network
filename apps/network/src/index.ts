@@ -148,7 +148,7 @@ function parseD1Timestamp(value: unknown): number | null {
   return null
 }
 
-function parseGamesLimit(value: string | null): number | { error: string } {
+function parseEnvironmentsLimit(value: string | null): number | { error: string } {
   if (value == null || value === '') return 20
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return { error: 'limit must be an integer' }
@@ -157,7 +157,7 @@ function parseGamesLimit(value: string | null): number | { error: string } {
   return parsed
 }
 
-function parseGamesCursor(value: string): { updatedAtRaw: string; updatedAtMs: number; id: string } | null {
+function parseEnvironmentsCursor(value: string): { updatedAtRaw: string; updatedAtMs: number; id: string } | null {
   const idx = value.indexOf('|')
   if (idx <= 0 || idx === value.length - 1) return null
   const updatedAtRaw = value.slice(0, idx)
@@ -166,6 +166,25 @@ function parseGamesCursor(value: string): { updatedAtRaw: string; updatedAtMs: n
   if (updatedAtMs == null) return null
   if (!id) return null
   return { updatedAtRaw, updatedAtMs, id }
+}
+
+function mapLegacyGamesAliasPath(pathname: string): string | null {
+  if (pathname === '/games') return '/environments'
+  if (!pathname.startsWith('/games/')) return null
+  const suffix = pathname.slice('/games'.length)
+  return `/environments${suffix}`
+}
+
+function withDeprecationHeaders(response: Response, replacementPath: string): Response {
+  const headers = new Headers(response.headers)
+  headers.set('Deprecation', 'true')
+  headers.set('Link', `<${replacementPath}>; rel="successor-version"`)
+  headers.set('Warning', `299 - "Route deprecated; use ${replacementPath}"`)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 export default {
@@ -401,48 +420,126 @@ export default {
           )
         }
 
-        // Environments (backed by shared D1 games table)
-        if (normalizedPathname === '/environments') {
-          return withErrorHandling(
+        // Environments (canonical) + legacy /games aliases.
+        if (normalizedPathname === '/environments' || normalizedPathname === '/games') {
+          const legacyReplacement = mapLegacyGamesAliasPath(normalizedPathname)
+          const isLegacyAlias = legacyReplacement !== null
+          if (isLegacyAlias) {
+            console.warn(`Route deprecated: ${request.method} ${normalizedPathname} -> ${legacyReplacement}`)
+          }
+
+          const result = await withErrorHandling(
             async () => {
+              if (request.method === 'DELETE') {
+                const updateResult = await env.DB.prepare(
+                  "UPDATE environments SET phase = 'abandoned', updated_at = datetime('now') WHERE phase NOT IN ('finished', 'abandoned')"
+                ).run()
+                const count = updateResult.meta?.changes ?? 0
+                return Response.json({ ok: true, message: `Killed ${count} active environment(s)` })
+              }
+
               if (request.method === 'GET') {
-                const type = url.searchParams.get('type')?.trim()
-                const phase = url.searchParams.get('phase')?.trim()
-                const player = url.searchParams.get('player')?.trim()
+                const typeFilter = url.searchParams.get('type')?.trim() ?? ''
+                const phaseFilter = url.searchParams.get('phase')?.trim() ?? ''
+                const playerFilter = url.searchParams.get('player')?.trim() ?? ''
 
-                const sqlParts = [
-                  'SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE 1=1',
-                ]
-                const binds: unknown[] = []
+                const showAll = url.searchParams.get('all') === 'true'
+                const limitParsed = parseEnvironmentsLimit(url.searchParams.get('limit'))
+                if (typeof limitParsed === 'object') {
+                  return Response.json({ error: limitParsed.error }, { status: 400 })
+                }
+                const limit = limitParsed
 
-                if (type) {
-                  sqlParts.push('AND id LIKE ?')
-                  binds.push(`${type}_%`)
-                }
-                if (phase) {
-                  sqlParts.push('AND phase = ?')
-                  binds.push(phase)
-                }
-                if (player) {
-                  sqlParts.push('AND players LIKE ?')
-                  binds.push(`%${player}%`)
+                const cursorRaw = url.searchParams.get('cursor')
+                const cursor = cursorRaw ? parseEnvironmentsCursor(cursorRaw) : null
+                if (cursorRaw && !cursor) {
+                  return Response.json({ error: 'Invalid cursor' }, { status: 400 })
                 }
 
-                sqlParts.push('ORDER BY updated_at DESC LIMIT 20')
+                // D1MockDatabase only supports a small SQL subset (no ORs, no >=),
+                // so fetch a bounded window and apply 24h + pagination logic in JS.
+                const fetchLimit = Math.min(Math.max(limit * 10, 200), 500)
+                const selectCols = 'id, type, host_agent, phase, players, winner, created_at, updated_at'
+                const activeSql = `SELECT ${selectCols} FROM environments WHERE phase NOT IN ('finished', 'abandoned') ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+                const finishedSql = `SELECT ${selectCols} FROM environments WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT ${fetchLimit}`
+                const allSql = `SELECT ${selectCols} FROM environments ORDER BY updated_at DESC LIMIT ${fetchLimit}`
 
-                const rows = await env.DB.prepare(sqlParts.join(' ')).bind(...binds).all()
-                const environments = (rows.results ?? []).map((r: any) => ({
-                  id: r.id,
-                  type: inferEnvironmentTypeFromId(String(r.id)),
-                  hostAgent: r.host_agent,
-                  phase: r.phase,
-                  players: safeJsonParseArray(r.players),
-                  winner: r.winner ?? null,
-                  createdAt: r.created_at,
-                  updatedAt: r.updated_at,
-                }))
+                const nowMs = Date.now()
+                const cutoffMs = nowMs - 24 * 60 * 60_000
 
-                return Response.json({ environments })
+                let rawRows: any[] = []
+                if (showAll) {
+                  const rows = await env.DB.prepare(allSql).all()
+                  rawRows = rows.results ?? []
+                } else {
+                  const [activeRows, finishedRows] = await Promise.all([
+                    env.DB.prepare(activeSql).all(),
+                    env.DB.prepare(finishedSql).all(),
+                  ])
+
+                  const recentFinished = (finishedRows.results ?? []).filter((row: any) => {
+                    const ts = parseD1Timestamp(row.updated_at)
+                    return ts != null && ts >= cutoffMs
+                  })
+                  rawRows = [...(activeRows.results ?? []), ...recentFinished]
+                }
+
+                const filtered = rawRows
+                  .map((row: any) => {
+                    const id = String(row.id ?? '')
+                    const type =
+                      typeof row.type === 'string' && row.type.trim().length > 0
+                        ? row.type
+                        : inferEnvironmentTypeFromId(id)
+                    const players = safeJsonParseArray(row.players)
+                    const updatedAtRaw = String(row.updated_at ?? '')
+                    const updatedAtMs = parseD1Timestamp(updatedAtRaw) ?? 0
+                    return {
+                      id,
+                      updatedAtRaw,
+                      updatedAtMs,
+                      environment: {
+                        id,
+                        type,
+                        hostAgent: row.host_agent,
+                        phase: row.phase,
+                        players,
+                        winner: row.winner ?? null,
+                        createdAt: row.created_at,
+                        updatedAt: row.updated_at,
+                      },
+                    }
+                  })
+                  .filter((entry) => entry.id.length > 0)
+                  .filter((entry) => (typeFilter ? entry.environment.type === typeFilter : true))
+                  .filter((entry) => (phaseFilter ? entry.environment.phase === phaseFilter : true))
+                  .filter((entry) => (playerFilter ? entry.environment.players.includes(playerFilter) : true))
+                  .sort((a, b) => {
+                    if (a.updatedAtMs !== b.updatedAtMs) return b.updatedAtMs - a.updatedAtMs
+                    return b.id.localeCompare(a.id)
+                  })
+
+                const afterCursor = cursor
+                  ? filtered.filter((entry) => {
+                      if (entry.updatedAtMs < cursor.updatedAtMs) return true
+                      if (entry.updatedAtMs > cursor.updatedAtMs) return false
+                      return entry.id.localeCompare(cursor.id) < 0
+                    })
+                  : filtered
+
+                const pagePlusOne = afterCursor.slice(0, limit + 1)
+                const hasMore = pagePlusOne.length > limit
+                const page = pagePlusOne.slice(0, limit)
+                const last = page.at(-1)
+                const nextCursor =
+                  hasMore && last && last.updatedAtRaw
+                    ? `${last.updatedAtRaw}|${last.id}`
+                    : undefined
+
+                return Response.json({
+                  environments: page.map((entry) => entry.environment),
+                  nextCursor,
+                })
               }
 
               if (request.method !== 'POST') {
@@ -485,30 +582,30 @@ export default {
                 )
               }
 
-              const result = await tool.execute('http', { command: 'new_game', players })
-              const details = (result as any)?.details as Record<string, unknown> | undefined
+              const toolResult = await tool.execute('http', { command: 'new_game', players })
+              const details = (toolResult as any)?.details as Record<string, unknown> | undefined
               const id = typeof details?.gameId === 'string' ? details.gameId : null
               if (!id) {
                 return Response.json({ error: 'Environment create failed' }, { status: 502 })
               }
 
               const row = await env.DB
-                .prepare('SELECT id, host_agent, phase, players, winner, created_at, updated_at FROM games WHERE id = ?')
+                .prepare('SELECT id, type, host_agent, phase, players, winner, created_at, updated_at FROM environments WHERE id = ?')
                 .bind(id)
                 .first()
 
               if (!row) {
-                return Response.json({
-                  id,
-                  type,
-                  hostAgent,
-                  players,
-                })
+                return Response.json({ id, type, hostAgent, players })
               }
+
+              const rowType =
+                typeof (row as any).type === 'string' && (row as any).type.trim().length > 0
+                  ? (row as any).type
+                  : inferEnvironmentTypeFromId(String((row as any).id))
 
               return Response.json({
                 id: (row as any).id,
-                type,
+                type: rowType,
                 hostAgent: (row as any).host_agent,
                 phase: (row as any).phase,
                 players: safeJsonParseArray((row as any).players),
@@ -519,17 +616,32 @@ export default {
             },
             { route: 'network.environments', request }
           )
+
+          return isLegacyAlias ? withDeprecationHeaders(result, '/environments') : result
         }
 
-        if (normalizedPathname.startsWith('/environments/')) {
-          return withErrorHandling(
-            async () => {
-              if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+        if (normalizedPathname.startsWith('/environments/') || normalizedPathname.startsWith('/games/')) {
+          const legacyReplacement = mapLegacyGamesAliasPath(normalizedPathname)
+          const isLegacyAlias = legacyReplacement !== null
+          if (isLegacyAlias) {
+            console.warn(`Route deprecated: ${request.method} ${normalizedPathname} -> ${legacyReplacement}`)
+          }
 
-              const envId = normalizedPathname.split('/')[2]
+          const envId = normalizedPathname.split('/')[2]
+          const replacementPath = envId ? `/environments/${envId}` : '/environments/:id'
+
+          const result = await withErrorHandling(
+            async () => {
               if (!envId) return Response.json({ error: 'Environment ID required' }, { status: 400 })
 
-              const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(envId).first()
+              if (request.method === 'DELETE') {
+                await env.DB.prepare('DELETE FROM environments WHERE id = ?').bind(envId).run()
+                return Response.json({ ok: true, message: `Environment ${envId} deleted` })
+              }
+
+              if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+              const row = await env.DB.prepare('SELECT * FROM environments WHERE id = ?').bind(envId).first()
               if (!row) return Response.json({ error: 'Environment not found' }, { status: 404 })
 
               let state: unknown = null
@@ -539,9 +651,14 @@ export default {
                 state = (row as any).state
               }
 
+              const rowType =
+                typeof (row as any).type === 'string' && (row as any).type.trim().length > 0
+                  ? (row as any).type
+                  : inferEnvironmentTypeFromId(String((row as any).id))
+
               return Response.json({
                 id: (row as any).id,
-                type: inferEnvironmentTypeFromId(String((row as any).id)),
+                type: rowType,
                 hostAgent: (row as any).host_agent,
                 phase: (row as any).phase,
                 players: safeJsonParseArray((row as any).players),
@@ -553,159 +670,8 @@ export default {
             },
             { route: 'network.environments.detail', request }
           )
-        }
 
-        // Games (shared D1 state)
-        if (normalizedPathname === '/games') {
-          // DELETE /games — kill ALL active games (admin nuclear option)
-          if (request.method === 'DELETE') {
-            return withErrorHandling(
-              async () => {
-                const result = await env.DB.prepare(
-                  "UPDATE games SET phase = 'abandoned', updated_at = datetime('now') WHERE phase NOT IN ('finished', 'abandoned')"
-                ).run()
-                const count = result.meta?.changes ?? 0
-                return Response.json({ ok: true, message: `Killed ${count} active game(s)` })
-              },
-              { route: 'DELETE /games' }
-            )
-          }
-          return withErrorHandling(
-            async () => {
-              const showAll = url.searchParams.get('all') === 'true'
-              const limitParsed = parseGamesLimit(url.searchParams.get('limit'))
-              if (typeof limitParsed === 'object') {
-                return Response.json({ error: limitParsed.error }, { status: 400 })
-              }
-              const limit = limitParsed
-
-              const cursorRaw = url.searchParams.get('cursor')
-              const cursor = cursorRaw ? parseGamesCursor(cursorRaw) : null
-              if (cursorRaw && !cursor) {
-                return Response.json({ error: 'Invalid cursor' }, { status: 400 })
-              }
-
-              // D1MockDatabase only supports a small SQL subset (no ORs, no >=),
-              // so fetch a bounded window and apply the 24h + pagination logic in JS.
-              const fetchLimit = Math.min(Math.max(limit * 10, 200), 500)
-
-              const selectCols = 'id, host_agent, phase, players, winner, created_at, updated_at'
-              const activeSql = `SELECT ${selectCols} FROM games WHERE phase NOT IN ('finished', 'abandoned') ORDER BY updated_at DESC LIMIT ${fetchLimit}`
-              const finishedSql = `SELECT ${selectCols} FROM games WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT ${fetchLimit}`
-              const allSql = `SELECT ${selectCols} FROM games ORDER BY updated_at DESC LIMIT ${fetchLimit}`
-
-              const nowMs = Date.now()
-              const cutoffMs = nowMs - 24 * 60 * 60_000
-
-              let rawRows: any[] = []
-              if (showAll) {
-                const rows = await env.DB.prepare(allSql).all()
-                rawRows = rows.results ?? []
-              } else {
-                const [activeRows, finishedRows] = await Promise.all([
-                  env.DB.prepare(activeSql).all(),
-                  env.DB.prepare(finishedSql).all(),
-                ])
-
-                const recentFinished = (finishedRows.results ?? []).filter((r: any) => {
-                  const ts = parseD1Timestamp(r.updated_at)
-                  return ts != null && ts >= cutoffMs
-                })
-
-                rawRows = [...(activeRows.results ?? []), ...recentFinished]
-              }
-
-              const enriched = rawRows
-                .map((r: any) => {
-                  const id = String(r.id ?? '')
-                  const updatedAtRaw = r.updated_at
-                  const updatedAtMs = parseD1Timestamp(updatedAtRaw) ?? 0
-                  return {
-                    row: {
-                      ...r,
-                      id,
-                      players: safeJsonParseArray(r.players),
-                      type: inferEnvironmentTypeFromId(id),
-                    },
-                    id,
-                    updatedAtRaw: String(updatedAtRaw ?? ''),
-                    updatedAtMs,
-                  }
-                })
-                .filter((r) => r.id.length > 0)
-                .sort((a, b) => {
-                  if (a.updatedAtMs !== b.updatedAtMs) return b.updatedAtMs - a.updatedAtMs
-                  return b.id.localeCompare(a.id)
-                })
-
-              const afterCursor = cursor
-                ? enriched.filter((g) => {
-                    if (g.updatedAtMs < cursor.updatedAtMs) return true
-                    if (g.updatedAtMs > cursor.updatedAtMs) return false
-                    return g.id.localeCompare(cursor.id) < 0
-                  })
-                : enriched
-
-              const pagePlusOne = afterCursor.slice(0, limit + 1)
-              const hasMore = pagePlusOne.length > limit
-              const page = pagePlusOne.slice(0, limit)
-
-              const last = page.at(-1)
-              const nextCursor =
-                hasMore && last && last.updatedAtRaw
-                  ? `${last.updatedAtRaw}|${last.id}`
-                  : undefined
-
-              return Response.json({
-                games: page.map((g) => g.row),
-                nextCursor,
-              })
-            },
-            { route: 'network.games', request }
-          )
-        }
-
-        if (normalizedPathname.startsWith('/games/')) {
-          return withErrorHandling(
-            async () => {
-              const gameId = normalizedPathname.split('/')[2]
-              if (!gameId) return Response.json({ error: 'Game ID required' }, { status: 400 })
-                            // DELETE /games/:id — admin kill game (hard delete from D1, any type)
-              if (request.method === 'DELETE') {
-                await env.DB.prepare("DELETE FROM games WHERE id = ?").bind(gameId).run()
-                return Response.json({ ok: true, message: `Game ${gameId} cancelled` })
-              }
-
-              // Backward compat: /games/:id GET is a legacy alias for catan environments only.
-              if (!gameId.startsWith('catan_')) {
-                return Response.json({ error: 'Use /environments/:id for non-catan games' }, { status: 404 })
-              }
-
-              const row = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(gameId).first()
-              if (!row) return Response.json({ error: 'Game not found' }, { status: 404 })
-              const game = JSON.parse((row as any).state)
-              const { renderBoard, generateGameSummary } = await import('./games/catan')
-
-              // ?raw=true returns full game state for visualization
-              if (url.searchParams.get('raw') === 'true') {
-                return Response.json(game)
-              }
-
-              return Response.json({
-                id: game.id,
-                type: 'catan',
-                phase: game.phase,
-                turn: game.turn,
-                currentPlayer: game.currentPlayer,
-                players: game.players?.map((p: any) => ({ name: p.name, victoryPoints: p.victoryPoints, resources: p.resources })),
-                winner: game.winner,
-                log: game.log?.slice(-20),
-                board: renderBoard(game),
-                summary: generateGameSummary(game),
-              })
-            },
-            { route: 'network.games.detail', request }
-          )
+          return isLegacyAlias ? withDeprecationHeaders(result, replacementPath) : result
         }
 
         // Admin

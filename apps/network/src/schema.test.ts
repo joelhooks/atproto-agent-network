@@ -119,12 +119,12 @@ describe('schema.sql', () => {
     }
   })
 
-  it('defines a games table with the expected columns', async () => {
+  it('defines an environments table with the expected columns', async () => {
     const schema = readFileSync(schemaPath, 'utf8')
     const normalized = normalize(schema)
 
     // Ensure the on-disk schema uses IF NOT EXISTS to avoid destructive deploys.
-    expect(normalized).toContain('create table if not exists games')
+    expect(normalized).toContain('create table if not exists environments')
 
     const mf = new Miniflare({
       modules: true,
@@ -140,16 +140,16 @@ describe('schema.sql', () => {
       }
 
       const tableRow = await db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='environments'")
         .first<{ name: string }>()
-      expect(tableRow?.name).toBe('games')
+      expect(tableRow?.name).toBe('environments')
 
       const createRow = await db
-        .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='games'")
+        .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='environments'")
         .first<{ sql: string }>()
       expect(createRow?.sql).toBeTruthy()
 
-      const games = extractTable(normalize(createRow!.sql), 'games')
+      const environments = extractTable(normalize(createRow!.sql), 'environments')
       const required = [
         'id text primary key',
         'type text',
@@ -163,7 +163,7 @@ describe('schema.sql', () => {
       ]
 
       for (const snippet of required) {
-        expect(games).toContain(snippet)
+        expect(environments).toContain(snippet)
       }
     } finally {
       await mf.dispose()

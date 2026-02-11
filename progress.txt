@@ -160,3 +160,48 @@ Result:
 Required post-work actions completed:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Milestone XP bonuses — reward non-combat encounters"`
+
+---
+[2026-02-11T14:56:18.166Z]
+Failed: Rename games → environments throughout D1, API, and codebase [unknown]
+Validation: Test Files  20 passed | 2 skipped (22)
+      Tests  299 passed | 6 skipped (305)
+   Start at  06:56:11
+   Duration  6.46s (transform 1.98s, setup 0ms, collect 3.51s, tests 6.64s, environment 6ms, prepare 2.78s)
+Codex: Validation passed; I’m now running the required post-work reporting commands: storing a specific hivemind learning and sending the required openclaw completion event.
+
+---
+[2026-02-11T15:04:26.650Z]
+Completed: Rename games → environments throughout D1, API, and codebase
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/schema.sql, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/environments/catan.test.ts, apps/network/src/environments/catan.ts, apps/network/src/environments/observe.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/schema.test.ts, apps/network/src/tools/gm-tool.pdfbrain.live.test.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, packages/core/src/d1-mock.ts
+Summary: Implemented the games→environments rename in the requested surface area with TDD.
+
+What changed:
+- Added failing-first coverage in `apps/network/src/environments/observe.test.ts` for canonical `environment_history` support plus `game_history` alias compatibility.
+- Updated `apps/network/src/environments/observe.ts`:
+  - Canonical command is now `environment_history` (with `game_history` alias kept).
+  - User-facing text now uses “environments”.
+  - Queries/type naming are environment-based.
+- Updated `apps/network/src/index.ts`:
+  - Renamed legacy mapper helper to `mapLegacyGamesAliasPath` (no behavior regression).
+  - `/games` and `/games/:id` alias flow remains active with deprecation warning/headers.
+- Updated `apps/network/src/environments/rpg.ts`:
+  - Renamed environment-level helper/type names (`EnvironmentRow`, `findJoinableEnvironmentsForAgent`, `emitEnvironmentCompleted`, etc.).
+  - Normalized environment wording in key comments/prompts.
+  - Kept backward-compatible config read by supporting `maxEnvironmentsPerDay` and legacy `maxGamesPerDay`.
+
+Validation run (required command):
+- `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5`
+- Result: `Test Files 21 passed | 2 skipped (23)`, `Tests 300 passed | 6 skipped (306)`.
+
+Required post-work actions completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Rename games → environments throughout D1, API, and codebase"`
+
+## Learnings
+### Technical Discovery
+In this codebase, alias migration is already structured around canonical `/environments` handling in `apps/network/src/index.ts`; adding/keeping backward compatibility is safest by layering alias-path mapping plus deprecation headers rather than duplicating handler logic.
+### Gotcha for Next Iteration
+For RPG autoplay limits, `rpg.ts` historically used `maxGamesPerDay`; renaming without fallback will silently break existing config wiring. Read both `maxEnvironmentsPerDay` and `maxGamesPerDay` during transition.
+### Files Context
+`apps/network/src/index.ts` is the single source of truth for worker route aliasing/deprecation behavior. `apps/network/src/environments/observe.ts` owns observer command naming and reporting language. `apps/network/src/environments/rpg.ts` contains most environment-query helper naming and autoplay throttling logic; this is where terminology drift is easiest to reintroduce.

@@ -3003,7 +3003,7 @@ export class AgentDO extends DurableObject {
             const existingGame =
               playerLike
                 ? await db.prepare(
-                    "SELECT id FROM games WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1"
+                    "SELECT id FROM environments WHERE phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1"
                   ).bind(playerLike).first<{ id: string }>()
                 : null
             if (existingGame) {
@@ -3021,7 +3021,7 @@ export class AgentDO extends DurableObject {
             const game = createGame(gameId, players)
             const hostAgent = this.config?.name ?? 'unknown'
             await db.prepare(
-              'INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
+              'INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
             ).bind(gameId, hostAgent, JSON.stringify(game), game.phase, JSON.stringify(players)).run()
             const { renderBoard } = await import('./games/catan')
 
@@ -3042,7 +3042,7 @@ export class AgentDO extends DurableObject {
           if (!gameId) throw new Error('gameId required')
 
           // Route non-Catan games to their correct tool with a clear error
-          const typeRow = await db.prepare('SELECT type FROM games WHERE id = ?').bind(gameId).first<{ type?: string }>()
+          const typeRow = await db.prepare('SELECT type FROM environments WHERE id = ?').bind(gameId).first<{ type?: string }>()
           if (typeRow?.type && typeRow.type !== 'catan') {
             return {
               ok: false,
@@ -3050,7 +3050,7 @@ export class AgentDO extends DurableObject {
             }
           }
 
-          const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+          const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
           if (!row) throw new Error(`Game ${gameId} not found — check the game ID`)
           const game = JSON.parse(row.state)
 
@@ -3078,7 +3078,7 @@ export class AgentDO extends DurableObject {
             const playerName = this.config?.name ?? 'unknown'
             const result = executeAction(game, playerName, action)
             await db.prepare(
-              'UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime(\'now\') WHERE id = ?'
+              'UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime(\'now\') WHERE id = ?'
             ).bind(JSON.stringify(game), game.phase, game.winner ?? null, gameId).run()
 
             // Broadcast game events through WebSocket for observability

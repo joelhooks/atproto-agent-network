@@ -32,7 +32,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['swoop', 'alice']))
       .run()
@@ -40,7 +40,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool(ctx as any)
     await tool.execute('toolcall-explore', { command: 'explore', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(updated.currentPlayer).toBe('alice')
@@ -85,7 +85,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'swoop', JSON.stringify(game), game.phase, JSON.stringify(['swoop', 'alice']))
       .run()
@@ -106,7 +106,7 @@ describe('rpgEnvironment', () => {
       spy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(updated.party.find((p: any) => (p.agent ?? p.name) === 'swoop').hp).toBe(0)
@@ -141,7 +141,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()
@@ -149,7 +149,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool(ctx as any)
     await tool.execute('toolcall-status', { command: 'status', gameId })
 
-    const row = await db.prepare('SELECT state, phase FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state, phase FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
     expect(row.phase).toBe('finished')
     expect(updated.phase).toBe('finished')
@@ -192,7 +192,7 @@ describe('rpgEnvironment', () => {
 
       await db
         .prepare(
-          "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+          "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
         )
         .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(party))
         .run()
@@ -213,7 +213,7 @@ describe('rpgEnvironment', () => {
         spy.mockRestore()
       }
 
-      const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
       const updated = JSON.parse(row.state)
       return updated.party.find((p: any) => (p.agent ?? p.name) === 'alice').hp
     }
@@ -262,7 +262,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -288,7 +288,7 @@ describe('rpgEnvironment', () => {
       spy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     // GM should NOT auto-resolve combat — instead provides graduated hints.
@@ -322,7 +322,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -330,7 +330,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool(ctx as any)
     await tool.execute('toolcall-join', { command: 'join_game', gameId, klass: 'Mage' })
 
-    const row = await db.prepare('SELECT state, players FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state, players FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(updated.party.some((p: any) => p.agent === 'bob' && p.klass === 'Mage')).toBe(true)
@@ -354,7 +354,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -385,7 +385,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -438,7 +438,7 @@ describe('rpgEnvironment', () => {
     const gameId = String((result as any)?.details?.gameId ?? '')
     expect(gameId).toContain('rpg_')
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     // Setup phase enabled — game starts in setup with backstory interview
@@ -469,7 +469,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -482,7 +482,7 @@ describe('rpgEnvironment', () => {
     const dmTool = rpgEnvironment.getTool({ agentName: 'grimlock', agentDid: 'did:cf:grimlock', db: db as any, broadcast } as any)
     await dmTool.execute('toolcall-setup-narrate', { command: 'setup_narrate', gameId, message: 'Tell me about your origin.' })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(updated.setupPhase.dialogues.slag).toEqual([expect.stringContaining('Tell me about your origin')])
@@ -512,7 +512,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -521,7 +521,7 @@ describe('rpgEnvironment', () => {
     await slagTool.execute('toolcall-setup-respond-1', { command: 'setup_respond', gameId, message: 'I was born under a broken moon.' })
 
     {
-      const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
       const updated = JSON.parse(row.state)
       expect(updated.setupPhase.exchangeCount).toBe(1)
       expect(updated.setupPhase.currentPlayerIndex).toBe(0)
@@ -535,7 +535,7 @@ describe('rpgEnvironment', () => {
     await slagTool.execute('toolcall-setup-respond-2', { command: 'setup_respond', gameId, message: 'Vengeance, and a promise I cannot break.' })
 
     {
-      const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
       const updated = JSON.parse(row.state)
       expect(updated.setupPhase.exchangeCount).toBe(0)
       expect(updated.setupPhase.currentPlayerIndex).toBe(1)
@@ -567,7 +567,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -582,7 +582,7 @@ describe('rpgEnvironment', () => {
       },
     })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(updated.setupPhase).toBeUndefined()
@@ -618,7 +618,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -630,7 +630,7 @@ describe('rpgEnvironment', () => {
     // Current player prompt
     game.currentPlayer = 'slag'
     await db
-      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
       .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
       .run()
 
@@ -664,7 +664,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -729,7 +729,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -756,7 +756,7 @@ describe('rpgEnvironment', () => {
       game.phase = 'finished'
       await db
         .prepare(
-          "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+          "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
         )
         .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
         .run()
@@ -785,7 +785,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -824,7 +824,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -877,7 +877,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -929,7 +929,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -948,7 +948,7 @@ describe('rpgEnvironment', () => {
     // Finish the adventure (+200).
     await tool.execute('toolcall-5', { command: 'explore', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.phase).toBe('finished')
     expect(updated.xpEarned).toEqual({ alice: 450 })
@@ -980,7 +980,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1002,7 +1002,7 @@ describe('rpgEnvironment', () => {
       spy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     const alice = findCharacter(updated, 'alice')!
     expect(updated.xpEarned).toEqual({ alice: 125 })
@@ -1039,7 +1039,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1052,7 +1052,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 75 })
   })
@@ -1079,7 +1079,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1087,7 +1087,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
     await tool.execute('toolcall-xp-barrier-class', { command: 'explore', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 75 })
   })
@@ -1113,7 +1113,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1121,7 +1121,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
     await tool.execute('toolcall-xp-barrier-bruteforce', { command: 'explore', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 65 })
   })
@@ -1147,7 +1147,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()
@@ -1160,7 +1160,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 80, bob: 80 })
   })
@@ -1185,7 +1185,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1193,7 +1193,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
     await tool.execute('toolcall-xp-treasure', { command: 'explore', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 60 })
   })
@@ -1218,7 +1218,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1231,7 +1231,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    let row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    let row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     let updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 18 })
 
@@ -1241,7 +1241,7 @@ describe('rpgEnvironment', () => {
       enemies: [{ name: 'Bruiser', hp: 4, maxHp: 10, DEX: 20, attack: 20, dodge: 20, morale: 6, negotiable: true, tactics: { kind: 'goblin' } }],
     }
     await db
-      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
       .bind(JSON.stringify(updated), updated.phase, updated.winner ?? null, gameId)
       .run()
 
@@ -1252,7 +1252,7 @@ describe('rpgEnvironment', () => {
       intimidateRandomSpy.mockRestore()
     }
 
-    row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 30 })
   })
@@ -1278,7 +1278,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1293,7 +1293,7 @@ describe('rpgEnvironment', () => {
 
     await tool.execute('toolcall-xp-rest', { command: 'rest', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     expect(updated.xpEarned).toEqual({ alice: 10 })
   })
@@ -1316,7 +1316,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', agentName, JSON.stringify(game), game.phase, JSON.stringify([agentName]))
       .run()
@@ -1401,7 +1401,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1470,7 +1470,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1524,7 +1524,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1586,7 +1586,7 @@ describe('rpgEnvironment', () => {
     game.mode = 'exploring'
 
     await db.prepare(
-      "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
     ).bind('rpg_persist_test', 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock'])).run()
 
     const tool = rpgEnvironment.getTool(ctx as any)
@@ -1595,7 +1595,7 @@ describe('rpgEnvironment', () => {
     expect(ctx.loadCharacter).toHaveBeenCalled()
 
     // Verify the joined character has persistent stats
-    const updatedRow = await db.prepare("SELECT state FROM games WHERE id = 'rpg_persist_test'").first<{ state: string }>()
+    const updatedRow = await db.prepare("SELECT state FROM environments WHERE id = 'rpg_persist_test'").first<{ state: string }>()
     const updatedGame = JSON.parse(updatedRow!.state)
     const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
     expect(alice).toBeDefined()
@@ -1663,7 +1663,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
       .run()
@@ -1672,7 +1672,7 @@ describe('rpgEnvironment', () => {
     const result = await tool.execute!('call-reroll', { command: 'join_game', gameId, klass: 'Mage' })
     const text = String((result as any)?.content?.[0]?.text ?? '')
 
-    const updatedRow = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updatedRow = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updatedGame = JSON.parse(updatedRow!.state)
     const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
 
@@ -1718,7 +1718,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock']))
       .run()
@@ -1728,7 +1728,7 @@ describe('rpgEnvironment', () => {
 
     expect(ctx.loadCharacter).toHaveBeenCalled()
 
-    const updatedRow = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updatedRow = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updatedGame = JSON.parse(updatedRow!.state)
     const alice = updatedGame.party.find((p: any) => p.agent === 'alice')
     expect(alice).toBeDefined()
@@ -1773,7 +1773,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()
@@ -1788,7 +1788,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
     const revived = updated.party.find((p: any) => (p.agent ?? p.name) === 'bob')
     const updatedHealer = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
@@ -1836,7 +1836,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()
@@ -1852,7 +1852,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
     const stillDead = updated.party.find((p: any) => (p.agent ?? p.name) === 'bob')
     const updatedHealer = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
@@ -1892,7 +1892,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'healer', JSON.stringify(game), game.phase, JSON.stringify(['healer', 'victim']))
       .run()
@@ -1914,7 +1914,7 @@ describe('rpgEnvironment', () => {
       randomSpy.mockRestore()
     }
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
     const deadChar = updated.party.find((p: any) => (p.agent ?? p.name) === 'victim')
     const logText = updated.log.map((e: any) => String(e.what))
@@ -1949,7 +1949,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -1998,7 +1998,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2032,7 +2032,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2125,7 +2125,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2165,7 +2165,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2174,7 +2174,7 @@ describe('rpgEnvironment', () => {
     const result = await tool.execute('toolcall-loot-1', { command: 'explore', gameId })
     const text = String((result as any)?.content?.[0]?.text ?? '')
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     const alice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
 
@@ -2219,7 +2219,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2227,7 +2227,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool(ctx as any)
     await tool.execute('toolcall-use-item', { command: 'use_item', gameId, item: 'potion' })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
 
@@ -2259,7 +2259,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2272,7 +2272,7 @@ describe('rpgEnvironment', () => {
     })
     const text = String((result as any)?.content?.[0]?.text ?? '')
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
     const boughtPotion = updatedAlice.inventory.find((item: any) => item?.slot === 'consumable')
@@ -2312,7 +2312,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -2320,7 +2320,7 @@ describe('rpgEnvironment', () => {
     const tool = rpgEnvironment.getTool(ctx as any)
     await tool.execute('toolcall-boss-drop', { command: 'attack', gameId })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<{ state: string }>()
     const updated = JSON.parse(row!.state)
     const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
     const rareDrops = (updatedAlice.inventory ?? []).filter((item: any) => item?.rarity === 'rare' || item?.rarity === 'legendary')
@@ -2351,7 +2351,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -2365,7 +2365,7 @@ describe('rpgEnvironment', () => {
       type: 'ic',
     })
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
     expect(Array.isArray(updated.feedMessages)).toBe(true)
@@ -2404,7 +2404,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -2441,7 +2441,7 @@ describe('rpgEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
       .run()
@@ -2471,7 +2471,7 @@ describe('rpgEnvironment', () => {
 
     expect((third as any).ok).toBe(false)
 
-    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
     expect(updated.feedMessages.length).toBe(2)
   })

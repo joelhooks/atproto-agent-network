@@ -346,7 +346,7 @@ describe('AgentDO', () => {
     })
     await (db as any)
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(game.id, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['grimlock', 'alice']))
       .run()
@@ -376,7 +376,7 @@ describe('AgentDO', () => {
     expect(execBody.steps?.[0]?.name).toBe('gm')
     expect(execBody.steps?.[0]?.ok).toBe(true)
 
-    const stored = await (db as any).prepare('SELECT state FROM games WHERE id = ?').bind(game.id).first<{ state: string }>()
+    const stored = await (db as any).prepare('SELECT state FROM environments WHERE id = ?').bind(game.id).first<{ state: string }>()
     const next = JSON.parse(String(stored?.state ?? '{}')) as any
     expect(Array.isArray(next.log)).toBe(true)
     expect(next.log.some((e: any) => e.who === 'GM' && String(e.what).startsWith('[GM]') && String(e.what).includes('torchlight'))).toBe(true)
@@ -2409,7 +2409,7 @@ describe('AgentDO', () => {
     }))
 
     await db
-      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(
         'catan_test_1',
         'catan',
@@ -2485,7 +2485,7 @@ describe('AgentDO', () => {
     )
 
     await db
-      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(
         'rpg_test_tools_1',
         'rpg',
@@ -2558,7 +2558,7 @@ describe('AgentDO', () => {
     }))
 
     await db
-      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(
         'rpg_test_1',
         'rpg',
@@ -2609,7 +2609,7 @@ describe('AgentDO', () => {
     }))
 
     await db
-      .prepare('INSERT INTO games (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(
         'rpg_test_2',
         'rpg',
@@ -3192,7 +3192,7 @@ describe('AgentDO', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
       .run()
@@ -3248,12 +3248,12 @@ describe('AgentDO', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()
 
-    const before = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+    const before = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const beforeState = JSON.parse(before.state)
     expect(beforeState.currentPlayer).toBe('alice')
 
@@ -3276,7 +3276,7 @@ describe('AgentDO', () => {
       const reflection = await storage.get<{ acted?: { steps?: Array<{ name: string; ok: boolean }> } }>('lastReflection')
       expect(reflection?.acted?.steps?.[0]).toMatchObject({ name: 'game', ok: true })
 
-      const after = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<any>()
+      const after = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
       const afterState = JSON.parse(after.state)
       expect(afterState.currentPlayer).toBe('bob')
       expect(afterState.turn).toBe(beforeState.turn + 1)

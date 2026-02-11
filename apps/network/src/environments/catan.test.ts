@@ -27,7 +27,7 @@ describe('catanEnvironment', () => {
 
     await db
       .prepare(
-        "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
       )
       .bind(gameId, 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
       .run()

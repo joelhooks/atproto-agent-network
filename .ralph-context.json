@@ -155,6 +155,31 @@
         "packages/core/src/types.ts"
       ],
       "learnings": "Technical Discovery: `createGame()`/`toCharacter()` reference semantics matter for existing RPG tests and logic that hold direct `Character` references. Cloning non-string players breaks expectations for HP/MP mutation visibility in barrier resolution. Normalizing loot fields in place preserves backward behavior while supporting typed loot.\nGotcha: Boss combat drops that immediately apply stat effects can interfere with unrelated progression assertions (for example, level-up skill boosts). If tests depend on exact post-level values, make boss drop item selection deterministic (or decouple auto-application timing) to avoid random/stat-order coupling.\nFiles Context: `apps/network/src/games/rpg-engine.ts` now owns loot item naming and player normalization semantics (`toCharacter`). `apps/network/src/environments/rpg.ts` controls runtime drop generation and was updated to deterministic boss drop seeding. `packages/core/src/types.ts` defines cross-package persistent inventory contract as `LootItem[]`."
+    },
+    {
+      "id": "story-mli3l69p",
+      "title": "Milestone XP bonuses — reward non-combat encounters",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "packages/core/src/types.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/environments/rpg.ts` already wires non-combat XP via post-`explore()` state (skill deltas + barrier log slice parsing). The robust way to keep brute-force XP consistent is to source it from `apps/network/src/games/rpg-engine.ts` as a dedicated constant (`XP_PER_BARRIER_BRUTE_FORCE`) instead of embedding a literal.\nGotcha: The non-combat XP tests in `apps/network/src/environments/rpg.test.ts` were present but skipped. If they are skipped again, regressions in trap/barrier/puzzle/treasure/negotiate/intimidate/flee XP can slip through despite full-suite green.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines canonical XP constants. `apps/network/src/environments/rpg.ts` applies those constants during room/action resolution and XP logging. `apps/network/src/environments/rpg.test.ts` contains the end-to-end story assertions for milestone XP behaviors."
+    },
+    {
+      "id": "story-mli4cnxe",
+      "title": "Rename games → environments throughout D1, API, and codebase",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[unknown] Test Files  20 passed | 2 skipped (22)\n      Tests  299 passed | 6 skipped (305)\n   Start at  06:56:11\n   Duration  6.46s (transform 1.98s, setup 0ms, collect 3.51s, tests 6.64s, environment 6ms, prepare 2.78s)"
     }
   ],
   "failures": [
@@ -196,6 +221,21 @@
         "rg -n"
       ],
       "iterationNumber": 5
+    },
+    {
+      "storyId": "story-mli4cnxe",
+      "storyTitle": "Rename games → environments throughout D1, API, and codebase",
+      "category": "unknown",
+      "error": "Test Files  20 passed | 2 skipped (22)\n      Tests  299 passed | 6 skipped (305)\n   Start at  06:56:11\n   Duration  6.46s (transform 1.98s, setup 0ms, collect 3.51s, tests 6.64s, environment 6ms, prepare 2.78s)",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n",
+        "ls -la",
+        "find apps/network/src",
+        "perl -pi"
+      ],
+      "iterationNumber": 8
     }
   ]
 }

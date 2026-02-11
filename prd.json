@@ -868,7 +868,7 @@
       "title": "Rename games → environments throughout D1, API, and codebase",
       "description": "The D1 `games` table, `/games` API routes, and related code use \"games\" terminology, but the real abstraction is \"environments.\" RPG is an env. Ralph is an env. Observe is an env. Not all envs are games.\n\n**D1 migration:**\n- Rename `games` table → `environments` (or create new table + migrate data + drop old)\n- Columns stay the same: id, type, phase, host_agent, players, winner, state, created_at, updated_at\n\n**API routes:**\n- `GET /games` → `GET /environments` (keep `/games` as alias for backwards compat temporarily)\n- `GET /games/:id` → `GET /environments/:id`\n- `DELETE /games/:id` → `DELETE /environments/:id`\n- `POST /games` → `POST /environments`\n- Update all route handlers in `apps/network/src/index.ts`\n\n**Code references:**\n- Grep for `games` table references in all .ts files and update\n- Update type names: `GameRow` → `EnvironmentRow` where appropriate\n- Update variable names in observe.ts, rpg.ts, catan.ts, agent.ts\n- Update D1 queries: `FROM games` → `FROM environments`\n\n**CLI (anet):**\n- `anet games` → `anet envs` (keep `games` as alias)\n- `anet games-all` → `anet envs --all`\n\n**Backwards compat:**\n- Keep `/games` routes as aliases that redirect/proxy to `/environments` for one release cycle\n- Log deprecation warning when old routes are hit\n\n**Files:**\n- `apps/network/src/index.ts` — routes\n- `apps/network/src/environments/rpg.ts` — D1 queries\n- `apps/network/src/environments/observe.ts` — D1 queries  \n- `apps/network/src/agent.ts` — game/env references\n- D1 migration SQL",
       "priority": 91,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/index.ts",
@@ -891,8 +891,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 78,
-    "lastIteration": "2026-02-11T14:45:32.894Z"
+    "totalIterations": 79,
+    "lastIteration": "2026-02-11T15:04:26.648Z"
   },
   "totalStories": 11
 }

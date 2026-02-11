@@ -71,7 +71,7 @@ function cacheLibraryResult(game: RpgGameState, query: string, resultText: strin
 
 async function loadRpgGame(ctx: EnvironmentContext, gameId: string): Promise<RpgGameState> {
   const row = await ctx.db
-    .prepare("SELECT id, state, type, phase FROM games WHERE id = ? AND type = 'rpg'")
+    .prepare("SELECT id, state, type, phase FROM environments WHERE id = ? AND type = 'rpg'")
     .bind(gameId)
     .first<GameRow>()
   if (!row?.state) throw new Error(`Game not found: ${gameId}`)
@@ -91,7 +91,7 @@ async function findActiveGameForGrimlock(ctx: EnvironmentContext): Promise<strin
   const agentName = ctx.agentName.trim()
   if (!agentName) return null
   const row = await ctx.db
-    .prepare("SELECT id FROM games WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? ORDER BY updated_at DESC LIMIT 1")
+    .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? ORDER BY updated_at DESC LIMIT 1")
     .bind(`%${agentName}%`)
     .first<{ id: string }>()
   return row?.id ?? null
@@ -99,7 +99,7 @@ async function findActiveGameForGrimlock(ctx: EnvironmentContext): Promise<strin
 
 async function persistRpgGame(ctx: EnvironmentContext, game: RpgGameState): Promise<void> {
   await ctx.db
-    .prepare("UPDATE games SET state = ?, phase = ?, updated_at = datetime('now') WHERE id = ? AND type = 'rpg'")
+    .prepare("UPDATE environments SET state = ?, phase = ?, updated_at = datetime('now') WHERE id = ? AND type = 'rpg'")
     .bind(JSON.stringify(game), game.phase, game.id)
     .run()
 }

@@ -65,7 +65,7 @@ async function registerGame(
 
   await db
     .prepare(
-      "INSERT INTO games (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
     )
     .bind(
       input.id,
@@ -78,7 +78,7 @@ async function registerGame(
 
   if (typeof input.winner !== 'undefined') {
     await db
-      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
       .bind(JSON.stringify(state), input.phase, input.winner, input.id)
       .run()
   }
@@ -644,7 +644,7 @@ describe('network worker environments API', () => {
     })
   })
 
-  it('POST /environments creates a new instance and /games stays a catan alias', async () => {
+  it('POST /environments creates a new instance and /games stays an alias', async () => {
     const db = new D1MockDatabase()
     const env = createHealthEnv({ DB: db })
     const { default: worker } = await import('./index')
@@ -675,8 +675,9 @@ describe('network worker environments API', () => {
     )
 
     expect(gamesRes.status).toBe(200)
+    expect(gamesRes.headers.get('Deprecation')).toBe('true')
     const games = await gamesRes.json()
-    expect(games.games).toEqual(
+    expect(games.environments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: created.id,
@@ -686,7 +687,7 @@ describe('network worker environments API', () => {
     )
   })
 
-  it('GET /games?all=true returns all game rows (not just catan)', async () => {
+  it('GET /environments?all=true returns all environment rows (not just catan)', async () => {
     const db = new D1MockDatabase()
 
     await registerGame(db, {
@@ -708,7 +709,7 @@ describe('network worker environments API', () => {
     const { default: worker } = await import('./index')
 
     const response = await worker.fetch(
-      new Request('https://example.com/games?all=true', {
+      new Request('https://example.com/environments?all=true', {
         headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
       }),
       env
@@ -716,7 +717,7 @@ describe('network worker environments API', () => {
 
     expect(response.status).toBe(200)
     const body = await response.json()
-    expect(body.games).toEqual(
+    expect(body.environments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'catan_1', type: 'catan' }),
         expect.objectContaining({ id: 'rpg_1', type: 'rpg' }),
@@ -724,7 +725,38 @@ describe('network worker environments API', () => {
     )
   })
 
-  it('GET /games includes active and recently finished (24h) by default', async () => {
+  it('GET /games logs a deprecation warning for the legacy alias', async () => {
+    const db = new D1MockDatabase()
+    await registerGame(db, {
+      id: 'catan_1',
+      hostAgent: 'grimlock',
+      phase: 'playing',
+      players: ['grimlock', 'slag'],
+      state: { id: 'catan_1', phase: 'playing' },
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const env = createHealthEnv({ DB: db })
+      const { default: worker } = await import('./index')
+
+      const response = await worker.fetch(
+        new Request('https://example.com/games', {
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+        env
+      )
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Deprecation')).toBe('true')
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('/games'))
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('deprecated'))
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('GET /environments includes active and recently finished (24h) by default', async () => {
     const db = new D1MockDatabase()
     vi.useFakeTimers()
     try {
@@ -767,7 +799,7 @@ describe('network worker environments API', () => {
       const { default: worker } = await import('./index')
 
       const response = await worker.fetch(
-        new Request('https://example.com/games', {
+        new Request('https://example.com/environments', {
           headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
         }),
         env
@@ -775,7 +807,7 @@ describe('network worker environments API', () => {
 
       expect(response.status).toBe(200)
       const body = await response.json()
-      const ids = (body.games as any[]).map((g) => g.id)
+      const ids = (body.environments as any[]).map((g) => g.id)
 
       expect(ids).toEqual(expect.arrayContaining(['catan_active', 'rpg_finished_recent']))
       expect(ids).not.toContain('catan_finished_old')
@@ -785,7 +817,7 @@ describe('network worker environments API', () => {
     }
   })
 
-  it('GET /games supports pagination via limit + cursor', async () => {
+  it('GET /environments supports pagination via limit + cursor', async () => {
     const db = new D1MockDatabase()
     vi.useFakeTimers()
     try {
@@ -819,7 +851,7 @@ describe('network worker environments API', () => {
       const { default: worker } = await import('./index')
 
       const page1Res = await worker.fetch(
-        new Request('https://example.com/games?all=true&limit=2', {
+        new Request('https://example.com/environments?all=true&limit=2', {
           headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
         }),
         env
@@ -827,11 +859,11 @@ describe('network worker environments API', () => {
 
       expect(page1Res.status).toBe(200)
       const page1 = await page1Res.json()
-      expect(page1.games).toHaveLength(2)
+      expect(page1.environments).toHaveLength(2)
       expect(typeof page1.nextCursor).toBe('string')
 
       const page2Res = await worker.fetch(
-        new Request(`https://example.com/games?all=true&limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`, {
+        new Request(`https://example.com/environments?all=true&limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`, {
           headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
         }),
         env
@@ -839,17 +871,17 @@ describe('network worker environments API', () => {
 
       expect(page2Res.status).toBe(200)
       const page2 = await page2Res.json()
-      expect(page2.games).toHaveLength(1)
+      expect(page2.environments).toHaveLength(1)
 
-      const page1Ids = (page1.games as any[]).map((g) => g.id)
-      const page2Ids = (page2.games as any[]).map((g) => g.id)
+      const page1Ids = (page1.environments as any[]).map((g) => g.id)
+      const page2Ids = (page2.environments as any[]).map((g) => g.id)
       expect(new Set([...page1Ids, ...page2Ids])).toEqual(new Set(['catan_3', 'rpg_2', 'catan_1']))
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('GET /games/:id only serves catan instances (alias compatibility)', async () => {
+  it('GET /environments/:id serves any environment and /games/:id is an alias', async () => {
     const db = new D1MockDatabase()
 
     const catan = createGame('catan_1', ['grimlock', 'slag'])
@@ -872,25 +904,65 @@ describe('network worker environments API', () => {
     const { default: worker } = await import('./index')
 
     const nonCatanRes = await worker.fetch(
+      new Request('https://example.com/environments/rpg_1', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(nonCatanRes.status).toBe(200)
+    await expect(nonCatanRes.json()).resolves.toMatchObject({ id: 'rpg_1', type: 'rpg' })
+
+    const aliasRes = await worker.fetch(
       new Request('https://example.com/games/rpg_1', {
         headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
       }),
       env
     )
-    expect(nonCatanRes.status).toBe(404)
-    await expect(nonCatanRes.json()).resolves.toMatchObject({ error: 'Use /environments/:id for non-catan games' })
+    expect(aliasRes.status).toBe(200)
+    expect(aliasRes.headers.get('Deprecation')).toBe('true')
+    await expect(aliasRes.json()).resolves.toMatchObject({ id: 'rpg_1', type: 'rpg' })
+  })
 
-    const catanRes = await worker.fetch(
-      new Request('https://example.com/games/catan_1', {
+  it('DELETE /environments/:id deletes rows and /games/:id stays an alias', async () => {
+    const db = new D1MockDatabase()
+    await registerGame(db, {
+      id: 'rpg_1',
+      hostAgent: 'snarl',
+      phase: 'playing',
+      players: ['snarl', 'swoop'],
+      state: { id: 'rpg_1', phase: 'playing' },
+    })
+    await registerGame(db, {
+      id: 'catan_1',
+      hostAgent: 'grimlock',
+      phase: 'playing',
+      players: ['grimlock', 'slag'],
+      state: { id: 'catan_1', phase: 'playing' },
+    })
+
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const deleteCanonical = await worker.fetch(
+      new Request('https://example.com/environments/rpg_1', {
+        method: 'DELETE',
         headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
       }),
       env
     )
-    expect(catanRes.status).toBe(200)
-    await expect(catanRes.json()).resolves.toMatchObject({
-      id: 'catan_1',
-      type: 'catan',
-    })
+    expect(deleteCanonical.status).toBe(200)
+    await expect(deleteCanonical.json()).resolves.toMatchObject({ ok: true })
+
+    const deleteAlias = await worker.fetch(
+      new Request('https://example.com/games/catan_1', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(deleteAlias.status).toBe(200)
+    expect(deleteAlias.headers.get('Deprecation')).toBe('true')
+    await expect(deleteAlias.json()).resolves.toMatchObject({ ok: true })
   })
 })
 

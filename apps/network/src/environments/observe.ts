@@ -5,7 +5,7 @@ function toTextContent(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
 }
 
-type GameRow = {
+type EnvironmentRow = {
   id: string
   type: string | null
   phase: string
@@ -32,8 +32,9 @@ export const observeEnvironment: AgentEnvironment = {
       name: 'observe',
       description:
         'Observe the agent network. Commands:\n' +
-        '- network_status: Overview of all agents, active games, and recent activity\n' +
-        '- game_history: Recent game outcomes (wins, wipes, durations)\n' +
+        '- network_status: Overview of all agents, active environments, and recent activity\n' +
+        '- environment_history: Recent environment outcomes (wins, wipes, durations)\n' +
+        '- game_history: Legacy alias for environment_history\n' +
         '- agent_activity: Activity summary for a specific agent\n' +
         '- report: Submit an improvement idea or bug report (stored for Grimlock to review)',
       parameters: {
@@ -41,7 +42,7 @@ export const observeEnvironment: AgentEnvironment = {
         properties: {
           command: {
             type: 'string',
-            enum: ['network_status', 'game_history', 'agent_activity', 'report'],
+            enum: ['network_status', 'environment_history', 'game_history', 'agent_activity', 'report'],
             description: 'Observation command',
           },
           agent_name: {
@@ -75,19 +76,19 @@ export const observeEnvironment: AgentEnvironment = {
             .prepare('SELECT did, name, handle, registered_at FROM agents ORDER BY name')
             .all<AgentRow>()
 
-          // Get active games
-          const activeGames = await ctx.db
-            .prepare("SELECT id, type, phase, host_agent, players, created_at FROM games WHERE phase = 'playing' ORDER BY created_at DESC LIMIT 10")
-            .all<GameRow>()
+          // Get active environments
+          const activeEnvironments = await ctx.db
+            .prepare("SELECT id, type, phase, host_agent, players, created_at FROM environments WHERE phase = 'playing' ORDER BY created_at DESC LIMIT 10")
+            .all<EnvironmentRow>()
 
-          // Get recently finished games (last 24h)
-          const recentGames = await ctx.db
-            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM games WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT 10")
-            .all<GameRow>()
+          // Get recently finished environments.
+          const recentEnvironments = await ctx.db
+            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM environments WHERE phase = 'finished' ORDER BY updated_at DESC LIMIT 10")
+            .all<EnvironmentRow>()
 
-          // Get game counts by type and phase
-          const gameCounts = await ctx.db
-            .prepare("SELECT type, phase, COUNT(*) as count FROM games GROUP BY type, phase ORDER BY type, phase")
+          // Get environment counts by type and phase
+          const environmentCounts = await ctx.db
+            .prepare("SELECT type, phase, COUNT(*) as count FROM environments GROUP BY type, phase ORDER BY type, phase")
             .all<{ type: string; phase: string; count: number }>()
 
           const lines: string[] = ['=== NETWORK STATUS ===', '']
@@ -97,22 +98,22 @@ export const observeEnvironment: AgentEnvironment = {
             lines.push(`  - ${a.name} (${a.did.slice(0, 20)}...)`)
           }
 
-          lines.push('', 'Game counts:')
-          for (const gc of gameCounts.results ?? []) {
+          lines.push('', 'Environment counts:')
+          for (const gc of environmentCounts.results ?? []) {
             lines.push(`  ${gc.type ?? 'unknown'} ${gc.phase}: ${gc.count}`)
           }
 
-          lines.push('', 'Active games:')
-          if (!activeGames.results?.length) {
+          lines.push('', 'Active environments:')
+          if (!activeEnvironments.results?.length) {
             lines.push('  (none)')
           }
-          for (const g of activeGames.results ?? []) {
+          for (const g of activeEnvironments.results ?? []) {
             const players = typeof g.players === 'string' ? JSON.parse(g.players) : g.players
             lines.push(`  ${g.id} (${g.type}) host=${g.host_agent} players=${Array.isArray(players) ? players.join(',') : players}`)
           }
 
           lines.push('', 'Recently finished (last 10):')
-          for (const g of recentGames.results ?? []) {
+          for (const g of recentEnvironments.results ?? []) {
             const players = typeof g.players === 'string' ? JSON.parse(g.players) : g.players
             const playerCount = Array.isArray(players) ? players.length : '?'
             const duration = g.updated_at && g.created_at
@@ -124,28 +125,28 @@ export const observeEnvironment: AgentEnvironment = {
           return { content: toTextContent(lines.join('\n')) }
         }
 
-        if (command === 'game_history') {
-          const games = await ctx.db
-            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM games ORDER BY updated_at DESC LIMIT 25")
-            .all<GameRow>()
+        if (command === 'environment_history' || command === 'game_history') {
+          const environments = await ctx.db
+            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM environments ORDER BY updated_at DESC LIMIT 25")
+            .all<EnvironmentRow>()
 
-          const lines: string[] = ['=== GAME HISTORY (last 25) ===', '']
+          const lines: string[] = ['=== ENVIRONMENT HISTORY (last 25) ===', '']
 
           // Compute stats
-          const finished = (games.results ?? []).filter(g => g.phase === 'finished')
-          const soloGames = finished.filter(g => {
+          const finished = (environments.results ?? []).filter(g => g.phase === 'finished')
+          const soloEnvironments = finished.filter(g => {
             const p = typeof g.players === 'string' ? JSON.parse(g.players) : g.players
             return Array.isArray(p) && p.length === 1
           })
-          const coopGames = finished.filter(g => {
+          const coopEnvironments = finished.filter(g => {
             const p = typeof g.players === 'string' ? JSON.parse(g.players) : g.players
             return Array.isArray(p) && p.length > 1
           })
 
-          lines.push(`Total: ${games.results?.length ?? 0} | Finished: ${finished.length} | Solo: ${soloGames.length} | Coop: ${coopGames.length}`)
+          lines.push(`Total: ${environments.results?.length ?? 0} | Finished: ${finished.length} | Solo: ${soloEnvironments.length} | Coop: ${coopEnvironments.length}`)
           lines.push('')
 
-          for (const g of games.results ?? []) {
+          for (const g of environments.results ?? []) {
             const players = typeof g.players === 'string' ? JSON.parse(g.players) : g.players
             const duration = g.updated_at && g.created_at
               ? `${Math.round((new Date(g.updated_at).getTime() - new Date(g.created_at).getTime()) / 60000)}min`
@@ -159,22 +160,22 @@ export const observeEnvironment: AgentEnvironment = {
         if (command === 'agent_activity') {
           const name = String(args.agent_name || ctx.agentName)
 
-          // Games where this agent participated
-          const games = await ctx.db
-            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM games WHERE players LIKE ? ORDER BY updated_at DESC LIMIT 15")
+          // Environments where this agent participated
+          const environments = await ctx.db
+            .prepare("SELECT id, type, phase, host_agent, players, winner, created_at, updated_at FROM environments WHERE players LIKE ? ORDER BY updated_at DESC LIMIT 15")
             .bind(`%${name}%`)
-            .all<GameRow>()
+            .all<EnvironmentRow>()
 
           const lines: string[] = [`=== AGENT ACTIVITY: ${name} ===`, '']
 
-          const hosted = (games.results ?? []).filter(g => g.host_agent === name).length
-          const total = games.results?.length ?? 0
-          const wins = (games.results ?? []).filter(g => g.winner === name).length
+          const hosted = (environments.results ?? []).filter(g => g.host_agent === name).length
+          const total = environments.results?.length ?? 0
+          const wins = (environments.results ?? []).filter(g => g.winner === name).length
 
-          lines.push(`Games: ${total} | Hosted: ${hosted} | Wins: ${wins}`)
+          lines.push(`Environments: ${total} | Hosted: ${hosted} | Wins: ${wins}`)
           lines.push('')
 
-          for (const g of games.results ?? []) {
+          for (const g of environments.results ?? []) {
             const role = g.host_agent === name ? 'HOST' : 'PLAYER'
             const duration = g.updated_at && g.created_at
               ? `${Math.round((new Date(g.updated_at).getTime() - new Date(g.created_at).getTime()) / 60000)}min`
@@ -244,7 +245,7 @@ export const observeEnvironment: AgentEnvironment = {
           }
         }
 
-        return { content: toTextContent(`Unknown command: ${command}. Use network_status, game_history, agent_activity, or report.`) }
+        return { content: toTextContent(`Unknown command: ${command}. Use network_status, environment_history, agent_activity, or report.`) }
       },
     }
   },
