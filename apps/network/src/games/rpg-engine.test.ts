@@ -8,6 +8,10 @@ import {
   createTestDice,
   generateDungeon,
   explore,
+  XP_PER_BARRIER_CLEAR,
+  XP_PER_PUZZLE,
+  XP_PER_TRAP_DISARM,
+  XP_PER_TREASURE_FIND,
   XP_TABLE,
   resolveSkillCheck,
   rollD100,
@@ -1013,7 +1017,15 @@ describe('persistentToGameCharacter', () => {
       personalityTraits: ['stubborn', 'loyal'],
       adventureLog: ['Adventure 1'],
       achievements: [],
-      inventory: ['Sword'],
+      inventory: [
+        {
+          name: 'Sword',
+          rarity: 'common',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 2 }],
+          description: 'A reliable steel blade.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 2000,
       gamesPlayed: 5,
@@ -1044,7 +1056,15 @@ describe('persistentToGameCharacter', () => {
       personalityTraits: [],
       adventureLog: ['A final stand'],
       achievements: ['Dragon Slayer'],
-      inventory: ['Legendary Axe'],
+      inventory: [
+        {
+          name: 'Legendary Axe',
+          rarity: 'legendary',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 10 }],
+          description: 'A once-in-an-era relic weapon.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 2000,
       gamesPlayed: 9,
@@ -1144,7 +1164,22 @@ describe('gameCharacterToPersistent', () => {
       personalityTraits: [],
       adventureLog: ['Won a duel'],
       achievements: ['Bronze Hero'],
-      inventory: ['Axe', 'Torch'],
+      inventory: [
+        {
+          name: 'Axe',
+          rarity: 'common',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 2 }],
+          description: 'A sturdy camp axe.',
+        },
+        {
+          name: 'Torch',
+          rarity: 'common',
+          slot: 'trinket',
+          effects: [],
+          description: 'A simple light source.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 1000,
       gamesPlayed: 3,
@@ -1160,6 +1195,54 @@ describe('gameCharacterToPersistent', () => {
     expect(result.inventory).toEqual([])
     expect(result.adventureLog).toEqual(expect.arrayContaining(['Won a duel', 'Defeated by dragon']))
     expect(result.achievements).toEqual(['Bronze Hero'])
+  })
+
+  it('persists living character inventory from in-game loot state', () => {
+    const gc = createCharacter({ name: 'Thorin', klass: 'Warrior', agent: 'p1' })
+    ;(gc as any).inventory = [
+      {
+        name: 'Silvered Shortsword',
+        rarity: 'uncommon',
+        slot: 'weapon',
+        effects: [{ stat: 'attack', bonus: 5 }],
+        description: 'A silver-inlaid blade balanced for quick strikes.',
+      },
+    ]
+    gc.hp = 5
+
+    const existing: PersistentCharacter = {
+      name: 'Thorin',
+      klass: 'Warrior',
+      level: 2,
+      xp: 220,
+      maxHp: gc.maxHp,
+      maxMp: gc.maxMp,
+      skills: { ...gc.skills },
+      backstory: '',
+      motivation: '',
+      appearance: '',
+      personalityTraits: [],
+      adventureLog: ['Won a duel'],
+      achievements: ['Bronze Hero'],
+      inventory: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+      gamesPlayed: 3,
+      deaths: 1,
+      dead: false,
+    }
+
+    const result = gameCharacterToPersistent(gc, existing, 'Kept moving')
+
+    expect(result.dead).toBe(false)
+    expect(result.inventory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Silvered Shortsword',
+          rarity: 'uncommon',
+        }),
+      ])
+    )
   })
 })
 
@@ -1196,6 +1279,13 @@ describe('awardXp', () => {
 
   it('XP_TABLE matches the expected level thresholds (levels 1-10)', () => {
     expect(XP_TABLE).toEqual([0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500])
+  })
+
+  it('exports milestone XP constants for non-combat encounters', () => {
+    expect(XP_PER_TRAP_DISARM).toBe(25)
+    expect(XP_PER_BARRIER_CLEAR).toBe(25)
+    expect(XP_PER_PUZZLE).toBe(30)
+    expect(XP_PER_TREASURE_FIND).toBe(10)
   })
 
   it('levels up a character when crossing the next XP threshold', () => {

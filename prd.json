@@ -832,7 +832,7 @@
       "title": "Sync xpEarned to in-game Character during play",
       "description": "Currently `game.xpEarned` accumulates XP per agent, but in-game `Character.xp` and `Character.level` stay at their initial values during play. Agents see \"Level 1, 0 XP\" the entire game even while earning thousands of XP.\n\n**Fix:** After every XP award (in `addXpEarned`), also update the corresponding party member's `Character.xp` and check for level-up using `XP_TABLE`. When a character levels up mid-dungeon, apply the stat growth (maxHp, maxMp, skill boost) and log it prominently.\n\nThis gives agents real-time feedback: \"Kaelen the Bold reaches Level 2! (+7 HP, +5 MP)\"\n\n**Files:**\n- `apps/network/src/environments/rpg.ts` — modify `addXpEarned` to sync to Character, add mid-game level-up logic\n- `apps/network/src/games/rpg-engine.ts` — may need to export level-up helper for in-game use",
       "priority": 85,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/environments/rpg.ts"
@@ -843,7 +843,7 @@
       "title": "Loot table system — tiered treasure generation with stat-affecting items",
       "description": "Currently treasure rooms give flavor text only (\"soot-black opal\") with no mechanical effect and nothing added to inventory. Implement a real loot system inspired by OSE treasure tables.\n\n**Implementation:**\n\n1. **Item types and effects** (in `rpg-engine.ts`):\n   ```\n   type ItemRarity = 'common' | 'uncommon' | 'rare' | 'legendary'\n   type ItemSlot = 'weapon' | 'armor' | 'consumable' | 'trinket'\n   type LootItem = {\n     name: string\n     rarity: ItemRarity\n     slot: ItemSlot\n     effects: { stat: string; bonus: number }[]  // e.g. [{stat: 'attack', bonus: 5}]\n     consumable?: { type: 'heal' | 'mp' | 'buff'; amount: number }\n     gold?: number  // gold value\n     description: string\n   }\n   ```\n\n2. **Loot tables by tier:**\n   - **Early rooms**: Common items — minor potions (heal 1d6), copper coins (5-20 gold), rusty weapons (+2 attack)\n   - **Mid rooms**: Uncommon items — healing potions (heal 2d6+3), silver (+5 attack/dodge), gems (20-50 gold)\n   - **Boss rooms**: Rare/legendary — magic weapons (+10 attack), enchanted armor (+5 armor), scrolls (one-time spell), large gold haul (50-200)\n\n3. **Treasure room resolution** (modify `explore` in rpg.ts):\n   - Roll on loot table based on room position in dungeon (early/mid/late)\n   - Add items to the acting character's inventory (or party shared — current player picks up)\n   - Log: \"Found: Silvered Shortsword (+5 attack) and 30 gold pieces\"\n\n4. **Combat drops** — small chance (20%) enemies drop loot on kill:\n   - Early enemies: copper (1-5 gold), occasional potion\n   - Mid enemies: silver (5-15 gold), uncommon items\n   - Boss: guaranteed rare+ drop\n\n5. **Gold as a resource** — track `gold` on Character (add to Character type):\n   - Earned from treasure rooms and enemy drops\n   - Spendable at rest rooms: buy healing potions, identify items\n\n6. **Consumable usage** — add `use_item` command:\n   - `use_item potion` — use a healing potion from inventory\n   - Items consumed on use, removed from inventory\n\n7. **Inventory persistence** — items carry to PersistentCharacter at game end (for living characters). Dead characters lose all items (ties into permadeath story).\n\n**Files:**\n- `apps/network/src/games/rpg-engine.ts` — LootItem type, loot tables, generateLoot function, Character.gold field\n- `apps/network/src/environments/rpg.ts` — treasure room loot generation, combat drops, use_item command, rest room shop\n- `packages/core/src/types.ts` — PersistentCharacter inventory type update (string[] → LootItem[])",
       "priority": 86,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
       "targetFiles": [
         "apps/network/src/games/rpg-engine.ts",
@@ -862,12 +862,37 @@
         "apps/network/src/games/rpg-engine.ts",
         "apps/network/src/environments/rpg.ts"
       ]
+    },
+    {
+      "id": "story-mli4cnxe",
+      "title": "Rename games → environments throughout D1, API, and codebase",
+      "description": "The D1 `games` table, `/games` API routes, and related code use \"games\" terminology, but the real abstraction is \"environments.\" RPG is an env. Ralph is an env. Observe is an env. Not all envs are games.\n\n**D1 migration:**\n- Rename `games` table → `environments` (or create new table + migrate data + drop old)\n- Columns stay the same: id, type, phase, host_agent, players, winner, state, created_at, updated_at\n\n**API routes:**\n- `GET /games` → `GET /environments` (keep `/games` as alias for backwards compat temporarily)\n- `GET /games/:id` → `GET /environments/:id`\n- `DELETE /games/:id` → `DELETE /environments/:id`\n- `POST /games` → `POST /environments`\n- Update all route handlers in `apps/network/src/index.ts`\n\n**Code references:**\n- Grep for `games` table references in all .ts files and update\n- Update type names: `GameRow` → `EnvironmentRow` where appropriate\n- Update variable names in observe.ts, rpg.ts, catan.ts, agent.ts\n- Update D1 queries: `FROM games` → `FROM environments`\n\n**CLI (anet):**\n- `anet games` → `anet envs` (keep `games` as alias)\n- `anet games-all` → `anet envs --all`\n\n**Backwards compat:**\n- Keep `/games` routes as aliases that redirect/proxy to `/environments` for one release cycle\n- Log deprecation warning when old routes are hit\n\n**Files:**\n- `apps/network/src/index.ts` — routes\n- `apps/network/src/environments/rpg.ts` — D1 queries\n- `apps/network/src/environments/observe.ts` — D1 queries  \n- `apps/network/src/agent.ts` — game/env references\n- D1 migration SQL",
+      "priority": 91,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/index.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/observe.ts"
+      ]
+    },
+    {
+      "id": "story-mli4kg2l",
+      "title": "anet v2 — pure agent o11y and debugging CLI",
+      "description": "Rethink anet as a pure agent observability and debugging CLI. NOT a game/env CLI. It answers: Are agents healthy? What are they thinking? Where are they stuck? What went wrong?\n\n**Keep/improve:**\n- `anet health` — agent health (errors, loop count, uptime)\n- `anet debug <agent>` — full debug dump\n- `anet transcript <agent>` — last loop transcript\n- `anet config <agent> [json]` — get/patch config\n- `anet deploy` — deploy worker\n- `anet reset/reset-all` — reset DOs\n\n**New o11y commands:**\n- `anet errors` — aggregate errors across all agents, grouped by category, sorted by recency\n- `anet loops [agent]` — loop performance: avg duration, tool calls per loop, success rate\n- `anet trace <agent>` — last decision chain: observe→think→act→reflect with timing\n- `anet slow` — find agents with degraded performance (>30s avg, increasing errors)\n- `anet stuck` — detect agents in error backoff or repeating same action\n\n**Environment views (generic):**\n- `anet envs` — list active environments (replaces `games`)\n- `anet env <id>` — dump env state (generic JSON, env provides its own debugView)\n- Environments register a `debugView()` on AgentEnvironment interface that returns structured o11y data. anet renders it without knowing RPG/Catan internals.\n\n**Remove RPG-specific commands from anet core:**\n- party, char, campaign, rpg, log → not agent o11y. Can live as separate convenience scripts.\n\n**Output:**\n- `--json` flag on all commands for scripting\n- Color-coded health (green/yellow/red via tput)\n- Compact tables for multi-agent views\n\n**New API endpoints needed:**\n- `GET /admin/errors` — aggregated errors across agents\n- `GET /admin/loops?agent=X` — loop performance metrics\n- `GET /agents/:name/trace` — last decision chain with timing\nAdd to `apps/network/src/index.ts`\n\n**Files:**\n- `~/.local/bin/anet` — CLI rewrite\n- `apps/network/src/index.ts` — new admin endpoints\n- `apps/network/src/environments/types.ts` — debugView on AgentEnvironment",
+      "priority": 92,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -5",
+      "targetFiles": [
+        "apps/network/src/index.ts",
+        "apps/network/src/environments/types.ts"
+      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 75,
-    "lastIteration": "2026-02-11T14:17:12.128Z"
+    "totalIterations": 77,
+    "lastIteration": "2026-02-11T14:36:16.002Z"
   },
   "totalStories": 11
 }

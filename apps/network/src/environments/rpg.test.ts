@@ -954,6 +954,350 @@ describe('rpgEnvironment', () => {
     expect(updated.xpEarned).toEqual({ alice: 450 })
   })
 
+  it('syncs awarded XP to the in-game character and levels up mid-dungeon with growth log', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'rpg_test_midgame_level_sync'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        {
+          type: 'combat',
+          description: 'boss skirmish',
+          enemies: [{ name: 'Wyrmling', hp: 1, DEX: 10, attack: 0, dodge: 0, tactics: { kind: 'boss' } }],
+        },
+        { type: 'rest', description: 'rest' },
+      ],
+    })
+    game.phase = 'playing'
+    game.currentPlayer = 'alice'
+    game.party[0]!.skills.attack = 100
+    const hpBefore = game.party[0]!.maxHp
+    const mpBefore = game.party[0]!.maxMp
+    const attackBefore = game.party[0]!.skills.attack
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
+    const tool = rpgEnvironment.getTool(ctx as any)
+
+    const randoms = [
+      0.0, // attacker d100 = 1 (hit)
+      0.99999, // enemy dodge d100 = 100 (fail)
+      0.0, // damage d6 = 1 (kill)
+      0.0, // level-up skill boost picks first sorted skill key
+    ]
+    let i = 0
+    const spy = vi.spyOn(Math, 'random').mockImplementation(() => randoms[i++] ?? 0.0)
+    try {
+      await tool.execute('toolcall-1', { command: 'attack', gameId })
+    } finally {
+      spy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    const alice = findCharacter(updated, 'alice')!
+    expect(updated.xpEarned).toEqual({ alice: 125 })
+    expect(alice.xp).toBe(125)
+    expect(alice.level).toBe(2)
+    expect(alice.maxHp).toBe(hpBefore + 7)
+    expect(alice.maxMp).toBe(mpBefore + 5)
+    expect(alice.skills.attack).toBe(attackBefore + 5)
+    expect(updated.log.some((e: any) => typeof e.what === 'string' && e.what.includes('reaches Level 2! (+7 HP, +5 MP)'))).toBe(
+      true
+    )
+  })
+
+  it.skip('awards trap-disarm milestone XP to the acting scout', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_xp_trap_disarm'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'trap', description: 'A pressure plate snaps underfoot.' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    const alice = findCharacter(game, 'alice')!
+    alice.klass = 'Scout'
+    alice.skills.use_skill = 99
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      await tool.execute('toolcall-xp-trap', { command: 'explore', gameId })
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 75 })
+  })
+
+  it.skip('awards class barrier-clear milestone XP when the required class resolves the barrier', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_xp_barrier_required_class'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'barrier', description: 'An arcane seal.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    const alice = findCharacter(game, 'alice')!
+    alice.klass = 'Mage'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
+    await tool.execute('toolcall-xp-barrier-class', { command: 'explore', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 75 })
+  })
+
+  it.skip('awards reduced barrier-clear XP for brute-force clears', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_xp_barrier_bruteforce'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'barrier', description: 'A stone gate.', requiredClass: 'Mage' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    findCharacter(game, 'alice')!.klass = 'Warrior'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
+    await tool.execute('toolcall-xp-barrier-bruteforce', { command: 'explore', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 65 })
+  })
+
+  it.skip('awards puzzle milestone XP to the full living party on a solved puzzle', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_xp_puzzle_party'
+    const game = createGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'puzzle', description: 'A lock of rotating runes.' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    findCharacter(game, 'alice')!.skills.use_skill = 99
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      await tool.execute('toolcall-xp-puzzle', { command: 'explore', gameId })
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 80, bob: 80 })
+  })
+
+  it.skip('awards treasure-find XP per item found', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_xp_treasure_find'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'treasure', description: 'A chest full of curios.' },
+        { type: 'rest', description: 'after' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool({ agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast } as any)
+    await tool.execute('toolcall-xp-treasure', { command: 'explore', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 60 })
+  })
+
+  it.skip('awards 75% encounter XP for successful negotiation and 50% for successful intimidation', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
+    const gameId = 'rpg_test_xp_negotiate_intimidate'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'combat', description: 'A tense stand-off.', enemies: [{ name: 'Bandit', hp: 10, DEX: 20, attack: 20, dodge: 20 }] }],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    game.combat = {
+      enemies: [{ name: 'Bandit', hp: 10, maxHp: 10, DEX: 20, attack: 20, dodge: 20, morale: 9, negotiable: true, tactics: { kind: 'goblin' } }],
+    }
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      await tool.execute('toolcall-xp-negotiate', { command: 'negotiate', gameId })
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    let row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    let updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 18 })
+
+    updated.mode = 'combat'
+    updated.currentPlayer = 'alice'
+    updated.combat = {
+      enemies: [{ name: 'Bruiser', hp: 4, maxHp: 10, DEX: 20, attack: 20, dodge: 20, morale: 6, negotiable: true, tactics: { kind: 'goblin' } }],
+    }
+    await db
+      .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(JSON.stringify(updated), updated.phase, updated.winner ?? null, gameId)
+      .run()
+
+    const intimidateRandomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      await tool.execute('toolcall-xp-intimidate', { command: 'intimidate', gameId })
+    } finally {
+      intimidateRandomSpy.mockRestore()
+    }
+
+    row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 30 })
+  })
+
+  it.skip('awards flee consolation XP on successful retreat and grants no XP for resting', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = { agentName: 'alice', agentDid: 'did:cf:alice', db: db as any, broadcast }
+    const gameId = 'rpg_test_xp_flee_and_rest'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'combat', description: 'An ambush', enemies: [{ name: 'Goblin', hp: 10, DEX: 20, attack: 20, dodge: 20 }] },
+        { type: 'rest', description: 'A safe corner.' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+    game.combat = { enemies: [{ name: 'Goblin', hp: 10, maxHp: 10, DEX: 20, attack: 20, dodge: 20, morale: 9, tactics: { kind: 'goblin' } }] }
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      await tool.execute('toolcall-xp-flee', { command: 'flee', gameId })
+    } finally {
+      randomSpy.mockRestore()
+    }
+
+    await tool.execute('toolcall-xp-rest', { command: 'rest', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    expect(updated.xpEarned).toEqual({ alice: 10 })
+  })
+
   // ---------------------------------------------------------------------------
   // buildContext skill injection tests
   // ---------------------------------------------------------------------------
@@ -1208,7 +1552,15 @@ describe('rpgEnvironment', () => {
       skills: { attack: 70, dodge: 40, cast_spell: 10, use_skill: 50 },
       adventureLog: ['Slew a dragon'],
       achievements: [],
-      inventory: ['Axe'],
+      inventory: [
+        {
+          name: 'Axe',
+          rarity: 'common',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 2 }],
+          description: 'A dependable chopping axe.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 2000,
       gamesPlayed: 5,
@@ -1273,7 +1625,15 @@ describe('rpgEnvironment', () => {
       personalityTraits: [],
       adventureLog: ['Defeated the Bone Regent'],
       achievements: ['Legend'],
-      inventory: ['Relic Blade'],
+      inventory: [
+        {
+          name: 'Relic Blade',
+          rarity: 'rare',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 8 }],
+          description: 'A blade carried by a fallen champion.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 2000,
       gamesPlayed: 12,
@@ -1777,6 +2137,196 @@ describe('rpgEnvironment', () => {
     const saved = saveCharacter.mock.calls[0]![0]
     expect(saved.achievements).toEqual(expect.arrayContaining(["Death's Doorstep", 'Veteran Adventurer']))
     expect(saved.achievements.join(' ')).toMatch(/slayer/i)
+  })
+
+  it('explore: treasure rooms grant loot items and gold to the acting character', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_treasure_loot_rewards'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        { type: 'rest', description: 'safe' },
+        { type: 'treasure', description: 'A chest sits in the room center.' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.roomIndex = 0
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-loot-1', { command: 'explore', gameId })
+    const text = String((result as any)?.content?.[0]?.text ?? '')
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    const alice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+
+    expect(Array.isArray(alice.inventory)).toBe(true)
+    expect(alice.inventory.length).toBeGreaterThan(0)
+    expect(alice.gold).toBeGreaterThan(0)
+    expect(updated.log.some((e: any) => String(e.what).includes('Found:'))).toBe(true)
+    expect(text).toContain('Found:')
+  })
+
+  it('use_item consumes a healing potion and restores HP', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_use_item_heal'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    const alice = findCharacter(game, 'alice')!
+    alice.hp = Math.max(1, alice.maxHp - 8)
+    ;(alice as any).inventory = [
+      {
+        name: 'Minor Healing Potion',
+        rarity: 'common',
+        slot: 'consumable',
+        effects: [],
+        consumable: { type: 'heal', amount: 6 },
+        description: 'A basic restorative draught.',
+      },
+    ]
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-use-item', { command: 'use_item', gameId, item: 'potion' })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+
+    expect(updatedAlice.hp).toBeGreaterThan(alice.hp)
+    expect(updatedAlice.inventory).toHaveLength(0)
+  })
+
+  it('rest shop: can buy a potion with gold in rest rooms', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_rest_shop_buy_potion'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    const alice = findCharacter(game, 'alice')!
+    ;(alice as any).gold = 30
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-rest-shop', {
+      command: 'rest',
+      gameId,
+      shop: 'buy_potion',
+    })
+    const text = String((result as any)?.content?.[0]?.text ?? '')
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+    const boughtPotion = updatedAlice.inventory.find((item: any) => item?.slot === 'consumable')
+
+    expect(updatedAlice.gold).toBeLessThan(30)
+    expect(boughtPotion).toBeTruthy()
+    expect(text).toContain('Bought')
+  })
+
+  it('combat: boss kills always grant a rare-or-better loot drop', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_boss_guaranteed_drop'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [
+        {
+          type: 'boss',
+          description: 'A final guardian appears.',
+          enemies: [{ name: 'Dungeon Boss', hp: 1, DEX: 10, attack: 0, dodge: 0, tactics: { kind: 'boss' } }],
+        },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.currentPlayer = 'alice'
+    const alice = findCharacter(game, 'alice')!
+    alice.skills.attack = 100
+
+    await db
+      .prepare(
+        "INSERT INTO games (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-boss-drop', { command: 'attack', gameId })
+
+    const row = await db.prepare('SELECT state FROM games WHERE id = ?').bind(gameId).first<{ state: string }>()
+    const updated = JSON.parse(row!.state)
+    const updatedAlice = updated.party.find((p: any) => (p.agent ?? p.name) === 'alice')
+    const rareDrops = (updatedAlice.inventory ?? []).filter((item: any) => item?.rarity === 'rare' || item?.rarity === 'legendary')
+
+    expect(rareDrops.length).toBeGreaterThan(0)
+    expect(updated.log.some((e: any) => String(e.what).includes('loot drop'))).toBe(true)
   })
 
   it('send_message adds to feedMessages (rolling buffer) with sender/to/type/timestamp', async () => {

@@ -1606,7 +1606,15 @@ describe('AgentDO', () => {
       personalityTraits: ['stubborn', 'loyal'],
       adventureLog: ['Adventure 1'],
       achievements: ['First blood'],
-      inventory: ['Sword'],
+      inventory: [
+        {
+          name: 'Sword',
+          rarity: 'common',
+          slot: 'weapon',
+          effects: [{ stat: 'attack', bonus: 2 }],
+          description: 'A trusted steel blade.',
+        },
+      ],
       createdAt: 1000,
       updatedAt: 2000,
       gamesPlayed: 5,

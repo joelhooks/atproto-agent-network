@@ -36,6 +36,23 @@ export type Skills = {
   use_skill: number
 }
 
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'legendary'
+export type ItemSlot = 'weapon' | 'armor' | 'consumable' | 'trinket'
+
+export type LootItem = {
+  name: string
+  rarity: ItemRarity
+  slot: ItemSlot
+  effects: { stat: string; bonus: number }[]
+  consumable?: { type: 'heal' | 'mp' | 'buff'; amount: number }
+  gold?: number
+  description: string
+}
+
+export type LootTier = 'early' | 'mid' | 'boss'
+export type LootSource = 'treasure' | 'combat'
+export type GeneratedLoot = { items: LootItem[]; gold: number }
+
 export type Character = {
   name: string
   /** The agent controlling this character (e.g. 'slag'). When set, turn matching uses this instead of name. */
@@ -59,6 +76,9 @@ export type Character = {
   deathNarrated?: boolean
   resurrectionFailedThisAdventure?: boolean
   resurrectionWeakness?: number
+  // Adventure inventory and economy.
+  inventory: LootItem[]
+  gold: number
 }
 
 export type Enemy = {
@@ -459,6 +479,10 @@ export const XP_PER_ENEMY_KILL = 25
 export const XP_PER_ROOM_CLEAR = 50
 export const XP_PER_BOSS_KILL = 100
 export const XP_PER_ADVENTURE_COMPLETE = 200
+export const XP_PER_TRAP_DISARM = 25
+export const XP_PER_BARRIER_CLEAR = 25
+export const XP_PER_PUZZLE = 30
+export const XP_PER_TREASURE_FIND = 10
 
 // XP needed to reach each level (1..10). Index is (level - 1).
 export const XP_TABLE = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500]
@@ -621,13 +645,316 @@ export function recordNarrativeBeat(
   }
 }
 
-const TREASURE_ITEMS = ['soot-black opal', 'cracked sunstone', 'silvered map scrap', 'bone-carved die'] as const
+function copyLootItem(item: LootItem): LootItem {
+  return {
+    ...item,
+    effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+    ...(item.consumable ? { consumable: { ...item.consumable } } : {}),
+  }
+}
 
-function pickTreasureItem(game: RpgGameState, roomIndex: number): string {
-  // Deterministic so tests and narrative callbacks are stable.
-  void game
-  const idx = Math.abs((roomIndex + TREASURE_ITEMS.length - 1) % TREASURE_ITEMS.length)
-  return TREASURE_ITEMS[idx]!
+function clampCurrency(value: unknown): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.floor(n))
+}
+
+function goldInRange(dice: Dice, min: number, max: number): number {
+  const lo = Math.max(0, Math.floor(min))
+  const hi = Math.max(lo, Math.floor(max))
+  return lo + rollDie(dice, hi - lo + 1) - 1
+}
+
+function minorHealingPotion(dice: Dice): LootItem {
+  return {
+    name: 'Minor Healing Potion',
+    rarity: 'common',
+    slot: 'consumable',
+    effects: [],
+    consumable: { type: 'heal', amount: rollDie(dice, 6) },
+    description: 'A corked vial that closes light cuts and bruises.',
+  }
+}
+
+function sturdyHealingPotion(dice: Dice): LootItem {
+  return {
+    name: 'Healing Potion',
+    rarity: 'uncommon',
+    slot: 'consumable',
+    effects: [],
+    consumable: { type: 'heal', amount: rollDie(dice, 6) + rollDie(dice, 6) + 3 },
+    description: 'A practiced alchemical blend used by veteran delvers.',
+  }
+}
+
+function pickLootOption(options: LootItem[], dice: Dice, seedIndex?: number): LootItem {
+  if (Number.isFinite(seedIndex)) {
+    const idx = Math.abs((Math.floor(seedIndex as number) + options.length - 1) % options.length)
+    return copyLootItem(options[idx]!)
+  }
+  return copyLootItem(options[rollDie(dice, options.length) - 1]!)
+}
+
+function itemByTier(tier: LootTier, dice: Dice, seedIndex?: number): LootItem {
+  if (tier === 'early') {
+    const options: LootItem[] = [
+      {
+        name: 'soot-black opal',
+        rarity: 'common',
+        slot: 'trinket',
+        effects: [],
+        gold: 15,
+        description: 'A thumb-sized opal that drinks torchlight.',
+      },
+      {
+        name: 'Rusty Shortsword',
+        rarity: 'common',
+        slot: 'weapon',
+        effects: [{ stat: 'attack', bonus: 2 }],
+        description: 'Rust blooms along the edge, but it still bites.',
+      },
+      minorHealingPotion(dice),
+    ]
+    return pickLootOption(options, dice, seedIndex)
+  }
+
+  if (tier === 'mid') {
+    const options: LootItem[] = [
+      {
+        name: 'Silvered Shortsword',
+        rarity: 'uncommon',
+        slot: 'weapon',
+        effects: [{ stat: 'attack', bonus: 5 }],
+        description: 'A polished blade that turns aside foul ichor.',
+      },
+      {
+        name: 'Silverweave Jerkin',
+        rarity: 'uncommon',
+        slot: 'armor',
+        effects: [{ stat: 'dodge', bonus: 5 }],
+        description: 'Fine links of silver thread that lighten your steps.',
+      },
+      sturdyHealingPotion(dice),
+    ]
+    return pickLootOption(options, dice, seedIndex)
+  }
+
+  const options: LootItem[] = [
+    {
+      name: 'Sunforged Greatblade',
+      rarity: 'legendary',
+      slot: 'weapon',
+      effects: [{ stat: 'attack', bonus: 10 }],
+      description: 'A rune-lit edge that hums like a struck bell.',
+    },
+    {
+      name: 'Enchanted Bastion Plate',
+      rarity: 'rare',
+      slot: 'armor',
+      effects: [{ stat: 'armor', bonus: 5 }],
+      description: 'Layered plates that ring with warding sigils.',
+    },
+    {
+      name: 'Scroll of Storm Spear',
+      rarity: 'rare',
+      slot: 'consumable',
+      effects: [],
+      consumable: { type: 'buff', amount: 10 },
+      description: 'A one-use invocation that sharpens killing intent.',
+    },
+  ]
+  return pickLootOption(options, dice, seedIndex)
+}
+
+export function generateLoot(input: { tier: LootTier; source: LootSource; dice: Dice; seedIndex?: number }): GeneratedLoot {
+  const tier = input.tier
+  const source = input.source
+  const dice = input.dice
+  const seedIndex = input.seedIndex
+
+  if (source === 'combat') {
+    if (tier === 'early') {
+      const roll = rollDie(dice, 3)
+      if (roll === 1) return { items: [], gold: goldInRange(dice, 1, 5) }
+      if (roll === 2) return { items: [minorHealingPotion(dice)], gold: goldInRange(dice, 1, 3) }
+      return {
+        items: [
+          {
+            name: 'Copper Fang Charm',
+            rarity: 'common',
+            slot: 'trinket',
+            effects: [],
+            gold: 8,
+            description: 'A crude trophy tied to sinew.',
+          },
+        ],
+        gold: goldInRange(dice, 1, 5),
+      }
+    }
+
+    if (tier === 'mid') {
+      return {
+        items: [itemByTier('mid', dice, seedIndex)],
+        gold: goldInRange(dice, 5, 15),
+      }
+    }
+
+    return {
+      items: [itemByTier('boss', dice, seedIndex)],
+      gold: goldInRange(dice, 50, 200),
+    }
+  }
+
+  if (tier === 'early') {
+    return {
+      items: [itemByTier('early', dice, seedIndex)],
+      gold: goldInRange(dice, 5, 20),
+    }
+  }
+
+  if (tier === 'mid') {
+    return {
+      items: [itemByTier('mid', dice, seedIndex)],
+      gold: goldInRange(dice, 20, 50),
+    }
+  }
+
+  return {
+    items: [itemByTier('boss', dice, seedIndex)],
+    gold: goldInRange(dice, 50, 200),
+  }
+}
+
+function applyLootEffect(character: Character, effect: { stat: string; bonus: number }): void {
+  const stat = String(effect.stat ?? '').trim().toLowerCase()
+  const bonus = Number.isFinite(effect.bonus) ? Math.floor(effect.bonus) : 0
+  if (bonus === 0) return
+
+  if (stat === 'attack') {
+    character.skills.attack = clampSkill(character.skills.attack + bonus)
+    return
+  }
+  if (stat === 'dodge') {
+    character.skills.dodge = clampSkill(character.skills.dodge + bonus)
+    return
+  }
+  if (stat === 'cast_spell') {
+    character.skills.cast_spell = clampSkill(character.skills.cast_spell + bonus)
+    return
+  }
+  if (stat === 'use_skill') {
+    character.skills.use_skill = clampSkill(character.skills.use_skill + bonus)
+    return
+  }
+  if (stat === 'armor') {
+    const baseArmor = Number.isFinite(character.armor) ? Math.floor(character.armor as number) : 0
+    character.armor = Math.max(0, baseArmor + bonus)
+  }
+}
+
+export function applyLootToCharacter(character: Character, loot: GeneratedLoot): void {
+  if (!character) return
+  character.inventory = Array.isArray(character.inventory) ? character.inventory : []
+  character.gold = clampCurrency(character.gold)
+
+  const grantedGold = clampCurrency(loot.gold)
+  if (grantedGold > 0) character.gold += grantedGold
+
+  const items = Array.isArray(loot.items) ? loot.items : []
+  for (const item of items) {
+    const safe = copyLootItem(item)
+    character.inventory.push(safe)
+    if (safe.slot === 'consumable') continue
+    for (const effect of safe.effects) applyLootEffect(character, effect)
+  }
+}
+
+function describeLootItem(item: LootItem): string {
+  const effects = Array.isArray(item.effects) ? item.effects : []
+  if (effects.length === 0) return item.name
+  const fx = effects.map((effect) => `${effect.bonus >= 0 ? '+' : ''}${effect.bonus} ${effect.stat}`).join(', ')
+  return `${item.name} (${fx})`
+}
+
+function joinHuman(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
+export function formatLootSummary(loot: GeneratedLoot): string {
+  const chunks: string[] = []
+  const items = Array.isArray(loot.items) ? loot.items : []
+  if (items.length > 0) chunks.push(joinHuman(items.map(describeLootItem)))
+  const gold = clampCurrency(loot.gold)
+  if (gold > 0) chunks.push(`${gold} gold pieces`)
+  if (chunks.length === 0) return 'nothing of value'
+  return chunks.join(' and ')
+}
+
+function normalizeLootInventory(raw: unknown): LootItem[] {
+  if (!Array.isArray(raw)) return []
+  const out: LootItem[] = []
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      const name = entry.trim()
+      if (!name) continue
+      out.push({
+        name,
+        rarity: 'common',
+        slot: 'trinket',
+        effects: [],
+        description: `Legacy item: ${name}`,
+      })
+      continue
+    }
+    if (!entry || typeof entry !== 'object') continue
+    const rec = entry as Record<string, unknown>
+    const name = typeof rec.name === 'string' ? rec.name.trim() : ''
+    if (!name) continue
+    const rarityRaw = typeof rec.rarity === 'string' ? rec.rarity : 'common'
+    const rarity: ItemRarity =
+      rarityRaw === 'common' || rarityRaw === 'uncommon' || rarityRaw === 'rare' || rarityRaw === 'legendary'
+        ? rarityRaw
+        : 'common'
+    const slotRaw = typeof rec.slot === 'string' ? rec.slot : 'trinket'
+    const slot: ItemSlot =
+      slotRaw === 'weapon' || slotRaw === 'armor' || slotRaw === 'consumable' || slotRaw === 'trinket'
+        ? slotRaw
+        : 'trinket'
+    const effects = Array.isArray(rec.effects)
+      ? rec.effects
+          .filter((effect) => effect && typeof effect === 'object')
+          .map((effect) => ({
+            stat: String((effect as Record<string, unknown>).stat ?? ''),
+            bonus: Number.isFinite((effect as Record<string, unknown>).bonus)
+              ? Math.floor((effect as Record<string, unknown>).bonus as number)
+              : 0,
+          }))
+      : []
+    const consumable = rec.consumable && typeof rec.consumable === 'object'
+      ? (() => {
+          const c = rec.consumable as Record<string, unknown>
+          const typeRaw = typeof c.type === 'string' ? c.type : null
+          const type = typeRaw === 'heal' || typeRaw === 'mp' || typeRaw === 'buff' ? typeRaw : null
+          const amount = Number.isFinite(c.amount) ? Math.max(0, Math.floor(c.amount as number)) : 0
+          if (!type) return undefined
+          return { type, amount } as { type: 'heal' | 'mp' | 'buff'; amount: number }
+        })()
+      : undefined
+    out.push({
+      name,
+      rarity,
+      slot,
+      effects,
+      ...(consumable ? { consumable } : {}),
+      ...(Number.isFinite(rec.gold) ? { gold: clampCurrency(rec.gold) } : {}),
+      description: typeof rec.description === 'string' && rec.description.trim()
+        ? rec.description.trim()
+        : `${name} salvaged from a prior adventure.`,
+    })
+  }
+  return out
 }
 
 function formatBeatForRoom(beat: NarrativeBeat): string {
@@ -853,6 +1180,8 @@ export function createCharacter(input: { name: string; klass: RpgClass; agent?: 
     maxMp,
     level: 1,
     xp: 0,
+    inventory: [],
+    gold: 0,
   }
 }
 
@@ -1511,7 +1840,11 @@ export function generateFantasyName(klass: RpgClass, index: number): string {
 }
 
 function toCharacter(value: string | Character, index: number): Character {
-  if (typeof value !== 'string') return value
+  if (typeof value !== 'string') {
+    value.inventory = normalizeLootInventory((value as any).inventory)
+    value.gold = clampCurrency((value as any).gold)
+    return value
+  }
   const classes: RpgClass[] = ['Warrior', 'Scout', 'Mage', 'Healer']
   const klass = classes[index % classes.length]!
   const fantasyName = generateFantasyName(klass, Math.floor(index / classes.length))
@@ -2259,9 +2592,6 @@ export function explore(game: RpgGameState, input: { dice: Dice }): { ok: true; 
       if (actor) {
         actor.mp = Math.min(actor.maxMp, actor.mp + 1)
       }
-      const item = pickTreasureItem(game, game.roomIndex)
-      game.log.push({ at: Date.now(), who: game.currentPlayer, what: `treasure: found ${item}` })
-      recordNarrativeBeat(game, { kind: 'treasure', text: item, roomIndex: game.roomIndex })
     }
 
     if (room.type === 'trap') {
@@ -2545,6 +2875,8 @@ export function persistentToGameCharacter(pc: PersistentCharacter, agent: string
 
   // Use createCharacter to get proper stats for the class, then override with persistent data
   const base = createCharacter({ name: pc.name, klass: pc.klass as RpgClass, agent })
+  const inventory = normalizeLootInventory((pc as any).inventory)
+  const gold = clampCurrency((pc as any).gold)
   return {
     ...base,
     ...(pc.backstory ? { backstory: pc.backstory } : {}),
@@ -2558,6 +2890,8 @@ export function persistentToGameCharacter(pc: PersistentCharacter, agent: string
       cast_spell: pc.skills.cast_spell ?? base.skills.cast_spell,
       use_skill: pc.skills.use_skill ?? base.skills.use_skill,
     },
+    inventory,
+    gold,
   }
 }
 
@@ -2608,7 +2942,7 @@ export function gameCharacterToPersistent(
     dead: isDead,
     diedAt: isDead ? now : undefined,
     causeOfDeath: deathCause,
-    inventory: isDead ? [] : base.inventory,
+    inventory: isDead ? [] : normalizeLootInventory((gc as any).inventory ?? base.inventory),
     adventureLog: adventureSummary
       ? [...base.adventureLog.slice(-9), adventureSummary]
       : base.adventureLog,

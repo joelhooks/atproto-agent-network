@@ -94,6 +94,19 @@ export interface EventError {
   retryable: boolean
 }
 
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'legendary'
+export type ItemSlot = 'weapon' | 'armor' | 'consumable' | 'trinket'
+
+export interface LootItem {
+  name: string
+  rarity: ItemRarity
+  slot: ItemSlot
+  effects: Array<{ stat: string; bonus: number }>
+  consumable?: { type: 'heal' | 'mp' | 'buff'; amount: number }
+  gold?: number
+  description: string
+}
+
 export interface PersistentCharacter {
   name: string
   klass: string
@@ -108,7 +121,7 @@ export interface PersistentCharacter {
   personalityTraits: string[]
   adventureLog: string[]
   achievements: string[]
-  inventory: string[]
+  inventory: LootItem[]
   createdAt: number
   updatedAt: number
   gamesPlayed: number

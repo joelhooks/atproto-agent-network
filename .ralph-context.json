@@ -101,6 +101,60 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `markCharacterDeath()` in `apps/network/src/games/rpg-engine.ts` centralizes per-adventure death flags (`diedThisAdventure`, `deathCause`, `deathNarrated`) and narrative beats, and `gameCharacterToPersistent()` is where permanent-death state (`dead`, `diedAt`, `causeOfDeath`, inventory wipe) is finalized for cross-adventure persistence.\nGotcha: Join-time reroll must happen in `apps/network/src/environments/rpg.ts` before calling `persistentToGameCharacter()`. If a dead persistent character is passed through normal load flow, old progression can leak; use `buildRerolledPersistentCharacter()` and save immediately to reset storage while preserving legacy log/achievements/death count.\nFiles Context: `packages/core/src/types.ts` defines persistent schema. `apps/network/src/games/rpg-engine.ts` owns death bookkeeping and persistent conversion. `apps/network/src/environments/rpg.ts` owns runtime command gating (`resurrect`), join reroll behavior, and combat death handling/logging."
+    },
+    {
+      "id": "story-mli3k7wh",
+      "title": "Fix debug endpoint — surface rpg:character in /agents/{name}/debug",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "packages/core/src/types.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: `/agents/:name/debug` in `apps/network/src/agent.ts` was returning only debug/o11y keys; it did not read `rpg:character` at all. Adding `const rpgCharacter = await this.ctx.storage.get('rpg:character')` and returning `rpgCharacter ?? null` aligns it with `handleCharacter()` behavior and prevents undefined payloads.\nGotcha: When running targeted Vitest tests, `-t` uses regex-like matching; patterns containing route fragments like `/debug` can skip everything unintentionally. Use a simpler title fragment (for example `agentic tool loop`) to ensure the intended test actually runs.\nFiles Context: `apps/network/src/agent.ts` contains the DO route switch and `/debug` response construction. `apps/network/src/agent-do.test.ts` contains the regression test that seeds storage with `rpg:character` and validates the `/debug` response includes `rpgCharacter`."
+    },
+    {
+      "id": "story-mli3kg7t",
+      "title": "Sync xpEarned to in-game Character during play",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "Technical Discovery: `addXpEarned` is the shared XP award path for combat kills, boss kills, negotiate, intimidate, spells, and abilities in `apps/network/src/environments/rpg.ts`. Updating progression there guarantees all XP sources sync to in-game character state consistently.\nGotcha: If in-game leveling uses a different formula or skill-boost selection than `awardXp` in `apps/network/src/games/rpg-engine.ts`, progression can diverge between mid-game state and end-of-game persistence. Keep the level-up rules aligned in both paths.\nFiles Context: `apps/network/src/environments/rpg.ts` now owns live XP-to-character sync in `addXpEarned` (around line 91). `apps/network/src/environments/rpg.test.ts` contains the regression test for mid-dungeon leveling (`syncs awarded XP...`, around line 957) and is the primary safety net for this behavior."
+    },
+    {
+      "id": "story-mli3kxn1",
+      "title": "Loot table system — tiered treasure generation with stat-affecting items",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "packages/core/src/types.ts"
+      ],
+      "learnings": "Technical Discovery: `createGame()`/`toCharacter()` reference semantics matter for existing RPG tests and logic that hold direct `Character` references. Cloning non-string players breaks expectations for HP/MP mutation visibility in barrier resolution. Normalizing loot fields in place preserves backward behavior while supporting typed loot.\nGotcha: Boss combat drops that immediately apply stat effects can interfere with unrelated progression assertions (for example, level-up skill boosts). If tests depend on exact post-level values, make boss drop item selection deterministic (or decouple auto-application timing) to avoid random/stat-order coupling.\nFiles Context: `apps/network/src/games/rpg-engine.ts` now owns loot item naming and player normalization semantics (`toCharacter`). `apps/network/src/environments/rpg.ts` controls runtime drop generation and was updated to deterministic boss drop seeding. `packages/core/src/types.ts` defines cross-package persistent inventory contract as `LootItem[]`."
     }
   ],
   "failures": [
@@ -130,6 +184,18 @@
         "rg -n"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mli3kxn1",
+      "storyTitle": "Loot table system — tiered treasure generation with stat-affecting items",
+      "category": "unknown",
+      "error": "Test Files  2 failed | 18 passed | 2 skipped (22)\n      Tests  4 failed | 285 passed | 6 skipped (295)\n   Start at  06:32:20\n   Duration  5.29s (transform 1.85s, setup 0ms, collect 3.37s, tests 5.30s, environment 5ms, prepare 2.33s)",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n"
+      ],
+      "iterationNumber": 5
     }
   ]
 }

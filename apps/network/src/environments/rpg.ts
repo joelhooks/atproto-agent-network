@@ -16,17 +16,24 @@ import {
   enemyIsNegotiable,
   enemyMoraleState,
   explore,
+  formatLootSummary,
   findIntimidatableEnemies,
   gameCharacterToPersistent,
+  generateLoot,
   generateFantasyName,
   gmInterveneIfStuck,
   isBossEncounterRoom,
   livingParty,
   markCharacterDeath,
+  applyLootToCharacter,
+  type LootItem,
+  type LootTier,
+  type Skills,
   nextEncounterRoomIndex,
   partyWipe,
   partyAverageLevel,
   persistentToGameCharacter,
+  recordNarrativeBeat,
   resolveSkillCheck,
   soloMultiplier,
   type RpgClass,
@@ -34,9 +41,13 @@ import {
   type FeedMessageType,
   type RpgGameState,
   XP_PER_ADVENTURE_COMPLETE,
+  XP_PER_BARRIER_CLEAR,
   XP_PER_BOSS_KILL,
   XP_PER_ENEMY_KILL,
+  XP_PER_PUZZLE,
   XP_PER_ROOM_CLEAR,
+  XP_PER_TRAP_DISARM,
+  XP_PER_TREASURE_FIND,
   XP_TABLE,
   resolveSpell,
   resolveAbility,
@@ -94,6 +105,141 @@ function addXpEarned(game: RpgGameState, who: string, amount: number): void {
   if (!agent || amt <= 0) return
   game.xpEarned ??= {}
   game.xpEarned[agent] = (game.xpEarned[agent] ?? 0) + amt
+
+  const member = Array.isArray(game.party) ? game.party.find((p) => p && isCharacter(p, agent)) : undefined
+  if (!member) return
+
+  member.xp = (Number.isFinite(member.xp) ? (member.xp as number) : 0) + amt
+  member.level = Number.isFinite(member.level) ? Math.max(1, Math.floor(member.level as number)) : 1
+
+  while (member.level < XP_TABLE.length && (member.xp ?? 0) >= (XP_TABLE[member.level] ?? Infinity)) {
+    member.level += 1
+    const hpGain = 5 + member.level
+    const mpGain = 3 + member.level
+    member.maxHp = (Number.isFinite(member.maxHp) ? member.maxHp : 0) + hpGain
+    member.maxMp = (Number.isFinite(member.maxMp) ? member.maxMp : 0) + mpGain
+
+    const skills: Skills = member.skills && typeof member.skills === 'object' ? member.skills : { attack: 30, dodge: 25, cast_spell: 25, use_skill: 25 }
+    const keys = Object.keys(skills).sort()
+    let boostedSkill = ''
+    if (keys.length > 0) {
+      const idx = Math.min(keys.length - 1, Math.floor(Math.random() * keys.length))
+      const key = keys[idx]!
+      const current = Number((skills as Record<string, unknown>)[key])
+      ;(skills as Record<string, unknown>)[key] = (Number.isFinite(current) ? current : 0) + 5
+      boostedSkill = key
+    }
+    member.skills = skills
+    game.log ??= []
+    game.log.push({
+      at: Date.now(),
+      who: agent,
+      what: `LEVEL UP: ${member.name} reaches Level ${member.level}! (+${hpGain} HP, +${mpGain} MP)${boostedSkill ? ` (+5 ${boostedSkill})` : ''}`,
+    })
+  }
+}
+
+function addLoggedXp(game: RpgGameState, who: string, amount: number, reason: string): void {
+  const identity = String(who ?? '').trim()
+  const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
+  if (!identity || amt <= 0) return
+  addXpEarned(game, identity, amt)
+  game.log.push({
+    at: Date.now(),
+    who: identity,
+    what: `gained ${amt} XP (${reason})`,
+  })
+}
+
+function clampGold(value: unknown): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.floor(n))
+}
+
+function ensureCharacterLootState(character: Character | undefined | null): void {
+  if (!character) return
+  ;(character as any).inventory = Array.isArray((character as any).inventory) ? (character as any).inventory : []
+  ;(character as any).gold = clampGold((character as any).gold)
+}
+
+function normalizePartyLootState(game: RpgGameState): void {
+  for (const member of Array.isArray(game.party) ? game.party : []) {
+    ensureCharacterLootState(member)
+  }
+}
+
+function roomLootTier(game: RpgGameState, roomIndex: number, roomType?: string): LootTier {
+  if (roomType === 'boss') return 'boss'
+  const total = Math.max(1, Array.isArray(game.dungeon) ? game.dungeon.length : 1)
+  const progress = (Math.max(0, roomIndex) + 1) / total
+  if (progress <= 0.4) return 'early'
+  if (progress <= 0.8) return 'mid'
+  return 'boss'
+}
+
+function findActingCharacter(game: RpgGameState, agentName: string): Character | undefined {
+  const agent = String(agentName ?? '').trim()
+  return (
+    (Array.isArray(game.party) ? game.party.find((p) => p && isCharacter(p, agent)) : undefined) ??
+    (Array.isArray(game.party) ? game.party.find((p) => p && isCharacter(p, game.currentPlayer)) : undefined) ??
+    (Array.isArray(game.party) ? game.party[0] : undefined)
+  )
+}
+
+function resolveTreasureLoot(game: RpgGameState, actor: Character, dice: ReturnType<typeof createDice>): string {
+  ensureCharacterLootState(actor)
+  const tier = roomLootTier(game, game.roomIndex, game.dungeon[game.roomIndex]?.type)
+  const loot = generateLoot({ tier, source: 'treasure', dice, seedIndex: game.roomIndex })
+  applyLootToCharacter(actor, loot)
+  const treasureXp = Math.max(0, loot.items.length) * XP_PER_TREASURE_FIND
+  if (treasureXp > 0) addLoggedXp(game, characterId(actor), treasureXp, 'treasure')
+
+  const beat = loot.items[0]?.name ?? `${loot.gold} gold pieces`
+  if (beat) recordNarrativeBeat(game, { kind: 'treasure', text: beat, roomIndex: game.roomIndex })
+
+  const summary = formatLootSummary(loot)
+  game.log.push({
+    at: Date.now(),
+    who: characterId(actor),
+    what: `Found: ${summary}`,
+  })
+  return `Found: ${summary}`
+}
+
+function maybeAwardEnemyDrop(
+  game: RpgGameState,
+  actor: Character,
+  enemy: Enemy,
+  dice: ReturnType<typeof createDice>,
+): string | null {
+  ensureCharacterLootState(actor)
+  const isBossEnemy = enemy?.tactics?.kind === 'boss' || isBossEncounterRoom(game)
+  const roll = dice.d100()
+  if (!isBossEnemy && roll > 20) return null
+
+  const tier: LootTier = isBossEnemy ? 'boss' : roomLootTier(game, game.roomIndex, game.dungeon[game.roomIndex]?.type)
+  const loot = generateLoot({ tier, source: 'combat', dice, ...(isBossEnemy ? { seedIndex: game.roomIndex } : {}) })
+  applyLootToCharacter(actor, loot)
+  const summary = formatLootSummary(loot)
+  const line = `${enemy.name} dropped ${summary}`
+  game.log.push({
+    at: Date.now(),
+    who: characterId(actor),
+    what: `loot drop: ${line}`,
+  })
+  return line
+}
+
+function makeShopHealingPotion(dice: ReturnType<typeof createDice>): LootItem {
+  return {
+    name: 'Camp Healing Potion',
+    rarity: 'common',
+    slot: 'consumable',
+    effects: [],
+    consumable: { type: 'heal', amount: dice.d(6) + dice.d(6) + 3 },
+    description: 'A reliable tonic mixed from field herbs and bright salts.',
+  }
 }
 
 function livingPartyIds(game: RpgGameState): string[] {
@@ -107,6 +253,47 @@ function awardRoomClearXp(game: RpgGameState): void {
 
 function awardAdventureCompleteXp(game: RpgGameState): void {
   for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ADVENTURE_COMPLETE)
+}
+
+function awardBarrierClearMilestoneXp(
+  game: RpgGameState,
+  input: { logSlice: Array<{ who?: string; what?: string }>; fallbackActorId: string }
+): void {
+  const { logSlice, fallbackActorId } = input
+  const line = (entry: { who?: string; what?: string } | undefined): string => String(entry?.what ?? '')
+
+  const bruteForce = logSlice.find((entry) => line(entry).includes('barrier: brute_force'))
+  if (bruteForce) {
+    const rawWho = String(bruteForce.who ?? '').trim()
+    const member = game.party.find((p) => p && isCharacter(p, rawWho))
+    const id = member ? characterId(member) : rawWho
+    if (id) addLoggedXp(game, id, 15, 'barrier brute_force')
+    return
+  }
+
+  const classResolve = logSlice.find((entry) => line(entry).startsWith('barrier: resolved by '))
+  if (classResolve) {
+    const klass = line(classResolve).replace('barrier: resolved by ', '').trim()
+    const member =
+      game.party.find((p) => p && p.hp > 0 && p.klass === klass) ??
+      game.party.find((p) => p && p.klass === klass)
+    const id = member ? characterId(member) : fallbackActorId
+    if (id) addLoggedXp(game, id, XP_PER_BARRIER_CLEAR, 'barrier clear')
+    return
+  }
+
+  const directResolve = logSlice.some((entry) => {
+    const what = line(entry)
+    return (
+      what.includes('barrier: skill_check success') ||
+      what.includes('barrier: mp_sacrifice') ||
+      what.includes('barrier: auto_crumble') ||
+      what.includes('barrier: bypassed')
+    )
+  })
+  if (directResolve && fallbackActorId) {
+    addLoggedXp(game, fallbackActorId, XP_PER_BARRIER_CLEAR, 'barrier clear')
+  }
 }
 
 function clampSkill(value: number): number {
@@ -697,6 +884,7 @@ export const rpgEnvironment: AgentEnvironment = {
         '- resurrect: Healer-only revival for allies who died this adventure (high risk)\n' +
         '- cast_spell: Cast a spell (fireball, ice_lance, lightning, heal, shield, smite)\n' +
         '- use_skill: Use a class ability (power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect)\n' +
+        '- use_item: Consume an inventory item (example: item="potion")\n' +
         '- rest: Recover some HP/MP\n' +
         '- status: Show game state\n',
       parameters: {
@@ -721,6 +909,7 @@ export const rpgEnvironment: AgentEnvironment = {
               'resurrect',
               'cast_spell',
               'use_skill',
+              'use_item',
               'rest',
               'status',
             ],
@@ -731,6 +920,8 @@ export const rpgEnvironment: AgentEnvironment = {
           defender: { type: 'string', description: 'Party member to attack (out of combat only).' },
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
           skill: { type: 'string', description: 'Skill name for use_skill (defaults to use_skill).' },
+          item: { type: 'string', description: 'Item filter for use_item (example: potion).' },
+          shop: { type: 'string', enum: ['buy_potion', 'identify'], description: 'Rest-room shop action.' },
           message: { type: 'string', description: 'Narration/response message for setup phase.' },
           target: { type: 'string', description: 'Target player agent for DM narration or resurrect target.' },
           to: {
@@ -959,6 +1150,7 @@ export const rpgEnvironment: AgentEnvironment = {
         game.party ??= []
         game.feedMessages ??= []
         game.round ??= 1
+        normalizePartyLootState(game)
 
         const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
         const setupActive = Boolean(setupPhase && !setupPhase.complete)
@@ -1308,8 +1500,41 @@ export const rpgEnvironment: AgentEnvironment = {
 
           const beforePhase = game.phase
           const beforeRoomIndex = game.roomIndex
+          const beforeLogLength = (game.log ??= []).length
+          const actingBefore = findActingCharacter(game, ctx.agentName.trim())
+          const actingBeforeId = characterId(actingBefore)
+          const actingUseSkillBefore = Number.isFinite(actingBefore?.skills?.use_skill)
+            ? Math.max(0, Math.floor((actingBefore?.skills?.use_skill as number)))
+            : null
           const attemptedRoomIndex = game.roomIndex + 1
           const result = explore(game, { dice })
+          let lootLine = ''
+
+          if (game.roomIndex > beforeRoomIndex) {
+            const enteredRoom = game.dungeon[game.roomIndex]
+            const newLogSlice = game.log.slice(beforeLogLength)
+            if (enteredRoom?.type === 'treasure') {
+              const actor = findActingCharacter(game, ctx.agentName.trim())
+              if (actor) {
+                lootLine = resolveTreasureLoot(game, actor, dice)
+              }
+            }
+            if (enteredRoom?.type === 'trap' && actingUseSkillBefore != null) {
+              const actorAfter = game.party.find((p) => p && isCharacter(p, actingBeforeId))
+              if (actorAfter && actorAfter.skills.use_skill > actingUseSkillBefore) {
+                addLoggedXp(game, characterId(actorAfter), XP_PER_TRAP_DISARM, 'trap disarm')
+              }
+            }
+            if (enteredRoom?.type === 'puzzle' && actingUseSkillBefore != null) {
+              const actorAfter = game.party.find((p) => p && isCharacter(p, actingBeforeId))
+              if (actorAfter && actorAfter.skills.use_skill > actingUseSkillBefore) {
+                for (const id of livingPartyIds(game)) addLoggedXp(game, id, XP_PER_PUZZLE, 'puzzle')
+              }
+            }
+            if (enteredRoom?.type === 'barrier') {
+              awardBarrierClearMilestoneXp(game, { logSlice: newLogSlice, fallbackActorId: actingBeforeId })
+            }
+          }
 
           gmInterveneIfStuck(game, {
             player: ctx.agentName.trim() || 'unknown',
@@ -1347,7 +1572,8 @@ export const rpgEnvironment: AgentEnvironment = {
                 if (game.phase !== 'playing') return 'The adventure is complete.'
                 const roomNow = game.dungeon[game.roomIndex]
                 if (!roomNow) return 'The adventure is complete.'
-                return `You enter: ${roomNow.type}\n${describeRoom(game, game.roomIndex)}\n\nParty: ${summarizeParty(game)}`
+                const lootText = lootLine ? `\n${lootLine}` : ''
+                return `You enter: ${roomNow.type}\n${describeRoom(game, game.roomIndex)}${lootText}\n\nParty: ${summarizeParty(game)}`
               })()
             ),
             details: { gameId, room: game.phase === 'playing' ? game.dungeon[game.roomIndex] ?? null : null, mode: game.mode },
@@ -1396,6 +1622,11 @@ export const rpgEnvironment: AgentEnvironment = {
                   if (enemy.tactics?.kind === 'boss') {
                     addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
                     game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
+                  }
+
+                  const dropLine = maybeAwardEnemyDrop(game, attacker, enemy, dice)
+                  if (dropLine) {
+                    text += `\nLoot: ${dropLine}`
                   }
                 }
               } else {
@@ -1519,7 +1750,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
           if (success) {
             const encounterXp = encounterXpValue(enemies)
-            const partialXp = Math.max(0, Math.floor(encounterXp * 0.5))
+            const partialXp = Math.max(0, Math.floor(encounterXp * 0.75))
             for (const id of livingPartyIds(game)) addXpEarned(game, id, partialXp)
 
             game.mode = 'exploring'
@@ -1586,7 +1817,9 @@ export const rpgEnvironment: AgentEnvironment = {
           const lines: string[] = []
 
           if (success) {
+            addLoggedXp(game, actorName, 10, 'flee')
             lines.push(`Retreat succeeds (${roll} <= ${target}). The party escapes without taking damage.`)
+            lines.push('You gain 10 XP for surviving the retreat.')
           } else {
             lines.push(`Retreat falters (${roll} > ${target}). You escape under enemy fire.`)
             lines.push(...runEnemyFreeAttackRound(game, dice))
@@ -1617,7 +1850,7 @@ export const rpgEnvironment: AgentEnvironment = {
             await emitGameCompleted(ctx, { gameId, game })
           }
 
-          lines.push('No XP awarded. The encounter remains dangerous.')
+          if (!success) lines.push('No XP awarded. The encounter remains dangerous.')
           return {
             content: toTextContent(`${lines.join('\n')}\n\nParty: ${summarizeParty(game)}`),
             details: { gameId, success, roll, target },
@@ -1735,7 +1968,7 @@ export const rpgEnvironment: AgentEnvironment = {
               enemy.hp = 0
               ;(enemy as any).fled = true
               const base = XP_PER_ENEMY_KILL + (enemy.tactics?.kind === 'boss' ? XP_PER_BOSS_KILL : 0)
-              awarded += Math.max(0, Math.floor(base * 0.75))
+              awarded += Math.max(0, Math.floor(base * 0.5))
             }
             if (awarded > 0) {
               addXpEarned(game, actorName, awarded)
@@ -1786,6 +2019,69 @@ export const rpgEnvironment: AgentEnvironment = {
           if ((actor.hp ?? 0) <= 0) {
             return { ok: false, error: 'You are dead. You cannot rest until revived.' }
           }
+          ensureCharacterLootState(actor)
+
+          const shopAction = typeof params.shop === 'string' ? params.shop.trim().toLowerCase() : ''
+          const room = game.dungeon[game.roomIndex]
+          if (shopAction) {
+            if (room?.type !== 'rest') {
+              return { ok: false, error: 'Shop actions are only available in rest rooms.' }
+            }
+
+            if (shopAction === 'buy_potion') {
+              const cost = 15
+              if (actor.gold < cost) return { ok: false, error: `Not enough gold (need ${cost}, have ${actor.gold}).` }
+              const potion = makeShopHealingPotion(dice)
+              actor.gold -= cost
+              actor.inventory.push(potion)
+              game.log.push({
+                at: Date.now(),
+                who: characterId(actor),
+                what: `shop: bought ${potion.name} for ${cost} gold`,
+              })
+
+              await db
+                .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+                .run()
+
+              return {
+                content: toTextContent(`Bought ${potion.name} for ${cost} gold. (${actor.gold} gold remaining)`),
+                details: { gameId, item: potion.name, gold: actor.gold },
+              }
+            }
+
+            if (shopAction === 'identify') {
+              const cost = 10
+              if (actor.gold < cost) return { ok: false, error: `Not enough gold (need ${cost}, have ${actor.gold}).` }
+              actor.gold -= cost
+              const lines = actor.inventory.length > 0
+                ? actor.inventory.map((item) => {
+                    const fx = item.effects.length > 0
+                      ? item.effects.map((effect) => `${effect.bonus >= 0 ? '+' : ''}${effect.bonus} ${effect.stat}`).join(', ')
+                      : 'no passive bonus'
+                    return `- ${item.name}: ${fx}`
+                  })
+                : ['- You carry no items to identify.']
+              game.log.push({
+                at: Date.now(),
+                who: characterId(actor),
+                what: `shop: identified inventory for ${cost} gold`,
+              })
+
+              await db
+                .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+                .run()
+
+              return {
+                content: toTextContent(`Identified inventory for ${cost} gold.\n${lines.join('\n')}\nGold: ${actor.gold}`),
+                details: { gameId, gold: actor.gold },
+              }
+            }
+
+            return { ok: false, error: "Unknown shop action. Use 'buy_potion' or 'identify'." }
+          }
 
           actor.hp = Math.min(actor.maxHp, actor.hp + 2)
           actor.mp = Math.min(actor.maxMp, actor.mp + 1)
@@ -1809,6 +2105,7 @@ export const rpgEnvironment: AgentEnvironment = {
           if (!abilityName) return { ok: false, error: 'skill required: power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect' }
 
           const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
+          const hpBeforeByEnemy = new Map(livingEnemies.map((enemy) => [enemy, enemy.hp] as const))
           const result = resolveAbility(actor, abilityName, livingEnemies, game.party, dice)
 
           if (result.abilityDef.mpCost > 0) {
@@ -1821,13 +2118,14 @@ export const rpgEnvironment: AgentEnvironment = {
           
           // XP for kills via abilities
           for (const enemy of livingEnemies) {
-            if (enemy.hp <= 0) {
+            if ((hpBeforeByEnemy.get(enemy) ?? 0) > 0 && enemy.hp <= 0) {
               addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
               game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
               if (enemy.tactics?.kind === 'boss') {
                 addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
                 game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
               }
+              maybeAwardEnemyDrop(game, actor, enemy, dice)
             }
           }
 
@@ -1854,6 +2152,63 @@ export const rpgEnvironment: AgentEnvironment = {
           return {
             content: toTextContent(result.narrative),
             details: { gameId, ability: abilityName, success: result.success, damage: result.damage, healed: result.healed },
+          }
+        }
+
+        if (command === 'use_item') {
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
+          if (!actor) throw new Error('Create your character before using items')
+          ensureCharacterLootState(actor)
+
+          const query = typeof params.item === 'string' ? params.item.trim().toLowerCase() : ''
+          const idx = actor.inventory.findIndex((item) => {
+            if (!item || item.slot !== 'consumable' || !item.consumable) return false
+            if (!query) return true
+            return item.name.toLowerCase().includes(query)
+          })
+
+          if (idx < 0) {
+            return { ok: false, error: query ? `No consumable matching "${query}" in inventory.` : 'No consumables in inventory.' }
+          }
+
+          const item = actor.inventory[idx]!
+          const consumable = item.consumable
+          if (!consumable) return { ok: false, error: `${item.name} cannot be consumed.` }
+
+          actor.inventory.splice(idx, 1)
+          let line = `You use ${item.name}.`
+          if (consumable.type === 'heal') {
+            const before = actor.hp
+            actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(0, consumable.amount))
+            line = `You use ${item.name} and recover ${actor.hp - before} HP. (${actor.hp}/${actor.maxHp})`
+          } else if (consumable.type === 'mp') {
+            const before = actor.mp
+            actor.mp = Math.min(actor.maxMp, actor.mp + Math.max(0, consumable.amount))
+            line = `You use ${item.name} and recover ${actor.mp - before} MP. (${actor.mp}/${actor.maxMp})`
+          } else if (consumable.type === 'buff') {
+            const bonus = Math.max(0, consumable.amount)
+            actor.skills.attack = clampSkill(actor.skills.attack + bonus)
+            line = `You invoke ${item.name}. Attack +${bonus} for this adventure.`
+          }
+
+          game.log.push({
+            at: Date.now(),
+            who: characterId(actor),
+            what: `use_item ${item.name}`,
+          })
+
+          if (game.phase === 'playing') {
+            advanceTurn(game)
+          }
+
+          await db
+            .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(line),
+            details: { gameId, item: item.name, slot: item.slot },
           }
         }
 
@@ -1964,6 +2319,7 @@ export const rpgEnvironment: AgentEnvironment = {
           if (actor.mp < spellDef.mpCost) return { ok: false, error: `Not enough MP for ${spellDef.name} (need ${spellDef.mpCost}, have ${actor.mp})` }
 
           const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
+          const hpBeforeByEnemy = new Map(livingEnemies.map((enemy) => [enemy, enemy.hp] as const))
           const result = resolveSpell(actor, spell, livingEnemies, game.party, dice)
 
           if (result.success) {
@@ -1971,13 +2327,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
             // XP for kills via spells
             for (const enemy of livingEnemies) {
-              if (enemy.hp <= 0) {
+              if ((hpBeforeByEnemy.get(enemy) ?? 0) > 0 && enemy.hp <= 0) {
                 addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
                 game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
                 if (enemy.tactics?.kind === 'boss') {
                   addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
                   game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
                 }
+                maybeAwardEnemyDrop(game, actor, enemy, dice)
               }
             }
           }
@@ -2226,7 +2583,7 @@ export const rpgEnvironment: AgentEnvironment = {
           lines.push('')
           if (partyMember) lines.push(buildAbilityMenu(partyMember))
           lines.push('')
-          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, negotiate, flee, intimidate, resurrect`)
+          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, use_item <item>, negotiate, flee, intimidate, resurrect`)
           lines.push(`Example: rpg({"command":"cast_spell","spell":"fireball","gameId":"${row.id}"})`)
         } else {
           lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
@@ -2270,6 +2627,7 @@ export const rpgEnvironment: AgentEnvironment = {
         'resurrect',
         'cast_spell',
         'use_skill',
+        'use_item',
         'rest',
         'create_character',
         'send_message',
