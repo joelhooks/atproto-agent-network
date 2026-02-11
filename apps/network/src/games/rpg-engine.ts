@@ -72,6 +72,8 @@ export type Enemy = {
   // Short per-monster description used to enrich encounter text.
   // Optional for backwards compatibility with persisted games.
   flavorText?: string
+  // Optional damage reduction.
+  armor?: number
   // Optional, but when present it drives target selection and special behaviors.
   tactics?: EnemyTactics
   // Optional per-enemy turn counter for multi-phase behaviors.
@@ -156,6 +158,235 @@ export function encounterXpValue(enemies: Enemy[]): number {
     if (enemy?.tactics?.kind === 'boss') total += XP_PER_BOSS_KILL
   }
   return total
+}
+
+// ─── Spell & Ability System ─────────────────────────────────────────────────
+
+export interface SpellDef {
+  name: string
+  mpCost: number
+  /** 'single' targets first living enemy, 'aoe' hits all, 'heal' targets ally */
+  target: 'single' | 'aoe' | 'heal'
+  /** Base damage dice (e.g. 2 means 2d6) — for heal spells this is heal dice */
+  dice: number
+  /** Flat bonus added to roll result */
+  bonus: number
+  /** Skill check required (cast_spell skill) */
+  description: string
+}
+
+export interface AbilityDef {
+  name: string
+  /** Which class can use it */
+  klass: RpgClass
+  /** 'attack' modifies next attack, 'utility' is non-damage, 'heal' restores HP */
+  type: 'attack' | 'utility' | 'heal'
+  /** MP cost (0 for martial abilities) */
+  mpCost: number
+  description: string
+}
+
+export const SPELLS: Record<string, SpellDef> = {
+  fireball:     { name: 'Fireball',     mpCost: 3, target: 'aoe',    dice: 2, bonus: 0, description: '2d6 fire damage to ALL enemies' },
+  ice_lance:    { name: 'Ice Lance',    mpCost: 2, target: 'single', dice: 2, bonus: 4, description: '2d6+4 cold damage to one enemy' },
+  lightning:    { name: 'Lightning',    mpCost: 4, target: 'single', dice: 3, bonus: 2, description: '3d6+2 lightning to one enemy' },
+  heal:         { name: 'Heal',         mpCost: 2, target: 'heal',   dice: 2, bonus: 3, description: 'Restore 2d6+3 HP to wounded ally' },
+  shield:       { name: 'Shield',       mpCost: 1, target: 'heal',   dice: 0, bonus: 0, description: '+10 dodge to caster for this round' },
+  smite:        { name: 'Smite',        mpCost: 2, target: 'single', dice: 2, bonus: 2, description: '2d6+2 holy damage (Healer offensive)' },
+}
+
+export const ABILITIES: Record<string, AbilityDef> = {
+  power_strike: { name: 'Power Strike', klass: 'Warrior', type: 'attack',  mpCost: 0, description: 'STR-boosted attack: +50% damage, -10 dodge this round' },
+  shield_bash:  { name: 'Shield Bash',  klass: 'Warrior', type: 'utility', mpCost: 0, description: 'Stun one enemy (skip their next attack)' },
+  aimed_shot:   { name: 'Aimed Shot',   klass: 'Scout',   type: 'attack',  mpCost: 0, description: 'DEX-based precision attack: +20 attack, double damage on crit' },
+  stealth:      { name: 'Stealth',      klass: 'Scout',   type: 'utility', mpCost: 0, description: 'Become hidden — next attack auto-crits, enemies skip you' },
+  heal_touch:   { name: 'Heal Touch',   klass: 'Healer',  type: 'heal',    mpCost: 2, description: 'Heal lowest HP ally for 2d6+WIS/10 HP' },
+  protect:      { name: 'Protect',      klass: 'Healer',  type: 'utility', mpCost: 1, description: 'Grant +15 dodge to one ally for this round' },
+}
+
+export interface SpellResult {
+  success: boolean
+  damage: number
+  healed: number
+  targets: string[]
+  narrative: string
+  spellDef: SpellDef
+}
+
+export function resolveSpell(
+  caster: Character,
+  spellName: string,
+  enemies: Enemy[],
+  party: Character[],
+  dice: Dice
+): SpellResult {
+  const def = SPELLS[spellName.toLowerCase()]
+  if (!def) return { success: false, damage: 0, healed: 0, targets: [], narrative: `Unknown spell: ${spellName}`, spellDef: SPELLS.fireball! }
+
+  // Skill check
+  const check = resolveSkillCheck({ skill: caster.skills.cast_spell, dice })
+  if (check.success) caster.skills.cast_spell = check.nextSkill
+
+  if (!check.success) {
+    return { success: false, damage: 0, healed: 0, targets: [], narrative: `${def.name} fizzles! (rolled ${check.roll} vs ${caster.skills.cast_spell})`, spellDef: def }
+  }
+
+  // Roll damage/healing
+  let total = def.bonus + Math.floor(caster.stats.INT / 20)
+  for (let i = 0; i < def.dice; i++) total += dice.d(6)
+
+  if (def.target === 'heal') {
+    // Heal lowest HP living ally
+    const wounded = party.filter(p => p.hp > 0 && p.hp < p.maxHp).sort((a, b) => a.hp - b.hp)
+    const target = wounded[0]
+    if (!target) return { success: true, damage: 0, healed: 0, targets: [], narrative: `${def.name}: No wounded allies to heal.`, spellDef: def }
+    const before = target.hp
+    target.hp = Math.min(target.maxHp, target.hp + total)
+    const healed = target.hp - before
+    return { success: true, damage: 0, healed, targets: [target.name], narrative: `${def.name} heals ${target.name} for ${healed} HP! (${target.hp}/${target.maxHp})`, spellDef: def }
+  }
+
+  if (def.target === 'aoe') {
+    // Hit all living enemies
+    const living = enemies.filter(e => e.hp > 0)
+    const names: string[] = []
+    let totalDmg = 0
+    for (const enemy of living) {
+      const dmg = Math.max(1, total - Math.floor((enemy.armor ?? 0) / 2))
+      enemy.hp = Math.max(0, enemy.hp - dmg)
+      totalDmg += dmg
+      names.push(`${enemy.name}(-${dmg})`)
+    }
+    return { success: true, damage: totalDmg, healed: 0, targets: names, narrative: `${def.name} hits ALL enemies for ${total} damage! ${names.join(', ')}`, spellDef: def }
+  }
+
+  // Single target — hit first living enemy
+  const target = enemies.find(e => e.hp > 0)
+  if (!target) return { success: true, damage: 0, healed: 0, targets: [], narrative: `${def.name}: No enemies to target.`, spellDef: def }
+  const dmg = Math.max(1, total - Math.floor((target.armor ?? 0) / 2))
+  target.hp = Math.max(0, target.hp - dmg)
+  return { success: true, damage: dmg, healed: 0, targets: [target.name], narrative: `${def.name} strikes ${target.name} for ${dmg} damage! (${target.hp} HP left)`, spellDef: def }
+}
+
+export interface AbilityResult {
+  success: boolean
+  narrative: string
+  damage: number
+  healed: number
+  abilityDef: AbilityDef
+  /** Side effects to apply (e.g. dodge modifier, stun) */
+  effects: { type: string; target: string; value: number }[]
+}
+
+export function resolveAbility(
+  user: Character,
+  abilityName: string,
+  enemies: Enemy[],
+  party: Character[],
+  dice: Dice
+): AbilityResult {
+  const def = ABILITIES[abilityName.toLowerCase()]
+  if (!def) return { success: false, narrative: `Unknown ability: ${abilityName}`, damage: 0, healed: 0, abilityDef: ABILITIES.power_strike!, effects: [] }
+
+  const effects: { type: string; target: string; value: number }[] = []
+
+  switch (abilityName.toLowerCase()) {
+    case 'power_strike': {
+      // STR-boosted attack with damage bonus
+      const enemy = enemies.find(e => e.hp > 0)
+      if (!enemy) return { success: false, narrative: 'No enemies to strike.', damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const check = resolveSkillCheck({ skill: user.skills.attack + 10, dice })
+      if (!check.success) return { success: false, narrative: `Power Strike misses ${enemy.name}! (rolled ${check.roll})`, damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const baseDmg = dice.d(6) + Math.floor(user.stats.STR / 15)
+      const dmg = Math.max(1, Math.floor(baseDmg * 1.5))
+      enemy.hp = Math.max(0, enemy.hp - dmg)
+      effects.push({ type: 'dodge_penalty', target: user.name, value: -10 })
+      return { success: true, narrative: `POWER STRIKE smashes ${enemy.name} for ${dmg} damage! (${enemy.hp} HP left) [dodge -10 this round]`, damage: dmg, healed: 0, abilityDef: def, effects }
+    }
+    case 'shield_bash': {
+      const enemy = enemies.find(e => e.hp > 0)
+      if (!enemy) return { success: false, narrative: 'No enemies to bash.', damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const check = resolveSkillCheck({ skill: user.skills.attack, dice })
+      if (!check.success) return { success: false, narrative: `Shield Bash misses ${enemy.name}.`, damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const dmg = Math.max(1, dice.d(4) + Math.floor(user.stats.STR / 25))
+      enemy.hp = Math.max(0, enemy.hp - dmg)
+      effects.push({ type: 'stun', target: enemy.name, value: 1 })
+      return { success: true, narrative: `Shield Bash stuns ${enemy.name} for ${dmg} damage! Stunned enemies skip their next attack.`, damage: dmg, healed: 0, abilityDef: def, effects }
+    }
+    case 'aimed_shot': {
+      const enemy = enemies.find(e => e.hp > 0)
+      if (!enemy) return { success: false, narrative: 'No enemies to target.', damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const check = resolveSkillCheck({ skill: user.skills.attack + 20, dice })
+      if (!check.success) return { success: false, narrative: `Aimed Shot misses ${enemy.name}. (rolled ${check.roll})`, damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const baseDmg = dice.d(6) + Math.floor(user.stats.DEX / 15)
+      const crit = check.roll <= Math.floor(user.skills.attack / 5)
+      const dmg = crit ? baseDmg * 2 : baseDmg
+      enemy.hp = Math.max(0, enemy.hp - dmg)
+      return { success: true, narrative: `${crit ? 'CRITICAL ' : ''}Aimed Shot hits ${enemy.name} for ${dmg} damage!${crit ? ' (double damage!)' : ''} (${enemy.hp} HP left)`, damage: dmg, healed: 0, abilityDef: def, effects }
+    }
+    case 'stealth': {
+      effects.push({ type: 'hidden', target: user.name, value: 1 })
+      return { success: true, narrative: `${user.name} vanishes into the shadows. Next attack will auto-crit. Enemies will skip you this round.`, damage: 0, healed: 0, abilityDef: def, effects }
+    }
+    case 'heal_touch': {
+      const wounded = party.filter(p => p.hp > 0 && p.hp < p.maxHp).sort((a, b) => a.hp - b.hp)
+      const target = wounded[0]
+      if (!target) return { success: true, narrative: 'No wounded allies to heal.', damage: 0, healed: 0, abilityDef: def, effects: [] }
+      const heal = dice.d(6) + dice.d(6) + Math.floor(user.stats.WIS / 10)
+      const before = target.hp
+      target.hp = Math.min(target.maxHp, target.hp + heal)
+      const healed = target.hp - before
+      return { success: true, narrative: `Heal Touch restores ${healed} HP to ${target.name}! (${target.hp}/${target.maxHp})`, damage: 0, healed, abilityDef: def, effects }
+    }
+    case 'protect': {
+      const ally = party.filter(p => p.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+      if (!ally) return { success: false, narrative: 'No ally to protect.', damage: 0, healed: 0, abilityDef: def, effects: [] }
+      effects.push({ type: 'dodge_bonus', target: ally.name, value: 15 })
+      return { success: true, narrative: `${user.name} shields ${ally.name} with divine protection! (+15 dodge this round)`, damage: 0, healed: 0, abilityDef: def, effects }
+    }
+    default:
+      return { success: false, narrative: `Unknown ability: ${abilityName}`, damage: 0, healed: 0, abilityDef: def, effects: [] }
+  }
+}
+
+/** Get available spells for a class */
+export function getClassSpells(klass: RpgClass): SpellDef[] {
+  switch (klass) {
+    case 'Mage':   return [SPELLS.fireball!, SPELLS.ice_lance!, SPELLS.lightning!, SPELLS.shield!]
+    case 'Healer': return [SPELLS.heal!, SPELLS.smite!, SPELLS.shield!]
+    case 'Scout':  return [] // Scouts don't cast
+    case 'Warrior': return [] // Warriors don't cast
+  }
+}
+
+/** Get available abilities for a class */
+export function getClassAbilities(klass: RpgClass): AbilityDef[] {
+  return Object.values(ABILITIES).filter(a => a.klass === klass)
+}
+
+/** Build combat ability menu for a character */
+export function buildAbilityMenu(char: Character): string {
+  const lines: string[] = []
+  const spells = getClassSpells(char.klass)
+  const abilities = getClassAbilities(char.klass)
+
+  if (spells.length > 0) {
+    lines.push(`SPELLS (MP: ${char.mp}/${char.maxMp}):`)
+    for (const s of spells) {
+      const canCast = char.mp >= s.mpCost ? '✓' : '✗'
+      lines.push(`  ${canCast} cast_spell ${s.name.toLowerCase()} — ${s.description} (${s.mpCost} MP)`)
+    }
+  }
+
+  if (abilities.length > 0) {
+    lines.push(`ABILITIES:`)
+    for (const a of abilities) {
+      const canUse = a.mpCost === 0 || char.mp >= a.mpCost ? '✓' : '✗'
+      lines.push(`  ${canUse} use_skill ${a.name.toLowerCase()} — ${a.description}${a.mpCost > 0 ? ` (${a.mpCost} MP)` : ' (free)'}`)
+    }
+  }
+
+  return lines.join('\n')
 }
 
 export function nextEncounterRoomIndex(game: RpgGameState): number | null {

@@ -37,6 +37,11 @@ import {
   XP_PER_ENEMY_KILL,
   XP_PER_ROOM_CLEAR,
   XP_TABLE,
+  resolveSpell,
+  resolveAbility,
+  buildAbilityMenu,
+  SPELLS,
+  ABILITIES,
 } from '../games/rpg-engine'
 
 import type { PersistentCharacter } from '@atproto-agent/core'
@@ -640,8 +645,8 @@ export const rpgEnvironment: AgentEnvironment = {
         '- flee: Attempt to retreat from combat (not allowed in boss rooms)\n' +
         '- sneak: Attempt to bypass the next combat encounter before it starts\n' +
         '- intimidate: Frighten wounded low-morale enemies into fleeing\n' +
-        '- cast_spell: Cast a spell (stub)\n' +
-        '- use_skill: Attempt a generic skill check\n' +
+        '- cast_spell: Cast a spell (fireball, ice_lance, lightning, heal, shield, smite)\n' +
+        '- use_skill: Use a class ability (power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect)\n' +
         '- rest: Recover some HP/MP\n' +
         '- status: Show game state\n',
       parameters: {
@@ -1730,22 +1735,44 @@ export const rpgEnvironment: AgentEnvironment = {
           const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before using skills')
 
-          const skillName = typeof params.skill === 'string' ? params.skill : 'use_skill'
-          if (!isRecord(actor.skills) || typeof (actor.skills as any)[skillName] !== 'number') {
-            return { ok: false, error: `Unknown skill: ${skillName}` }
+          const abilityName = typeof params.skill === 'string' ? params.skill.trim().toLowerCase() : ''
+          if (!abilityName) return { ok: false, error: 'skill required: power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect' }
+
+          const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
+          const result = resolveAbility(actor, abilityName, livingEnemies, game.party, dice)
+
+          if (result.abilityDef.mpCost > 0) {
+            if (actor.mp < result.abilityDef.mpCost) return { ok: false, error: `Not enough MP (need ${result.abilityDef.mpCost}, have ${actor.mp})` }
+            if (result.success) actor.mp -= result.abilityDef.mpCost
           }
 
-          const current = Number((actor.skills as any)[skillName])
-          const check = resolveSkillCheck({ skill: current, dice })
-          if (check.success) {
-            ;(actor.skills as any)[skillName] = check.nextSkill
+          // Apply effects (stun, dodge bonuses, etc.) — stored on game state for this round
+          // For now, effects are narrative-only; future: track on game.roundEffects
+          
+          // XP for kills via abilities
+          for (const enemy of livingEnemies) {
+            if (enemy.hp <= 0) {
+              addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
+              game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
+              if (enemy.tactics?.kind === 'boss') {
+                addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
+                game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
+              }
+            }
+          }
+
+          if (game.phase === 'playing' && game.combat?.enemies?.every((e) => e.hp <= 0)) {
+            game.mode = 'exploring'
+            game.combat = undefined
           }
 
           gmInterveneIfStuck(game, {
             player: ctx.agentName.trim() || 'unknown',
             action: 'use_skill',
-            target: `skill:${skillName}`,
+            target: `ability:${abilityName}`,
           })
+
+          advanceTurn(game)
 
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -1753,11 +1780,8 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return {
-            content: toTextContent(
-              `${check.success ? 'Success' : 'Fail'} (rolled ${check.roll} vs ${current}).` +
-                (check.success ? ` Skill improves to ${check.nextSkill}.` : '')
-            ),
-            details: { gameId, skill: skillName, roll: check.roll, success: check.success, nextSkill: check.nextSkill },
+            content: toTextContent(result.narrative),
+            details: { gameId, ability: abilityName, success: result.success, damage: result.damage, healed: result.healed },
           }
         }
 
@@ -1765,12 +1789,36 @@ export const rpgEnvironment: AgentEnvironment = {
           const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before casting')
 
-          const spell = typeof params.spell === 'string' ? params.spell.trim() : 'spell'
-          if (actor.mp <= 0) return { ok: false, error: 'Out of MP' }
-          actor.mp -= 1
+          const spell = typeof params.spell === 'string' ? params.spell.trim().toLowerCase() : ''
+          if (!spell) return { ok: false, error: 'spell required: fireball, ice_lance, lightning, heal, shield, smite' }
 
-          const check = resolveSkillCheck({ skill: actor.skills.cast_spell, dice })
-          if (check.success) actor.skills.cast_spell = check.nextSkill
+          const spellDef = SPELLS[spell]
+          if (!spellDef) return { ok: false, error: `Unknown spell: ${spell}. Available: ${Object.keys(SPELLS).join(', ')}` }
+          if (actor.mp < spellDef.mpCost) return { ok: false, error: `Not enough MP for ${spellDef.name} (need ${spellDef.mpCost}, have ${actor.mp})` }
+
+          const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
+          const result = resolveSpell(actor, spell, livingEnemies, game.party, dice)
+
+          if (result.success) {
+            actor.mp -= spellDef.mpCost
+
+            // XP for kills via spells
+            for (const enemy of livingEnemies) {
+              if (enemy.hp <= 0) {
+                addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
+                game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
+                if (enemy.tactics?.kind === 'boss') {
+                  addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
+                  game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
+                }
+              }
+            }
+          }
+
+          if (game.phase === 'playing' && game.combat?.enemies?.every((e) => e.hp <= 0)) {
+            game.mode = 'exploring'
+            game.combat = undefined
+          }
 
           gmInterveneIfStuck(game, {
             player: ctx.agentName.trim() || 'unknown',
@@ -1778,14 +1826,16 @@ export const rpgEnvironment: AgentEnvironment = {
             target: `spell:${spell}`,
           })
 
+          advanceTurn(game)
+
           await db
             .prepare("UPDATE games SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
           return {
-            content: toTextContent(`${check.success ? 'Spell succeeds' : 'Spell fizzles'}: ${spell}`),
-            details: { gameId, spell, success: check.success, roll: check.roll },
+            content: toTextContent(result.narrative),
+            details: { gameId, spell, success: result.success, damage: result.damage, healed: result.healed },
           }
         }
 
@@ -1995,10 +2045,14 @@ export const rpgEnvironment: AgentEnvironment = {
             })
             .join(', ') || 'unknown'
           const negotiableNow = livingEnemies.filter((enemy) => enemyIsNegotiable(enemy)).map((enemy) => enemy.name)
-          lines.push(`⚔️ COMBAT! Enemies: ${enemies} | Actions: attack, negotiate, flee, intimidate`)
+          lines.push(`⚔️ COMBAT! Enemies: ${enemies}`)
           lines.push(`Negotiable now: ${negotiableNow.length > 0 ? negotiableNow.join(', ') : 'none'}`)
           if (isBossEncounterRoom(game)) lines.push('Boss encounter: flee is unavailable.')
-          lines.push(`Your action: rpg({"command":"attack","gameId":"${row.id}"}) or choose negotiate/flee/intimidate.`)
+          lines.push('')
+          if (partyMember) lines.push(buildAbilityMenu(partyMember))
+          lines.push('')
+          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, negotiate, flee, intimidate`)
+          lines.push(`Example: rpg({"command":"cast_spell","spell":"fireball","gameId":"${row.id}"})`)
         } else {
           lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
           if (nextEncounterRoomIndex(game) != null) {
