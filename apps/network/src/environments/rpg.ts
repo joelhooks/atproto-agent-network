@@ -3,6 +3,7 @@ import type { PiAgentTool } from '@atproto-agent/agent'
 import { generateTid } from '../../../../packages/core/src/identity'
 
 import {
+  adjustDisposition,
   attack,
   awardXp,
   type Character,
@@ -21,6 +22,7 @@ import {
   gameCharacterToPersistent,
   generateLoot,
   generateFantasyName,
+  getDispositionTier,
   gmInterveneIfStuck,
   isBossEncounterRoom,
   livingParty,
@@ -119,6 +121,44 @@ function normalizeDisposition(value: unknown): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
   if (!Number.isFinite(n)) return 0
   return Math.max(-100, Math.min(100, Math.floor(n)))
+}
+
+function formatSignedDisposition(value: number): string {
+  return value >= 0 ? `+${value}` : `${value}`
+}
+
+function dispositionTierLabel(value: number): string {
+  const tier = getDispositionTier(value)
+  return tier === 'allied' ? 'allies' : tier
+}
+
+function formatFactionStandingLine(input: { name: string; disposition: number }): string {
+  const disposition = normalizeDisposition(input.disposition)
+  return `The ${input.name} considers you ${dispositionTierLabel(disposition)} (${formatSignedDisposition(disposition)})`
+}
+
+function factionIdsFromEnemies(enemies: Enemy[]): string[] {
+  const ids = new Set<string>()
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    const factionId = typeof enemy?.factionId === 'string' ? enemy.factionId.trim() : ''
+    if (!factionId) continue
+    ids.add(factionId)
+  }
+  return [...ids]
+}
+
+export function applyDispositionForEncounterOutcome(input: {
+  campaign: CampaignState
+  enemies: Enemy[]
+  resolution: 'kill' | 'negotiate'
+  reason: string
+}): CampaignState {
+  const delta = input.resolution === 'kill' ? -20 : 10
+  let next = input.campaign
+  for (const factionId of factionIdsFromEnemies(input.enemies)) {
+    next = adjustDisposition(next, factionId, delta, input.reason)
+  }
+  return next
 }
 
 function buildDefaultWorldState(): WorldState {
@@ -972,6 +1012,53 @@ async function applyAdventureOutcomeToCampaign(
   })
 }
 
+async function applyEncounterDispositionToCampaign(
+  ctx: EnvironmentContext,
+  input: {
+    game: RpgGameState
+    enemies: Enemy[]
+    resolution: 'kill' | 'negotiate'
+    reason: string
+  }
+): Promise<void> {
+  const campaignId = typeof input.game.campaignId === 'string' ? input.game.campaignId.trim() : ''
+  if (!campaignId) return
+
+  const factionIds = factionIdsFromEnemies(input.enemies)
+  if (factionIds.length === 0) return
+
+  let campaign: CampaignState | null = null
+  try {
+    campaign = await getCampaign(ctx.db, campaignId)
+  } catch {
+    return
+  }
+  if (!campaign) return
+
+  const next = applyDispositionForEncounterOutcome({
+    campaign,
+    enemies: input.enemies,
+    resolution: input.resolution,
+    reason: input.reason,
+  })
+  if (next === campaign) return
+
+  await updateCampaign(ctx.db, campaignId, { worldState: next.worldState })
+
+  if (input.game.campaignContext) {
+    input.game.campaignContext.factions = (next.worldState.factions ?? [])
+      .slice(0, 4)
+      .map((faction) => formatFactionStandingLine({ name: faction.name, disposition: faction.disposition }))
+  }
+
+  const previousEventCount = Array.isArray(campaign.worldState.events) ? campaign.worldState.events.length : 0
+  const appendedEvents = (next.worldState.events ?? []).slice(previousEventCount)
+  if (appendedEvents.length > 0) {
+    const existing = Array.isArray(input.game.campaignLog) ? input.game.campaignLog : []
+    input.game.campaignLog = [...existing, ...appendedEvents].slice(-25)
+  }
+}
+
 function countKillsFromLog(game: RpgGameState, agentName: string): number {
   const log = Array.isArray(game.log) ? game.log : []
   return log.filter((e) => e && e.who === agentName && typeof e.what === 'string' && e.what.includes('(kill:')).length
@@ -1370,7 +1457,8 @@ export const rpgEnvironment: AgentEnvironment = {
         '- use_skill: Use a class ability (power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect)\n' +
         '- use_item: Consume an inventory item (example: item="potion")\n' +
         '- rest: Recover some HP/MP\n' +
-        '- status: Show game state\n',
+        '- status: Show game state\n' +
+        '- get_reputation: Show faction standings for the current campaign\n',
       parameters: {
         type: 'object',
         properties: {
@@ -1396,12 +1484,14 @@ export const rpgEnvironment: AgentEnvironment = {
               'use_item',
               'rest',
               'status',
+              'get_reputation',
             ],
           },
           gameId: { type: 'string', description: 'Game ID (optional; defaults to your active adventure).' },
           players: { type: 'array', items: { type: 'string' }, description: 'Players for new_game.' },
           campaignId: { type: 'string', description: 'Optional campaign id to bind this adventure to.' },
           campaign_id: { type: 'string', description: 'Alias for campaignId.' },
+          factionId: { type: 'string', description: 'Optional faction id/name filter for get_reputation.' },
           klass: { type: 'string', enum: ['Warrior', 'Scout', 'Mage', 'Healer'], description: 'Class for create_character.' },
           defender: { type: 'string', description: 'Party member to attack (out of combat only).' },
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
@@ -1740,6 +1830,51 @@ export const rpgEnvironment: AgentEnvironment = {
               roomIndex: game.roomIndex,
               currentPlayer: game.currentPlayer,
             },
+          }
+        }
+
+        if (command === 'get_reputation') {
+          const factionFilter = typeof params.factionId === 'string' ? params.factionId.trim().toLowerCase() : ''
+          const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
+
+          let lines: string[] = []
+          if (campaignId) {
+            try {
+              const campaign = await getCampaign(db, campaignId)
+              if (campaign) {
+                const factions = (campaign.worldState?.factions ?? [])
+                  .filter((faction) => {
+                    if (!factionFilter) return true
+                    return faction.id.toLowerCase() === factionFilter || faction.name.toLowerCase().includes(factionFilter)
+                  })
+                  .slice(0, 8)
+                lines = factions.map((faction) =>
+                  formatFactionStandingLine({ name: faction.name, disposition: faction.disposition })
+                )
+              }
+            } catch {
+              // Ignore DB lookup errors in tests/mocks and fall back to cached context.
+            }
+          }
+
+          if (lines.length === 0) {
+            const cached = Array.isArray(game.campaignContext?.factions) ? game.campaignContext!.factions : []
+            lines = cached
+              .filter((line) => !factionFilter || line.toLowerCase().includes(factionFilter))
+              .slice(0, 8)
+          }
+
+          if (lines.length === 0) {
+            return {
+              content: toTextContent('No faction reputation data is available for this adventure yet.'),
+              details: { gameId, campaignId: campaignId || null },
+            }
+          }
+
+          const title = campaignId ? `Faction reputation (${campaignId})` : 'Faction reputation'
+          return {
+            content: toTextContent(`${title}\n${lines.join('\n')}`),
+            details: { gameId, campaignId: campaignId || null, count: lines.length },
           }
         }
 
@@ -2151,6 +2286,13 @@ export const rpgEnvironment: AgentEnvironment = {
                   addXpEarned(game, attackerName, XP_PER_ENEMY_KILL)
                   game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
 
+                  await applyEncounterDispositionToCampaign(ctx, {
+                    game,
+                    enemies: [enemy],
+                    resolution: 'kill',
+                    reason: `${attackerName} killed a ${enemy.name} during an encounter.`,
+                  })
+
                   if (enemy.tactics?.kind === 'boss') {
                     addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
                     game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
@@ -2284,6 +2426,13 @@ export const rpgEnvironment: AgentEnvironment = {
             const encounterXp = encounterXpValue(enemies)
             const partialXp = Math.max(0, Math.floor(encounterXp * 0.75))
             for (const id of livingPartyIds(game)) addXpEarned(game, id, partialXp)
+
+            await applyEncounterDispositionToCampaign(ctx, {
+              game,
+              enemies,
+              resolution: 'negotiate',
+              reason: `${actorName} negotiated a peaceful resolution after combat tensions.`,
+            })
 
             game.mode = 'exploring'
             game.combat = undefined
@@ -3034,7 +3183,12 @@ export const rpgEnvironment: AgentEnvironment = {
         campaignLines.push(`Campaign: ${campaignContext.name}`)
         if (campaignContext.premise) campaignLines.push(`Premise: ${campaignContext.premise}`)
         if (campaignContext.activeArcs.length > 0) campaignLines.push(`Active arcs: ${campaignContext.activeArcs.join(', ')}`)
-        if (campaignContext.factions.length > 0) campaignLines.push(`Key factions: ${campaignContext.factions.join(', ')}`)
+        if (campaignContext.factions.length > 0) {
+          campaignLines.push('Faction standing:')
+          for (const factionLine of campaignContext.factions.slice(0, 4)) {
+            campaignLines.push(`- ${factionLine}`)
+          }
+        }
         if (campaignContext.npcs.length > 0) campaignLines.push(`Recurring NPCs: ${campaignContext.npcs.join(', ')}`)
       }
       if (isGrimlockAgent) {

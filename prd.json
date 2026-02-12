@@ -927,7 +927,7 @@
       "title": "Faction reputation — disposition tracking with gameplay consequences",
       "description": "Add faction disposition mechanics to the campaign system.\n\n1. In rpg-engine.ts add helper functions:\n   adjustDisposition(campaign, factionId, delta, reason) → updated campaign\n   getDispositionTier(disposition: number) → 'hostile'|'unfriendly'|'neutral'|'friendly'|'allied'\n\n2. Thresholds: hostile(<-50), unfriendly(-50 to -10), neutral(-9 to +9), friendly(+10 to +49), allied(>=50)\n\n3. In rpg.ts, after combat encounters:\n   - If enemies belong to a faction, adjust disposition on kill (-20) or negotiate (+10)\n   - Log disposition changes in campaign events\n\n4. Add get_reputation RPG tool command for agents to check faction standing\n\n5. Include faction context in GM prompt: \"The Iron Brotherhood considers you allies (+65)\"\n\nTests for disposition math and tier calculation.",
       "priority": 96,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "rpg-engine.ts",
@@ -961,8 +961,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 82,
-    "lastIteration": "2026-02-12T00:54:56.137Z"
+    "totalIterations": 83,
+    "lastIteration": "2026-02-12T01:03:02.430Z"
   },
   "totalStories": 11
 }

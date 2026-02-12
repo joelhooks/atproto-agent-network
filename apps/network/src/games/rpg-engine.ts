@@ -104,6 +104,8 @@ export type Enemy = {
   tactics?: EnemyTactics
   // Optional per-enemy turn counter for multi-phase behaviors.
   turnsTaken?: number
+  // Optional faction alignment for campaign reputation effects.
+  factionId?: string
 }
 
 export type EnemyTacticKind =
@@ -550,6 +552,8 @@ export type Faction = {
   description: string
 }
 
+export type DispositionTier = 'hostile' | 'unfriendly' | 'neutral' | 'friendly' | 'allied'
+
 export type PlotPoint = {
   id: string
   description: string
@@ -577,6 +581,71 @@ export type CampaignState = {
   worldState: WorldState
   storyArcs: StoryArc[]
   adventureCount: number
+}
+
+function normalizeDispositionValue(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(-100, Math.min(100, Math.floor(value)))
+}
+
+function formatSignedDisposition(disposition: number): string {
+  return disposition >= 0 ? `+${disposition}` : `${disposition}`
+}
+
+function dispositionNarrativeLabel(tier: DispositionTier): string {
+  if (tier === 'allied') return 'allies'
+  return tier
+}
+
+export function getDispositionTier(disposition: number): DispositionTier {
+  const value = normalizeDispositionValue(disposition)
+  if (value < -50) return 'hostile'
+  if (value <= -10) return 'unfriendly'
+  if (value <= 9) return 'neutral'
+  if (value <= 49) return 'friendly'
+  return 'allied'
+}
+
+export function adjustDisposition(
+  campaign: CampaignState,
+  factionId: string,
+  delta: number,
+  reason: string
+): CampaignState {
+  const id = String(factionId || '').trim()
+  if (!id) return campaign
+  const amount = Number.isFinite(delta) ? Math.floor(delta) : 0
+  if (amount === 0) return campaign
+
+  const factions = Array.isArray(campaign.worldState?.factions) ? campaign.worldState.factions : []
+  const index = factions.findIndex((faction) => String(faction?.id || '') === id)
+  if (index < 0) return campaign
+
+  const current = factions[index]!
+  const beforeDisposition = normalizeDispositionValue(current.disposition)
+  const afterDisposition = normalizeDispositionValue(beforeDisposition + amount)
+  if (afterDisposition === beforeDisposition) return campaign
+
+  const beforeTier = getDispositionTier(beforeDisposition)
+  const afterTier = getDispositionTier(afterDisposition)
+  const nextFactions = factions.map((faction, factionIndex) =>
+    factionIndex === index ? { ...faction, disposition: afterDisposition } : faction
+  )
+
+  const reasonText = String(reason || '').trim()
+  const nextEvents = Array.isArray(campaign.worldState?.events) ? [...campaign.worldState.events] : []
+  nextEvents.push(
+    `Faction reputation: ${current.name} ${formatSignedDisposition(amount)} (${formatSignedDisposition(beforeDisposition)} -> ${formatSignedDisposition(afterDisposition)}; ${beforeTier} -> ${afterTier})${reasonText ? ` - ${reasonText}` : ''}`
+  )
+
+  return {
+    ...campaign,
+    worldState: {
+      ...campaign.worldState,
+      factions: nextFactions,
+      events: nextEvents.slice(-100),
+    },
+  }
 }
 
 export type CampaignContextSummary = {
@@ -1352,6 +1421,12 @@ function campaignArcFocus(campaignState: CampaignState): string[] {
   return fallback.filter(Boolean)
 }
 
+function formatFactionStandingForContext(faction: Faction): string {
+  const disposition = normalizeDispositionValue(faction.disposition)
+  const tier = getDispositionTier(disposition)
+  return `The ${faction.name} considers you ${dispositionNarrativeLabel(tier)} (${formatSignedDisposition(disposition)})`
+}
+
 function withCampaignTheme(baseTheme: DungeonTheme, campaignState: CampaignState): DungeonTheme {
   const arcs = campaignArcFocus(campaignState)
   const arcText = arcs.length > 0 ? arcs.join(' / ') : 'Unfolding campaign arc'
@@ -1957,7 +2032,7 @@ export function createGame(input: {
         name: campaignState.name,
         premise: campaignState.premise,
         activeArcs: campaignArcFocus(campaignState),
-        factions: (campaignState.worldState?.factions ?? []).slice(0, 4).map((faction) => faction.name),
+        factions: (campaignState.worldState?.factions ?? []).slice(0, 4).map((faction) => formatFactionStandingForContext(faction)),
         npcs: [],
       }
     : undefined

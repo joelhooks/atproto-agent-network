@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
 import {
+  applyDispositionForEncounterOutcome,
   buildCampaignDungeonThread,
   compactAdventureLog,
   createCampaign,
@@ -2483,6 +2484,52 @@ describe('rpgEnvironment', () => {
     const updated = JSON.parse(row.state)
     expect(updated.feedMessages.length).toBe(2)
   })
+
+  it('get_reputation returns faction standings for campaign-linked adventures', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_get_reputation'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe room' }],
+      campaignState: {
+        id: 'campaign_rep_1',
+        name: 'Ironlands',
+        premise: 'Hold the border',
+        worldState: {
+          factions: [{ id: 'f_iron', name: 'Iron Brotherhood', disposition: 65, description: 'Steel-clad wardens.' }],
+          locations: [],
+          events: [],
+        },
+        storyArcs: [],
+        adventureCount: 0,
+      } as any,
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-get-reputation', { command: 'get_reputation', gameId })
+    const text = (result as any)?.content?.[0]?.text ?? ''
+
+    expect(text).toContain('The Iron Brotherhood considers you allies (+65)')
+  })
 })
 
 describe('compactAdventureLog', () => {
@@ -2727,6 +2774,46 @@ describe('campaign persistence helpers', () => {
     const db = new CampaignDbMock()
     const campaign = await getCampaign(db as any, 'campaign_missing')
     expect(campaign).toBeNull()
+  })
+})
+
+describe('faction disposition encounter outcomes', () => {
+  it('applies kill and negotiation outcomes to faction disposition', () => {
+    const campaign = {
+      id: 'campaign_faction_rep',
+      name: 'Ironlands',
+      premise: 'Faction war',
+      worldState: {
+        factions: [
+          { id: 'iron', name: 'Iron Brotherhood', disposition: 15, description: 'Border wardens' },
+          { id: 'court', name: 'Shadow Court', disposition: -30, description: 'Ruthless opportunists' },
+        ],
+        locations: [],
+        events: [],
+      },
+      storyArcs: [],
+      adventureCount: 2,
+    } as any
+
+    const afterKill = applyDispositionForEncounterOutcome({
+      campaign,
+      enemies: [{ name: 'Iron Scout', hp: 0, DEX: 30, attack: 30, dodge: 20, factionId: 'iron' }],
+      resolution: 'kill',
+      reason: 'Killed faction-aligned enemy in combat.',
+    })
+
+    expect(afterKill.worldState.factions.find((f: any) => f.id === 'iron')?.disposition).toBe(-5)
+    expect(afterKill.worldState.events.at(-1)).toContain('Killed faction-aligned enemy')
+
+    const afterNegotiation = applyDispositionForEncounterOutcome({
+      campaign: afterKill,
+      enemies: [{ name: 'Iron Envoy', hp: 10, DEX: 30, attack: 20, dodge: 20, factionId: 'iron' }],
+      resolution: 'negotiate',
+      reason: 'Negotiated truce with faction-aligned enemies.',
+    })
+
+    expect(afterNegotiation.worldState.factions.find((f: any) => f.id === 'iron')?.disposition).toBe(5)
+    expect(afterNegotiation.worldState.events.at(-1)).toContain('Negotiated truce')
   })
 })
 

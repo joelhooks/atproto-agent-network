@@ -564,3 +564,48 @@ What changed:
 Required reporting executed:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` (stored `mem-684a1b6f0f6b0f52`)
 - `openclaw system event --mode now --text "Ralph: completed Adventure threading — dungeon themes from campaign story arcs"`
+
+---
+[2026-02-12T01:03:02.432Z]
+Completed: Faction reputation — disposition tracking with gameplay consequences
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json, progress.txt, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts
+Summary: Implemented faction reputation/disposition mechanics end-to-end for story-mlip8wfo with TDD.
+
+Prior failure pattern detected: `unknown` (`check-types` missing) and `verification_rejected` (required files not modified). Mitigation: validated `check-types` script availability up front, wrote failing tests first, and ensured both required runtime files were modified (`apps/network/src/games/rpg-engine.ts`, `apps/network/src/environments/rpg.ts`).
+
+What changed:
+1. `apps/network/src/games/rpg-engine.ts`
+- Added `getDispositionTier(disposition)` with thresholds:
+  - hostile `< -50`
+  - unfriendly `-50..-10`
+  - neutral `-9..9`
+  - friendly `10..49`
+  - allied `>= 50`
+- Added `adjustDisposition(campaign, factionId, delta, reason)`:
+  - clamps disposition to `[-100, 100]`
+  - updates the matching faction
+  - appends a campaign world event entry describing the change and reason
+- Added optional `Enemy.factionId` for faction-linked encounter outcomes.
+- Updated campaign context generation to include faction standing lines like:
+  - `The Iron Brotherhood considers you allies (+65)`
+
+2. `apps/network/src/environments/rpg.ts`
+- Added pure helper `applyDispositionForEncounterOutcome(...)` to apply kill/negotiate disposition deltas across faction-linked enemies.
+- Added runtime persistence helper to load campaign, apply disposition updates, persist `worldState` updates, and refresh in-game campaign faction context.
+- Wired post-combat outcomes:
+  - kill => `-20` disposition (for faction-linked enemies)
+  - negotiate success => `+10` disposition (for faction-linked enemies)
+- Added `get_reputation` RPG tool command (with optional `factionId` filter).
+- Enhanced GM/campaign prompt faction section to include explicit standing lines instead of only faction names.
+
+3. Tests (RED -> GREEN)
+- `apps/network/src/games/rpg-engine.test.ts`
+  - Added disposition tier boundary tests.
+  - Added adjustDisposition behavior tests (mutation, event logging, unknown faction behavior).
+- `apps/network/src/environments/rpg.test.ts`
+  - Added `get_reputation` command test.
+  - Added encounter outcome disposition application test.
+
+Also completed required reporting:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Faction reputation — disposition tracking with gameplay consequences"`

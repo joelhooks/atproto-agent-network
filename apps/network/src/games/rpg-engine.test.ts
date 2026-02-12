@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   attack,
+  adjustDisposition,
   awardXp,
   createCharacter,
   createGame,
@@ -22,6 +23,7 @@ import {
   aoeSpell,
   disarmTrap,
   enemyTakeTurn,
+  getDispositionTier,
   selectTarget,
   attackEnemy,
   type RpgClass,
@@ -1384,5 +1386,64 @@ describe('campaign-aware dungeon setup', () => {
     expect(game.campaignAdventureNumber).toBe(3)
     expect(game.campaignContext?.activeArcs[0]).toContain('War for the Ironlands')
     expect(`${game.theme.name} ${game.theme.backstory}`).toContain('War for the Ironlands')
+  })
+})
+
+describe('faction disposition helpers', () => {
+  it('maps disposition values to tiers at threshold boundaries', () => {
+    expect(getDispositionTier(-80)).toBe('hostile')
+    expect(getDispositionTier(-51)).toBe('hostile')
+    expect(getDispositionTier(-50)).toBe('unfriendly')
+    expect(getDispositionTier(-10)).toBe('unfriendly')
+    expect(getDispositionTier(-9)).toBe('neutral')
+    expect(getDispositionTier(0)).toBe('neutral')
+    expect(getDispositionTier(9)).toBe('neutral')
+    expect(getDispositionTier(10)).toBe('friendly')
+    expect(getDispositionTier(49)).toBe('friendly')
+    expect(getDispositionTier(50)).toBe('allied')
+    expect(getDispositionTier(80)).toBe('allied')
+  })
+
+  it('adjusts faction disposition and appends a campaign event', () => {
+    const campaign: CampaignState = {
+      id: 'campaign_reputation_1',
+      name: 'Ironlands Reputation',
+      premise: 'A brewing civil war',
+      worldState: {
+        factions: [{ id: 'iron', name: 'Iron Brotherhood', disposition: 40, description: 'Militant defenders.' }],
+        locations: [],
+        events: [],
+      },
+      storyArcs: [],
+      adventureCount: 0,
+    }
+
+    const updated = adjustDisposition(campaign, 'iron', 25, 'Negotiated safe passage after a tense standoff.')
+
+    expect(updated.worldState.factions[0]?.disposition).toBe(65)
+    expect(updated.worldState.events).toHaveLength(1)
+    expect(updated.worldState.events[0]).toContain('Iron Brotherhood')
+    expect(updated.worldState.events[0]).toContain('+25')
+    expect(updated.worldState.events[0]).toContain('Negotiated safe passage')
+    expect(campaign.worldState.factions[0]?.disposition).toBe(40)
+    expect(campaign.worldState.events).toEqual([])
+  })
+
+  it('returns the original campaign when faction id is unknown', () => {
+    const campaign: CampaignState = {
+      id: 'campaign_reputation_2',
+      name: 'Ironlands Reputation',
+      premise: 'A brewing civil war',
+      worldState: {
+        factions: [{ id: 'iron', name: 'Iron Brotherhood', disposition: 0, description: 'Militant defenders.' }],
+        locations: [],
+        events: [],
+      },
+      storyArcs: [],
+      adventureCount: 0,
+    }
+
+    const updated = adjustDisposition(campaign, 'missing', -20, 'Killed patrol')
+    expect(updated).toBe(campaign)
   })
 })
