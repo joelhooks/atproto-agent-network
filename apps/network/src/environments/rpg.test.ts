@@ -2530,6 +2530,216 @@ describe('rpgEnvironment', () => {
 
     expect(text).toContain('The Iron Brotherhood considers you allies (+65)')
   })
+
+  it('transitions campaign adventures into hub_town on completion', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_campaign_hub_transition'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe room' }],
+      campaignState: {
+        id: 'campaign_hub_1',
+        name: 'Ironlands',
+        premise: 'Hold the border against the shadow host.',
+        worldState: {
+          factions: [{ id: 'f_iron', name: 'Iron Brotherhood', disposition: 30, description: 'Steel-clad wardens.' }],
+          locations: [],
+          events: ['Adventure #1 ended in victory: The border held.'],
+        },
+        storyArcs: [
+          {
+            id: 'arc_border',
+            name: 'War for the Border',
+            status: 'active',
+            plotPoints: [{ id: 'plot_1', description: 'Secure the ford', resolved: false }],
+          },
+        ],
+        adventureCount: 1,
+      } as any,
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    game.roomIndex = 0
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-campaign-hub', { command: 'explore', gameId })
+
+    const row = await db.prepare('SELECT state, phase FROM environments WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    const text = String((result as any)?.content?.[0]?.text ?? '')
+
+    expect(row.phase).toBe('hub_town')
+    expect(updated.phase).toBe('hub_town')
+    expect(updated.hubTown).toMatchObject({ location: 'tavern', idleTurns: 0, autoEmbarkAfter: 5 })
+    expect(text).toContain('Hub Town')
+    expect(text).toContain('Ironlands')
+  })
+
+  it('supports hub town commands: visit_location, buy_item, sell_item, and full-heal rest', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_hub_commands'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe room' }],
+      campaignState: {
+        id: 'campaign_hub_2',
+        name: 'Ironlands',
+        premise: 'Hold the border.',
+        worldState: { factions: [], locations: [], events: [] },
+        storyArcs: [],
+        adventureCount: 2,
+      } as any,
+    })
+    game.phase = 'hub_town'
+    game.mode = 'finished'
+    game.currentPlayer = 'alice'
+    ;(game as any).hubTown = { location: 'tavern', idleTurns: 0, autoEmbarkAfter: 5 }
+    const alice = findCharacter(game, 'alice')!
+    alice.hp = 1
+    alice.mp = 0
+    alice.gold = 120
+    alice.inventory = []
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const visit = await tool.execute('toolcall-hub-visit', { command: 'visit_location', gameId, location: 'market' })
+    const buy = await tool.execute('toolcall-hub-buy', { command: 'buy_item', gameId, itemId: 'iron_sword' })
+    const sell = await tool.execute('toolcall-hub-sell', { command: 'sell_item', gameId, itemId: 'iron_sword' })
+    const rest = await tool.execute('toolcall-hub-rest', { command: 'rest', gameId })
+
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    const updatedAlice = findCharacter(updated, 'alice')!
+
+    expect(String((visit as any)?.content?.[0]?.text ?? '')).toContain('Ironlands')
+    expect(String((buy as any)?.content?.[0]?.text ?? '')).toContain('iron_sword')
+    expect(String((sell as any)?.content?.[0]?.text ?? '')).toContain('iron_sword')
+    expect(String((rest as any)?.content?.[0]?.text ?? '')).toContain('fully recover')
+    expect(updated.hubTown.location).toBe('market')
+    expect(updatedAlice.hp).toBe(updatedAlice.maxHp)
+    expect(updatedAlice.mp).toBe(updatedAlice.maxMp)
+    expect(updatedAlice.inventory.some((item: any) => String(item?.name || '').toLowerCase().includes('iron'))).toBe(false)
+  })
+
+  it('auto-embarks from hub town after 5 idle turns via autoplay actions', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_hub_auto_embark'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe room' }],
+      campaignState: {
+        id: 'campaign_hub_3',
+        name: 'Ironlands',
+        premise: 'Hold the border.',
+        worldState: { factions: [], locations: [], events: [] },
+        storyArcs: [],
+        adventureCount: 2,
+      } as any,
+    })
+    game.phase = 'hub_town'
+    game.mode = 'finished'
+    game.currentPlayer = 'alice'
+    ;(game as any).hubTown = { location: 'tavern', idleTurns: 5, autoEmbarkAfter: 5 }
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+    expect(calls).toEqual([{ name: 'rpg', arguments: { command: 'embark', gameId } }])
+  })
+
+  it('increments hub-town idle turns during autoplay checks before auto-embark', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    }
+
+    const gameId = 'rpg_test_hub_auto_embark_progressive'
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ type: 'rest', description: 'safe room' }],
+      campaignState: {
+        id: 'campaign_hub_4',
+        name: 'Ironlands',
+        premise: 'Hold the border.',
+        worldState: { factions: [], locations: [], events: [] },
+        storyArcs: [],
+        adventureCount: 2,
+      } as any,
+    })
+    game.phase = 'hub_town'
+    game.mode = 'finished'
+    game.currentPlayer = 'alice'
+    ;(game as any).hubTown = { location: 'tavern', idleTurns: 0, autoEmbarkAfter: 5 }
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice']))
+      .run()
+
+    for (let i = 0; i < 4; i += 1) {
+      const calls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+      expect(calls).toEqual([])
+    }
+    const finalCalls = await rpgEnvironment.getAutoPlayActions(ctx as any)
+    expect(finalCalls).toEqual([{ name: 'rpg', arguments: { command: 'embark', gameId } }])
+
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    expect(updated.hubTown.idleTurns).toBe(5)
+  })
 })
 
 describe('compactAdventureLog', () => {

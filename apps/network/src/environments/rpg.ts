@@ -9,6 +9,8 @@ import {
   type Character,
   type Enemy,
   cloneEnemiesForCombat,
+  advanceHubTownIdleTurns,
+  createHubTownState,
   createCharacter,
   createDice,
   createGame,
@@ -41,6 +43,8 @@ import {
   type RpgClass,
   type FeedMessage,
   type FeedMessageType,
+  type HubTownLocation,
+  type HubTownState,
   type CampaignState,
   type StoryArc,
   type WorldState,
@@ -724,6 +728,195 @@ function makeShopHealingPotion(dice: ReturnType<typeof createDice>): LootItem {
   }
 }
 
+type HubTownShopItem = {
+  id: string
+  cost: number
+  sellValue: number
+  item: LootItem
+}
+
+const HUB_TOWN_LOCATIONS: readonly HubTownLocation[] = ['tavern', 'market', 'temple', 'guild_hall']
+
+const HUB_TOWN_LOCATION_LABEL: Record<HubTownLocation, string> = {
+  tavern: 'Hearthfire Tavern',
+  market: 'Lantern Market',
+  temple: 'Temple of Dawn',
+  guild_hall: "Adventurers' Guild Hall",
+}
+
+const HUB_TOWN_SHOP: Record<string, HubTownShopItem> = {
+  iron_sword: {
+    id: 'iron_sword',
+    cost: 45,
+    sellValue: 22,
+    item: {
+      name: 'Iron Sword',
+      rarity: 'uncommon',
+      slot: 'weapon',
+      effects: [{ stat: 'attack', bonus: 3 }],
+      description: 'A balanced, dependable blade favored by caravan guards.',
+    },
+  },
+  chain_jerkin: {
+    id: 'chain_jerkin',
+    cost: 40,
+    sellValue: 20,
+    item: {
+      name: 'Chain Jerkin',
+      rarity: 'uncommon',
+      slot: 'armor',
+      effects: [{ stat: 'dodge', bonus: 3 }],
+      description: 'Interlocked rings that soften glancing blows.',
+    },
+  },
+  runed_charm: {
+    id: 'runed_charm',
+    cost: 55,
+    sellValue: 27,
+    item: {
+      name: 'Runed Charm',
+      rarity: 'rare',
+      slot: 'trinket',
+      effects: [{ stat: 'cast_spell', bonus: 4 }],
+      description: 'A sigil-inscribed charm that steadies spellcraft.',
+    },
+  },
+}
+
+function normalizeHubTownLocation(value: unknown): HubTownLocation | null {
+  const location = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (location === 'tavern' || location === 'market' || location === 'temple' || location === 'guild_hall') {
+    return location
+  }
+  return null
+}
+
+function ensureHubTownState(game: RpgGameState): HubTownState {
+  const existing = (game as Record<string, unknown>).hubTown
+  const source = isRecord(existing) ? existing : {}
+  const normalized = createHubTownState({
+    location: normalizeHubTownLocation(source.location) ?? undefined,
+    idleTurns: Number.isFinite(source.idleTurns) ? Number(source.idleTurns) : undefined,
+    autoEmbarkAfter: Number.isFinite(source.autoEmbarkAfter) ? Number(source.autoEmbarkAfter) : undefined,
+  })
+  ;(game as Record<string, unknown>).hubTown = normalized as unknown as Record<string, unknown>
+  return normalized
+}
+
+function resetHubTownIdle(game: RpgGameState): void {
+  if (game.phase !== 'hub_town') return
+  const hub = ensureHubTownState(game)
+  hub.idleTurns = 0
+}
+
+function countHubTownIdleTurn(game: RpgGameState): number {
+  const next = advanceHubTownIdleTurns(ensureHubTownState(game))
+  ;(game as Record<string, unknown>).hubTown = next.state as unknown as Record<string, unknown>
+  return next.state.idleTurns
+}
+
+function hubTownItemIdFromName(name: string): string {
+  return String(name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function hubTownItemIdFromInventory(item: LootItem): string {
+  const explicit = typeof (item as any).hubItemId === 'string' ? (item as any).hubItemId.trim() : ''
+  if (explicit) return explicit
+  return hubTownItemIdFromName(item.name)
+}
+
+function copyHubTownShopItem(entry: HubTownShopItem): LootItem {
+  const item: LootItem = {
+    ...entry.item,
+    effects: (entry.item.effects ?? []).map((effect) => ({ ...effect })),
+  }
+  ;(item as any).hubItemId = entry.id
+  return item
+}
+
+function removeLootEffectsFromCharacter(character: Character, item: LootItem): void {
+  const effects = Array.isArray(item.effects) ? item.effects : []
+  for (const effect of effects) {
+    const stat = String(effect.stat ?? '').trim().toLowerCase()
+    const bonus = Number.isFinite(effect.bonus) ? Math.floor(effect.bonus) : 0
+    if (bonus === 0) continue
+    if (stat === 'attack') {
+      character.skills.attack = clampSkill(character.skills.attack - bonus)
+      continue
+    }
+    if (stat === 'dodge') {
+      character.skills.dodge = clampSkill(character.skills.dodge - bonus)
+      continue
+    }
+    if (stat === 'cast_spell') {
+      character.skills.cast_spell = clampSkill(character.skills.cast_spell - bonus)
+      continue
+    }
+    if (stat === 'use_skill') {
+      character.skills.use_skill = clampSkill(character.skills.use_skill - bonus)
+      continue
+    }
+    if (stat === 'armor') {
+      const baseArmor = Number.isFinite(character.armor) ? Math.floor(character.armor as number) : 0
+      character.armor = Math.max(0, baseArmor - bonus)
+    }
+  }
+}
+
+function fallbackSellValueForItem(item: LootItem): number {
+  const byRarity: Record<string, number> = { common: 8, uncommon: 16, rare: 28, legendary: 50 }
+  const rarity = String(item.rarity ?? '').toLowerCase()
+  const baseline = byRarity[rarity] ?? 10
+  const explicit = Number.isFinite(item.gold) ? Math.floor(item.gold as number) : 0
+  if (explicit > 0) return Math.max(1, Math.floor(explicit * 0.5))
+  return baseline
+}
+
+function buildHubTownNarration(game: RpgGameState, input: { location: HubTownLocation; cue: string }): string {
+  const lines: string[] = []
+  lines.push(`Hub Town - ${HUB_TOWN_LOCATION_LABEL[input.location]}`)
+  lines.push(`GM: ${input.cue}`)
+
+  const campaign = game.campaignContext
+  if (campaign) {
+    lines.push(`Campaign: ${campaign.name}`)
+    if (campaign.premise) lines.push(`Premise: ${campaign.premise}`)
+    if (campaign.activeArcs.length > 0) lines.push(`Active arc: ${campaign.activeArcs[0]}`)
+  }
+
+  const recap = Array.isArray(game.campaignLog) ? game.campaignLog.filter(Boolean).slice(-1)[0] : ''
+  if (recap) lines.push(`Latest rumor: ${recap}`)
+
+  return lines.join('\n')
+}
+
+function transitionCampaignCompletionToHubTown(game: RpgGameState, beforePhase: RpgGameState['phase']): { completed: boolean; enteredHubTown: boolean } {
+  if (beforePhase !== 'playing' || game.phase !== 'finished') return { completed: false, enteredHubTown: false }
+
+  const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
+  if (!campaignId) return { completed: true, enteredHubTown: false }
+
+  const hub = ensureHubTownState(game)
+  hub.location = 'tavern'
+  hub.idleTurns = 0
+  hub.autoEmbarkAfter = Math.max(1, hub.autoEmbarkAfter || 5)
+
+  game.phase = 'hub_town'
+  game.mode = 'finished'
+  game.combat = undefined
+
+  const initiative = computeInitiativeOrder(game.party ?? [])
+  const living = initiative.find((member) => isLiving(member))
+  if (living) game.currentPlayer = characterId(living)
+
+  game.log.push({ at: Date.now(), who: 'GM', what: 'hub_town: the party returns to town between adventures.' })
+  return { completed: true, enteredHubTown: true }
+}
+
 function livingPartyIds(game: RpgGameState): string[] {
   const party = Array.isArray(game.party) ? game.party : []
   return party.filter((p) => (p?.hp ?? 0) > 0).map((p) => characterId(p))
@@ -886,7 +1079,7 @@ function getMaxEnvironmentsPerDay(ctx: EnvironmentContext): number {
 async function anyPlayingRpgEnvironmentsExist(ctx: EnvironmentContext): Promise<boolean> {
   try {
     const row = await ctx.db
-      .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
+      .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') LIMIT 1")
       .first<{ id: string }>()
     return Boolean(row?.id)
   } catch {
@@ -1203,14 +1396,14 @@ async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<Environm
   try {
     // Check as player first
     const asPlayer = await ctx.db
-      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? LIMIT 1")
+      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND players LIKE ? LIMIT 1")
       .bind(`%${agentName}%`)
       .first<EnvironmentRow>()
     if (asPlayer) return asPlayer
 
     // Check as host/DM
     const asHost = await ctx.db
-      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND host_agent = ? LIMIT 1")
+      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND host_agent = ? LIMIT 1")
       .bind(agentName)
       .first<EnvironmentRow>()
     return asHost ?? null
@@ -1226,7 +1419,7 @@ async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<En
   try {
     const row = await ctx.db
       .prepare(
-        "SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND json_extract(state, '$.currentPlayer') = ?"
+        "SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND json_extract(state, '$.currentPlayer') = ?"
       )
       .bind(agentName)
       .first<EnvironmentRow>()
@@ -1457,6 +1650,10 @@ export const rpgEnvironment: AgentEnvironment = {
         '- use_skill: Use a class ability (power_strike, shield_bash, aimed_shot, stealth, heal_touch, protect)\n' +
         '- use_item: Consume an inventory item (example: item="potion")\n' +
         '- rest: Recover some HP/MP\n' +
+        '- visit_location: In hub town, move between tavern/market/temple/guild_hall\n' +
+        '- buy_item: In hub town market, spend gold on gear\n' +
+        '- sell_item: In hub town market, sell inventory loot for gold\n' +
+        '- embark: In hub town, start the next campaign adventure\n' +
         '- status: Show game state\n' +
         '- get_reputation: Show faction standings for the current campaign\n',
       parameters: {
@@ -1483,6 +1680,10 @@ export const rpgEnvironment: AgentEnvironment = {
               'use_skill',
               'use_item',
               'rest',
+              'visit_location',
+              'buy_item',
+              'sell_item',
+              'embark',
               'status',
               'get_reputation',
             ],
@@ -1497,6 +1698,8 @@ export const rpgEnvironment: AgentEnvironment = {
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
           skill: { type: 'string', description: 'Skill name for use_skill (defaults to use_skill).' },
           item: { type: 'string', description: 'Item filter for use_item (example: potion).' },
+          itemId: { type: 'string', description: 'Hub town market item id (buy_item/sell_item).' },
+          location: { type: 'string', enum: [...HUB_TOWN_LOCATIONS], description: 'Hub town location for visit_location.' },
           shop: { type: 'string', enum: ['buy_potion', 'identify'], description: 'Rest-room shop action.' },
           message: { type: 'string', description: 'Narration/response message for setup phase.' },
           target: { type: 'string', description: 'Target player agent for DM narration or resurrect target.' },
@@ -1782,18 +1985,46 @@ export const rpgEnvironment: AgentEnvironment = {
         if (!setupActive) {
           const beforePhase = game.phase
           const dirty = normalizeTurnState(game)
-          if (dirty) {
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
+          if (dirty || completion.enteredHubTown) {
             await db
               .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
               .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
               .run()
-            if (beforePhase !== 'finished' && game.phase === 'finished') {
+            if (completion.completed) {
               await emitEnvironmentCompleted(ctx, { gameId, game })
             }
           }
         }
 
         if (command === 'status') {
+          if (game.phase === 'hub_town') {
+            const hub = ensureHubTownState(game)
+            const idleTurns = countHubTownIdleTurn(game)
+            const text =
+              `${buildHubTownNarration(game, { location: hub.location, cue: 'The party regroups, trades rumors, and plans the next push.' })}\n\n` +
+              `Current player: ${game.currentPlayer}\n` +
+              `Party: ${summarizeParty(game)}\n` +
+              `Idle turns: ${idleTurns}/${hub.autoEmbarkAfter}\n` +
+              `Hub actions: visit_location, buy_item, sell_item, rest, embark`
+
+            await db
+              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+              .run()
+
+            return {
+              content: toTextContent(text),
+              details: {
+                gameId,
+                phase: game.phase,
+                location: hub.location,
+                idleTurns,
+                autoEmbarkAfter: hub.autoEmbarkAfter,
+              },
+            }
+          }
+
           const room = game.dungeon[game.roomIndex]
           const description = describeRoom(game, game.roomIndex)
           let statusText =
@@ -1875,6 +2106,213 @@ export const rpgEnvironment: AgentEnvironment = {
           return {
             content: toTextContent(`${title}\n${lines.join('\n')}`),
             details: { gameId, campaignId: campaignId || null, count: lines.length },
+          }
+        }
+
+        if (command === 'visit_location') {
+          if (game.phase !== 'hub_town') {
+            return { ok: false, error: 'visit_location is only available in hub_town.' }
+          }
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+
+          const location = normalizeHubTownLocation(params.location)
+          if (!location) {
+            return { ok: false, error: `location required: ${HUB_TOWN_LOCATIONS.join(', ')}` }
+          }
+
+          const hub = ensureHubTownState(game)
+          hub.location = location
+          resetHubTownIdle(game)
+          advanceTurn(game)
+
+          await db
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(
+              `${buildHubTownNarration(game, {
+                location,
+                cue: `You make your way to the ${HUB_TOWN_LOCATION_LABEL[location]}.`,
+              })}\n\nParty: ${summarizeParty(game)}`
+            ),
+            details: { gameId, location },
+          }
+        }
+
+        if (command === 'buy_item') {
+          if (game.phase !== 'hub_town') return { ok: false, error: 'buy_item is only available in hub_town.' }
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+
+          const hub = ensureHubTownState(game)
+          if (hub.location !== 'market') {
+            return { ok: false, error: 'You must be at the market to buy items. Use visit_location("market").' }
+          }
+
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
+          if (!actor) throw new Error('Create your character before buying items')
+          ensureCharacterLootState(actor)
+
+          const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
+          const listing = HUB_TOWN_SHOP[itemId]
+          if (!listing) {
+            return { ok: false, error: `Unknown itemId. Available: ${Object.keys(HUB_TOWN_SHOP).join(', ')}` }
+          }
+          if (actor.gold < listing.cost) {
+            return { ok: false, error: `Not enough gold (need ${listing.cost}, have ${actor.gold}).` }
+          }
+
+          actor.gold -= listing.cost
+          applyLootToCharacter(actor, { items: [copyHubTownShopItem(listing)], gold: 0 })
+          resetHubTownIdle(game)
+          advanceTurn(game)
+
+          await db
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(`Bought ${itemId} (${listing.item.name}) for ${listing.cost} gold. (${actor.gold} gold remaining)`),
+            details: { gameId, itemId, gold: actor.gold },
+          }
+        }
+
+        if (command === 'sell_item') {
+          if (game.phase !== 'hub_town') return { ok: false, error: 'sell_item is only available in hub_town.' }
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+
+          const hub = ensureHubTownState(game)
+          if (hub.location !== 'market') {
+            return { ok: false, error: 'You must be at the market to sell items. Use visit_location("market").' }
+          }
+
+          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
+          if (!actor) throw new Error('Create your character before selling items')
+          ensureCharacterLootState(actor)
+
+          const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
+          if (!itemId) return { ok: false, error: 'itemId required for sell_item.' }
+
+          const idx = actor.inventory.findIndex((item) => {
+            if (!item) return false
+            const invId = hubTownItemIdFromInventory(item)
+            return invId === itemId || hubTownItemIdFromName(item.name) === itemId
+          })
+          if (idx < 0) {
+            return { ok: false, error: `No inventory item matches itemId "${itemId}".` }
+          }
+
+          const [item] = actor.inventory.splice(idx, 1)
+          if (!item) return { ok: false, error: `No inventory item matches itemId "${itemId}".` }
+
+          removeLootEffectsFromCharacter(actor, item)
+          const value = HUB_TOWN_SHOP[itemId]?.sellValue ?? fallbackSellValueForItem(item)
+          actor.gold += value
+          resetHubTownIdle(game)
+          advanceTurn(game)
+
+          await db
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(`Sold ${itemId} (${item.name}) for ${value} gold. (${actor.gold} gold total)`),
+            details: { gameId, itemId, gold: actor.gold, value },
+          }
+        }
+
+        if (command === 'embark') {
+          if (game.phase !== 'hub_town') return { ok: false, error: 'embark is only available in hub_town.' }
+          if (game.currentPlayer !== ctx.agentName.trim()) {
+            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
+          }
+
+          const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
+          let campaignState: CampaignState | null = null
+          if (campaignId) {
+            try {
+              campaignState = await getCampaign(db, campaignId)
+            } catch {
+              campaignState = null
+            }
+          }
+
+          const fallbackAdventureCount = parseCampaignAdventureCount(game.campaignAdventureNumber, 1)
+          const fallbackCampaignState: CampaignState | null = campaignId
+            ? {
+                id: campaignId,
+                name: game.campaignContext?.name ?? 'Campaign',
+                premise: game.campaignContext?.premise ?? '',
+                worldState: { factions: [], locations: [], events: [] },
+                storyArcs: [],
+                adventureCount: fallbackAdventureCount,
+              }
+            : null
+
+          const sourceCampaign = campaignState ?? fallbackCampaignState
+          const campaignThread = sourceCampaign ? buildCampaignDungeonThread(sourceCampaign) : null
+          const next = createGame({
+            id: gameId,
+            players: game.party,
+            ...(campaignThread ? { campaignState: campaignThread.themedCampaignState } : {}),
+          })
+
+          if (campaignThread?.objective) {
+            ;(next as Record<string, unknown>).campaignObjective = {
+              ...campaignThread.objective,
+            }
+          }
+          if (campaignThread && campaignThread.campaignLog.length > 0) {
+            next.campaignLog = campaignThread.campaignLog
+          }
+          if (campaignThread?.objective && next.campaignContext) {
+            const objectiveText = `${campaignThread.objective.arcName}: ${campaignThread.objective.plotPoint}`
+            next.campaignContext.activeArcs = [objectiveText, ...(next.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText)].slice(0, 3)
+          }
+
+          if (campaignState) {
+            const adventureNumber = Math.max(
+              Math.floor(campaignState.adventureCount) + 1,
+              Number.isFinite(next.campaignAdventureNumber) ? Math.floor(next.campaignAdventureNumber as number) : 1
+            )
+            next.campaignAdventureNumber = adventureNumber
+            try {
+              await updateCampaign(db, campaignState.id, { adventureCount: adventureNumber })
+            } catch {
+              // best effort
+            }
+          }
+
+          await db
+            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(JSON.stringify(next), next.phase, (next as any).winner ?? null, gameId)
+            .run()
+
+          return {
+            content: toTextContent(`You leave town and embark on the next adventure.\n\nParty: ${summarizeParty(next)}`),
+            details: {
+              gameId,
+              phase: next.phase,
+              roomIndex: next.roomIndex,
+              campaignId: next.campaignId ?? null,
+              adventureNumber: next.campaignAdventureNumber ?? null,
+            },
+          }
+        }
+
+        if (game.phase === 'hub_town' && command !== 'rest') {
+          return {
+            ok: false,
+            error: 'You are in hub_town. Use: visit_location, buy_item, sell_item, rest, embark, status, or get_reputation.',
           }
         }
 
@@ -2223,19 +2661,27 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // advance turn (skip dead players)
           advanceTurn(game)
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
           return {
             content: toTextContent(
               (() => {
+                if (game.phase === 'hub_town') {
+                  const hub = ensureHubTownState(game)
+                  return `${buildHubTownNarration(game, {
+                    location: hub.location,
+                    cue: 'The dungeon expedition ends for now, and town life resumes.',
+                  })}\n\nParty: ${summarizeParty(game)}`
+                }
                 if (game.phase !== 'playing') return 'The adventure is complete.'
                 const roomNow = game.dungeon[game.roomIndex]
                 if (!roomNow) return 'The adventure is complete.'
@@ -2350,13 +2796,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
               // advance turn (skip dead players)
               advanceTurn(game)
+              const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
               await db
                 .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
                 .run()
 
-              if (beforePhase !== 'finished' && game.phase === 'finished') {
+              if (completion.completed) {
                 await emitEnvironmentCompleted(ctx, { gameId, game })
               }
 
@@ -2377,13 +2824,14 @@ export const rpgEnvironment: AgentEnvironment = {
 
           // advance turn (skip dead players)
           advanceTurn(game)
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -2460,13 +2908,14 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.phase === 'playing') {
             advanceTurn(game)
           }
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -2521,13 +2970,14 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.phase === 'playing') {
             advanceTurn(game)
           }
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -2603,13 +3053,14 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.phase === 'playing') {
             advanceTurn(game)
           }
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -2678,13 +3129,14 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.phase === 'playing') {
             advanceTurn(game)
           }
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -2697,6 +3149,27 @@ export const rpgEnvironment: AgentEnvironment = {
         if (command === 'rest') {
           const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
           if (!actor) throw new Error('Create your character before resting')
+
+          if (game.phase === 'hub_town') {
+            for (const member of game.party) {
+              if ((member.hp ?? 0) <= 0) continue
+              member.hp = member.maxHp
+              member.mp = member.maxMp
+            }
+            resetHubTownIdle(game)
+            advanceTurn(game)
+
+            await db
+              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
+              .run()
+
+            return {
+              content: toTextContent(`You rest at town and fully recover. Party: ${summarizeParty(game)}`),
+              details: { gameId, phase: game.phase },
+            }
+          }
+
           if ((actor.hp ?? 0) <= 0) {
             return { ok: false, error: 'You are dead. You cannot rest until revived.' }
           }
@@ -2972,13 +3445,14 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.phase === 'playing') {
             advanceTurn(game)
           }
+          const completion = transitionCampaignCompletionToHubTown(game, beforePhase)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
             .run()
 
-          if (beforePhase !== 'finished' && game.phase === 'finished') {
+          if (completion.completed) {
             await emitEnvironmentCompleted(ctx, { gameId, game })
           }
 
@@ -3131,6 +3605,21 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         return [`Waiting for ${currentAgent || 'the current player'} to finish backstory with DM.`]
+      }
+
+      if (game.phase === 'hub_town') {
+        const hub = ensureHubTownState(game)
+        const lines: string[] = []
+        lines.push(buildHubTownNarration(game, { location: hub.location, cue: 'Downtime in town gives the party room to recover and prepare.' }))
+        lines.push(`Location: ${hub.location}`)
+        lines.push(`Idle turns: ${hub.idleTurns}/${hub.autoEmbarkAfter}`)
+        lines.push(`Party: ${summarizeParty(game)}`)
+        if (isMyTurn) {
+          lines.push('Use one of: visit_location, buy_item, sell_item, rest, embark, status')
+        } else {
+          lines.push(`Waiting for ${game.currentPlayer} to act in hub town.`)
+        }
+        return lines.filter(Boolean)
       }
 
       // Barrier detection: if room requires a class nobody has, prompt recruitment
@@ -3342,6 +3831,10 @@ export const rpgEnvironment: AgentEnvironment = {
         'use_skill',
         'use_item',
         'rest',
+        'visit_location',
+        'buy_item',
+        'sell_item',
+        'embark',
         'create_character',
         'send_message',
         'setup_narrate',
@@ -3468,6 +3961,24 @@ export const rpgEnvironment: AgentEnvironment = {
           return [{ name: 'rpg', arguments: { command: 'setup_respond', gameId: row.id, message } }]
         }
 
+        return []
+      }
+
+      if (state.phase === 'hub_town') {
+        const hub = ensureHubTownState(state)
+        if (hub.idleTurns >= hub.autoEmbarkAfter) {
+          return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
+        }
+
+        const next = advanceHubTownIdleTurns(hub)
+        ;(state as Record<string, unknown>).hubTown = next.state as unknown as Record<string, unknown>
+        await ctx.db
+          .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+          .bind(JSON.stringify(state), state.phase, (state as any).winner ?? null, row.id)
+          .run()
+        if (next.shouldEmbark) {
+          return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
+        }
         return []
       }
 

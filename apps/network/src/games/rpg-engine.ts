@@ -525,6 +525,14 @@ export type Room = (
 
 export type RpgMode = 'exploring' | 'combat' | 'finished'
 
+export type HubTownLocation = 'tavern' | 'market' | 'temple' | 'guild_hall'
+
+export type HubTownState = {
+  location: HubTownLocation
+  idleTurns: number
+  autoEmbarkAfter: number
+}
+
 export type RpgActionHistoryEntry = {
   action: string
   target: string
@@ -680,7 +688,7 @@ export type FeedMessage = {
 export type RpgGameState = {
   id: string
   type: 'rpg'
-  phase: 'setup' | 'playing' | 'finished'
+  phase: 'setup' | 'playing' | 'hub_town' | 'finished'
   mode: RpgMode
   // Turn-cycle counter. Used for rate limiting and other per-round mechanics.
   // Optional for backwards compatibility with persisted games.
@@ -723,10 +731,35 @@ export type RpgGameState = {
   campaignAdventureNumber?: number
   campaignContext?: CampaignContextSummary
   campaignLog?: string[]
+  hubTown?: HubTownState
   // Per-round spam guard for send_message.
   // Optional for backwards compatibility with persisted games.
   messageRateLimit?: { round: number; counts: Record<string, number> }
   log: Array<{ at: number; who: string; what: string }>
+}
+
+export function createHubTownState(input?: Partial<HubTownState>): HubTownState {
+  const location = input?.location
+  const idleTurns = Number.isFinite(input?.idleTurns) ? Math.max(0, Math.floor(input!.idleTurns as number)) : 0
+  const autoEmbarkAfterRaw = Number.isFinite(input?.autoEmbarkAfter) ? Math.floor(input!.autoEmbarkAfter as number) : 5
+  const autoEmbarkAfter = Math.max(1, Math.min(20, autoEmbarkAfterRaw))
+  return {
+    location:
+      location === 'tavern' || location === 'market' || location === 'temple' || location === 'guild_hall'
+        ? location
+        : 'tavern',
+    idleTurns,
+    autoEmbarkAfter,
+  }
+}
+
+export function advanceHubTownIdleTurns(input?: Partial<HubTownState>): { state: HubTownState; shouldEmbark: boolean } {
+  const current = createHubTownState(input)
+  const next = createHubTownState({
+    ...current,
+    idleTurns: current.idleTurns + 1,
+  })
+  return { state: next, shouldEmbark: next.idleTurns >= next.autoEmbarkAfter }
 }
 
 export type GeneratedDungeon = {

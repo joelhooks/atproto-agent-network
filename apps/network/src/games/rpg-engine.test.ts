@@ -4,6 +4,8 @@ import {
   attack,
   adjustDisposition,
   awardXp,
+  createHubTownState,
+  advanceHubTownIdleTurns,
   createCharacter,
   createGame,
   createTestDice,
@@ -1352,6 +1354,22 @@ describe('awardXp', () => {
 })
 
 describe('campaign-aware dungeon setup', () => {
+  it('builds default hub town state for downtime between adventures', () => {
+    expect(createHubTownState()).toEqual({
+      location: 'tavern',
+      idleTurns: 0,
+      autoEmbarkAfter: 5,
+    })
+  })
+
+  it('advances hub town idle turns and signals when auto-embark threshold is reached', () => {
+    const first = createHubTownState({ idleTurns: 0, autoEmbarkAfter: 3 })
+    expect(advanceHubTownIdleTurns(first)).toEqual({ state: { location: 'tavern', idleTurns: 1, autoEmbarkAfter: 3 }, shouldEmbark: false })
+
+    const second = createHubTownState({ idleTurns: 2, autoEmbarkAfter: 3, location: 'market' })
+    expect(advanceHubTownIdleTurns(second)).toEqual({ state: { location: 'market', idleTurns: 3, autoEmbarkAfter: 3 }, shouldEmbark: true })
+  })
+
   it('threads campaign arcs and world context into a newly created adventure', () => {
     const campaign: CampaignState = {
       id: 'campaign_ironlands',
