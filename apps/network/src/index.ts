@@ -970,9 +970,12 @@ export default {
                   campaignState: campaignThread.themedCampaignState,
                 })
 
-                // Campaign adventures keep backstory setup — the phase machine
-                // and setup command coercion handle it. Agents get interviewed
-                // about their characters before the adventure begins.
+                // Campaign adventures start in 'playing' — they already have
+                // campaign premise as backstory context. The setup phase machine
+                // is only initialized in the create_game RPG command handler,
+                // not by createRpgGame(), so starting in 'setup' here would
+                // leave agents in a limbo with no phase machine.
+                game.phase = 'playing'
 
                 if (campaignThread.objective) {
                   ;(game as Record<string, unknown>).campaignObjective = {
