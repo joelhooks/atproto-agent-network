@@ -916,7 +916,7 @@
       "title": "Adventure threading — dungeon themes from campaign story arcs",
       "description": "When generating a dungeon for a campaign-linked environment, use the campaign's active story arcs to determine theme and objectives.\n\nIn rpg.ts, when starting a new RPG game that has campaign_id:\n1. Load campaign state\n2. Pick the active story arc with next unresolved plot point\n3. Pass arc name + plot point as dungeon theme context to generateDungeon/craft_dungeon\n4. After adventure completes, mark the plot point as resolved\n5. Update campaign with adventure outcome\n\nModify the GM system prompt to include \"Previously on...\" from campaign adventure log (last 2-3 adventures summarized in 1 sentence each).\n\nKeep changes focused on rpg.ts — the engine types are already in place from the data layer story.",
       "priority": 95,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "rpg.ts"
@@ -961,8 +961,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 81,
-    "lastIteration": "2026-02-12T00:47:11.613Z"
+    "totalIterations": 82,
+    "lastIteration": "2026-02-12T00:54:56.137Z"
   },
   "totalStories": 11
 }

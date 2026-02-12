@@ -388,6 +388,159 @@ export async function linkAdventureToCampaign(db: D1Database, envId: string, cam
   return adventureNumber
 }
 
+export type CampaignDungeonObjective = {
+  arcId: string
+  arcName: string
+  plotPointId: string
+  plotPoint: string
+}
+
+function copyStoryArcs(storyArcs: StoryArc[]): StoryArc[] {
+  return (Array.isArray(storyArcs) ? storyArcs : []).map((arc) => ({
+    ...arc,
+    plotPoints: Array.isArray(arc.plotPoints) ? arc.plotPoints.map((plotPoint) => ({ ...plotPoint })) : [],
+  }))
+}
+
+function firstSentence(text: string): string {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  const idx = clean.search(/[.!?]/)
+  if (idx < 0) return clean.slice(0, 220)
+  return clean.slice(0, Math.min(clean.length, idx + 1)).trim()
+}
+
+function adventureRecapsFromEvents(events: unknown, limit = 3): string[] {
+  if (!Array.isArray(events)) return []
+  const adventureEvents = events
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry) => entry.startsWith('Adventure #'))
+  const recent = adventureEvents.slice(Math.max(0, adventureEvents.length - Math.max(1, Math.floor(limit))))
+  return recent.map((entry) => firstSentence(entry)).filter(Boolean)
+}
+
+function pickCampaignObjective(campaign: CampaignState): CampaignDungeonObjective | null {
+  const arcs = Array.isArray(campaign.storyArcs) ? campaign.storyArcs : []
+  for (const arc of arcs) {
+    if (!arc || arc.status !== 'active') continue
+    const unresolved = Array.isArray(arc.plotPoints) ? arc.plotPoints.find((plotPoint) => !plotPoint.resolved) : null
+    if (!unresolved) continue
+    const plotPoint = String(unresolved.description || '').trim()
+    if (!plotPoint) continue
+    return {
+      arcId: String(arc.id || ''),
+      arcName: String(arc.name || '').trim() || 'Active Arc',
+      plotPointId: String(unresolved.id || ''),
+      plotPoint,
+    }
+  }
+  return null
+}
+
+function themeCampaignStateForObjective(campaign: CampaignState, objective: CampaignDungeonObjective | null): CampaignState {
+  if (!objective) return campaign
+  const storyArcs = copyStoryArcs(campaign.storyArcs)
+  const chosenIndex = storyArcs.findIndex((arc) => arc.id === objective.arcId)
+  if (chosenIndex > 0) {
+    const [chosen] = storyArcs.splice(chosenIndex, 1)
+    if (chosen) storyArcs.unshift(chosen)
+  }
+
+  const objectiveLine = `${objective.arcName}: ${objective.plotPoint}`
+  const basePremise = String(campaign.premise || '').trim()
+  const alreadyPresent = basePremise.toLowerCase().includes(objective.plotPoint.toLowerCase())
+  const premise = alreadyPresent
+    ? basePremise
+    : [basePremise, `Current objective: ${objectiveLine}.`].filter(Boolean).join(' ')
+
+  return {
+    ...campaign,
+    premise,
+    storyArcs,
+  }
+}
+
+function campaignLogFromThread(input: {
+  campaign: CampaignState
+  objective: CampaignDungeonObjective | null
+  recaps: string[]
+}): string[] {
+  const lines: string[] = [
+    `Campaign: ${input.campaign.name}`,
+    `Arc focus: ${input.objective?.arcName ?? 'none'}`,
+    `Premise: ${input.campaign.premise}`,
+  ]
+  if (input.objective) {
+    lines.push(`Current objective: ${input.objective.arcName} — ${input.objective.plotPoint}`)
+  }
+  for (const recap of input.recaps) {
+    lines.push(`Previously on: ${recap}`)
+  }
+  return lines
+}
+
+export function buildCampaignDungeonThread(campaign: CampaignState): {
+  objective: CampaignDungeonObjective | null
+  themedCampaignState: CampaignState
+  campaignLog: string[]
+} {
+  const objective = pickCampaignObjective(campaign)
+  const themedCampaignState = themeCampaignStateForObjective(campaign, objective)
+  const recaps = adventureRecapsFromEvents(campaign.worldState?.events, 3)
+  const campaignLog = campaignLogFromThread({ campaign, objective, recaps })
+  return {
+    objective,
+    themedCampaignState,
+    campaignLog,
+  }
+}
+
+function objectiveFromGame(game: RpgGameState): CampaignDungeonObjective | null {
+  const raw = (game as Record<string, unknown>).campaignObjective
+  if (!isRecord(raw)) return null
+  const arcId = String(raw.arcId ?? '').trim()
+  const arcName = String(raw.arcName ?? '').trim()
+  const plotPointId = String(raw.plotPointId ?? '').trim()
+  const plotPoint = String(raw.plotPoint ?? '').trim()
+  if (!arcId || !plotPointId || !plotPoint) return null
+  return { arcId, arcName, plotPointId, plotPoint }
+}
+
+export function resolveStoryArcsForAdventureOutcome(input: {
+  storyArcs: StoryArc[]
+  gameId: string
+  outcome: 'victory' | 'tpk' | 'abandoned'
+  objective?: Pick<CampaignDungeonObjective, 'arcId' | 'plotPointId'>
+}): StoryArc[] {
+  const nextArcs = copyStoryArcs(input.storyArcs)
+  let targetArc: StoryArc | undefined
+  let targetPoint: StoryArc['plotPoints'][number] | undefined
+
+  if (input.objective?.arcId && input.objective?.plotPointId) {
+    targetArc = nextArcs.find((arc) => arc.id === input.objective!.arcId)
+    targetPoint = targetArc?.plotPoints.find((plotPoint) => plotPoint.id === input.objective!.plotPointId)
+  }
+
+  if (!targetArc || !targetPoint) {
+    targetArc = nextArcs.find((arc) => arc.status === 'active' && arc.plotPoints.some((plotPoint) => !plotPoint.resolved))
+    targetPoint = targetArc?.plotPoints.find((plotPoint) => !plotPoint.resolved)
+  }
+
+  if (targetPoint) {
+    targetPoint.resolved = true
+    targetPoint.adventureId = input.gameId
+  }
+  if (targetArc) {
+    if (input.outcome === 'tpk') {
+      targetArc.status = 'failed'
+    } else if (!targetArc.plotPoints.some((plotPoint) => !plotPoint.resolved)) {
+      targetArc.status = 'resolved'
+    }
+  }
+
+  return nextArcs
+}
+
 function addXpEarned(game: RpgGameState, who: string, amount: number): void {
   const agent = String(who ?? '').trim()
   const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
@@ -805,24 +958,12 @@ async function applyAdventureOutcomeToCampaign(
     events: [...(campaign.worldState.events ?? []), event].slice(-100),
   }
 
-  const nextArcs: StoryArc[] = campaign.storyArcs.map((arc) => ({
-    ...arc,
-    plotPoints: Array.isArray(arc.plotPoints) ? arc.plotPoints.map((plotPoint) => ({ ...plotPoint })) : [],
-  }))
-
-  const activeArc = nextArcs.find((arc) => arc.status === 'active')
-  if (activeArc) {
-    const unresolved = activeArc.plotPoints.find((plotPoint) => !plotPoint.resolved)
-    if (outcome === 'victory' && unresolved) {
-      unresolved.resolved = true
-      unresolved.adventureId = input.gameId
-    }
-    if (outcome === 'tpk' && unresolved) {
-      activeArc.status = 'failed'
-    } else if (!activeArc.plotPoints.some((plotPoint) => !plotPoint.resolved)) {
-      activeArc.status = 'resolved'
-    }
-  }
+  const nextArcs = resolveStoryArcsForAdventureOutcome({
+    storyArcs: campaign.storyArcs,
+    gameId: input.gameId,
+    outcome,
+    objective: objectiveFromGame(input.game) ?? undefined,
+  })
 
   await updateCampaign(ctx.db, campaignId, {
     worldState: nextWorldState,
@@ -1414,6 +1555,7 @@ export const rpgEnvironment: AgentEnvironment = {
               ? params.campaign_id.trim()
               : ''
           const campaignState = requestedCampaignId ? await getCampaign(db, requestedCampaignId) : null
+          const campaignThread = campaignState ? buildCampaignDungeonThread(campaignState) : null
           if (requestedCampaignId && !campaignState) {
             return { ok: false, error: `Campaign ${requestedCampaignId} not found.` }
           }
@@ -1438,8 +1580,21 @@ export const rpgEnvironment: AgentEnvironment = {
           const game = createGame({
             id: gameId,
             players: finalPlayers,
-            ...(campaignState ? { campaignState } : {}),
+            ...(campaignThread ? { campaignState: campaignThread.themedCampaignState } : {}),
           })
+          if (campaignThread?.objective) {
+            ;(game as Record<string, unknown>).campaignObjective = {
+              ...campaignThread.objective,
+              selectedAt: Date.now(),
+            }
+          }
+          if (campaignThread && campaignThread.campaignLog.length > 0) {
+            game.campaignLog = campaignThread.campaignLog
+          }
+          if (campaignThread?.objective && game.campaignContext) {
+            const objectiveText = `${campaignThread.objective.arcName}: ${campaignThread.objective.plotPoint}`
+            game.campaignContext.activeArcs = [objectiveText, ...(game.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText)].slice(0, 3)
+          }
 
           // Backstory setup phase: DM interviews each player before the adventure begins
           game.phase = 'setup'
@@ -2872,6 +3027,7 @@ export const rpgEnvironment: AgentEnvironment = {
         }
       }
 
+      const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
       const campaignLines: string[] = []
       const campaignContext = game.campaignContext
       if (campaignContext) {
@@ -2881,9 +3037,23 @@ export const rpgEnvironment: AgentEnvironment = {
         if (campaignContext.factions.length > 0) campaignLines.push(`Key factions: ${campaignContext.factions.join(', ')}`)
         if (campaignContext.npcs.length > 0) campaignLines.push(`Recurring NPCs: ${campaignContext.npcs.join(', ')}`)
       }
+      if (isGrimlockAgent) {
+        const recaps = Array.isArray(game.campaignLog)
+          ? game.campaignLog
+            .filter((line): line is string => typeof line === 'string' && line.startsWith('Previously on: '))
+            .map((line) => line.slice('Previously on: '.length).trim())
+            .filter(Boolean)
+            .slice(-3)
+          : []
+        if (recaps.length > 0) {
+          campaignLines.push('Previously on...')
+          for (const recap of recaps) {
+            campaignLines.push(`- ${recap}`)
+          }
+        }
+      }
 
       // Inject role-based skills
-      const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
       const roleSkillLines: string[] = []
       if (isGrimlockAgent) {
         const skill = isMyTurn ? DM_SKILL : DM_SKILL_BRIEF

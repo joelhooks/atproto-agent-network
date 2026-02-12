@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
 import {
+  buildCampaignDungeonThread,
   compactAdventureLog,
   createCampaign,
   getCampaign,
+  resolveStoryArcsForAdventureOutcome,
   rpgEnvironment,
   updateCampaign,
 } from './rpg'
@@ -2725,5 +2727,131 @@ describe('campaign persistence helpers', () => {
     const db = new CampaignDbMock()
     const campaign = await getCampaign(db as any, 'campaign_missing')
     expect(campaign).toBeNull()
+  })
+})
+
+describe('campaign adventure threading helpers', () => {
+  it('picks the active arc with the next unresolved plot point and builds dungeon context + recaps', () => {
+    const campaign = {
+      id: 'campaign_threading',
+      name: 'Ashfall Chronicles',
+      premise: 'A crimson comet fractures the northern kingdoms',
+      worldState: {
+        factions: [],
+        locations: [],
+        events: [
+          'Adventure #1 (rpg_1) ended in victory: The vanguard held the bridge.',
+          'Adventure #2 (rpg_2) ended in victory: The scouts mapped the catacombs.',
+          'Adventure #3 (rpg_3) ended in tpk: The ogre host overwhelmed the camp.',
+          'Local festival resumed in the market district.',
+          'Adventure #4 (rpg_4) ended in victory: The relic vault was breached.',
+        ],
+      },
+      storyArcs: [
+        {
+          id: 'arc_resolved',
+          name: 'Broken Sigils',
+          status: 'active' as const,
+          plotPoints: [{ id: 'pp_done', description: 'Repair the warding circle', resolved: true }],
+        },
+        {
+          id: 'arc_active',
+          name: 'Cometfall Conspiracy',
+          status: 'active' as const,
+          plotPoints: [
+            { id: 'pp_open', description: 'Recover the sunstone from Ash Vault', resolved: false },
+            { id: 'pp_later', description: 'Confront the court astrologer', resolved: false },
+          ],
+        },
+      ],
+      adventureCount: 4,
+    }
+
+    const thread = buildCampaignDungeonThread(campaign as any)
+
+    expect(thread.objective?.arcId).toBe('arc_active')
+    expect(thread.objective?.plotPointId).toBe('pp_open')
+    expect(thread.themedCampaignState.storyArcs[0]?.id).toBe('arc_active')
+    expect(thread.themedCampaignState.premise).toContain('Recover the sunstone from Ash Vault')
+
+    const recapLines = thread.campaignLog.filter((line) => line.startsWith('Previously on: '))
+    expect(recapLines).toHaveLength(3)
+    expect(recapLines[0]).toContain('Adventure #2')
+    expect(recapLines[2]).toContain('Adventure #4')
+  })
+
+  it('marks the selected plot point as resolved after adventure completion', () => {
+    const next = resolveStoryArcsForAdventureOutcome({
+      storyArcs: [
+        {
+          id: 'arc_alpha',
+          name: 'First Arc',
+          status: 'active',
+          plotPoints: [{ id: 'pp_alpha', description: 'Scout the pass', resolved: false }],
+        },
+        {
+          id: 'arc_beta',
+          name: 'Second Arc',
+          status: 'active',
+          plotPoints: [{ id: 'pp_beta', description: 'Recover the moon key', resolved: false }],
+        },
+      ],
+      gameId: 'rpg_campaign_outcome',
+      outcome: 'abandoned',
+      objective: { arcId: 'arc_beta', plotPointId: 'pp_beta' },
+    })
+
+    const alphaPoint = next.find((arc) => arc.id === 'arc_alpha')?.plotPoints[0]
+    const betaPoint = next.find((arc) => arc.id === 'arc_beta')?.plotPoints[0]
+
+    expect(alphaPoint?.resolved).toBe(false)
+    expect(betaPoint?.resolved).toBe(true)
+    expect(betaPoint?.adventureId).toBe('rpg_campaign_outcome')
+  })
+
+  it('includes "Previously on..." recap lines for Grimlock context from campaignLog', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const gameId = 'rpg_test_campaign_previous_on'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl', 'swoop'],
+      dungeon: [{ type: 'rest', description: 'A briefing chamber.' }],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'grimlock'
+    game.campaignContext = {
+      id: 'campaign_alpha',
+      name: 'Ashfall Chronicles',
+      premise: 'A crimson comet fractures the northern kingdoms',
+      activeArcs: ['Cometfall Conspiracy'],
+      factions: [],
+      npcs: [],
+    }
+    game.campaignLog = [
+      'Campaign: Ashfall Chronicles',
+      'Previously on: Adventure #2 ended in victory at the catacombs.',
+      'Previously on: Adventure #3 ended in tpk at the shattered camp.',
+    ]
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl', 'swoop']))
+      .run()
+
+    const lines = await rpgEnvironment.buildContext({
+      agentName: 'grimlock',
+      agentDid: 'did:cf:grimlock',
+      db: db as any,
+      broadcast,
+    } as any)
+    const text = lines.join('\n')
+
+    expect(text).toContain('Previously on...')
+    expect(text).toContain('Adventure #2 ended in victory at the catacombs.')
+    expect(text).toContain('Adventure #3 ended in tpk at the shattered camp.')
   })
 })
