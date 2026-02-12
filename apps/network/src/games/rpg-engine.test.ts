@@ -4,6 +4,7 @@ import {
   attack,
   adjustDisposition,
   awardXp,
+  buildCampaignPremiseFromParty,
   createHubTownState,
   advanceHubTownIdleTurns,
   DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
@@ -27,6 +28,7 @@ import {
   disarmTrap,
   enemyTakeTurn,
   getDispositionTier,
+  previously_on,
   selectTarget,
   attackEnemy,
   type RpgClass,
@@ -1405,6 +1407,67 @@ describe('campaign-aware dungeon setup', () => {
     expect(game.campaignAdventureNumber).toBe(3)
     expect(game.campaignContext?.activeArcs[0]).toContain('War for the Ironlands')
     expect(`${game.theme.name} ${game.theme.backstory}`).toContain('War for the Ironlands')
+  })
+
+  it('builds a deterministic campaign premise package from theme + party composition', () => {
+    const input = {
+      theme: 'Crimson Crown',
+      party: [
+        { klass: 'Warrior' as const, level: 5 },
+        { klass: 'Scout' as const, level: 4 },
+        { klass: 'Mage' as const, level: 5 },
+      ],
+    }
+
+    const first = buildCampaignPremiseFromParty(input)
+    const second = buildCampaignPremiseFromParty(input)
+
+    expect(second).toEqual(first)
+    expect(first.factions.length).toBeGreaterThanOrEqual(3)
+    expect(first.factions.length).toBeLessThanOrEqual(4)
+    expect(first.storyArcs.length).toBeGreaterThanOrEqual(2)
+    expect(first.storyArcs.length).toBeLessThanOrEqual(3)
+    expect(first.storyArcs.every((arc) => arc.status === 'seeded')).toBe(true)
+    expect(first.startingLocation.name.length).toBeGreaterThan(0)
+    expect(first.premise).toContain(first.startingLocation.name)
+  })
+
+  it('scales campaign threat tier with high-level party compositions', () => {
+    const low = buildCampaignPremiseFromParty({
+      theme: 'Ashfall',
+      party: [
+        { klass: 'Warrior', level: 1 },
+        { klass: 'Healer', level: 1 },
+      ],
+    })
+    const high = buildCampaignPremiseFromParty({
+      theme: 'Ashfall',
+      party: [
+        { klass: 'Warrior', level: 10 },
+        { klass: 'Mage', level: 11 },
+      ],
+    })
+
+    expect(low.threatTier).not.toBe(high.threatTier)
+    expect(high.threatTier).toBe('epic')
+  })
+
+  it('builds previously_on recap text from campaign history', () => {
+    const recap = previously_on({
+      campaignName: 'Ashfall Chronicles',
+      premise: 'A crimson comet fractures the northern kingdoms',
+      activeArcs: ['Cometfall Conspiracy'],
+      history: [
+        'Adventure #1 ended in victory at the river gate.',
+        'Adventure #2 ended in victory inside the catacombs.',
+        'Festival lights returned to market square.',
+      ],
+      adventureCount: 2,
+    })
+
+    expect(recap).toContain('Ashfall Chronicles')
+    expect(recap).toContain('Adventure #1')
+    expect(recap).toContain('Cometfall Conspiracy')
   })
 })
 

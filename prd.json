@@ -951,7 +951,7 @@
       "title": "Session zero — auto-generate campaign premise from party composition",
       "description": "When creating a campaign, auto-generate a premise based on the party's persistent characters.\n\n1. In createCampaign, accept optional theme parameter\n2. Generate premise with: 3-4 factions, starting location, central conflict, 2-3 seeded story arcs\n3. Use character classes/levels to inform world (high-level party = bigger threats)\n4. Add previously_on helper that generates narrative recap from campaign history\n5. Inject previously_on into GM prompt at adventure start\n\nGeneration is deterministic from inputs (theme + party) — no LLM call needed, use template tables.",
       "priority": 98,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "rpg-engine.ts",
@@ -962,7 +962,7 @@
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
     "totalIterations": 84,
-    "lastIteration": "2026-02-12T01:20:20.134Z"
+    "lastIteration": "2026-02-12T01:26:28.435Z"
   },
   "totalStories": 11
 }

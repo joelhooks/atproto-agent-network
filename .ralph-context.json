@@ -234,6 +234,19 @@
         "progress.txt"
       ],
       "learnings": "[verification_rejected] @atproto-agent/dashboard:typecheck: \n@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard\n@atproto-agent/dashboard:typecheck: > tsc --noEmit\n@atproto-agent/dashboard:typecheck: \n@atproto-agent/core:build: \n@"
+    },
+    {
+      "id": "story-mlip8x1w",
+      "title": "Hub town — downtime phase between campaign adventures",
+      "status": "completed",
+      "filesModified": [
+        ".ralph/research/story-mlip8x1w.md",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts"
+      ],
+      "learnings": "Technical Discovery: `createHubTownState()` in `apps/network/src/games/rpg-engine.ts` is the canonical normalization point for hub-town timing defaults; using a shared exported constant there and consuming it in `transitionCampaignCompletionToHubTown()` prevents default drift between engine and environment layers.\nGotcha: Hub-town behavior is split between engine state normalization and environment command/autoplay flow. If you change auto-embark timing in only one layer, tests can stay green in one path but runtime behavior diverges in another path.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines hub-town state shape/defaults; `apps/network/src/environments/rpg.ts` applies hub transition/runtime behavior; `apps/network/src/games/rpg-engine.test.ts` contains the low-level default/timing assertions for hub-town state."
     }
   ],
   "failures": [

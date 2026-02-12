@@ -2985,6 +2985,33 @@ describe('campaign persistence helpers', () => {
     const campaign = await getCampaign(db as any, 'campaign_missing')
     expect(campaign).toBeNull()
   })
+
+  it('auto-generates deterministic campaign premise data from theme + party composition when premise is blank', async () => {
+    const db = new CampaignDbMock()
+    const options = {
+      theme: 'Crimson Crown',
+      party: [
+        { klass: 'Warrior' as const, level: 6 },
+        { klass: 'Mage' as const, level: 6 },
+        { klass: 'Healer' as const, level: 5 },
+      ],
+    }
+
+    const first = await createCampaign(db as any, 'Crimson Crown Saga', '', options)
+    const second = await createCampaign(db as any, 'Crimson Crown Saga', '', options)
+
+    expect(first.premise.length).toBeGreaterThan(20)
+    expect(first.worldState.factions.length).toBeGreaterThanOrEqual(3)
+    expect(first.worldState.factions.length).toBeLessThanOrEqual(4)
+    expect(first.worldState.locations.length).toBeGreaterThanOrEqual(1)
+    expect(first.storyArcs.length).toBeGreaterThanOrEqual(2)
+    expect(first.storyArcs.length).toBeLessThanOrEqual(3)
+    expect(first.storyArcs.every((arc) => arc.status === 'seeded')).toBe(true)
+
+    expect(second.premise).toBe(first.premise)
+    expect(second.worldState.factions.map((faction) => faction.name)).toEqual(first.worldState.factions.map((faction) => faction.name))
+    expect(second.storyArcs.map((arc) => arc.name)).toEqual(first.storyArcs.map((arc) => arc.name))
+  })
 })
 
 describe('faction disposition encounter outcomes', () => {
@@ -3072,9 +3099,27 @@ describe('campaign adventure threading helpers', () => {
     expect(thread.themedCampaignState.premise).toContain('Recover the sunstone from Ash Vault')
 
     const recapLines = thread.campaignLog.filter((line) => line.startsWith('Previously on: '))
-    expect(recapLines).toHaveLength(3)
-    expect(recapLines[0]).toContain('Adventure #2')
-    expect(recapLines[2]).toContain('Adventure #4')
+    expect(recapLines.length).toBeGreaterThanOrEqual(3)
+    expect(recapLines.some((line) => line.includes('Adventure #2'))).toBe(true)
+    expect(recapLines.some((line) => line.includes('Adventure #4'))).toBe(true)
+  })
+
+  it('always adds a previously_on narrative line, even for a brand-new campaign history', () => {
+    const campaign = {
+      id: 'campaign_fresh',
+      name: 'Fresh Banner',
+      premise: 'A new alliance forms under a blood-red moon.',
+      worldState: {
+        factions: [],
+        locations: [{ id: 'loc_1', name: 'Red Harbor', description: 'A storm-battered frontier port.' }],
+        events: [],
+      },
+      storyArcs: [],
+      adventureCount: 0,
+    }
+
+    const thread = buildCampaignDungeonThread(campaign as any)
+    expect(thread.campaignLog.some((line) => line.startsWith('Previously on: '))).toBe(true)
   })
 
   it('marks the selected plot point as resolved after adventure completion', () => {

@@ -593,6 +593,332 @@ export type CampaignState = {
   adventureCount: number
 }
 
+export type CampaignThreatTier = 'local' | 'regional' | 'world' | 'epic'
+
+export type CampaignPartyMemberSeed = {
+  klass?: RpgClass
+  level?: number
+}
+
+export type CampaignPremiseTemplate = {
+  theme: string
+  threatTier: CampaignThreatTier
+  premise: string
+  centralConflict: string
+  startingLocation: { id: string; name: string; description: string }
+  factions: Faction[]
+  storyArcs: StoryArc[]
+}
+
+export type PreviouslyOnInput = {
+  campaignName: string
+  premise?: string
+  activeArcs?: string[]
+  history?: string[]
+  adventureCount?: number
+}
+
+type CampaignFactionRole = 'ally' | 'rival' | 'villain' | 'wildcard'
+
+type CampaignFactionTemplate = {
+  name: string
+  role: CampaignFactionRole
+  description: string
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function seededNumber(seed: number, salt: number): number {
+  let x = (seed ^ Math.imul(salt + 1, 0x45d9f3b)) >>> 0
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
+  return (x ^ (x >>> 16)) >>> 0
+}
+
+function seededPick<T>(items: T[], seed: number, salt: number): T {
+  const idx = seededNumber(seed, salt) % items.length
+  return items[idx]!
+}
+
+function normalizeCampaignTheme(theme: unknown): string {
+  const text = typeof theme === 'string' ? theme.trim().replace(/\s+/g, ' ') : ''
+  if (!text) return 'Shattered Marches'
+  return text.slice(0, 60)
+}
+
+function normalizeCampaignParty(party: CampaignPartyMemberSeed[] | undefined): Array<{ klass: RpgClass; level: number }> {
+  if (!Array.isArray(party)) return []
+  return party
+    .map((member) => {
+      const klass = member?.klass
+      if (!isRpgClass(klass)) return null
+      const level = Number.isFinite(member?.level) ? Math.max(1, Math.floor(member!.level as number)) : 1
+      return { klass, level }
+    })
+    .filter((member): member is NonNullable<typeof member> => Boolean(member))
+}
+
+function threatTierForParty(party: Array<{ klass: RpgClass; level: number }>): CampaignThreatTier {
+  if (party.length === 0) return 'local'
+  const levels = party.map((member) => member.level)
+  const maxLevel = Math.max(...levels)
+  const avgLevel = Math.max(1, Math.floor(levels.reduce((sum, level) => sum + level, 0) / levels.length))
+  if (maxLevel >= 11 || avgLevel >= 9) return 'epic'
+  if (maxLevel >= 8 || avgLevel >= 6) return 'world'
+  if (maxLevel >= 5 || avgLevel >= 3) return 'regional'
+  return 'local'
+}
+
+function slugifyToken(value: string): string {
+  const slug = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'unknown'
+}
+
+function firstSentenceOrTrim(value: string, maxLen = 220): string {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  const idx = clean.search(/[.!?]/)
+  if (idx < 0) return clean.slice(0, maxLen)
+  return clean.slice(0, Math.min(clean.length, idx + 1)).trim()
+}
+
+function replaceTemplateTokens(
+  template: string,
+  tokens: Record<'theme' | 'location' | 'ally' | 'rival' | 'villain' | 'wildcard' | 'motif', string>
+): string {
+  return template.replace(/\{(theme|location|ally|rival|villain|wildcard|motif)\}/g, (_match, key: string) => {
+    const tokenKey = key as keyof typeof tokens
+    return tokens[tokenKey] ?? ''
+  })
+}
+
+const CAMPAIGN_FACTION_TEMPLATES: CampaignFactionTemplate[] = [
+  { role: 'ally', name: 'Iron Vanguard', description: 'Veteran soldiers sworn to keep the realm stable.' },
+  { role: 'ally', name: 'Dawn Hospice', description: 'Battle healers preserving lives and sacred relics.' },
+  { role: 'ally', name: 'Lantern Guild', description: 'Wardens and scouts guarding roads after dusk.' },
+  { role: 'rival', name: 'Veil Syndicate', description: 'Smugglers who trade favors for leverage.' },
+  { role: 'rival', name: 'Star Ledger Consortium', description: 'Merchant princes who bet on every warfront.' },
+  { role: 'rival', name: 'Thorn Rangers', description: 'Border hunters who answer to no crown.' },
+  { role: 'villain', name: 'Obsidian Throne', description: 'A conquering court that binds cities through fear.' },
+  { role: 'villain', name: 'Cinder Covenant', description: 'Fanatics promising rebirth through ruin.' },
+  { role: 'villain', name: 'Null Choir', description: 'An order trying to unmake memory and law.' },
+  { role: 'wildcard', name: 'Free Banner Companies', description: 'Mercenaries who can be bought by anyone.' },
+  { role: 'wildcard', name: 'Tideglass Compact', description: 'River traders with private armies and old maps.' },
+  { role: 'wildcard', name: 'Rootbound Circle', description: 'Mystics preserving ancient pacts below the earth.' },
+]
+
+const CAMPAIGN_LOCATION_TEMPLATES: Array<{ name: string; description: string }> = [
+  { name: '{theme} Gate', description: 'A fortress town where every road converges under uneasy truces.' },
+  { name: '{theme} Reach', description: 'A frontier valley littered with old battle standards and fresh graves.' },
+  { name: '{theme} Harbor', description: 'Storm-worn docks feeding caravans into contested hinterlands.' },
+  { name: '{theme} Spire', description: 'A high citadel used by diplomats, spies, and oathbreakers alike.' },
+  { name: '{theme} Bastion', description: 'A layered keep built to survive sieges and betrayals.' },
+  { name: '{theme} Expanse', description: 'Ruined farmlands where patrols vanish and rumors spread fast.' },
+]
+
+const CAMPAIGN_CONFLICT_TEMPLATES: Record<CampaignThreatTier, string[]> = {
+  local: [
+    '{villain} is seizing supply routes through {location}, forcing {ally} to choose between law and survival.',
+    '{rival} and {villain} are carving up villages around {location}, while {ally} struggles to hold the line.',
+  ],
+  regional: [
+    'A border war is igniting around {location} as {villain} and {rival} race to control the old mustering roads.',
+    '{villain} has rallied breakaway houses near {location}, and {ally} needs champions to stop a civil collapse.',
+  ],
+  world: [
+    '{villain} is opening rifts around {location}; if unchecked, the breach will swallow entire kingdoms.',
+    '{rival} and {villain} are weaponizing relic engines beneath {location}, threatening every realm nearby.',
+  ],
+  epic: [
+    'An apocalyptic host under {villain} is awakening beneath {location}, and only decisive action can prevent worldfall.',
+    'Reality fractures around {location} as {villain} hunts the final seal; failure would unmake empires overnight.',
+  ],
+}
+
+const CAMPAIGN_ARC_TEMPLATES: Array<{ name: string; plotPoint: string }> = [
+  { name: 'Broken Treaties', plotPoint: 'Convince {ally} and {rival} to sign a war ceasefire at {location}.' },
+  { name: 'Relic Chase', plotPoint: 'Recover the oath-lantern before {villain} can empower it.' },
+  { name: 'Shadows in Council', plotPoint: 'Expose which patron inside {ally} secretly serves {villain}.' },
+  { name: 'Road of Ash', plotPoint: 'Secure three strongholds outside {location} before siege lines close.' },
+  { name: 'Echoes of the Seal', plotPoint: 'Decode the ancient ward tied to {theme} and stabilize the breach.' },
+  { name: 'Crown of Knives', plotPoint: 'Choose whether to back {ally}, {rival}, or neither in the succession crisis.' },
+]
+
+function partyMotif(party: Array<{ klass: RpgClass; level: number }>): string {
+  const classes = new Set<RpgClass>(party.map((member) => member.klass))
+  if (classes.has('Mage')) return 'arcane warding'
+  if (classes.has('Warrior')) return 'frontline command'
+  if (classes.has('Scout')) return 'deep reconnaissance'
+  if (classes.has('Healer')) return 'battlefield triage'
+  return 'hard-won fieldcraft'
+}
+
+function factionDispositionByRole(role: CampaignFactionRole, seed: number, salt: number): number {
+  const offset = seededNumber(seed, salt) % 21
+  if (role === 'ally') return 20 + offset
+  if (role === 'villain') return -70 + offset
+  if (role === 'rival') return -15 + offset
+  return -5 + offset
+}
+
+function buildFactionSet(
+  seed: number,
+  tier: CampaignThreatTier,
+  tokens: Record<'theme' | 'location' | 'ally' | 'rival' | 'villain' | 'wildcard' | 'motif', string>,
+  count: number
+): Faction[] {
+  const roles: CampaignFactionRole[] = count >= 4 ? ['ally', 'rival', 'villain', 'wildcard'] : ['ally', 'rival', 'villain']
+  return roles.map((role, index) => {
+    const pool = CAMPAIGN_FACTION_TEMPLATES.filter((template) => template.role === role)
+    const template = seededPick(pool, seed, 30 + index)
+    const description = replaceTemplateTokens(template.description, tokens)
+    const tierSuffix =
+      tier === 'epic' ? ' Their plans now carry world-ending stakes.' :
+      tier === 'world' ? ' Their ambitions can topple nations.' :
+      tier === 'regional' ? ' Their influence reaches across the region.' :
+      ' Their reach is local but growing fast.'
+    return {
+      id: `faction_${slugifyToken(template.name)}`,
+      name: template.name,
+      disposition: normalizeDispositionValue(factionDispositionByRole(role, seed, 60 + index)),
+      description: `${description} ${tierSuffix}`.trim(),
+    }
+  })
+}
+
+export function buildCampaignPremiseFromParty(input: {
+  theme?: string
+  party?: CampaignPartyMemberSeed[]
+}): CampaignPremiseTemplate {
+  const party = normalizeCampaignParty(input.party)
+  const theme = normalizeCampaignTheme(input.theme)
+  const threatTier = threatTierForParty(party)
+  const seed = stableHash(
+    JSON.stringify({
+      theme: theme.toLowerCase(),
+      party: party.map((member) => `${member.klass}:${member.level}`),
+    })
+  )
+
+  const motif = partyMotif(party)
+  const fallbackTokens = {
+    theme,
+    location: `${theme} Gate`,
+    ally: 'Iron Vanguard',
+    rival: 'Veil Syndicate',
+    villain: 'Obsidian Throne',
+    wildcard: 'Free Banner Companies',
+    motif,
+  } as const
+  const locationTemplate = seededPick(CAMPAIGN_LOCATION_TEMPLATES, seed, 1)
+  const startingLocation = {
+    id: `location_${slugifyToken(theme)}_${seededNumber(seed, 2) % 1000}`,
+    name: replaceTemplateTokens(locationTemplate.name, fallbackTokens),
+    description: replaceTemplateTokens(locationTemplate.description, fallbackTokens),
+  }
+
+  const factionCount = party.length >= 3 ? 4 : 3
+  const factions = buildFactionSet(seed, threatTier, { ...fallbackTokens, location: startingLocation.name }, factionCount)
+  const ally = factions.find((faction) => faction.disposition >= 20)?.name ?? factions[0]?.name ?? fallbackTokens.ally
+  const rival = factions.find((faction) => faction.disposition >= -10 && faction.disposition < 20)?.name ?? factions[1]?.name ?? fallbackTokens.rival
+  const villain = factions.find((faction) => faction.disposition <= -30)?.name ?? factions[2]?.name ?? fallbackTokens.villain
+  const wildcard = factions.find((faction) => faction.name !== ally && faction.name !== rival && faction.name !== villain)?.name ?? factions[3]?.name ?? fallbackTokens.wildcard
+  const tokens = { theme, location: startingLocation.name, ally, rival, villain, wildcard, motif }
+
+  const centralConflict = replaceTemplateTokens(
+    seededPick(CAMPAIGN_CONFLICT_TEMPLATES[threatTier], seed, 3),
+    tokens
+  )
+
+  const arcCount = threatTier === 'world' || threatTier === 'epic' ? 3 : 2
+  const storyArcs: StoryArc[] = []
+  let salt = 100
+  while (storyArcs.length < arcCount && salt < 200) {
+    const template = seededPick(CAMPAIGN_ARC_TEMPLATES, seed, salt)
+    if (storyArcs.some((arc) => arc.name === template.name)) {
+      salt += 1
+      continue
+    }
+    const arcName = replaceTemplateTokens(template.name, tokens)
+    const plotPoint = replaceTemplateTokens(template.plotPoint, tokens)
+    storyArcs.push({
+      id: `arc_${slugifyToken(arcName)}_${storyArcs.length + 1}`,
+      name: arcName,
+      status: 'seeded',
+      plotPoints: [
+        {
+          id: `plot_${storyArcs.length + 1}`,
+          description: plotPoint,
+          resolved: false,
+        },
+      ],
+    })
+    salt += 1
+  }
+
+  const factionNames = factions.map((faction) => faction.name).join(', ')
+  const premise = [
+    `${theme} begins at ${startingLocation.name}.`,
+    `Central conflict: ${centralConflict}`,
+    `Factions in play: ${factionNames}.`,
+    `Seeded arcs: ${storyArcs.map((arc) => arc.name).join('; ')}.`,
+  ].join(' ')
+
+  return {
+    theme,
+    threatTier,
+    premise: premise.replace(/\s+/g, ' ').trim(),
+    centralConflict,
+    startingLocation,
+    factions,
+    storyArcs,
+  }
+}
+
+export function previously_on(input: PreviouslyOnInput): string {
+  const campaignName = String(input.campaignName || '').trim() || 'Untitled Campaign'
+  const premise = firstSentenceOrTrim(String(input.premise || '').trim(), 180)
+  const activeArc = Array.isArray(input.activeArcs)
+    ? input.activeArcs.map((arc) => String(arc || '').trim()).filter(Boolean)[0] ?? ''
+    : ''
+  const history = Array.isArray(input.history)
+    ? input.history.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : []
+  const adventureCount = Number.isFinite(input.adventureCount) ? Math.max(0, Math.floor(input.adventureCount as number)) : 0
+  const adventureHistory = history
+    .filter((entry) => entry.startsWith('Adventure #'))
+    .slice(-3)
+    .map((entry) => firstSentenceOrTrim(entry, 180))
+    .filter(Boolean)
+
+  const parts: string[] = [`${campaignName} recap.`]
+  if (adventureHistory.length > 0) {
+    parts.push(adventureHistory.join(' '))
+  } else if (premise) {
+    parts.push(premise)
+  } else {
+    parts.push('The party is gathering allies and preparing for the first push.')
+  }
+  if (adventureCount > 0) {
+    parts.push(`Adventures completed: ${adventureCount}.`)
+  }
+  if (activeArc) {
+    parts.push(`Current thread: ${activeArc}.`)
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 420)
+}
+
 function normalizeDispositionValue(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.max(-100, Math.min(100, Math.floor(value)))

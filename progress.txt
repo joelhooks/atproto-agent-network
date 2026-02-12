@@ -624,3 +624,37 @@ Implemented a small hardening pass for hub-town defaults in the required files:
 Also completed mandatory story reporting commands:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Hub town — downtime phase between campaign adventures"`
+
+---
+[2026-02-12T01:26:28.436Z]
+Completed: Session zero — auto-generate campaign premise from party composition
+Files: .ralph/research/story-mlip8x1w.md, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts
+Summary: Implemented session-zero campaign autogeneration and GM recap injection with deterministic, template-based logic.
+
+Changes made:
+- `apps/network/src/games/rpg-engine.ts:596`
+  - Added deterministic campaign generation primitives:
+    - `CampaignThreatTier`, `CampaignPartyMemberSeed`, `CampaignPremiseTemplate`
+    - `buildCampaignPremiseFromParty(...)` to generate:
+      - 3-4 factions
+      - starting location
+      - central conflict
+      - 2-3 seeded arcs
+      - level-based threat tier scaling (high-level party -> bigger threats)
+  - Added `previously_on(...)` recap helper for narrative campaign summaries from history.
+- `apps/network/src/environments/rpg.ts:353`
+  - Updated `createCampaign(...)` to accept optional options (`theme`, `party`) and auto-generate premise/world/arcs when premise is blank (or when theme/party is provided).
+  - Integrated `previously_on(...)` into campaign thread construction so GM context always includes a `Previously on:` recap line at adventure start (`apps/network/src/environments/rpg.ts:539`, `apps/network/src/environments/rpg.ts:564`).
+- Tests (TDD: RED -> GREEN):
+  - `apps/network/src/games/rpg-engine.test.ts:1408`
+    - Added deterministic generation test, threat-tier scaling test, and `previously_on` recap test.
+  - `apps/network/src/environments/rpg.test.ts:2985`
+    - Added `createCampaign` autogeneration test for deterministic theme+party behavior.
+    - Added campaign thread test ensuring `Previously on:` exists even for brand-new campaigns.
+
+Prior failure pattern detected: `unknown` (check-types script mismatch) and `verification_rejected` (required target files missing).
+Mitigation: ran the exact required validation command and ensured both required target files were directly modified (`apps/network/src/games/rpg-engine.ts`, `apps/network/src/environments/rpg.ts`).
+
+Also completed required reporting commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Session zero — auto-generate campaign premise from party composition"`

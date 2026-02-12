@@ -6,8 +6,10 @@ import {
   adjustDisposition,
   attack,
   awardXp,
+  buildCampaignPremiseFromParty,
   type Character,
   type Enemy,
+  type CampaignPartyMemberSeed,
   cloneEnemiesForCombat,
   advanceHubTownIdleTurns,
   createHubTownState,
@@ -50,6 +52,7 @@ import {
   type StoryArc,
   type WorldState,
   type RpgGameState,
+  previously_on,
   XP_PER_ADVENTURE_COMPLETE,
   XP_PER_BARRIER_BRUTE_FORCE,
   XP_PER_BARRIER_CLEAR,
@@ -121,6 +124,11 @@ type CampaignRow = {
 }
 
 type CampaignPatch = Partial<Pick<CampaignState, 'name' | 'premise' | 'worldState' | 'storyArcs' | 'adventureCount'>>
+
+type CreateCampaignOptions = {
+  theme?: string
+  party?: CampaignPartyMemberSeed[]
+}
 
 function normalizeDisposition(value: unknown): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
@@ -342,16 +350,39 @@ async function ensureCampaignSchema(db: D1Database): Promise<void> {
     .catch(() => undefined)
 }
 
-export async function createCampaign(db: D1Database, name: string, premise: string): Promise<CampaignState> {
+export async function createCampaign(
+  db: D1Database,
+  name: string,
+  premise: string,
+  options?: CreateCampaignOptions
+): Promise<CampaignState> {
   await ensureCampaignSchema(db)
   const safeName = String(name || '').trim() || 'Untitled Campaign'
   const safePremise = String(premise || '').trim()
-  const worldState = buildDefaultWorldState()
-  const storyArcs = buildDefaultStoryArcs()
+  const shouldAutogenerate = safePremise.length === 0 || Boolean(options?.theme) || Boolean(options?.party?.length)
+  const generated = shouldAutogenerate
+    ? buildCampaignPremiseFromParty({
+        theme: options?.theme,
+        party: options?.party,
+      })
+    : null
+  const worldState = generated
+    ? {
+        factions: generated.factions.map((faction) => ({ ...faction })),
+        locations: [{ ...generated.startingLocation }],
+        events: [`Campaign setup: ${generated.centralConflict}`],
+      }
+    : buildDefaultWorldState()
+  const storyArcs = generated
+    ? generated.storyArcs.map((arc) => ({
+        ...arc,
+        plotPoints: arc.plotPoints.map((plotPoint) => ({ ...plotPoint })),
+      }))
+    : buildDefaultStoryArcs()
   const campaign: CampaignState = {
     id: `campaign_${generateTid()}`,
     name: safeName,
-    premise: safePremise,
+    premise: safePremise || generated?.premise || '',
     worldState,
     storyArcs,
     adventureCount: 0,
@@ -509,6 +540,7 @@ function campaignLogFromThread(input: {
   campaign: CampaignState
   objective: CampaignDungeonObjective | null
   recaps: string[]
+  previouslyOn: string
 }): string[] {
   const lines: string[] = [
     `Campaign: ${input.campaign.name}`,
@@ -518,8 +550,13 @@ function campaignLogFromThread(input: {
   if (input.objective) {
     lines.push(`Current objective: ${input.objective.arcName} — ${input.objective.plotPoint}`)
   }
+  if (input.previouslyOn) {
+    lines.push(`Previously on: ${input.previouslyOn}`)
+  }
   for (const recap of input.recaps) {
-    lines.push(`Previously on: ${recap}`)
+    const trimmed = String(recap || '').trim()
+    if (!trimmed) continue
+    lines.push(`Previously on: ${trimmed}`)
   }
   return lines
 }
@@ -532,7 +569,14 @@ export function buildCampaignDungeonThread(campaign: CampaignState): {
   const objective = pickCampaignObjective(campaign)
   const themedCampaignState = themeCampaignStateForObjective(campaign, objective)
   const recaps = adventureRecapsFromEvents(campaign.worldState?.events, 3)
-  const campaignLog = campaignLogFromThread({ campaign, objective, recaps })
+  const previouslyOn = previously_on({
+    campaignName: campaign.name,
+    premise: campaign.premise,
+    activeArcs: objective ? [objective.arcName] : campaign.storyArcs.filter((arc) => arc.status === 'active').map((arc) => arc.name),
+    history: campaign.worldState?.events,
+    adventureCount: campaign.adventureCount,
+  })
+  const campaignLog = campaignLogFromThread({ campaign, objective, recaps, previouslyOn })
   return {
     objective,
     themedCampaignState,
