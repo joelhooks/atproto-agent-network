@@ -6,7 +6,6 @@ import {
   adjustDisposition,
   attack,
   awardXp,
-  buildCampaignPremiseFromParty,
   type Character,
   type Enemy,
   type CampaignPartyMemberSeed,
@@ -48,6 +47,11 @@ import {
   type FeedMessageType,
   type HubTownLocation,
   type HubTownState,
+  type CampaignNpc,
+  type CampaignVillain,
+  type CampaignHubTown,
+  type CampaignHubTownLocation,
+  type CampaignRegionalLocation,
   type CampaignState,
   type StoryArc,
   type WorldState,
@@ -128,6 +132,8 @@ type CampaignPatch = Partial<Pick<CampaignState, 'name' | 'premise' | 'worldStat
 type CreateCampaignOptions = {
   theme?: string
   party?: CampaignPartyMemberSeed[]
+  worldState?: WorldState
+  storyArcs?: StoryArc[]
 }
 
 function normalizeCreateCampaignOptions(input?: CreateCampaignOptions | string): CreateCampaignOptions {
@@ -139,9 +145,13 @@ function normalizeCreateCampaignOptions(input?: CreateCampaignOptions | string):
 
   const theme = typeof input.theme === 'string' ? input.theme.trim() : ''
   const party = Array.isArray(input.party) ? input.party : undefined
+  const worldState = isRecord(input.worldState) ? (input.worldState as WorldState) : undefined
+  const storyArcs = Array.isArray(input.storyArcs) ? (input.storyArcs as StoryArc[]) : undefined
   return {
     ...(theme ? { theme } : {}),
     ...(party ? { party } : {}),
+    ...(worldState ? { worldState } : {}),
+    ...(storyArcs ? { storyArcs } : {}),
   }
 }
 
@@ -207,6 +217,67 @@ function parseCampaignAdventureCount(raw: unknown, fallback = 0): number {
   return Math.max(0, Math.floor(n))
 }
 
+function normalizeCampaignNpc(raw: unknown): CampaignNpc | null {
+  if (!isRecord(raw)) return null
+  const name = String(raw.name ?? '').trim()
+  if (!name) return null
+  const role = String(raw.role ?? '').trim() || 'Contact'
+  const description = String(raw.description ?? '').trim() || 'No details recorded.'
+  return { name, role, description }
+}
+
+function normalizeCampaignVillain(raw: unknown): CampaignVillain | undefined {
+  if (!isRecord(raw)) return undefined
+  const name = String(raw.name ?? '').trim()
+  if (!name) return undefined
+  const description = String(raw.description ?? '').trim() || 'No details recorded.'
+  const objective = String(raw.objective ?? '').trim() || 'Advance a hidden agenda.'
+  const lieutenants = Array.isArray(raw.lieutenants)
+    ? raw.lieutenants
+      .map((entry) => normalizeCampaignNpc(entry))
+      .filter((entry): entry is CampaignNpc => Boolean(entry))
+      .slice(0, 6)
+    : []
+  return { name, description, objective, lieutenants }
+}
+
+function normalizeCampaignHubTownLocation(raw: unknown): CampaignHubTownLocation | null {
+  if (!isRecord(raw)) return null
+  const name = String(raw.name ?? '').trim()
+  if (!name) return null
+  const description = String(raw.description ?? '').trim() || 'No details recorded.'
+  const shopkeeper = typeof raw.shopkeeper === 'string' ? raw.shopkeeper.trim() : ''
+  const questGiver = typeof raw.questGiver === 'string' ? raw.questGiver.trim() : ''
+  return {
+    name,
+    description,
+    ...(shopkeeper ? { shopkeeper } : {}),
+    ...(questGiver ? { questGiver } : {}),
+  }
+}
+
+function normalizeCampaignHubTown(raw: unknown): CampaignHubTown | undefined {
+  if (!isRecord(raw)) return undefined
+  const name = String(raw.name ?? '').trim()
+  if (!name) return undefined
+  const description = String(raw.description ?? '').trim() || 'No details recorded.'
+  const locations = Array.isArray(raw.locations)
+    ? raw.locations
+      .map((entry) => normalizeCampaignHubTownLocation(entry))
+      .filter((entry): entry is CampaignHubTownLocation => Boolean(entry))
+      .slice(0, 8)
+    : []
+  return { name, description, locations }
+}
+
+function normalizeCampaignRegionalLocation(raw: unknown): CampaignRegionalLocation | null {
+  if (!isRecord(raw)) return null
+  const name = String(raw.name ?? '').trim()
+  if (!name) return null
+  const description = String(raw.description ?? '').trim() || 'No details recorded.'
+  return { name, description }
+}
+
 function normalizeWorldState(raw: unknown, input: { adventureCount: number }): WorldState & { adventureCount: number } {
   const fallback = buildDefaultWorldState()
   const src = isRecord(raw) ? raw : {}
@@ -217,11 +288,13 @@ function normalizeWorldState(raw: unknown, input: { adventureCount: number }): W
         if (!isRecord(entry)) return null
         const name = String(entry.name ?? '').trim()
         if (!name) return null
+        const keyNpc = normalizeCampaignNpc(entry.keyNpc)
         return {
           id: String(entry.id ?? `faction_${generateTid()}`),
           name,
           disposition: normalizeDisposition(entry.disposition),
           description: String(entry.description ?? '').trim() || 'Unknown faction motives.',
+          ...(keyNpc ? { keyNpc } : {}),
         }
       })
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
@@ -256,8 +329,32 @@ function normalizeWorldState(raw: unknown, input: { adventureCount: number }): W
       .filter((entry): entry is string => Boolean(entry))
     : fallback.events
 
+  const alliedNpcs = Array.isArray(src.alliedNpcs)
+    ? src.alliedNpcs
+      .map((entry) => normalizeCampaignNpc(entry))
+      .filter((entry): entry is CampaignNpc => Boolean(entry))
+      .slice(0, 6)
+    : []
+  const centralVillain = normalizeCampaignVillain(src.centralVillain)
+  const hubTown = normalizeCampaignHubTown(src.hubTown)
+  const regionalMap = Array.isArray(src.regionalMap)
+    ? src.regionalMap
+      .map((entry) => normalizeCampaignRegionalLocation(entry))
+      .filter((entry): entry is CampaignRegionalLocation => Boolean(entry))
+      .slice(0, 16)
+    : []
+
   const adventureCount = parseCampaignAdventureCount((src as Record<string, unknown>).adventureCount, input.adventureCount)
-  return { factions, locations, events, adventureCount }
+  return {
+    factions,
+    locations,
+    events,
+    ...(alliedNpcs.length ? { alliedNpcs } : {}),
+    ...(centralVillain ? { centralVillain } : {}),
+    ...(hubTown ? { hubTown } : {}),
+    ...(regionalMap.length ? { regionalMap } : {}),
+    adventureCount,
+  }
 }
 
 function normalizeStoryArcs(raw: unknown): StoryArc[] {
@@ -305,6 +402,18 @@ function normalizeStoryArcs(raw: unknown): StoryArc[] {
   return arcs.length > 0 ? arcs : fallback
 }
 
+function worldStateWithoutMeta(state: WorldState & { adventureCount: number }): WorldState {
+  return {
+    factions: state.factions,
+    locations: state.locations,
+    events: state.events,
+    ...(Array.isArray(state.alliedNpcs) && state.alliedNpcs.length > 0 ? { alliedNpcs: state.alliedNpcs } : {}),
+    ...(state.centralVillain ? { centralVillain: state.centralVillain } : {}),
+    ...(state.hubTown ? { hubTown: state.hubTown } : {}),
+    ...(Array.isArray(state.regionalMap) && state.regionalMap.length > 0 ? { regionalMap: state.regionalMap } : {}),
+  }
+}
+
 function rowToCampaignState(row: CampaignRow): CampaignState {
   const name = String(row.name || 'Untitled Campaign').trim() || 'Untitled Campaign'
   const premise = String(row.premise || '').trim()
@@ -329,23 +438,28 @@ function rowToCampaignState(row: CampaignRow): CampaignState {
     id: row.id,
     name,
     premise,
-    worldState: {
-      factions: worldStateWithMeta.factions,
-      locations: worldStateWithMeta.locations,
-      events: worldStateWithMeta.events,
-    },
+    worldState: worldStateWithoutMeta(worldStateWithMeta),
     storyArcs: normalizeStoryArcs(arcsRaw),
     adventureCount,
   }
 }
 
 function serializeWorldState(state: CampaignState): string {
-  return JSON.stringify({
+  const payload: Record<string, unknown> = {
     factions: state.worldState.factions,
     locations: state.worldState.locations,
     events: state.worldState.events,
     adventureCount: state.adventureCount,
-  })
+  }
+  if (Array.isArray(state.worldState.alliedNpcs) && state.worldState.alliedNpcs.length > 0) {
+    payload.alliedNpcs = state.worldState.alliedNpcs
+  }
+  if (state.worldState.centralVillain) payload.centralVillain = state.worldState.centralVillain
+  if (state.worldState.hubTown) payload.hubTown = state.worldState.hubTown
+  if (Array.isArray(state.worldState.regionalMap) && state.worldState.regionalMap.length > 0) {
+    payload.regionalMap = state.worldState.regionalMap
+  }
+  return JSON.stringify(payload)
 }
 
 async function ensureCampaignSchema(db: D1Database): Promise<void> {
@@ -375,30 +489,20 @@ export async function createCampaign(
   const campaignOptions = normalizeCreateCampaignOptions(options)
   const safeName = String(name || '').trim() || 'Untitled Campaign'
   const safePremise = String(premise || '').trim()
-  const shouldAutogenerate = safePremise.length === 0 || Boolean(campaignOptions.theme) || Boolean(campaignOptions.party?.length)
-  const generated = shouldAutogenerate
-    ? buildCampaignPremiseFromParty({
-        theme: campaignOptions.theme,
-        party: campaignOptions.party,
-      })
-    : null
-  const worldState = generated
-    ? {
-        factions: generated.factions.map((faction) => ({ ...faction })),
-        locations: [{ ...generated.startingLocation }],
-        events: [`Campaign setup: ${generated.centralConflict}`],
-      }
+  const worldState = campaignOptions.worldState
+    ? worldStateWithoutMeta(
+        normalizeWorldState(campaignOptions.worldState, {
+          adventureCount: 0,
+        })
+      )
     : buildDefaultWorldState()
-  const storyArcs = generated
-    ? generated.storyArcs.map((arc) => ({
-        ...arc,
-        plotPoints: arc.plotPoints.map((plotPoint) => ({ ...plotPoint })),
-      }))
+  const storyArcs = campaignOptions.storyArcs
+    ? normalizeStoryArcs(campaignOptions.storyArcs)
     : buildDefaultStoryArcs()
   const campaign: CampaignState = {
     id: `campaign_${generateTid()}`,
     name: safeName,
-    premise: safePremise || generated?.premise || '',
+    premise: safePremise,
     worldState,
     storyArcs,
     adventureCount: 0,
@@ -432,9 +536,11 @@ export async function updateCampaign(db: D1Database, id: string, patch: Campaign
     ...(typeof patch.name === 'string' ? { name: patch.name.trim() || current.name } : {}),
     ...(typeof patch.premise === 'string' ? { premise: patch.premise.trim() } : {}),
     worldState: patch.worldState
-      ? normalizeWorldState(patch.worldState, {
-          adventureCount: parseCampaignAdventureCount(patch.adventureCount, current.adventureCount),
-        })
+      ? worldStateWithoutMeta(
+          normalizeWorldState(patch.worldState, {
+            adventureCount: parseCampaignAdventureCount(patch.adventureCount, current.adventureCount),
+          })
+        )
       : { ...current.worldState },
     storyArcs: patch.storyArcs ? normalizeStoryArcs(patch.storyArcs) : current.storyArcs,
     adventureCount: parseCampaignAdventureCount(patch.adventureCount, current.adventureCount),

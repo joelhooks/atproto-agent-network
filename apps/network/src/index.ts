@@ -14,7 +14,7 @@ import { requireAdminBearerAuth } from './auth'
 import { applyCorsHeaders, corsPreflightResponse } from './cors'
 import './environments/builtins'
 import { getEnvironment } from './environments'
-import { createCampaign, getCampaign, linkAdventureToCampaign } from './environments/rpg'
+import { buildCampaignDungeonThread, createCampaign, getCampaign, linkAdventureToCampaign } from './environments/rpg'
 import { createGame as createRpgGame } from './games/rpg-engine'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
@@ -960,28 +960,59 @@ export default {
                 return Response.json({ error: 'Campaign not found' }, { status: 404 })
               }
 
-              const players = ['slag', 'snarl', 'swoop']
-              const id = `rpg_${generateTid()}`
-              const game = createRpgGame({ id, players, campaignState: campaign })
+              try {
+                const campaignThread = buildCampaignDungeonThread(campaign)
+                const players = ['slag', 'snarl', 'swoop']
+                const id = `rpg_${generateTid()}`
+                const game = createRpgGame({
+                  id,
+                  players,
+                  campaignState: campaignThread.themedCampaignState,
+                })
 
-              await env.DB
-                .prepare(
-                  "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-                )
-                .bind(id, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(players))
-                .run()
+                if (campaignThread.objective) {
+                  ;(game as Record<string, unknown>).campaignObjective = {
+                    ...campaignThread.objective,
+                    selectedAt: Date.now(),
+                  }
+                }
+                if (campaignThread.campaignLog.length > 0) {
+                  game.campaignLog = campaignThread.campaignLog
+                }
+                if (campaignThread.objective && game.campaignContext) {
+                  const objectiveText = `${campaignThread.objective.arcName}: ${campaignThread.objective.plotPoint}`
+                  game.campaignContext.activeArcs = [
+                    objectiveText,
+                    ...(game.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText),
+                  ].slice(0, 3)
+                }
 
-              const adventureNumber = await linkAdventureToCampaign(env.DB, id, campaign.id)
+                await env.DB
+                  .prepare(
+                    "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+                  )
+                  .bind(id, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(players))
+                  .run()
 
-              return Response.json({
-                id,
-                type: 'rpg',
-                hostAgent: 'grimlock',
-                phase: game.phase,
-                players,
-                campaignId: campaign.id,
-                adventureNumber,
-              })
+                const adventureNumber = await linkAdventureToCampaign(env.DB, id, campaign.id)
+
+                return Response.json({
+                  id,
+                  type: 'rpg',
+                  hostAgent: 'grimlock',
+                  phase: game.phase,
+                  players,
+                  campaignId: campaign.id,
+                  adventureNumber,
+                })
+              } catch (error) {
+                console.error('Failed to start RPG campaign adventure', {
+                  campaignId: campaign.id,
+                  route: 'network.environments.rpg.campaign.start-adventure',
+                  error,
+                })
+                throw error
+              }
             },
             { route: 'network.environments.rpg.campaign.start-adventure', request }
           )

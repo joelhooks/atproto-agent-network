@@ -1155,6 +1155,20 @@ describe('network worker campaign API', () => {
     expect(createRes.status).toBe(200)
     const campaign = await createRes.json() as any
 
+    const campaignRow = db.campaigns.get(String(campaign.id))
+    expect(campaignRow).toBeDefined()
+    if (campaignRow) {
+      campaignRow.story_arcs = JSON.stringify([
+        {
+          id: 'arc_titan',
+          name: 'The Waking Titan',
+          status: 'active',
+          plotPoints: [{ id: 'plot_gate', description: 'Seal the Titan gate', resolved: false }],
+        },
+      ])
+      db.campaigns.set(campaignRow.id, campaignRow)
+    }
+
     const startRes = await worker.fetch(
       new Request(`https://example.com/environments/rpg/campaign/${campaign.id}/start-adventure`, {
         method: 'POST',
@@ -1179,6 +1193,13 @@ describe('network worker campaign API', () => {
     const state = JSON.parse(String(createdRow?.state ?? '{}')) as any
     expect(state.campaignId).toBe(campaign.id)
     expect(state.campaignAdventureNumber).toBe(1)
+    expect(state.theme?.name).toContain('The Waking Titan')
+    expect(state.theme?.backstory).toContain('The dead roads are waking.')
+    expect(state.campaignLog).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Current objective: The Waking Titan'),
+      ])
+    )
 
     const campaignAfter = await worker.fetch(
       new Request(`https://example.com/environments/rpg/campaign/${campaign.id}`, {

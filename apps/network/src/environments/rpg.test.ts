@@ -2986,7 +2986,7 @@ describe('campaign persistence helpers', () => {
     expect(campaign).toBeNull()
   })
 
-  it('auto-generates deterministic campaign premise data from theme + party composition when premise is blank', async () => {
+  it('does not auto-generate campaign premise data from theme + party composition when premise is blank', async () => {
     const db = new CampaignDbMock()
     const options = {
       theme: 'Crimson Crown',
@@ -3000,26 +3000,130 @@ describe('campaign persistence helpers', () => {
     const first = await createCampaign(db as any, 'Crimson Crown Saga', '', options)
     const second = await createCampaign(db as any, 'Crimson Crown Saga', '', options)
 
-    expect(first.premise.length).toBeGreaterThan(20)
-    expect(first.worldState.factions.length).toBeGreaterThanOrEqual(3)
-    expect(first.worldState.factions.length).toBeLessThanOrEqual(4)
-    expect(first.worldState.locations.length).toBeGreaterThanOrEqual(1)
-    expect(first.storyArcs.length).toBeGreaterThanOrEqual(2)
-    expect(first.storyArcs.length).toBeLessThanOrEqual(3)
-    expect(first.storyArcs.every((arc) => arc.status === 'seeded')).toBe(true)
+    expect(first.premise).toBe('')
+    expect(first.worldState).toEqual({
+      factions: [],
+      locations: [],
+      events: [],
+    })
+    expect(first.storyArcs).toEqual([])
 
-    expect(second.premise).toBe(first.premise)
-    expect(second.worldState.factions.map((faction) => faction.name)).toEqual(first.worldState.factions.map((faction) => faction.name))
-    expect(second.storyArcs.map((arc) => arc.name)).toEqual(first.storyArcs.map((arc) => arc.name))
+    expect(second.premise).toBe('')
+    expect(second.worldState).toEqual({
+      factions: [],
+      locations: [],
+      events: [],
+    })
+    expect(second.storyArcs).toEqual([])
   })
 
-  it('accepts a theme string as the optional createCampaign parameter', async () => {
+  it('treats a theme string as a no-op optional createCampaign parameter', async () => {
     const db = new CampaignDbMock()
     const generated = await createCampaign(db as any, 'Stormwatch Saga', '', 'Stormwatch')
 
-    expect(generated.premise).toContain('Stormwatch')
-    expect(generated.worldState.factions.length).toBeGreaterThanOrEqual(3)
-    expect(generated.storyArcs.length).toBeGreaterThanOrEqual(2)
+    expect(generated.premise).toBe('')
+    expect(generated.worldState).toEqual({
+      factions: [],
+      locations: [],
+      events: [],
+    })
+    expect(generated.storyArcs).toEqual([])
+  })
+
+  it('persists rich campaign world details when createCampaign receives prebuilt worldState/storyArcs', async () => {
+    const db = new CampaignDbMock()
+    const worldState = {
+      factions: [
+        {
+          id: 'f_lantern',
+          name: 'Iron Lantern Compact',
+          disposition: 25,
+          description: 'Road wardens holding trade routes.',
+          keyNpc: { name: 'Captain Mirel Voss', role: 'Marshal', description: 'Veteran tactician.' },
+        },
+      ],
+      locations: [{ id: 'loc_cinderwatch', name: 'Cinderwatch', description: 'Hub city above siege tunnels.' }],
+      events: ['Campaign setup: A fractured crown ignites a succession war.'],
+      centralVillain: {
+        name: 'Duke Malrec Thorne',
+        description: 'A dispossessed warlord with a private army.',
+        objective: 'Claim the ember crown and unify the marches by force.',
+        lieutenants: [
+          { name: 'Sergeant Bronn', role: 'Enforcer', description: 'Leads levy raids.' },
+          { name: 'Magister Vale', role: 'Arcanist', description: 'Maintains blood wards.' },
+        ],
+      },
+      alliedNpcs: [
+        { name: 'Iri Dawnforge', role: 'Quartermaster', description: 'Supplies frontier expeditions.' },
+        { name: 'Brother Tamsin', role: 'Healer', description: 'Treats cursed wounds.' },
+      ],
+      hubTown: {
+        name: 'Cinderwatch',
+        description: 'A soot-stained bastion where caravans regroup.',
+        locations: [
+          {
+            name: 'The Brazen Cup',
+            description: 'A packed inn with rotating mercenary contracts.',
+            shopkeeper: 'Nella Quay',
+            questGiver: 'Captain Mirel Voss',
+          },
+          {
+            name: 'Warden Outfitters',
+            description: 'Arms and expedition supplies.',
+            shopkeeper: 'Dorrik Steel',
+            questGiver: 'Iri Dawnforge',
+          },
+        ],
+      },
+      regionalMap: [
+        { name: 'Cinderwatch', description: 'Hub city and market crossroads.' },
+        { name: 'Ash Crypt', description: 'Collapsed royal tomb.' },
+        { name: 'Silk Row', description: 'Canal district controlled by spies.' },
+      ],
+    }
+    const storyArcs = [
+      {
+        id: 'arc_ember',
+        name: 'Ember Succession',
+        status: 'active' as const,
+        plotPoints: [
+          { id: 'pp_1', description: 'Recover the shattered signet from Ash Crypt.', resolved: false },
+          { id: 'pp_2', description: 'Win over two neutral barons.', resolved: false },
+        ],
+      },
+      {
+        id: 'arc_spyglass',
+        name: 'Spyglass War',
+        status: 'seeded' as const,
+        plotPoints: [{ id: 'pp_3', description: 'Unmask the Cabal handler in Cinderwatch.', resolved: false }],
+      },
+      {
+        id: 'arc_pilgrimage',
+        name: 'Relic Fire Pilgrimage',
+        status: 'seeded' as const,
+        plotPoints: [{ id: 'pp_4', description: 'Escort pilgrims through the high pass.', resolved: false }],
+      },
+    ]
+
+    const created = await createCampaign(db as any, 'Ashen Crown Requiem', 'A fractured crown ignites war.', {
+      worldState,
+      storyArcs,
+    } as any)
+
+    expect(created.worldState.centralVillain?.name).toBe('Duke Malrec Thorne')
+    expect(created.worldState.hubTown?.locations[0]?.shopkeeper).toBe('Nella Quay')
+    expect(created.worldState.factions[0]?.keyNpc?.name).toBe('Captain Mirel Voss')
+    expect(created.storyArcs).toEqual(storyArcs)
+
+    const loaded = await getCampaign(db as any, created.id)
+    expect(loaded?.worldState.centralVillain?.lieutenants).toHaveLength(2)
+    expect(loaded?.worldState.hubTown?.locations[1]?.questGiver).toBe('Iri Dawnforge')
+    expect(loaded?.worldState.regionalMap?.map((location: any) => location.name)).toEqual([
+      'Cinderwatch',
+      'Ash Crypt',
+      'Silk Row',
+    ])
+    expect(loaded?.storyArcs).toEqual(storyArcs)
   })
 })
 

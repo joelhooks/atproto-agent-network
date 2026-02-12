@@ -523,7 +523,7 @@ export type Room = (
 ) &
   RoomMeta
 
-export type RpgMode = 'exploring' | 'combat' | 'finished'
+export type RpgMode = 'setup' | 'exploring' | 'combat' | 'finished'
 
 export type HubTownLocation = 'tavern' | 'market' | 'temple' | 'guild_hall'
 
@@ -560,6 +560,38 @@ export type Faction = {
   name: string
   disposition: number
   description: string
+  keyNpc?: CampaignNpc
+}
+
+export type CampaignNpc = {
+  name: string
+  role: string
+  description: string
+}
+
+export type CampaignVillain = {
+  name: string
+  description: string
+  objective: string
+  lieutenants: CampaignNpc[]
+}
+
+export type CampaignHubTownLocation = {
+  name: string
+  description: string
+  shopkeeper?: string
+  questGiver?: string
+}
+
+export type CampaignHubTown = {
+  name: string
+  description: string
+  locations: CampaignHubTownLocation[]
+}
+
+export type CampaignRegionalLocation = {
+  name: string
+  description: string
 }
 
 export type DispositionTier = 'hostile' | 'unfriendly' | 'neutral' | 'friendly' | 'allied'
@@ -582,6 +614,10 @@ export type WorldState = {
   factions: Faction[]
   locations: Array<{ id: string; name: string; description: string }>
   events: string[]
+  alliedNpcs?: CampaignNpc[]
+  centralVillain?: CampaignVillain
+  hubTown?: CampaignHubTown
+  regionalMap?: CampaignRegionalLocation[]
 }
 
 export type CampaignState = {
@@ -618,73 +654,6 @@ export type PreviouslyOnInput = {
   adventureCount?: number
 }
 
-type CampaignFactionRole = 'ally' | 'rival' | 'villain' | 'wildcard'
-
-type CampaignFactionTemplate = {
-  name: string
-  role: CampaignFactionRole
-  description: string
-}
-
-function stableHash(value: string): number {
-  let hash = 2166136261
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
-
-function seededNumber(seed: number, salt: number): number {
-  let x = (seed ^ Math.imul(salt + 1, 0x45d9f3b)) >>> 0
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
-  return (x ^ (x >>> 16)) >>> 0
-}
-
-function seededPick<T>(items: T[], seed: number, salt: number): T {
-  const idx = seededNumber(seed, salt) % items.length
-  return items[idx]!
-}
-
-function normalizeCampaignTheme(theme: unknown): string {
-  const text = typeof theme === 'string' ? theme.trim().replace(/\s+/g, ' ') : ''
-  if (!text) return 'Shattered Marches'
-  return text.slice(0, 60)
-}
-
-function normalizeCampaignParty(party: CampaignPartyMemberSeed[] | undefined): Array<{ klass: RpgClass; level: number }> {
-  if (!Array.isArray(party)) return []
-  return party
-    .map((member) => {
-      const klass = member?.klass
-      if (!isRpgClass(klass)) return null
-      const level = Number.isFinite(member?.level) ? Math.max(1, Math.floor(member!.level as number)) : 1
-      return { klass, level }
-    })
-    .filter((member): member is NonNullable<typeof member> => Boolean(member))
-}
-
-function threatTierForParty(party: Array<{ klass: RpgClass; level: number }>): CampaignThreatTier {
-  if (party.length === 0) return 'local'
-  const levels = party.map((member) => member.level)
-  const maxLevel = Math.max(...levels)
-  const avgLevel = Math.max(1, Math.floor(levels.reduce((sum, level) => sum + level, 0) / levels.length))
-  if (maxLevel >= 11 || avgLevel >= 9) return 'epic'
-  if (maxLevel >= 8 || avgLevel >= 6) return 'world'
-  if (maxLevel >= 5 || avgLevel >= 3) return 'regional'
-  return 'local'
-}
-
-function slugifyToken(value: string): string {
-  const slug = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'unknown'
-}
-
 function firstSentenceOrTrim(value: string, maxLen = 220): string {
   const clean = String(value || '').replace(/\s+/g, ' ').trim()
   if (!clean) return ''
@@ -693,202 +662,6 @@ function firstSentenceOrTrim(value: string, maxLen = 220): string {
   return clean.slice(0, Math.min(clean.length, idx + 1)).trim()
 }
 
-function replaceTemplateTokens(
-  template: string,
-  tokens: Record<'theme' | 'location' | 'ally' | 'rival' | 'villain' | 'wildcard' | 'motif', string>
-): string {
-  return template.replace(/\{(theme|location|ally|rival|villain|wildcard|motif)\}/g, (_match, key: string) => {
-    const tokenKey = key as keyof typeof tokens
-    return tokens[tokenKey] ?? ''
-  })
-}
-
-const CAMPAIGN_FACTION_TEMPLATES: CampaignFactionTemplate[] = [
-  { role: 'ally', name: 'Iron Vanguard', description: 'Veteran soldiers sworn to keep the realm stable.' },
-  { role: 'ally', name: 'Dawn Hospice', description: 'Battle healers preserving lives and sacred relics.' },
-  { role: 'ally', name: 'Lantern Guild', description: 'Wardens and scouts guarding roads after dusk.' },
-  { role: 'rival', name: 'Veil Syndicate', description: 'Smugglers who trade favors for leverage.' },
-  { role: 'rival', name: 'Star Ledger Consortium', description: 'Merchant princes who bet on every warfront.' },
-  { role: 'rival', name: 'Thorn Rangers', description: 'Border hunters who answer to no crown.' },
-  { role: 'villain', name: 'Obsidian Throne', description: 'A conquering court that binds cities through fear.' },
-  { role: 'villain', name: 'Cinder Covenant', description: 'Fanatics promising rebirth through ruin.' },
-  { role: 'villain', name: 'Null Choir', description: 'An order trying to unmake memory and law.' },
-  { role: 'wildcard', name: 'Free Banner Companies', description: 'Mercenaries who can be bought by anyone.' },
-  { role: 'wildcard', name: 'Tideglass Compact', description: 'River traders with private armies and old maps.' },
-  { role: 'wildcard', name: 'Rootbound Circle', description: 'Mystics preserving ancient pacts below the earth.' },
-]
-
-const CAMPAIGN_LOCATION_TEMPLATES: Array<{ name: string; description: string }> = [
-  { name: '{theme} Gate', description: 'A fortress town where every road converges under uneasy truces.' },
-  { name: '{theme} Reach', description: 'A frontier valley littered with old battle standards and fresh graves.' },
-  { name: '{theme} Harbor', description: 'Storm-worn docks feeding caravans into contested hinterlands.' },
-  { name: '{theme} Spire', description: 'A high citadel used by diplomats, spies, and oathbreakers alike.' },
-  { name: '{theme} Bastion', description: 'A layered keep built to survive sieges and betrayals.' },
-  { name: '{theme} Expanse', description: 'Ruined farmlands where patrols vanish and rumors spread fast.' },
-]
-
-const CAMPAIGN_CONFLICT_TEMPLATES: Record<CampaignThreatTier, string[]> = {
-  local: [
-    '{villain} is seizing supply routes through {location}, forcing {ally} to choose between law and survival.',
-    '{rival} and {villain} are carving up villages around {location}, while {ally} struggles to hold the line.',
-  ],
-  regional: [
-    'A border war is igniting around {location} as {villain} and {rival} race to control the old mustering roads.',
-    '{villain} has rallied breakaway houses near {location}, and {ally} needs champions to stop a civil collapse.',
-  ],
-  world: [
-    '{villain} is opening rifts around {location}; if unchecked, the breach will swallow entire kingdoms.',
-    '{rival} and {villain} are weaponizing relic engines beneath {location}, threatening every realm nearby.',
-  ],
-  epic: [
-    'An apocalyptic host under {villain} is awakening beneath {location}, and only decisive action can prevent worldfall.',
-    'Reality fractures around {location} as {villain} hunts the final seal; failure would unmake empires overnight.',
-  ],
-}
-
-const CAMPAIGN_ARC_TEMPLATES: Array<{ name: string; plotPoint: string }> = [
-  { name: 'Broken Treaties', plotPoint: 'Convince {ally} and {rival} to sign a war ceasefire at {location}.' },
-  { name: 'Relic Chase', plotPoint: 'Recover the oath-lantern before {villain} can empower it.' },
-  { name: 'Shadows in Council', plotPoint: 'Expose which patron inside {ally} secretly serves {villain}.' },
-  { name: 'Road of Ash', plotPoint: 'Secure three strongholds outside {location} before siege lines close.' },
-  { name: 'Echoes of the Seal', plotPoint: 'Decode the ancient ward tied to {theme} and stabilize the breach.' },
-  { name: 'Crown of Knives', plotPoint: 'Choose whether to back {ally}, {rival}, or neither in the succession crisis.' },
-]
-
-function partyMotif(party: Array<{ klass: RpgClass; level: number }>): string {
-  const classes = new Set<RpgClass>(party.map((member) => member.klass))
-  if (classes.has('Mage')) return 'arcane warding'
-  if (classes.has('Warrior')) return 'frontline command'
-  if (classes.has('Scout')) return 'deep reconnaissance'
-  if (classes.has('Healer')) return 'battlefield triage'
-  return 'hard-won fieldcraft'
-}
-
-function factionDispositionByRole(role: CampaignFactionRole, seed: number, salt: number): number {
-  const offset = seededNumber(seed, salt) % 21
-  if (role === 'ally') return 20 + offset
-  if (role === 'villain') return -70 + offset
-  if (role === 'rival') return -15 + offset
-  return -5 + offset
-}
-
-function buildFactionSet(
-  seed: number,
-  tier: CampaignThreatTier,
-  tokens: Record<'theme' | 'location' | 'ally' | 'rival' | 'villain' | 'wildcard' | 'motif', string>,
-  count: number
-): Faction[] {
-  const roles: CampaignFactionRole[] = count >= 4 ? ['ally', 'rival', 'villain', 'wildcard'] : ['ally', 'rival', 'villain']
-  return roles.map((role, index) => {
-    const pool = CAMPAIGN_FACTION_TEMPLATES.filter((template) => template.role === role)
-    const template = seededPick(pool, seed, 30 + index)
-    const description = replaceTemplateTokens(template.description, tokens)
-    const tierSuffix =
-      tier === 'epic' ? ' Their plans now carry world-ending stakes.' :
-      tier === 'world' ? ' Their ambitions can topple nations.' :
-      tier === 'regional' ? ' Their influence reaches across the region.' :
-      ' Their reach is local but growing fast.'
-    return {
-      id: `faction_${slugifyToken(template.name)}`,
-      name: template.name,
-      disposition: normalizeDispositionValue(factionDispositionByRole(role, seed, 60 + index)),
-      description: `${description} ${tierSuffix}`.trim(),
-    }
-  })
-}
-
-export function buildCampaignPremiseFromParty(input: {
-  theme?: string
-  party?: CampaignPartyMemberSeed[]
-}): CampaignPremiseTemplate {
-  const party = normalizeCampaignParty(input.party)
-  const composition = [...party].sort((a, b) => {
-    if (a.klass !== b.klass) return a.klass.localeCompare(b.klass)
-    return a.level - b.level
-  })
-  const theme = normalizeCampaignTheme(input.theme)
-  const threatTier = threatTierForParty(composition)
-  const seed = stableHash(
-    JSON.stringify({
-      theme: theme.toLowerCase(),
-      party: composition.map((member) => `${member.klass}:${member.level}`),
-    })
-  )
-
-  const motif = partyMotif(composition)
-  const fallbackTokens = {
-    theme,
-    location: `${theme} Gate`,
-    ally: 'Iron Vanguard',
-    rival: 'Veil Syndicate',
-    villain: 'Obsidian Throne',
-    wildcard: 'Free Banner Companies',
-    motif,
-  } as const
-  const locationTemplate = seededPick(CAMPAIGN_LOCATION_TEMPLATES, seed, 1)
-  const startingLocation = {
-    id: `location_${slugifyToken(theme)}_${seededNumber(seed, 2) % 1000}`,
-    name: replaceTemplateTokens(locationTemplate.name, fallbackTokens),
-    description: replaceTemplateTokens(locationTemplate.description, fallbackTokens),
-  }
-
-  const factionCount = composition.length >= 3 ? 4 : 3
-  const factions = buildFactionSet(seed, threatTier, { ...fallbackTokens, location: startingLocation.name }, factionCount)
-  const ally = factions.find((faction) => faction.disposition >= 20)?.name ?? factions[0]?.name ?? fallbackTokens.ally
-  const rival = factions.find((faction) => faction.disposition >= -10 && faction.disposition < 20)?.name ?? factions[1]?.name ?? fallbackTokens.rival
-  const villain = factions.find((faction) => faction.disposition <= -30)?.name ?? factions[2]?.name ?? fallbackTokens.villain
-  const wildcard = factions.find((faction) => faction.name !== ally && faction.name !== rival && faction.name !== villain)?.name ?? factions[3]?.name ?? fallbackTokens.wildcard
-  const tokens = { theme, location: startingLocation.name, ally, rival, villain, wildcard, motif }
-
-  const centralConflict = replaceTemplateTokens(
-    seededPick(CAMPAIGN_CONFLICT_TEMPLATES[threatTier], seed, 3),
-    tokens
-  )
-
-  const arcCount = threatTier === 'world' || threatTier === 'epic' ? 3 : 2
-  const storyArcs: StoryArc[] = []
-  let salt = 100
-  while (storyArcs.length < arcCount && salt < 200) {
-    const template = seededPick(CAMPAIGN_ARC_TEMPLATES, seed, salt)
-    if (storyArcs.some((arc) => arc.name === template.name)) {
-      salt += 1
-      continue
-    }
-    const arcName = replaceTemplateTokens(template.name, tokens)
-    const plotPoint = replaceTemplateTokens(template.plotPoint, tokens)
-    storyArcs.push({
-      id: `arc_${slugifyToken(arcName)}_${storyArcs.length + 1}`,
-      name: arcName,
-      status: 'seeded',
-      plotPoints: [
-        {
-          id: `plot_${storyArcs.length + 1}`,
-          description: plotPoint,
-          resolved: false,
-        },
-      ],
-    })
-    salt += 1
-  }
-
-  const factionNames = factions.map((faction) => faction.name).join(', ')
-  const premise = [
-    `${theme} begins at ${startingLocation.name}.`,
-    `Central conflict: ${centralConflict}`,
-    `Factions in play: ${factionNames}.`,
-    `Seeded arcs: ${storyArcs.map((arc) => arc.name).join('; ')}.`,
-  ].join(' ')
-
-  return {
-    theme,
-    threatTier,
-    premise: premise.replace(/\s+/g, ' ').trim(),
-    centralConflict,
-    startingLocation,
-    factions,
-    storyArcs,
-  }
-}
 
 export function previously_on(input: PreviouslyOnInput): string {
   const campaignName = String(input.campaignName || '').trim() || 'Untitled Campaign'
@@ -1101,11 +874,6 @@ export function advanceHubTownIdleTurns(input?: Partial<HubTownState>): { state:
     idleTurns: current.idleTurns + 1,
   })
   return { state: next, shouldEmbark: next.idleTurns >= next.autoEmbarkAfter }
-}
-
-export type GeneratedDungeon = {
-  theme: DungeonTheme
-  rooms: Room[]
 }
 
 function clampNarrativeText(value: unknown): string {
@@ -1711,10 +1479,6 @@ function uniquePartyClasses(party: Character[]): RpgClass[] {
   return [...seen]
 }
 
-function defaultDungeon(party: Character[]): Room[] {
-  return generateDungeon(12, createDice(), { partyClasses: uniquePartyClasses(party) }).rooms
-}
-
 function safeInt(value: unknown, fallback: number): number {
   if (!Number.isFinite(value)) return fallback
   return Math.floor(value as number)
@@ -1725,63 +1489,10 @@ function rollDie(dice: Dice, sides: number): number {
   return Math.max(1, Math.min(sides, roll))
 }
 
-function shuffle<T>(items: T[], dice: Dice): T[] {
-  const arr = [...items]
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = rollDie(dice, i + 1) - 1
-    const tmp = arr[i]
-    arr[i] = arr[j]
-    arr[j] = tmp
-  }
-  return arr
-}
 
-const DUNGEON_THEMES: DungeonTheme[] = [
-  {
-    name: 'Ashen Reliquary',
-    backstory: 'A monastery burned to cinders, its relics still humming with old vows.',
-  },
-  {
-    name: 'Gilded Catacombs',
-    backstory: 'A dynastys tomb where greed outlived the kings that fed it.',
-  },
-  {
-    name: 'Glass Labyrinth',
-    backstory: 'A maze of mirrored corridors that remembers every footstep.',
-  },
-  {
-    name: 'Ironroot Hollow',
-    backstory: 'A cavern where metal veins grow like roots, and the earth tastes of rust.',
-  },
-  {
-    name: 'Moonlit Sepulcher',
-    backstory: 'A crypt washed in pale light, as if the moon itself were buried here.',
-  },
-  {
-    name: 'Saltworn Archives',
-    backstory: 'A library drowned long ago, its pages preserved in brine and myth.',
-  },
-  {
-    name: 'Thorn Choir',
-    backstory: 'A ruin that sings through briars; every wound is a note in its hymn.',
-  },
-  {
-    name: 'Verdigris Vault',
-    backstory: 'Bronze doors and copper bones, corroded into something almost alive.',
-  },
-  {
-    name: 'Wicker Sanctum',
-    backstory: 'A shrine woven from reeds and secrets, crackling with dry prayers.',
-  },
-  {
-    name: 'Winterhall Depths',
-    backstory: 'A buried keep sealed by ice, keeping its last breath for the unwary.',
-  },
-]
-
-function pickDungeonTheme(dice: Dice): DungeonTheme {
-  const idx = rollDie(dice, DUNGEON_THEMES.length) - 1
-  return DUNGEON_THEMES[Math.max(0, Math.min(DUNGEON_THEMES.length - 1, idx))]!
+const DEFAULT_DUNGEON_THEME: DungeonTheme = {
+  name: 'Forgotten Depths',
+  backstory: 'A long-abandoned undercroft waiting for a new expedition.',
 }
 
 function campaignArcFocus(campaignState: CampaignState): string[] {
@@ -1817,237 +1528,6 @@ function withThemeDescription(theme: DungeonTheme, description: string): string 
   if (!base) return theme.name
   if (base.includes(theme.name)) return base
   return `${theme.name}: ${base}`
-}
-
-// ── BESTIARY ─────────────────────────────────────────────────────────────────
-// Stats sourced from OSE Classic Fantasy Rules Tome + Advanced Expansion Set.
-// Tactical behaviors from "The Monsters Know What They're Doing" (Keith Ammann).
-// Morale scores use the OSE 2-12 scale (2d6 vs morale; higher = braver).
-//
-// Our combat uses BRP-style d100 skill checks, so we map OSE HD/THAC0 to:
-//   attack = 25 + (HD * 5), dodge = 15 + (HD * 3), DEX = 30 + (HD * 4)
-//   HP = OSE average hp ± dice variance for variety.
-
-type BestiaryEntry = {
-  name: string
-  /** Base HP (dice roll added on top) */
-  hp: number
-  /** Extra random HP via rollDie(dice, hpDie) */
-  hpDie: number
-  DEX: number
-  attack: number
-  dodge: number
-  morale: number
-  negotiable: boolean
-  tactics: EnemyTactics
-  flavorText: string
-}
-
-// ── EARLY TIER (HD 1-2): dungeon fodder ──────────────────────────────────────
-// From OSE: Goblin HD 1-1 (ML 7), Kobold HD ½ (ML 6), Skeleton HD 1 (ML 12),
-// Fire Beetle HD 1+2 (ML 7), Giant Rat HD ½ (ML 8), Stirge HD 1* (ML 9),
-// Giant Centipede HD ½ (ML 7), Zombie HD 2 (ML 12), Bat Swarm HD 2 (ML 6)
-
-const EARLY_ENEMIES: BestiaryEntry[] = [
-  // OSE: Goblin AC 6[13], HD 1-1 (3hp), Att 1×weapon (1d6), ML 7
-  // Monsters Know: goblins are sneaky ambushers, use hit-and-run, never fight fair
-  { name: 'Goblin', hp: 4, hpDie: 3, DEX: 35, attack: 30, dodge: 22, morale: 7, negotiable: true,
-    tactics: { kind: 'goblin' }, flavorText: 'A wiry goblin crouches in shadow, blade drawn, eyes glinting.' },
-  // OSE: Kobold AC 7[12], HD ½ (2hp), Att 1×weapon (1d4), ML 6
-  // Monsters Know: kobolds use traps and pack tactics, flee when cornered alone
-  { name: 'Kobold', hp: 3, hpDie: 2, DEX: 32, attack: 25, dodge: 18, morale: 6, negotiable: true,
-    tactics: { kind: 'pack' }, flavorText: 'A small, scaly kobold clutches a crude spear, yipping to its fellows.' },
-  // OSE: Skeleton AC 7[12], HD 1 (4hp), Att 1×weapon (1d6), ML 12 (undead, fights to destruction)
-  { name: 'Skeleton', hp: 4, hpDie: 3, DEX: 30, attack: 30, dodge: 18, morale: 12, negotiable: false,
-    tactics: { kind: 'skeleton' }, flavorText: 'Bones clatter as a skeletal warrior rises, weapon in hand.' },
-  // OSE: Fire Beetle AC 4[15], HD 1+2 (6hp), Att 1×bite (2d4), ML 7
-  { name: 'Fire Beetle', hp: 5, hpDie: 4, DEX: 34, attack: 32, dodge: 20, morale: 7, negotiable: false,
-    tactics: { kind: 'swarm' }, flavorText: 'A dog-sized beetle with glowing nodules scuttles forward, mandibles snapping.' },
-  // OSE: Giant Rat AC 7[12], HD ½ (2hp), Att 1×bite (1d3 + disease), ML 8
-  { name: 'Giant Rat', hp: 3, hpDie: 2, DEX: 38, attack: 25, dodge: 20, morale: 8, negotiable: false,
-    tactics: { kind: 'swarm' }, flavorText: 'A mangy rat the size of a terrier bares yellowed fangs.' },
-  // OSE: Stirge AC 7[12], HD 1* (4hp), Att 1×proboscis (1d3 + blood drain), ML 9
-  { name: 'Stirge', hp: 4, hpDie: 2, DEX: 40, attack: 33, dodge: 25, morale: 9, negotiable: false,
-    tactics: { kind: 'ambush' }, flavorText: 'A bat-winged mosquito-thing drops from the ceiling, proboscis extended.' },
-  // OSE: Giant Centipede AC 9[10], HD ½ (2hp), Att 1×bite (poison), ML 7
-  { name: 'Giant Centipede', hp: 3, hpDie: 2, DEX: 36, attack: 28, dodge: 18, morale: 7, negotiable: false,
-    tactics: { kind: 'ambush' }, flavorText: 'A segmented horror as long as your arm writhes out of a crack in the wall.' },
-  // OSE: Zombie AC 8[11], HD 2 (9hp), Att 1×weapon (1d8), ML 12 (undead)
-  { name: 'Zombie', hp: 8, hpDie: 4, DEX: 25, attack: 30, dodge: 15, morale: 12, negotiable: false,
-    tactics: { kind: 'berserker' }, flavorText: 'A shambling corpse lurches forward, dead eyes fixed on the living.' },
-  // OSE: Bat Swarm - Normal Bat AC 6[13], HD 2 (as swarm), Att confusion, ML 6
-  { name: 'Bat Swarm', hp: 6, hpDie: 4, DEX: 42, attack: 28, dodge: 30, morale: 6, negotiable: false,
-    tactics: { kind: 'swarm' }, flavorText: 'A cloud of shrieking bats erupts from the darkness, filling the passage.' },
-  // OSE: Carcass Crawler (Carrion Crawler) AC 7[12], HD 3+1 (14hp), Att 8×tentacle (paralysis), ML 9
-  // Slightly tough for early but keeps things spicy
-  { name: 'Carcass Crawler', hp: 10, hpDie: 6, DEX: 35, attack: 35, dodge: 22, morale: 9, negotiable: false,
-    tactics: { kind: 'ambush' }, flavorText: 'A pale, segmented worm with writhing tentacles drops from above.' },
-]
-
-// ── MID TIER (HD 3-5): dungeon threats ───────────────────────────────────────
-// From OSE: Orc HD 1 but tougher group (ML 8), Bugbear HD 3+1 (ML 9),
-// Hobgoblin HD 1+1 (ML 8), Ghoul HD 2* (ML 9), Gnoll HD 2 (ML 8),
-// Ogre HD 4+1 (ML 10), Wight HD 3* (ML 12), Gargoyle HD 4** (ML 11),
-// Gelatinous Cube HD 4* (ML 12), Ghast HD 4* (ML 9)
-
-const MID_ENEMIES: BestiaryEntry[] = [
-  // OSE: Orc AC 6[13], HD 1 (4hp), Att 1×weapon (1d6), ML 8 (but we scale up for mid-tier)
-  // Monsters Know: orcs are aggressive, fight in groups, press advantage on weakest
-  { name: 'Orc Warrior', hp: 10, hpDie: 6, DEX: 40, attack: 42, dodge: 25, morale: 8, negotiable: true,
-    tactics: { kind: 'orc' }, flavorText: 'A brutish orc with a notched blade snarls a challenge.' },
-  // OSE: Bugbear HD 3+1 (14hp), Att 1×weapon (2d4), ML 9
-  // Monsters Know: bugbears are stealthy brutes, surprise attack then press
-  { name: 'Bugbear', hp: 12, hpDie: 6, DEX: 38, attack: 45, dodge: 25, morale: 9, negotiable: false,
-    tactics: { kind: 'ambush' }, flavorText: 'A hulking, hairy goblinoid emerges from hiding, mace raised high.' },
-  // OSE: Hobgoblin AC 6[13], HD 1+1 (5hp), Att 1×weapon (1d8), ML 8
-  // Monsters Know: disciplined soldiers, fight in formation, use tactics
-  { name: 'Hobgoblin', hp: 8, hpDie: 4, DEX: 38, attack: 40, dodge: 24, morale: 8, negotiable: true,
-    tactics: { kind: 'guardian' }, flavorText: 'A heavily-armored hobgoblin stands in disciplined formation.' },
-  // OSE: Ghoul AC 6[13], HD 2* (9hp), Att 2×claw (1d3 + paralysis), 1×bite (1d3 + paralysis), ML 9
-  { name: 'Ghoul', hp: 9, hpDie: 4, DEX: 42, attack: 40, dodge: 24, morale: 9, negotiable: false,
-    tactics: { kind: 'pack' }, flavorText: 'A hunched, grey-skinned corpse-eater licks its claws, reeking of the grave.' },
-  // OSE: Gnoll HD 2 (9hp), Att 1×weapon (2d4 or by weapon +1), ML 8
-  { name: 'Gnoll', hp: 9, hpDie: 5, DEX: 38, attack: 42, dodge: 22, morale: 8, negotiable: true,
-    tactics: { kind: 'pack' }, flavorText: 'A hyena-headed gnoll lopes forward, flind bar crackling with menace.' },
-  // OSE: Ogre HD 4+1 (18hp), Att 1×club (1d10), ML 10
-  // Monsters Know: ogres are stupid but strong, charge the biggest target
-  { name: 'Ogre', hp: 16, hpDie: 8, DEX: 35, attack: 48, dodge: 22, morale: 10, negotiable: true,
-    tactics: { kind: 'berserker' }, flavorText: 'A massive ogre fills the corridor, dragging a tree-trunk club.' },
-  // OSE: Wight AC 5[14], HD 3* (13hp), Att 1×touch (energy drain), ML 12 (undead)
-  { name: 'Wight', hp: 12, hpDie: 6, DEX: 40, attack: 45, dodge: 28, morale: 12, negotiable: false,
-    tactics: { kind: 'guardian' }, flavorText: 'A fell presence in corroded armor, its touch drains life itself.' },
-  // OSE: Gargoyle AC 5[14], HD 4** (18hp), Att 2×claw (1d3), 1×bite (1d6), 1×horn (1d4), ML 11
-  { name: 'Gargoyle', hp: 15, hpDie: 6, DEX: 42, attack: 46, dodge: 30, morale: 11, negotiable: false,
-    tactics: { kind: 'ambush' }, flavorText: 'Stone wings unfold as a gargoyle drops from its perch, talons extended.' },
-  // OSE: Gelatinous Cube AC 8[11], HD 4* (18hp), Att 1×touch (2d4 + paralysis), ML 12
-  { name: 'Gelatinous Cube', hp: 16, hpDie: 6, DEX: 15, attack: 35, dodge: 8, morale: 12, negotiable: false,
-    tactics: { kind: 'guardian' }, flavorText: 'A translucent cube of quivering jelly fills the passage, bones floating within.' },
-  // Advanced OSE: Ghast AC 3[16], HD 4* (18hp), Att 2×claw (1d4+paralysis), 1×bite (1d8+paralysis), ML 9
-  { name: 'Ghast', hp: 14, hpDie: 6, DEX: 44, attack: 48, dodge: 28, morale: 9, negotiable: false,
-    tactics: { kind: 'pack' }, flavorText: 'A foul stench precedes this grotesque undead, stronger and fouler than any ghoul.' },
-]
-
-// ── BOSS TIER (HD 6+): dungeon lords ─────────────────────────────────────────
-// From OSE: Troll HD 6+3 (ML 10), Wraith HD 4** (ML 12), Minotaur HD 6 (ML 12),
-// Manticore HD 6+1 (ML 9), Owlbear HD 5 (ML 9), Basilisk HD 6** (ML 9),
-// Hydra HD 5-12 (ML 9+), Black Pudding HD 10* (ML 12)
-
-type BossEntry = BestiaryEntry & { minionPool: BestiaryEntry[] }
-
-const BOSS_ENEMIES: BossEntry[] = [
-  // OSE: Troll HD 6+3 (30hp), Att 2×claw (1d6), 1×bite (1d10), ML 10
-  // Monsters Know: trolls regenerate, fight recklessly, focus one target
-  { name: 'Cave Troll', hp: 30, hpDie: 12, DEX: 48, attack: 55, dodge: 35, morale: 10, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'A lanky, green-skinned troll unfolds to its full height, wounds already closing.',
-    minionPool: [MID_ENEMIES[0]!, MID_ENEMIES[4]!] }, // Orc Warriors + Gnolls
-  // OSE: Wraith AC 3[16], HD 4** (18hp), Att 1×touch (1d6 + energy drain), ML 12
-  { name: 'Tomb Wraith', hp: 28, hpDie: 10, DEX: 55, attack: 58, dodge: 40, morale: 12, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'A shrieking specter in tattered robes, its mere presence saps warmth from the air.',
-    minionPool: [EARLY_ENEMIES[2]!, EARLY_ENEMIES[7]!] }, // Skeletons + Zombies
-  // OSE: Minotaur HD 6 (27hp), Att 1×gore (1d6), 1×bite (1d6) or weapon (1d6+2), ML 12
-  // Monsters Know: minotaurs are territorial, charge, use labyrinth knowledge
-  { name: 'Minotaur', hp: 28, hpDie: 10, DEX: 50, attack: 56, dodge: 32, morale: 12, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'A bull-headed horror snorts in rage, lowering its horns for a devastating charge.',
-    minionPool: [EARLY_ENEMIES[0]!, EARLY_ENEMIES[1]!] }, // Goblins + Kobolds (enslaved servants)
-  // OSE: Manticore HD 6+1 (28hp), Att 2×claw (1d4), 1×bite (2d4) or 6×tail spikes (1d6 each), ML 9
-  { name: 'Manticore', hp: 26, hpDie: 12, DEX: 52, attack: 54, dodge: 35, morale: 9, negotiable: true,
-    tactics: { kind: 'boss', specialEveryTurns: 3 },
-    flavorText: 'A lion-bodied beast with a human face grins wickedly, tail bristling with spikes.',
-    minionPool: [EARLY_ENEMIES[4]!, EARLY_ENEMIES[5]!] }, // Giant Rats + Stirges
-  // OSE: Owlbear HD 5 (22hp), Att 2×claw (1d8), 1×bite (1d8), ML 9
-  { name: 'Owlbear', hp: 24, hpDie: 10, DEX: 45, attack: 52, dodge: 30, morale: 9, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'A feathered ursine monstrosity shrieks with an owl\'s cry and charges.',
-    minionPool: [EARLY_ENEMIES[3]!, EARLY_ENEMIES[6]!] }, // Fire Beetles + Giant Centipedes
-  // OSE: Basilisk AC 4[15], HD 6+1** (28hp), Att 1×bite (1d10 + petrification gaze), ML 9
-  { name: 'Basilisk', hp: 26, hpDie: 10, DEX: 35, attack: 50, dodge: 28, morale: 9, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'An eight-legged serpent with deadly eyes. Do NOT meet its gaze.',
-    minionPool: [EARLY_ENEMIES[6]!, EARLY_ENEMIES[8]!] }, // Giant Centipedes + Bat Swarms
-  // Advanced OSE: Demonic Knight HD 10*** (45hp), Att 1×magic sword (1d8+6), ML 12
-  { name: 'Demonic Knight', hp: 40, hpDie: 15, DEX: 55, attack: 60, dodge: 40, morale: 12, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 2 },
-    flavorText: 'A fell warrior in black plate, undead flame burning behind its visor.',
-    minionPool: [MID_ENEMIES[6]!, EARLY_ENEMIES[2]!] }, // Wights + Skeletons
-  // OSE: Hydra HD 5-12, Att 5-12×bite (1d10 each), ML 11
-  { name: 'Hydra', hp: 35, hpDie: 15, DEX: 40, attack: 55, dodge: 30, morale: 11, negotiable: false,
-    tactics: { kind: 'boss', specialEveryTurns: 1 },
-    flavorText: 'Multiple serpentine heads weave and strike from a massive reptilian body.',
-    minionPool: [EARLY_ENEMIES[4]!, EARLY_ENEMIES[3]!] }, // Giant Rats + Fire Beetles
-]
-
-function pickFromPool<T>(pool: T[], dice: Dice): T {
-  return pool[rollDie(dice, pool.length) - 1]!
-}
-
-function spawnEnemy(entry: BestiaryEntry, dice: Dice, index: number): Enemy {
-  const hp = entry.hp + rollDie(dice, entry.hpDie)
-  return {
-    name: index === 0 ? entry.name : `${entry.name} ${index + 1}`,
-    hp, maxHp: hp,
-    DEX: entry.DEX, attack: entry.attack, dodge: entry.dodge,
-    morale: entry.morale, negotiable: entry.negotiable,
-    flavorText: entry.flavorText,
-    tactics: { ...entry.tactics },
-  }
-}
-
-function buildCombatRoom(input: { tier: 'early' | 'mid'; dice: Dice; theme: DungeonTheme }): Room {
-  const { tier, dice, theme } = input
-
-  // Multiple enemies per room — action economy matters!
-  // From "The Monsters Know": never pit a solo creature against a party.
-  const pool = tier === 'early' ? EARLY_ENEMIES : MID_ENEMIES
-  const template = pickFromPool(pool, dice)
-
-  // Vary group size: 2-3 for early, 1-3 for mid (tougher creatures appear in fewer numbers)
-  const count = tier === 'early'
-    ? 2 + (rollDie(dice, 2) === 2 ? 1 : 0)  // 2-3
-    : 1 + (rollDie(dice, 3) >= 2 ? 1 : 0)   // 1-2
-
-  const enemies: Enemy[] = Array.from({ length: count }, (_, i) => spawnEnemy(template, dice, i))
-
-  // Sometimes add a second type for mixed encounters (from Phandelver: varied groups are more interesting)
-  if (rollDie(dice, 4) === 1 && pool.length > 1) {
-    let other = pickFromPool(pool, dice)
-    // Avoid duplicates
-    let attempts = 0
-    while (other.name === template.name && attempts < 3) { other = pickFromPool(pool, dice); attempts++ }
-    if (other.name !== template.name) {
-      enemies.push(spawnEnemy(other, dice, 0))
-    }
-  }
-
-  // Build thematic description
-  const names = [...new Set(enemies.map(e => e.name.replace(/ \d+$/, '')))]
-  const nameList = names.join(' and ')
-  const desc = enemies.length === 1
-    ? `A lone ${nameList} blocks the passage.`
-    : `${enemies.length} creatures — ${nameList} — lurk ahead.`
-
-  return { type: 'combat', description: withThemeDescription(theme, desc), enemies }
-}
-
-function buildBossRoom(dice: Dice, theme: DungeonTheme): Room {
-  const bossTemplate = pickFromPool(BOSS_ENEMIES, dice)
-  const boss = spawnEnemy(bossTemplate, dice, 0)
-
-  // Boss always has minions — from "The Monsters Know": never run a solo boss
-  const minionCount = 1 + (rollDie(dice, 2) === 2 ? 1 : 0) // 1-2 minions
-  const minionTemplate = pickFromPool(bossTemplate.minionPool, dice)
-  const minions: Enemy[] = Array.from({ length: minionCount }, (_, i) =>
-    spawnEnemy(minionTemplate, dice, i)
-  )
-
-  const desc = `${boss.name} dominates the chamber${minions.length > 0 ? `, flanked by ${minions.map(m => m.name).join(' and ')}` : ''}.`
-  return {
-    type: 'boss',
-    description: withThemeDescription(theme, desc),
-    enemies: [boss, ...minions],
-  }
 }
 
 function clampLibrarySnippet(text: string, max = 220): string {
@@ -2254,90 +1734,6 @@ export function craftDungeonFromLibrary(input: {
   return { rooms, difficultyCurve, designNotes }
 }
 
-export function generateDungeon(
-  depth: number = 12,
-  dice: Dice,
-  options?: { partyClasses?: RpgClass[]; campaignState?: CampaignState }
-): GeneratedDungeon {
-  const rooms = safeInt(depth, 12)
-  if (rooms < 6) throw new Error('generateDungeon requires depth >= 6')
-
-  const lastIndex = rooms - 1
-  const baseTheme = pickDungeonTheme(dice)
-  const theme = options?.campaignState ? withCampaignTheme(baseTheme, options.campaignState) : baseTheme
-  const partyClasses = Array.isArray(options?.partyClasses)
-    ? options!.partyClasses.filter(isRpgClass)
-    : ([] as RpgClass[])
-
-  const allClasses: RpgClass[] = ['Warrior', 'Scout', 'Mage', 'Healer']
-  const uniqueClasses = [...new Set(partyClasses)]
-  const classes: RpgClass[] = shuffle(uniqueClasses.length > 0 ? uniqueClasses : allClasses, dice)
-
-  const barrierIndices = new Set<number>()
-  for (let i = 1; i <= 4; i += 1) {
-    // Evenly spread across the run, but never in the first room or the final boss room.
-    let idx = Math.floor((i * lastIndex) / 5)
-    idx = Math.max(1, Math.min(lastIndex - 1, idx))
-    while (barrierIndices.has(idx)) {
-      idx = idx + 1
-      if (idx >= lastIndex) idx = 1
-    }
-    barrierIndices.add(idx)
-  }
-
-  const orderedBarrierIndices = [...barrierIndices].sort((a, b) => a - b)
-  const requiredClassByIndex = new Map<number, RpgClass>()
-  for (let i = 0; i < orderedBarrierIndices.length; i += 1) {
-    requiredClassByIndex.set(orderedBarrierIndices[i]!, classes[i % classes.length]!)
-  }
-
-  const fillerCycle = ['rest', 'combat', 'trap', 'treasure', 'puzzle'] as const
-  const midpoint = Math.floor(rooms / 2)
-  let fillCursor = rollDie(dice, fillerCycle.length) - 1
-
-  const dungeon: Room[] = []
-  for (let index = 0; index < lastIndex; index += 1) {
-    const requiredClass = requiredClassByIndex.get(index)
-    if (requiredClass) {
-      dungeon.push({
-        type: 'barrier',
-        requiredClass,
-        description: withThemeDescription(theme, `A sealed archway bars the way. Only a ${requiredClass} can open it.`),
-      })
-      continue
-    }
-
-    const type = fillerCycle[fillCursor % fillerCycle.length]!
-    fillCursor += 1
-
-    if (type === 'combat') {
-      const tier: 'early' | 'mid' = index < midpoint ? 'early' : 'mid'
-      dungeon.push(buildCombatRoom({ tier, dice, theme }))
-      continue
-    }
-
-    if (type === 'rest') {
-      dungeon.push({ type: 'rest', description: withThemeDescription(theme, 'A quiet alcove.' ) })
-      continue
-    }
-
-    if (type === 'trap') {
-      dungeon.push({ type: 'trap', description: withThemeDescription(theme, 'A pressure plate clicks underfoot.' ) })
-      continue
-    }
-
-    if (type === 'treasure') {
-      dungeon.push({ type: 'treasure', description: withThemeDescription(theme, 'A small chest with a few coins.' ) })
-      continue
-    }
-
-    dungeon.push({ type: 'puzzle', description: withThemeDescription(theme, 'A rune-locked door hums with strange energy.' ) })
-  }
-
-  dungeon.push(buildBossRoom(dice, theme))
-  return { theme, rooms: dungeon }
-}
-
 /** Fantasy name pools for character generation */
 const FANTASY_FIRST_NAMES: Record<RpgClass, string[]> = {
   Warrior: ['Kaelen', 'Bjorn', 'Theron', 'Grak', 'Voss', 'Draven', 'Kord', 'Ragnar'],
@@ -2379,27 +1775,26 @@ export function createGame(input: {
 }): RpgGameState {
   const party = input.players.map(toCharacter)
   const turnOrder = computeTurnOrder(party)
-  const themeRng = createDice()
-  const generated = input.dungeon
-    ? null
-    : generateDungeon(12, themeRng, {
-        partyClasses: uniquePartyClasses(party),
-        campaignState: input.campaignState,
-      })
-  const theme = generated?.theme ?? pickDungeonTheme(themeRng)
-  const dungeon = (input.dungeon ? input.dungeon : generated!.rooms).map((room) => ({
+  const campaignState = input.campaignState
+  const baseTheme = { ...DEFAULT_DUNGEON_THEME }
+  const theme = campaignState ? withCampaignTheme(baseTheme, campaignState) : baseTheme
+  const dungeon = (Array.isArray(input.dungeon) ? input.dungeon : []).map((room) => ({
     ...room,
     description: withThemeDescription(theme, room.description),
   }))
+  const startsWithoutDungeon = !Array.isArray(input.dungeon)
 
   const initialRoom = dungeon[0]
   const initialMode: RpgMode =
-    initialRoom?.type === 'combat' || initialRoom?.type === 'boss' ? 'combat' : 'exploring'
+    startsWithoutDungeon
+      ? 'setup'
+      : initialRoom?.type === 'combat' || initialRoom?.type === 'boss'
+        ? 'combat'
+        : 'exploring'
   const combat =
-    initialMode === 'combat' && (initialRoom?.type === 'combat' || initialRoom?.type === 'boss')
+    !startsWithoutDungeon && initialMode === 'combat' && (initialRoom?.type === 'combat' || initialRoom?.type === 'boss')
       ? { enemies: cloneEnemiesForCombat(initialRoom.enemies) }
       : undefined
-  const campaignState = input.campaignState
   const campaignContext: CampaignContextSummary | undefined = campaignState
     ? {
         id: campaignState.id,
@@ -2414,7 +1809,7 @@ export function createGame(input: {
   return {
     id: input.id,
     type: 'rpg',
-    phase: 'playing',
+    phase: startsWithoutDungeon ? 'setup' : 'playing',
     mode: initialMode,
     round: 1,
     roomIndex: 0,

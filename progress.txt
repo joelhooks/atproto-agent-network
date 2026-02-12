@@ -675,3 +675,91 @@ Prior failure pattern detected: `unknown` (`check-types` mismatch) and `verifica
 Also completed required reporting commands:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Session zero — auto-generate campaign premise from party composition"`
+
+---
+[2026-02-12T02:07:05.614Z]
+Completed: plan_campaign GM tool — LLM-driven campaign worldbuilding
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts
+Summary: Implemented `plan_campaign` in the GM tool with LLM-driven worldbuilding, pdf-brain inspiration lookups, and campaign persistence via `createCampaign`. Added full test coverage for command behavior and rich campaign JSON round-trip persistence.
+
+Prior failure pattern detected: `unknown` (script mismatch) and `test_failure` (unrelated suite noise). Mitigation: used the story-specified validation command exactly and kept iteration checks focused on affected tests before full run.
+
+Key changes:
+- Added `plan_campaign` command enum/schema/handler in `apps/network/src/tools/gm-tool.ts`.
+- Added campaign planner prompt construction, AI response parsing/normalization, structured campaign conversion, and persistence call to `createCampaign`.
+- Extended campaign domain types in `apps/network/src/games/rpg-engine.ts` to support key NPCs, central villain, allied NPCs, hub town, and regional map.
+- Extended campaign persistence normalization/serialization in `apps/network/src/environments/rpg.ts` so optional rich world-state fields round-trip through D1 JSON.
+- Extended `createCampaign` options in `apps/network/src/environments/rpg.ts` to accept prebuilt `worldState` and `storyArcs`.
+- Extended `EnvironmentContext` with optional `env.AI.run` in `apps/network/src/environments/types.ts` and passed `env` into GM context from `apps/network/src/agent.ts`.
+- Added tests:
+  - `apps/network/src/tools/gm-tool.test.ts`: new `plan_campaign` orchestration test.
+  - `apps/network/src/environments/rpg.test.ts`: rich campaign persistence regression test.
+
+Required reporting completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` (stored `mem-1f8b1d84b3583c25`)
+- `openclaw system event --mode now --text "Ralph: completed plan_campaign GM tool — LLM-driven campaign worldbuilding"`
+
+Note: existing unrelated `prd.json` worktree change was left untouched.
+
+---
+[2026-02-12T02:13:07.945Z]
+Completed: advance_campaign GM tool — evolve world state between adventures
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, apps/network/src/agent.ts, apps/network/src/environments/types.ts
+Summary: Implemented `advance_campaign` in the GM tool with LLM-driven campaign evolution, D1 load/update flow, schema/command wiring, and tests. Added new command docs/enum/params, prompt + normalization for structured campaign patches, and persisted updates via `updateCampaign()` after loading current state from `getCampaign()`. Added a dedicated orchestration test for the new command.
+
+---
+[2026-02-12T02:18:09.262Z]
+Completed: Fix start-adventure endpoint and wire campaign into game creation
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts
+Summary: Implemented the start-adventure fix and campaign wiring in `apps/network/src/index.ts` and added regression coverage in `apps/network/src/index.test.ts`.
+
+What changed:
+- `POST /environments/rpg/campaign/:id/start-adventure` now builds a campaign thread with `buildCampaignDungeonThread(campaign)` before calling `createRpgGame(...)`.
+- The new game now gets:
+  - `campaignState: campaignThread.themedCampaignState` (ensures theme uses premise + arc context)
+  - `campaignObjective` when available
+  - thread-derived `campaignLog`
+  - updated `campaignContext.activeArcs` with the selected objective text
+- Added explicit route-level error logging in a `catch` block for this endpoint:
+  - logs `campaignId`, route id, and error, then rethrows to existing `withErrorHandling`.
+
+Test (TDD):
+- Updated `apps/network/src/index.test.ts` campaign start-adventure flow to seed an active story arc and assert:
+  - dungeon theme name includes arc name
+  - theme backstory includes campaign premise
+  - campaign log includes current objective context
+
+Validation run (requested):
+- `cd apps/network && npx vitest run 2>&1 | tail -5`
+- Result: `22 passed | 2 skipped` test files, `336 passed | 6 skipped` tests.
+
+Required reporting completed:
+- Stored hivemind learning via `swarm memory store`.
+- Sent completion event via `openclaw system event --mode now --text "Ralph: completed Fix start-adventure endpoint and wire campaign into game creation"`.
+
+## Learnings
+### Technical Discovery
+`createRpgGame` theming and campaign context are most reliable in this route when using `buildCampaignDungeonThread(...)` first (same pattern already used in RPG environment flows). This provides a themed campaign state plus objective/log context that should be attached to the created game.
+### Gotcha for Next Iteration
+If you only pass raw `campaign` into `createRpgGame`, tests can still pass for basic linking but miss objective-specific context (`campaignObjective`, enriched `campaignLog`, focused active arc). Keep route behavior aligned with `apps/network/src/environments/rpg.ts` campaign-thread flow.
+### Files Context
+- `apps/network/src/index.ts`: HTTP route logic for campaign `start-adventure`; now includes campaign-thread wiring and explicit error logging.
+- `apps/network/src/index.test.ts`: regression test for start-adventure campaign theming/objective flow and environment linkage assertions.
+
+---
+[2026-02-12T02:22:03.573Z]
+Completed: Remove template mad-libs from campaign code
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts
+Summary: Removed campaign mad-libs/template generation from `apps/network/src/games/rpg-engine.ts`, updated callers in `apps/network/src/environments/rpg.ts` to stop autogenerating campaign premise/world/arc data, and updated tests to remove deleted-function coverage while keeping `previously_on` coverage. Stored hivemind learning and sent required OpenClaw completion event.
+
+---
+[2026-02-12T02:36:23.939Z]
+Completed: Rewrite craft_dungeon to use LLM for dungeon generation
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/index.test.ts, apps/network/src/index.ts
+Summary: Rewrote `craft_dungeon` in `apps/network/src/tools/gm-tool.ts` to use `ctx.env.AI.run` for dungeon generation with strict JSON parsing/normalization into `Room[]`, campaign+party+library-aware prompt construction, and fallback to `generateDungeon()` when AI output/binding fails. Added/updated tests in `apps/network/src/tools/gm-tool.test.ts` to cover successful LLM generation and fallback behavior.
+
+---
+[2026-02-12T02:43:31.122Z]
+Completed: Remove procedural dungeon generation — delete generateDungeon and template arrays
+Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/index.test.ts, apps/network/src/index.ts
+Summary: Removed procedural dungeon generation from the RPG engine and updated startup behavior. Specifically, deleted `DUNGEON_THEMES`, `pickDungeonTheme`, `generateDungeon`, `buildCombatRoom`, `buildBossRoom`, and associated bestiary template arrays from `apps/network/src/games/rpg-engine.ts`. Updated `createGame` (used as `createRpgGame`) to start with `dungeon: []`, `phase: 'setup'`, and `mode: 'setup'` when no dungeon is provided. Kept `Room`/`Enemy`/`DungeonTheme` types, `withCampaignTheme`, and `craftDungeonFromLibrary`. Updated GM fallback in `apps/network/src/tools/gm-tool.ts` to use `craftDungeonFromLibrary` instead of deleted procedural generation. Removed tests tied to deleted generation APIs and added setup-mode startup coverage.

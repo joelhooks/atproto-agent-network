@@ -3194,7 +3194,7 @@ export class AgentDO extends DurableObject {
         const enabled = Array.isArray(this.config?.enabledTools) ? this.config!.enabledTools : []
         if (!enabled.includes('gm')) return []
         if (!isGrimlock(agentName)) return []
-        const gmCtx = { agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent, webhookUrl: this.config?.webhookUrl }
+        const gmCtx = { agentName, agentDid: did, db: env.DB, env, broadcast: broadcastLoopEvent, webhookUrl: this.config?.webhookUrl }
         return [createGmTool(gmCtx as any)]
       })(),
       // Profile tool: available to ALL agents for self-reporting status to dashboard

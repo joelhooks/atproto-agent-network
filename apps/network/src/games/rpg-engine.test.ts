@@ -4,14 +4,12 @@ import {
   attack,
   adjustDisposition,
   awardXp,
-  buildCampaignPremiseFromParty,
   createHubTownState,
   advanceHubTownIdleTurns,
   DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
   createCharacter,
   createGame,
   createTestDice,
-  generateDungeon,
   explore,
   XP_PER_BARRIER_CLEAR,
   XP_PER_PUZZLE,
@@ -328,126 +326,15 @@ describe('rpg-engine', () => {
     expect(game.mode).toBe('finished')
   })
 
-  it('default dungeon includes all encounter types (combat, trap, treasure, rest, puzzle)', () => {
-    // defaultDungeon() is procedural (uses Math.random), so test generateDungeon() deterministically instead.
-    const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice).rooms
+  it('createGame starts in setup mode with an empty dungeon when none is provided', () => {
+    const game = createGame({ id: 'rpg_setup_default', players: ['alice', 'bob'] })
 
-    const types = new Set(dungeon.map((r) => r.type))
-    expect(types.has('combat')).toBe(true)
-    expect(types.has('trap')).toBe(true)
-    expect(types.has('treasure')).toBe(true)
-    expect(types.has('rest')).toBe(true)
-    expect(types.has('puzzle')).toBe(true)
-    expect(types.has('barrier')).toBe(true)
-    expect(types.has('boss')).toBe(true)
-  })
-
-  it('generateDungeon creates the requested number of rooms, contains all 4 class barriers, and ends with a boss room', () => {
-    const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice).rooms
-
-    expect(dungeon).toHaveLength(12)
-    expect(dungeon.at(-1)?.type).toBe('boss')
-
-    const barriers = dungeon.filter((r) => r.type === 'barrier')
-    expect(barriers).toHaveLength(4)
-
-    const required = new Set(barriers.map((b) => b.requiredClass))
-    expect(required).toEqual(new Set<RpgClass>(['Warrior', 'Scout', 'Mage', 'Healer']))
-  })
-
-  it('generateDungeon scales enemy HP (early 6-8, mid 10-14, boss 30+)', () => {
-    const dice = createTestDice({ d100: () => 1, d: () => 1 })
-    const dungeon = generateDungeon(12, dice).rooms
-
-    const last = dungeon.at(-1)
-    expect(last?.type).toBe('boss')
-    if (last?.type === 'boss') {
-      expect(last.enemies[0]!.hp).toBeGreaterThanOrEqual(30)
-    }
-
-    const midpoint = Math.floor(dungeon.length / 2)
-    const combats = dungeon
-      .map((room, index) => ({ room, index }))
-      .filter((x) => x.room.type === 'combat')
-
-    const earlyCombats = combats.filter((c) => c.index < midpoint).map((c) => c.room)
-    const midCombats = combats.filter((c) => c.index >= midpoint).map((c) => c.room)
-
-    expect(earlyCombats.length).toBeGreaterThan(0)
-    expect(midCombats.length).toBeGreaterThan(0)
-
-    for (const room of earlyCombats) {
-      if (room.type !== 'combat') continue
-      for (const e of room.enemies) {
-        // Bestiary: early enemies range from Kobold (hp 3+1d2=4-5) to Carcass Crawler (hp 10+1d6=11-16)
-        expect(e.hp).toBeGreaterThanOrEqual(4)
-        expect(e.hp).toBeLessThanOrEqual(20)
-      }
-    }
-
-    for (const room of midCombats) {
-      if (room.type !== 'combat') continue
-      for (const e of room.enemies) {
-        // Bestiary: mid enemies range from Hobgoblin (hp 8+1d4=9-12) to Ogre (hp 16+1d8=17-24)
-        expect(e.hp).toBeGreaterThanOrEqual(8)
-        expect(e.hp).toBeLessThanOrEqual(30)
-      }
-    }
-  })
-
-  it('generated dungeons include a theme + backstory and room descriptions reference the theme', () => {
-    const game = createGame({ id: 'rpg_theme_default', players: ['alice', 'bob'] })
-
+    expect(game.phase).toBe('setup')
+    expect(game.mode).toBe('setup')
+    expect(game.dungeon).toEqual([])
+    expect(game.combat).toBeUndefined()
     expect(game.theme.name.length).toBeGreaterThan(0)
     expect(game.theme.backstory.length).toBeGreaterThan(0)
-
-    for (const room of game.dungeon) {
-      expect(room.description).toContain(game.theme.name)
-      expect(room.description.toLowerCase()).not.toContain('goblin prowls here')
-    }
-  })
-
-  it('10 generated dungeons can have unique themes', () => {
-    function makeThemePickingDice(themePick: number) {
-      let picked = false
-      return createTestDice({
-        d100: () => 1,
-        d: (sides: number) => {
-          if (!picked) {
-            picked = true
-            const value = Math.max(1, Math.min(sides, themePick))
-            return value
-          }
-          return 1
-        },
-      })
-    }
-
-    const themes = new Set<string>()
-    for (let i = 1; i <= 10; i += 1) {
-      const dungeon = generateDungeon(12, makeThemePickingDice(i))
-      themes.add(dungeon.theme.name)
-    }
-    expect(themes.size).toBe(10)
-  })
-
-  it('barrier rooms only require classes present in the party', () => {
-    const allowed = new Set<RpgClass>(['Warrior', 'Mage'])
-
-    for (let i = 0; i < 100; i += 1) {
-      const game = createGame({
-        id: `rpg_barrier_${i}`,
-        players: [createCharacter({ name: 'a', klass: 'Warrior' }), createCharacter({ name: 'b', klass: 'Mage' })],
-      })
-
-      const barriers = game.dungeon.filter((r) => r.type === 'barrier')
-      for (const room of barriers) {
-        if (room.type !== 'barrier') continue
-        expect(allowed.has(room.requiredClass)).toBe(true)
-      }
-    }
   })
 
   it('barriers: brute force path lets any Warrior smash through at 20% max HP cost', () => {
@@ -1407,73 +1294,6 @@ describe('campaign-aware dungeon setup', () => {
     expect(game.campaignAdventureNumber).toBe(3)
     expect(game.campaignContext?.activeArcs[0]).toContain('War for the Ironlands')
     expect(`${game.theme.name} ${game.theme.backstory}`).toContain('War for the Ironlands')
-  })
-
-  it('builds a deterministic campaign premise package from theme + party composition', () => {
-    const input = {
-      theme: 'Crimson Crown',
-      party: [
-        { klass: 'Warrior' as const, level: 5 },
-        { klass: 'Scout' as const, level: 4 },
-        { klass: 'Mage' as const, level: 5 },
-      ],
-    }
-
-    const first = buildCampaignPremiseFromParty(input)
-    const second = buildCampaignPremiseFromParty(input)
-
-    expect(second).toEqual(first)
-    expect(first.factions.length).toBeGreaterThanOrEqual(3)
-    expect(first.factions.length).toBeLessThanOrEqual(4)
-    expect(first.storyArcs.length).toBeGreaterThanOrEqual(2)
-    expect(first.storyArcs.length).toBeLessThanOrEqual(3)
-    expect(first.storyArcs.every((arc) => arc.status === 'seeded')).toBe(true)
-    expect(first.startingLocation.name.length).toBeGreaterThan(0)
-    expect(first.premise).toContain(first.startingLocation.name)
-  })
-
-  it('treats party composition deterministically regardless of party order', () => {
-    const ordered = buildCampaignPremiseFromParty({
-      theme: 'Ashfall',
-      party: [
-        { klass: 'Warrior', level: 6 },
-        { klass: 'Mage', level: 5 },
-        { klass: 'Healer', level: 4 },
-      ],
-    })
-    const shuffled = buildCampaignPremiseFromParty({
-      theme: 'Ashfall',
-      party: [
-        { klass: 'Healer', level: 4 },
-        { klass: 'Warrior', level: 6 },
-        { klass: 'Mage', level: 5 },
-      ],
-    })
-
-    expect(shuffled.premise).toBe(ordered.premise)
-    expect(shuffled.centralConflict).toBe(ordered.centralConflict)
-    expect(shuffled.factions.map((faction) => faction.name)).toEqual(ordered.factions.map((faction) => faction.name))
-    expect(shuffled.storyArcs.map((arc) => arc.name)).toEqual(ordered.storyArcs.map((arc) => arc.name))
-  })
-
-  it('scales campaign threat tier with high-level party compositions', () => {
-    const low = buildCampaignPremiseFromParty({
-      theme: 'Ashfall',
-      party: [
-        { klass: 'Warrior', level: 1 },
-        { klass: 'Healer', level: 1 },
-      ],
-    })
-    const high = buildCampaignPremiseFromParty({
-      theme: 'Ashfall',
-      party: [
-        { klass: 'Warrior', level: 10 },
-        { klass: 'Mage', level: 11 },
-      ],
-    })
-
-    expect(low.threatTier).not.toBe(high.threatTier)
-    expect(high.threatTier).toBe('epic')
   })
 
   it('builds previously_on recap text from campaign history', () => {

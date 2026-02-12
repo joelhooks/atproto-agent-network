@@ -957,12 +957,60 @@
         "rpg-engine.ts",
         "rpg.ts"
       ]
+    },
+    {
+      "id": "story-mlit6mcg",
+      "title": "plan_campaign GM tool — LLM-driven campaign worldbuilding",
+      "description": "Add a `plan_campaign` command to the GM tool in `apps/network/src/tools/gm-tool.ts`.\n\nWhen Grimlock calls `plan_campaign` with party composition, the tool:\n1. Queries pdf-brain for campaign design patterns (Game Angry, etc.)\n2. Builds a prompt with party classes/levels/backstories\n3. Calls the LLM (via ctx.env.AI) to generate structured campaign data\n4. Returns and persists: campaign name, premise, 3-5 factions (each with name, description, disposition, key NPC), central villain with lieutenants, 2-3 allied NPCs, hub town (name, description, locations with shopkeepers/quest-givers), 3-4 story arcs with plot points, regional map of named locations\n5. Stores result in D1 via createCampaign() — extend the campaigns table schema if needed\n\nThe LLM prompt should reference pdf-brain results as inspiration. The output is structured JSON matching CampaignState (extend the type as needed for NPCs, hub town, villain details).\n\nAdd the command enum value, parameter schema, and handler in gm-tool.ts following the craft_dungeon pattern. Add tests.",
+      "priority": 100,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mlit6tsb",
+      "title": "advance_campaign GM tool — evolve world state between adventures",
+      "description": "Add an `advance_campaign` command to the GM tool in `apps/network/src/tools/gm-tool.ts`.\n\nWhen Grimlock calls `advance_campaign` after an adventure completes, the tool:\n1. Takes the adventure outcome (who survived, what happened, rooms cleared, enemies defeated, choices made)\n2. Loads the campaign state from D1\n3. Calls the LLM to decide: which factions gained/lost power, which NPCs react (new allies, betrayals, deaths), which plot points resolved or advanced, what new threats emerge, how the hub town changed\n4. Updates campaign state in D1 via updateCampaign()\n5. Returns a narrative summary of world changes\n\nThe LLM prompt includes current campaign state, adventure log, and party actions. Output is a structured patch to CampaignState.\n\nAdd command enum, params (campaignId, adventureSummary), handler following plan_campaign pattern. Add tests.",
+      "priority": 101,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mlit70y6",
+      "title": "Fix start-adventure endpoint and wire campaign into game creation",
+      "description": "Fix the 500 error on POST `/environments/rpg/campaign/:id/start-adventure`.\n\nDebug: the endpoint calls `createRpgGame({id, players, campaignState: campaign})` which crashes at runtime. Find and fix the type mismatch or missing field causing the error. The campaign object from getCampaign() has: id, name, premise, worldState, storyArcs, adventureCount.\n\nAlso ensure the created game's dungeon theme pulls from the campaign's story arcs and premise (use withCampaignTheme which already exists).\n\nAdd error logging in the catch block so future errors are visible. Add a test for the start-adventure flow.",
+      "priority": 102,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mlit78mz",
+      "title": "Remove template mad-libs from campaign code",
+      "description": "Delete the hardcoded template arrays and procedural campaign generation from `apps/network/src/games/rpg-engine.ts`:\n\nRemove these constants and all functions that use them:\n- CAMPAIGN_FACTION_TEMPLATES\n- CAMPAIGN_LOCATION_TEMPLATES  \n- CAMPAIGN_CONFLICT_TEMPLATES\n- CAMPAIGN_ARC_TEMPLATES\n- buildCampaignPremiseFromParty()\n- buildFactionSet()\n- partyMotif()\n- factionDispositionByRole()\n- replaceTemplateTokens()\n- All the seededPick campaign helpers\n\nKeep the CampaignState, CampaignPremiseTemplate, Faction, StoryArc, PlotPoint types — those are still used by the GM tools.\n\nKeep previously_on() — that's useful.\n\nUpdate any imports/callers. Update tests to remove tests for deleted functions. All remaining tests must pass.",
+      "priority": 103,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mliud6pe",
+      "title": "Rewrite craft_dungeon to use LLM for dungeon generation",
+      "description": "Rewrite the `craft_dungeon` command in `apps/network/src/tools/gm-tool.ts` to generate dungeons via LLM instead of calling `generateDungeon()`.\n\nCurrent flow: consult pdf-brain → call generateDungeon() (procedural) → attach library context\nNew flow: consult pdf-brain → build prompt with party stats, theme, campaign context, library results → call LLM via ctx.env.AI → parse structured JSON output into Room[] array → set on game state\n\nThe LLM prompt should include pdf-brain results as inspiration, party composition, campaign context if active, and request 10-12 rooms with varied types and a difficulty curve. Each room needs type, description, enemies (if combat/boss), requiredClass (if barrier). Output must match existing Room type. Fallback to generateDungeon() if LLM fails. Add tests mocking ctx.env.AI.",
+      "priority": 104,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mliuddpv",
+      "title": "Remove procedural dungeon generation — delete generateDungeon and template arrays",
+      "description": "Delete procedural dungeon generation from `apps/network/src/games/rpg-engine.ts`: DUNGEON_THEMES array, pickDungeonTheme(), generateDungeon(), buildCombatRoom(), buildBossRoom(), and all enemy/boss template arrays used only by these functions. Keep Room/Enemy/DungeonTheme types, withCampaignTheme(), and anything used elsewhere. Update createRpgGame to start with empty dungeon and mode 'setup' when no dungeon provided. Remove tests for deleted functions, ensure remaining tests pass.",
+      "priority": 105,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 85,
-    "lastIteration": "2026-02-12T01:30:17.686Z"
+    "totalIterations": 91,
+    "lastIteration": "2026-02-12T02:43:31.120Z"
   },
   "totalStories": 11
 }

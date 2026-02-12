@@ -247,6 +247,132 @@
         "apps/network/src/games/rpg-engine.ts"
       ],
       "learnings": "Technical Discovery: `createHubTownState()` in `apps/network/src/games/rpg-engine.ts` is the canonical normalization point for hub-town timing defaults; using a shared exported constant there and consuming it in `transitionCampaignCompletionToHubTown()` prevents default drift between engine and environment layers.\nGotcha: Hub-town behavior is split between engine state normalization and environment command/autoplay flow. If you change auto-embark timing in only one layer, tests can stay green in one path but runtime behavior diverges in another path.\nFiles Context: `apps/network/src/games/rpg-engine.ts` defines hub-town state shape/defaults; `apps/network/src/environments/rpg.ts` applies hub transition/runtime behavior; `apps/network/src/games/rpg-engine.test.ts` contains the low-level default/timing assertions for hub-town state."
+    },
+    {
+      "id": "story-mlit6mcg",
+      "title": "plan_campaign GM tool — LLM-driven campaign worldbuilding",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/environments/rpg.ts` can persist rich campaign structures without schema-column expansion by carrying optional JSON keys through `normalizeWorldState` and `serializeWorldState`; this allows `createCampaign` to accept seeded `worldState/storyArcs` while preserving existing campaign SQL shape.\nGotcha: `plan_campaign` in `apps/network/src/tools/gm-tool.ts` depends on `ctx.env.AI.run`; if caller contexts don’t pass `env` (now wired in `apps/network/src/agent.ts:3197`), the command fails with `AI binding unavailable for plan_campaign`.\nFiles Context: `apps/network/src/tools/gm-tool.ts` now contains campaign planning orchestration (library queries, prompt, AI parse, normalization, persistence). `apps/network/src/environments/rpg.ts` is the canonical campaign JSON normalization/persistence layer. `apps/network/src/games/rpg-engine.ts` defines the expanded campaign types used by both tool and persistence logic."
+    },
+    {
+      "id": "story-mlit6tsb",
+      "title": "advance_campaign GM tool — evolve world state between adventures",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts"
+      ],
+      "learnings": "Technical Discovery: `advance_campaign` must execute before the generic active-game lookup in `gm-tool.ts`; otherwise it fails with `No active RPG game found` even when valid `campaignId` + `adventureSummary` are provided. Also, `updateCampaign()` in `rpg.ts` normalizes `worldState` and can default missing sections, so the tool should merge AI output with current `CampaignState` before persisting.\nGotcha: `D1MockDatabase` in this test setup does not support the campaign insert path used by `createCampaign()` for this unit context; for `gm-tool` orchestration tests, mock `getCampaign`/`updateCampaign` directly (as done in `gm-tool.test.ts`) instead of relying on D1 campaign SQL support.\nFiles Context: `apps/network/src/tools/gm-tool.ts` now contains `buildAdvanceCampaignPrompt`, `normalizeAdvanceCampaignResult`, new command metadata, and the `advance_campaign` execution branch. `apps/network/src/tools/gm-tool.test.ts` adds the new `advance_campaign` test that verifies AI prompt context, update call payload, and returned narrative/details."
+    },
+    {
+      "id": "story-mlit70y6",
+      "title": "Fix start-adventure endpoint and wire campaign into game creation",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts"
+      ],
+      "learnings": "Technical Discovery: For campaign start-adventure, routing through `buildCampaignDungeonThread(campaign)` before `createRpgGame` aligns this endpoint with RPG environment flows and ensures objective-aware themed campaign state is used during game creation.\nGotcha: A basic `createRpgGame({ campaignState: campaign })` call can miss objective/log enrichment. Keep `campaignObjective`, `campaignLog`, and `campaignContext.activeArcs` updates in the route when a campaign objective exists.\nFiles Context: `apps/network/src/index.ts` contains the campaign start-adventure endpoint and now has the route-level try/catch logging plus campaign-thread integration. `apps/network/src/index.test.ts` contains the campaign API regression that verifies theming and objective wiring in persisted game state."
+    },
+    {
+      "id": "story-mlit78mz",
+      "title": "Remove template mad-libs from campaign code",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts"
+      ],
+      "learnings": "Technical Discovery: Prior failure pattern detected: test_failure. Mitigation: convert behavior tests first to create a red state, then remove generator code and run targeted Vitest files before full validation. In this codebase, campaign autogeneration was centralized in `createCampaign` (`apps/network/src/environments/rpg.ts:482`) via `buildCampaignPremiseFromParty`; once removed, default campaign creation should come from `buildDefaultWorldState()` and `buildDefaultStoryArcs()` with premise preserved as input.\nGotcha: Removing only `buildCampaignPremiseFromParty` from `rpg-engine.ts` is not enough. `createCampaign` in `apps/network/src/environments/rpg.ts` also auto-generated from `theme`/`party`; if not updated, tests still fail and blank-premise campaigns continue producing synthesized text.\nFiles Context: `apps/network/src/games/rpg-engine.ts:639` keeps `CampaignPremiseTemplate` and related campaign types, and `apps/network/src/games/rpg-engine.ts:666` keeps `previously_on`. `apps/network/src/environments/rpg.ts:482` now creates campaigns without template-based synthesis. `apps/network/src/environments/rpg.test.ts:2989` and `apps/network/src/environments/rpg.test.ts:3020` now assert no autogeneration. `apps/network/src/games/rpg-engine.test.ts:1411` still validates `previously_on` behavior."
+    },
+    {
+      "id": "story-mliud6pe",
+      "title": "Rewrite craft_dungeon to use LLM for dungeon generation",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts"
+      ],
+      "learnings": "Technical Discovery: `craft_dungeon` can safely use LLM output by normalizing into existing `Room` union constraints and enforcing quality gates (10-12 rooms, room variety, combat/boss/barrier requirements) before accepting AI output; otherwise fallback keeps gameplay stable.\nGotcha: Fallback logic cannot rely on `game.dungeon.length` because games already have a starter dungeon; use an explicit `craftedByAi` flag to decide when to call `generateDungeon()`.\nFiles Context: `apps/network/src/tools/gm-tool.ts` now contains `buildCraftDungeonPrompt`, AI room/enemy normalizers, and the updated `craft_dungeon` execution path. `apps/network/src/tools/gm-tool.test.ts` now verifies AI prompt usage with campaign context and fallback behavior on invalid AI JSON."
+    },
+    {
+      "id": "story-mliuddpv",
+      "title": "Remove procedural dungeon generation — delete generateDungeon and template arrays",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/games/rpg-engine.test.ts",
+        "apps/network/src/games/rpg-engine.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/tools/gm-tool.test.ts",
+        "apps/network/src/tools/gm-tool.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/types.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts"
+      ],
+      "learnings": "Technical Discovery: `createGame` is the effective `createRpgGame` constructor used across network paths; changing its no-dungeon branch (rather than route-level logic) cleanly enforces setup-mode bootstrap everywhere. `craftDungeonFromLibrary` is a viable non-procedural fallback for GM dungeon crafting when AI output is invalid.\nGotcha: Any caller that previously relied on implicit procedural dungeon population from `createGame({ players, id })` now gets an empty dungeon in setup mode. If immediate gameplay is required, provide an explicit `dungeon` or run `craft_dungeon` first.\nFiles Context: `apps/network/src/games/rpg-engine.ts` now contains default-theme + setup bootstrap behavior and no procedural generation APIs (`DEFAULT_DUNGEON_THEME` at :1493, `createGame` behavior at :1770). `apps/network/src/tools/gm-tool.ts` fallback path now uses `craftDungeonFromLibrary` (`if (!craftedByAi)` around :1396). `apps/network/src/games/rpg-engine.test.ts` includes the new no-dungeon setup assertion at :329 and removed generation-specific tests."
     }
   ],
   "failures": [
