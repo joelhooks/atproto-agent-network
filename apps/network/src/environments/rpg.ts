@@ -130,6 +130,21 @@ type CreateCampaignOptions = {
   party?: CampaignPartyMemberSeed[]
 }
 
+function normalizeCreateCampaignOptions(input?: CreateCampaignOptions | string): CreateCampaignOptions {
+  if (typeof input === 'string') {
+    const theme = input.trim()
+    return theme ? { theme } : {}
+  }
+  if (!isRecord(input)) return {}
+
+  const theme = typeof input.theme === 'string' ? input.theme.trim() : ''
+  const party = Array.isArray(input.party) ? input.party : undefined
+  return {
+    ...(theme ? { theme } : {}),
+    ...(party ? { party } : {}),
+  }
+}
+
 function normalizeDisposition(value: unknown): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
   if (!Number.isFinite(n)) return 0
@@ -354,16 +369,17 @@ export async function createCampaign(
   db: D1Database,
   name: string,
   premise: string,
-  options?: CreateCampaignOptions
+  options?: CreateCampaignOptions | string
 ): Promise<CampaignState> {
   await ensureCampaignSchema(db)
+  const campaignOptions = normalizeCreateCampaignOptions(options)
   const safeName = String(name || '').trim() || 'Untitled Campaign'
   const safePremise = String(premise || '').trim()
-  const shouldAutogenerate = safePremise.length === 0 || Boolean(options?.theme) || Boolean(options?.party?.length)
+  const shouldAutogenerate = safePremise.length === 0 || Boolean(campaignOptions.theme) || Boolean(campaignOptions.party?.length)
   const generated = shouldAutogenerate
     ? buildCampaignPremiseFromParty({
-        theme: options?.theme,
-        party: options?.party,
+        theme: campaignOptions.theme,
+        party: campaignOptions.party,
       })
     : null
   const worldState = generated

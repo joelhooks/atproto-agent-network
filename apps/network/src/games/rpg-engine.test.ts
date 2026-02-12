@@ -1432,6 +1432,30 @@ describe('campaign-aware dungeon setup', () => {
     expect(first.premise).toContain(first.startingLocation.name)
   })
 
+  it('treats party composition deterministically regardless of party order', () => {
+    const ordered = buildCampaignPremiseFromParty({
+      theme: 'Ashfall',
+      party: [
+        { klass: 'Warrior', level: 6 },
+        { klass: 'Mage', level: 5 },
+        { klass: 'Healer', level: 4 },
+      ],
+    })
+    const shuffled = buildCampaignPremiseFromParty({
+      theme: 'Ashfall',
+      party: [
+        { klass: 'Healer', level: 4 },
+        { klass: 'Warrior', level: 6 },
+        { klass: 'Mage', level: 5 },
+      ],
+    })
+
+    expect(shuffled.premise).toBe(ordered.premise)
+    expect(shuffled.centralConflict).toBe(ordered.centralConflict)
+    expect(shuffled.factions.map((faction) => faction.name)).toEqual(ordered.factions.map((faction) => faction.name))
+    expect(shuffled.storyArcs.map((arc) => arc.name)).toEqual(ordered.storyArcs.map((arc) => arc.name))
+  })
+
   it('scales campaign threat tier with high-level party compositions', () => {
     const low = buildCampaignPremiseFromParty({
       theme: 'Ashfall',
@@ -1468,6 +1492,22 @@ describe('campaign-aware dungeon setup', () => {
     expect(recap).toContain('Ashfall Chronicles')
     expect(recap).toContain('Adventure #1')
     expect(recap).toContain('Cometfall Conspiracy')
+  })
+
+  it('uses non-adventure history entries in previously_on recaps when no adventure markers exist', () => {
+    const recap = previously_on({
+      campaignName: 'Ashfall Chronicles',
+      premise: 'A crimson comet fractures the northern kingdoms',
+      activeArcs: ['Cometfall Conspiracy'],
+      history: [
+        'The Sapphire Gate fell before dawn.',
+        'Refugees flooded the river district.',
+      ],
+      adventureCount: 0,
+    })
+
+    expect(recap).toContain('Sapphire Gate')
+    expect(recap).toContain('river district')
   })
 })
 

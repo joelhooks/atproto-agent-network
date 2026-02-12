@@ -802,16 +802,20 @@ export function buildCampaignPremiseFromParty(input: {
   party?: CampaignPartyMemberSeed[]
 }): CampaignPremiseTemplate {
   const party = normalizeCampaignParty(input.party)
+  const composition = [...party].sort((a, b) => {
+    if (a.klass !== b.klass) return a.klass.localeCompare(b.klass)
+    return a.level - b.level
+  })
   const theme = normalizeCampaignTheme(input.theme)
-  const threatTier = threatTierForParty(party)
+  const threatTier = threatTierForParty(composition)
   const seed = stableHash(
     JSON.stringify({
       theme: theme.toLowerCase(),
-      party: party.map((member) => `${member.klass}:${member.level}`),
+      party: composition.map((member) => `${member.klass}:${member.level}`),
     })
   )
 
-  const motif = partyMotif(party)
+  const motif = partyMotif(composition)
   const fallbackTokens = {
     theme,
     location: `${theme} Gate`,
@@ -828,7 +832,7 @@ export function buildCampaignPremiseFromParty(input: {
     description: replaceTemplateTokens(locationTemplate.description, fallbackTokens),
   }
 
-  const factionCount = party.length >= 3 ? 4 : 3
+  const factionCount = composition.length >= 3 ? 4 : 3
   const factions = buildFactionSet(seed, threatTier, { ...fallbackTokens, location: startingLocation.name }, factionCount)
   const ally = factions.find((faction) => faction.disposition >= 20)?.name ?? factions[0]?.name ?? fallbackTokens.ally
   const rival = factions.find((faction) => faction.disposition >= -10 && faction.disposition < 20)?.name ?? factions[1]?.name ?? fallbackTokens.rival
@@ -901,10 +905,17 @@ export function previously_on(input: PreviouslyOnInput): string {
     .slice(-3)
     .map((entry) => firstSentenceOrTrim(entry, 180))
     .filter(Boolean)
+  const recentHistory = history
+    .filter((entry) => !entry.startsWith('Adventure #'))
+    .slice(-2)
+    .map((entry) => firstSentenceOrTrim(entry, 180))
+    .filter(Boolean)
 
   const parts: string[] = [`${campaignName} recap.`]
   if (adventureHistory.length > 0) {
     parts.push(adventureHistory.join(' '))
+  } else if (recentHistory.length > 0) {
+    parts.push(recentHistory.join(' '))
   } else if (premise) {
     parts.push(premise)
   } else {

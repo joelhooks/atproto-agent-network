@@ -3012,6 +3012,15 @@ describe('campaign persistence helpers', () => {
     expect(second.worldState.factions.map((faction) => faction.name)).toEqual(first.worldState.factions.map((faction) => faction.name))
     expect(second.storyArcs.map((arc) => arc.name)).toEqual(first.storyArcs.map((arc) => arc.name))
   })
+
+  it('accepts a theme string as the optional createCampaign parameter', async () => {
+    const db = new CampaignDbMock()
+    const generated = await createCampaign(db as any, 'Stormwatch Saga', '', 'Stormwatch')
+
+    expect(generated.premise).toContain('Stormwatch')
+    expect(generated.worldState.factions.length).toBeGreaterThanOrEqual(3)
+    expect(generated.storyArcs.length).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe('faction disposition encounter outcomes', () => {

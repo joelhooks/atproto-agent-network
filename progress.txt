@@ -658,3 +658,20 @@ Mitigation: ran the exact required validation command and ensured both required 
 Also completed required reporting commands:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Session zero — auto-generate campaign premise from party composition"`
+
+---
+[2026-02-12T01:30:17.688Z]
+Completed: Session zero — auto-generate campaign premise from party composition
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt
+Summary: Implemented story `Session zero — auto-generate campaign premise from party composition` with required target-file edits and RED→GREEN tests.
+
+What changed:
+- `apps/network/src/games/rpg-engine.ts`: made `buildCampaignPremiseFromParty` deterministic by party composition (order-insensitive hashing) and improved `previously_on` to use non-`Adventure #` history entries when adventure markers are absent.
+- `apps/network/src/environments/rpg.ts`: updated `createCampaign` to accept optional theme shorthand as a string (in addition to options object) via `normalizeCreateCampaignOptions`, then feed normalized options into deterministic premise generation.
+- Added regression tests for these behaviors in `apps/network/src/games/rpg-engine.test.ts` and `apps/network/src/environments/rpg.test.ts`.
+
+Prior failure pattern detected: `unknown` (`check-types` mismatch) and `verification_rejected` (required-file diffs missing). Mitigation: used exact validation command (`bun run check-types && bun run test`), and ensured both required files were explicitly modified.
+
+Also completed required reporting commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Session zero — auto-generate campaign premise from party composition"`
