@@ -53,12 +53,12 @@ function createState() {
   return { state, storage }
 }
 
-function createSocket(sub: { collections: string[]; dids: string[] }) {
+function createSocket(sub: { collections: string[]; dids: string[]; mode?: 'private' | 'public' }) {
   let attachment = sub
   return {
     deserializeAttachment: () => attachment,
     serializeAttachment: (next: unknown) => {
-      attachment = next as { collections: string[]; dids: string[] }
+      attachment = next as { collections: string[]; dids: string[]; mode?: 'private' | 'public' }
     },
     send: vi.fn(),
   } as unknown as WebSocket
@@ -293,12 +293,192 @@ describe('RelayDO', () => {
     expect(ws.deserializeAttachment()).toEqual({
       collections: ['agent.comms.*'],
       dids: ['did:cf:alice'],
+      mode: 'private',
     })
     expect((ws as any).send).toHaveBeenCalledWith(
       JSON.stringify({
         type: 'subscribed',
         collections: ['agent.comms.*'],
         dids: ['did:cf:alice'],
+      })
+    )
+  })
+
+  it('filters emitted loop events by event_type via collections=loop.*', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const loopOnly = createSocket({ collections: ['loop.*'], dids: ['*'] })
+    state.getWebSockets = vi.fn().mockReturnValue([loopOnly] as WebSocket[])
+
+    const event = {
+      agent_did: 'did:cf:grimlock',
+      event_type: 'loop.observe',
+      timestamp: new Date().toISOString(),
+      context: { secret: 'nope' },
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((loopOnly as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+  })
+
+  it('sanitizes public-firehose subscribers (no secret context, no error stack)', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const publicWs = createSocket({ collections: ['loop.*'], dids: ['*'], mode: 'public' })
+    const privateWs = createSocket({ collections: ['loop.*'], dids: ['*'], mode: 'private' })
+    state.getWebSockets = vi.fn().mockReturnValue([publicWs, privateWs] as WebSocket[])
+
+    const event = {
+      agent_did: 'did:cf:grimlock',
+      agent_name: 'grimlock',
+      event_type: 'loop.error',
+      timestamp: new Date().toISOString(),
+      trace_id: '0123456789abcdef0123456789abcdef',
+      span_id: '0123456789abcdef',
+      context: { phase: 'observe', secret: 'nope' },
+      error: { code: 'ERR', message: 'boom', stack: 'super secret stack', retryable: false },
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((privateWs as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+
+    const publicPayload = (publicWs as any).send.mock.calls[0]?.[0]
+    expect(typeof publicPayload).toBe('string')
+    const parsed = JSON.parse(publicPayload)
+
+    expect(parsed).toMatchObject({
+      event_type: 'loop.error',
+      agent_did: 'did:cf:grimlock',
+      agent_name: 'grimlock',
+      trace_id: '0123456789abcdef0123456789abcdef',
+      span_id: '0123456789abcdef',
+      context: { phase: 'observe' },
+      error: { code: 'ERR', message: 'boom', retryable: false },
+    })
+
+    expect(parsed.context.secret).toBeUndefined()
+    expect(parsed.error.stack).toBeUndefined()
+  })
+
+  it('sanitizes think_aloud events and keeps only context.message', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const publicWs = createSocket({ collections: ['agent.think_aloud'], dids: ['*'], mode: 'public' })
+    state.getWebSockets = vi.fn().mockReturnValue([publicWs] as WebSocket[])
+
+    const event = {
+      agent_did: 'did:cf:grimlock',
+      agent_name: 'grimlock',
+      event_type: 'agent.think_aloud',
+      timestamp: new Date().toISOString(),
+      context: { message: 'hi', secret: 'nope' },
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const parsed = JSON.parse((publicWs as any).send.mock.calls[0]?.[0])
+    expect(parsed).toMatchObject({
+      event_type: 'agent.think_aloud',
+      agent_did: 'did:cf:grimlock',
+      agent_name: 'grimlock',
+      context: { message: 'hi' },
+    })
+    expect(parsed.context.secret).toBeUndefined()
+  })
+
+  it('sanitizes comms.message events into a small context payload', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const publicWs = createSocket({ collections: ['agent.comms.message'], dids: ['*'], mode: 'public' })
+    state.getWebSockets = vi.fn().mockReturnValue([publicWs] as WebSocket[])
+
+    const record = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:alice',
+      recipient: 'did:cf:bob',
+      content: { text: 'yo', extra: { nested: 'nope' } },
+      createdAt: new Date().toISOString(),
+    }
+
+    const event = {
+      event_type: 'agent.comms.message',
+      timestamp: record.createdAt,
+      agent_did: record.sender,
+      record,
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const parsed = JSON.parse((publicWs as any).send.mock.calls[0]?.[0])
+    expect(parsed).toMatchObject({
+      event_type: 'agent.comms.message',
+      agent_did: 'did:cf:alice',
+      context: {
+        sender: 'did:cf:alice',
+        recipient: 'did:cf:bob',
+        message: 'yo',
+      },
+    })
+  })
+
+  it('rejects websocket filter updates for public firehose subscriptions', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const ws = createSocket({ collections: ['loop.*'], dids: ['*'], mode: 'public' })
+
+    await relay.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'subscribe',
+        collections: ['*'],
+        dids: ['*'],
+      })
+    )
+
+    expect((ws as any).send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'error',
+        error: 'Public firehose subscriptions are fixed (no filter updates)',
       })
     )
   })

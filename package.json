@@ -12,7 +12,12 @@
     "deploy": "turbo deploy",
     "dev": "turbo dev",
     "lint": "turbo lint",
-    "prepare": "sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'"
+    "ios:gen": "pnpm --filter @atproto-agent-network/ios gen",
+    "ios:open": "pnpm --filter @atproto-agent-network/ios open",
+    "ios:build": "pnpm --filter @atproto-agent-network/ios ios:build",
+    "ios:test": "pnpm --filter @atproto-agent-network/ios ios:test",
+    "prepare": "sh -c 'if command -v git >/dev/null 2>&1; then git config core.hooksPath .husky; fi'",
+    "ios:testflight": "pnpm --filter @atproto-agent-network/ios ios:testflight"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",

@@ -86,6 +86,31 @@ function hasMethod(value: unknown, method: string): boolean {
   return typeof (value as Record<string, unknown> | null | undefined)?.[method] === 'function'
 }
 
+function isWebSocketHandshake(request: Request): boolean {
+  // RFC 8441 "Extended CONNECT" for WebSockets over HTTP/2 uses method CONNECT
+  // and does not necessarily include classic Upgrade/Sec-WebSocket-* headers.
+  if (request.method === 'CONNECT') return true
+
+  // WebSocket handshakes *usually* come in as:
+  // - GET + Connection: Upgrade + Upgrade: websocket + Sec-WebSocket-Key + Sec-WebSocket-Version
+  //
+  // But some clients/platform stacks can be inconsistent in header casing, and we want to avoid
+  // accidentally requiring admin auth for a legit WS handshake.
+  const upgrade = (request.headers.get('Upgrade') ?? '').toLowerCase()
+  if (upgrade === 'websocket') return true
+
+  // Fallback: treat presence of WS key/version as an attempted handshake.
+  const key = request.headers.get('Sec-WebSocket-Key')
+  const ver = request.headers.get('Sec-WebSocket-Version')
+  if (key && ver) return true
+
+  // Very loose fallback: Connection: Upgrade.
+  const conn = (request.headers.get('Connection') ?? '').toLowerCase()
+  if (conn.split(',').map((s) => s.trim()).includes('upgrade')) return true
+
+  return false
+}
+
 function listMissingBindings(env: Partial<Env>): string[] {
   const missing: string[] = []
 
@@ -544,6 +569,25 @@ export default {
           )
         }
 
+        // Firehose alias (rewrites to RelayDO firehose).
+        //
+        // WARNING: This is currently tokenless and raw (no sanitization). This is acceptable
+        // for personal dogfooding while the network contains no confidential data.
+        //
+        // Do this BEFORE admin auth to avoid accidental 401s on WS handshakes from iOS/browsers.
+        if (normalizedPathname === '/firehose') {
+          if (!isWebSocketHandshake(request)) {
+            return Response.json({ error: 'WebSocket upgrade required' }, { status: 400 })
+          }
+
+          const forwardUrl = new URL(request.url)
+          forwardUrl.pathname = '/relay/firehose'
+
+          const relayId = env.RELAY.idFromName('main')
+          const relay = env.RELAY.get(relayId)
+          return relay.fetch(new Request(forwardUrl.toString(), request))
+        }
+
         // Public read-only access for agent identity + memory list (GET only)
         // Write operations (POST/PUT/DELETE) and other routes require admin auth
         const isLoopStatusRoute =
@@ -555,8 +599,14 @@ export default {
           !isLoopStatusRoute &&
           // Internal DO endpoints should never be reachable through the public agent forwarding route.
           !normalizedPathname.includes('/__internal/')
-        
-        if (!isAgentReadRoute) {
+
+        // Tokenless Relay firehose WebSockets (raw + sanitized).
+        // Keep this narrow: we do NOT want tokenless access to /relay/emit or other admin-ish relay routes.
+        const isTokenlessRelayFirehoseWs =
+          (normalizedPathname === '/relay/firehose' || normalizedPathname === '/relay/public-firehose') &&
+          isWebSocketHandshake(request)
+
+        if (!isAgentReadRoute && !isTokenlessRelayFirehoseWs) {
           const auth = requireAdminBearerAuth(request, env)
           if (auth) return auth
         }

@@ -48,6 +48,9 @@ atproto-agent-network/
 │   └── IMPLEMENTATION.md # Code examples
 ├── .agents/
 │   └── skills/          # Skills for autonomous development
+├── apps/
+│   ├── network/         # Cloudflare Worker + Durable Objects (API)
+│   └── ios/             # Native iOS client (XcodeGen, SwiftUI) [NEW]
 └── src/                 # Implementation (to be created)
     ├── agent/           # Pi agent wrapper for Cloudflare DO
     ├── crypto/          # Encryption utilities
@@ -69,6 +72,8 @@ Skills live in `.agents/skills/`. Load a skill when working on its domain:
 | `d1-patterns` | D1 schema, encrypted records, queries |
 | `vectorize-search` | Semantic search, embeddings, Vectorize API |
 | `zap-cli` | Observability CLI, event logging, decision traces |
+| `ios-app` | Native iOS client (XcodeGen, SwiftUI, WebSocket feed), turbo integration for iOS build/test |
+| `ios-publish` | TestFlight publishing workflow (archive/export/upload/status checks) for `apps/ios` |
 
 ## HITL Gates
 

@@ -67,8 +67,13 @@ export interface EncryptedRecord {
 export interface AgentEvent {
   id: string
   agent_did: string
+  // Human-readable name (Durable Object name). Useful for clients so they don't have to map DID hashes.
+  agent_name?: string
   session_id: string
   event_type: string
+  // Optional subscription hint: some parts of the system treat event_type as a "collection".
+  // This is safe to omit for internal-only event delivery.
+  collection?: string
   outcome: 'success' | 'error' | 'timeout' | 'skipped'
   timestamp: string
   duration_ms?: number

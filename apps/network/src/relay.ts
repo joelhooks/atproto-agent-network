@@ -21,6 +21,7 @@ type RelayEnv = {
 interface Subscription {
   collections: string[]
   dids: string[]
+  mode?: 'private' | 'public'
 }
 
 interface AgentRegistration {
@@ -35,6 +36,23 @@ interface AgentRegistration {
 
 export class RelayDO extends DurableObject {
   private readonly relayEnv: RelayEnv
+  // Tokenless feed allowlist. Keep this tight until "member auth" exists.
+  private static readonly PUBLIC_COLLECTIONS = ['loop.*', 'agent.think_aloud', 'agent.comms.message', 'game.*']
+
+  private static isWebSocketHandshake(request: Request): boolean {
+    // RFC 8441 "Extended CONNECT" for WebSockets over HTTP/2 uses method CONNECT
+    // and does not necessarily include classic Upgrade/Sec-WebSocket-* headers.
+    if (request.method === 'CONNECT') return true
+
+    const upgrade = (request.headers.get('Upgrade') ?? '').toLowerCase()
+    if (upgrade === 'websocket') return true
+    const key = request.headers.get('Sec-WebSocket-Key')
+    const ver = request.headers.get('Sec-WebSocket-Version')
+    if (key && ver) return true
+    const conn = (request.headers.get('Connection') ?? '').toLowerCase()
+    if (conn.split(',').map((s) => s.trim()).includes('upgrade')) return true
+    return false
+  }
 
   constructor(ctx: DurableObjectState, env: RelayEnv) {
     super(ctx, env)
@@ -48,10 +66,18 @@ export class RelayDO extends DurableObject {
         const path = url.pathname.replace('/relay', '')
 
         // Firehose subscription
-        if (path === '/firehose' && request.headers.get('Upgrade') === 'websocket') {
+        if (path === '/firehose' && RelayDO.isWebSocketHandshake(request)) {
           return withErrorHandling(
             () => this.handleFirehoseSubscription(request),
             { route: 'RelayDO.firehose', request }
+          )
+        }
+
+        // Public firehose subscription (sanitized events only)
+        if (path === '/public-firehose' && RelayDO.isWebSocketHandshake(request)) {
+          return withErrorHandling(
+            () => this.handlePublicFirehoseSubscription(request),
+            { route: 'RelayDO.public_firehose', request }
           )
         }
 
@@ -178,15 +204,18 @@ export class RelayDO extends DurableObject {
     // Fanout to firehose subscribers (same matching logic as /emit).
     const event = {
       event_type: 'agent.comms.message',
+      collection: 'agent.comms.message',
+      timestamp: record.createdAt,
       did: senderDid,
       agent_did: senderDid,
       record,
     }
     for (const ws of this.ctx.getWebSockets()) {
-      const sub = ws.deserializeAttachment() as Subscription
-      if (this.matchesSubscription(event, sub)) {
-        ws.send(JSON.stringify(event))
-      }
+      const sub = (ws.deserializeAttachment?.() as Subscription | undefined) ?? { collections: ['*'], dids: ['*'] }
+      if (!this.matchesSubscription(event, sub)) continue
+      const payload = sub.mode === 'public' ? this.sanitizeEventForPublic(event) : event
+      if (!payload) continue
+      ws.send(JSON.stringify(payload))
     }
 
     return Response.json({ ok: true })
@@ -204,9 +233,27 @@ export class RelayDO extends DurableObject {
     const [client, server] = Object.values(pair)
     
     // Store subscription filters
-    server.serializeAttachment({ collections, dids } satisfies Subscription)
+    server.serializeAttachment({ collections, dids, mode: 'private' } satisfies Subscription)
     this.ctx.acceptWebSocket(server)
     
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private async handlePublicFirehoseSubscription(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    // Allow DID filtering, but clamp collections to a safe allowlist.
+    const dids = this.parseFilterList(url.searchParams.get('dids') ?? url.searchParams.get('wantedDids'))
+
+    const pair = new WebSocketPair()
+    const [client, server] = Object.values(pair)
+
+    server.serializeAttachment({
+      collections: RelayDO.PUBLIC_COLLECTIONS,
+      dids,
+      mode: 'public',
+    } satisfies Subscription)
+    this.ctx.acceptWebSocket(server)
+
     return new Response(null, { status: 101, webSocket: client })
   }
   
@@ -215,11 +262,12 @@ export class RelayDO extends DurableObject {
     
     // Fan out to matching subscribers
     for (const ws of this.ctx.getWebSockets()) {
-      const sub = ws.deserializeAttachment() as Subscription
-      
-      if (this.matchesSubscription(event, sub)) {
-        ws.send(JSON.stringify(event))
-      }
+      const sub = (ws.deserializeAttachment?.() as Subscription | undefined) ?? { collections: ['*'], dids: ['*'] }
+      if (!this.matchesSubscription(event, sub)) continue
+
+      const payload = sub.mode === 'public' ? this.sanitizeEventForPublic(event) : event
+      if (!payload) continue
+      ws.send(JSON.stringify(payload))
     }
     
     return new Response('OK')
@@ -292,6 +340,10 @@ export class RelayDO extends DurableObject {
     // Simplified JSON event shape: { collection }
     push(e.collection)
 
+    // Treat `event_type` as a "collection" for subscription matching.
+    // This makes it possible to subscribe with `collections=loop.*` for loop lifecycle events.
+    push(e.event_type)
+
     // Sometimes the payload is the record itself: { $type: 'agent.*' }
     if (typeof e.$type === 'string' && e.$type.startsWith('agent.')) {
       push(e.$type)
@@ -351,6 +403,174 @@ export class RelayDO extends DurableObject {
       .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&'))
     const regex = new RegExp(`^${escapedParts.join('.*')}$`)
     return regex.test(value)
+  }
+
+  private sanitizeEventForPublic(event: unknown): Record<string, unknown> | null {
+    if (!event || typeof event !== 'object') return null
+    const e = event as Record<string, unknown>
+
+    const event_type = typeof e.event_type === 'string' ? e.event_type : null
+    if (!event_type) return null
+    const isAllowed =
+      event_type.startsWith('loop.') ||
+      event_type === 'agent.think_aloud' ||
+      event_type === 'agent.comms.message' ||
+      event_type.startsWith('game.')
+    if (!isAllowed) return null
+
+    const timestamp =
+      typeof e.timestamp === 'string'
+        ? e.timestamp
+        : typeof e.timestamp === 'number' && Number.isFinite(e.timestamp)
+          ? new Date(e.timestamp).toISOString()
+          : new Date().toISOString()
+
+    const agent_did =
+      typeof e.agent_did === 'string'
+        ? e.agent_did
+        : typeof e.did === 'string'
+          ? e.did
+          : typeof e.repo === 'string'
+            ? e.repo
+            : 'unknown'
+
+    const out: Record<string, unknown> = {
+      event_type,
+      timestamp,
+      agent_did,
+    }
+
+    if (typeof e.agent_name === 'string') out.agent_name = e.agent_name
+    if (typeof e.trace_id === 'string') out.trace_id = e.trace_id
+    if (typeof e.span_id === 'string') out.span_id = e.span_id
+    if (typeof e.parent_span_id === 'string') out.parent_span_id = e.parent_span_id
+    if (typeof e.outcome === 'string') out.outcome = e.outcome
+
+    const ctx =
+      e.context && typeof e.context === 'object' && !Array.isArray(e.context)
+        ? (e.context as Record<string, unknown>)
+        : null
+
+    // Only keep whitelisted context keys for public events.
+    const publicCtx: Record<string, unknown> = {}
+    if (ctx) {
+      if (event_type === 'loop.sleep') {
+        if (typeof ctx.intervalMs === 'number' && Number.isFinite(ctx.intervalMs)) publicCtx.intervalMs = ctx.intervalMs
+        if (typeof ctx.nextAlarmAt === 'number' && Number.isFinite(ctx.nextAlarmAt)) publicCtx.nextAlarmAt = ctx.nextAlarmAt
+      }
+      if (event_type === 'loop.error') {
+        if (typeof ctx.phase === 'string') publicCtx.phase = ctx.phase
+      }
+      if (event_type === 'agent.think_aloud') {
+        if (typeof ctx.message === 'string' && ctx.message.length > 0) {
+          publicCtx.message = ctx.message.length > 2000 ? ctx.message.slice(0, 2000) + '…' : ctx.message
+        }
+      }
+      if (event_type.startsWith('game.')) {
+        // Keep only primitive context values to avoid leaking big state objects.
+        Object.assign(publicCtx, this.extractPrimitiveContext(ctx, 25, 500))
+      }
+    }
+
+    // Comms messages: canonicalize into a small `context` payload for clients.
+    if (event_type === 'agent.comms.message') {
+      const record =
+        e.record && typeof e.record === 'object' && !Array.isArray(e.record)
+          ? (e.record as Record<string, unknown>)
+          : null
+      const content =
+        record?.content && typeof record.content === 'object' && !Array.isArray(record.content)
+          ? (record.content as Record<string, unknown>)
+          : null
+
+      const sender =
+        typeof record?.sender === 'string'
+          ? record.sender
+          : typeof (e as { senderDid?: unknown }).senderDid === 'string'
+            ? (e as { senderDid: string }).senderDid
+            : typeof e.did === 'string'
+              ? e.did
+              : agent_did
+      const recipient =
+        typeof record?.recipient === 'string'
+          ? record.recipient
+          : typeof (e as { recipientDid?: unknown }).recipientDid === 'string'
+            ? (e as { recipientDid: string }).recipientDid
+            : undefined
+
+      const message =
+        typeof content?.text === 'string'
+          ? content.text
+          : typeof content?.message === 'string'
+            ? content.message
+            : typeof content?.body === 'string'
+              ? content.body
+              : typeof content?.task === 'string'
+                ? content.task
+                : undefined
+
+      publicCtx.sender = sender
+      if (recipient) publicCtx.recipient = recipient
+      if (typeof message === 'string' && message.length > 0) {
+        publicCtx.message = message.length > 2000 ? message.slice(0, 2000) + '…' : message
+      } else if (content) {
+        // Fall back to a shallow stringified preview if content is not a simple string.
+        const preview = JSON.stringify(this.extractPrimitiveContext(content, 12, 200))
+        if (preview && preview !== '{}' && preview !== '[]') {
+          publicCtx.message = preview.length > 2000 ? preview.slice(0, 2000) + '…' : preview
+        }
+      }
+    }
+
+    if (Object.keys(publicCtx).length > 0) out.context = publicCtx
+
+    // Error: keep only safe fields (no stack).
+    const err =
+      e.error && typeof e.error === 'object' && !Array.isArray(e.error)
+        ? (e.error as Record<string, unknown>)
+        : null
+    if (err) {
+      const safeErr: Record<string, unknown> = {}
+      if (typeof err.code === 'string') safeErr.code = err.code
+      if (typeof err.message === 'string') safeErr.message = err.message
+      if (typeof err.retryable === 'boolean') safeErr.retryable = err.retryable
+      if (Object.keys(safeErr).length > 0) out.error = safeErr
+    }
+
+    return out
+  }
+
+  private extractPrimitiveContext(
+    ctx: Record<string, unknown>,
+    maxKeys: number,
+    maxStringLen: number
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    let count = 0
+    for (const [k, v] of Object.entries(ctx)) {
+      if (count >= maxKeys) break
+      if (typeof v === 'string') {
+        out[k] = v.length > maxStringLen ? v.slice(0, maxStringLen) + '…' : v
+        count += 1
+        continue
+      }
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        out[k] = v
+        count += 1
+        continue
+      }
+      if (typeof v === 'boolean') {
+        out[k] = v
+        count += 1
+        continue
+      }
+      if (v === null) {
+        out[k] = null
+        count += 1
+        continue
+      }
+    }
+    return out
   }
   
   private async handleAgents(request: Request): Promise<Response> {
@@ -473,6 +693,13 @@ export class RelayDO extends DurableObject {
         return
       }
 
+      const current =
+        (ws.deserializeAttachment?.() as Subscription | undefined) ?? { collections: ['*'], dids: ['*'], mode: 'private' }
+      if (current.mode === 'public') {
+        ws.send(JSON.stringify({ type: 'error', error: 'Public firehose subscriptions are fixed (no filter updates)' }))
+        return
+      }
+
       // Allow clients to update filters after connecting.
       if (type && type !== 'subscribe' && type !== 'filters' && type !== 'update') {
         ws.send(JSON.stringify({ type: 'error', error: 'Unsupported message type' }))
@@ -482,7 +709,7 @@ export class RelayDO extends DurableObject {
       const collections = this.normalizeFilterList(data.collections)
       const dids = this.normalizeFilterList(data.dids)
 
-      ws.serializeAttachment({ collections, dids } satisfies Subscription)
+      ws.serializeAttachment({ collections, dids, mode: current.mode ?? 'private' } satisfies Subscription)
       ws.send(JSON.stringify({ type: 'subscribed', collections, dids }))
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)

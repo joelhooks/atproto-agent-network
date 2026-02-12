@@ -1215,6 +1215,98 @@ describe('AgentDO', () => {
     expect(payload.context).toMatchObject({ message: 'UI-only reasoning' })
   })
 
+  it('broadcasts memory lifecycle events to websocket clients', async () => {
+    const { state, acceptWebSocket } = createState('agent-memory-events')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const ws = { readyState: 1, send: vi.fn(), close: vi.fn() } as any as WebSocket
+    acceptWebSocket(ws)
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    const recall = tools.find((t) => t.name === 'recall')
+    expect(remember).toBeTruthy()
+    expect(recall).toBeTruthy()
+
+    const remembered = await remember!.execute('tc-mem-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Memory events',
+        text: 'show all memory event types',
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rememberId = remembered.details.id as string
+
+    const apiRecord = {
+      $type: 'agent.memory.note',
+      summary: 'API memory',
+      text: 'stored through HTTP',
+      createdAt: new Date().toISOString(),
+    }
+    const postResponse = await agent.fetch(new Request('https://example/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(apiRecord),
+    }))
+    expect(postResponse.status).toBe(200)
+    const { id } = (await postResponse.json()) as { id: string }
+
+    await recall!.execute('tc-mem-2', { query: 'memory', limit: 3 })
+
+    const getResponse = await agent.fetch(new Request(`https://example/memory?id=${encodeURIComponent(id)}`))
+    expect(getResponse.status).toBe(200)
+
+    const listResponse = await agent.fetch(new Request('https://example/memory?collection=agent.memory.note&limit=10'))
+    expect(listResponse.status).toBe(200)
+
+    const updated = { ...apiRecord, summary: 'API memory updated', text: 'updated through HTTP' }
+    const putResponse = await agent.fetch(new Request(`https://example/memory?id=${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }))
+    expect(putResponse.status).toBe(200)
+
+    const deleteResponse = await agent.fetch(new Request(`https://example/memory?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }))
+    expect(deleteResponse.status).toBe(200)
+
+    const events = (ws as any).send.mock.calls.map((call: [string]) => JSON.parse(call[0]) as Record<string, unknown>)
+    const eventTypes = events.map((event) => event.event_type)
+    expect(eventTypes).toEqual(
+      expect.arrayContaining([
+        'agent.memory.store',
+        'agent.memory.recall',
+        'agent.memory.retrieve',
+        'agent.memory.list',
+        'agent.memory.update',
+        'agent.memory.delete',
+      ])
+    )
+
+    const storeSources = events
+      .filter((event) => event.event_type === 'agent.memory.store')
+      .map((event) => (event.context as Record<string, unknown>)?.source)
+
+    expect(storeSources).toEqual(expect.arrayContaining(['tool.remember', 'api.memory.post']))
+
+    const storedIds = events
+      .filter((event) => event.event_type === 'agent.memory.store')
+      .map((event) => (event.context as Record<string, unknown>)?.id)
+
+    expect(storedIds).toEqual(expect.arrayContaining([rememberId, id]))
+  })
+
   it('shares encrypted records between agents via /share and /shared', async () => {
     const aliceState = createState('agent-alice-share').state
     const bobState = createState('agent-bob-share').state
