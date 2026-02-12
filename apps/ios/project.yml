@@ -1,0 +1,48 @@
+name: HighswarmFeed
+
+options:
+  bundleIdPrefix: com.joelhooks
+  deploymentTarget:
+    iOS: "26.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: "N7L54A44YX"
+
+targets:
+  HighswarmFeed:
+    type: application
+    platform: iOS
+    sources:
+      - HighswarmFeed
+    resources:
+      - HighswarmFeed/Resources
+      - HighswarmFeed/Assets.xcassets
+    dependencies:
+      - sdk: CarPlay.framework
+    settings:
+      base:
+        INFOPLIST_FILE: HighswarmFeed/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.joelhooks.highswarm.feed
+        SWIFT_VERSION: "6.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    preBuildScripts:
+      - name: "SwiftLint (disabled)"
+        script: |
+          # Placeholder: we can add SwiftLint later if we actually want it.
+          exit 0
+        basedOnDependencyAnalysis: false
+
+  HighswarmFeedTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - HighswarmFeedTests
+    settings:
+      base:
+        INFOPLIST_GENERATION_MODE: GeneratedFile
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: HighswarmFeed

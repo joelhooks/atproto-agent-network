@@ -251,13 +251,15 @@ export class AgentDO extends DurableObject {
     error?: AgentEvent['error']
   }): Promise<void> {
     const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
-    if (!sockets.length) return
 
     const payload: AgentEvent = {
       id: generateTid(),
       agent_did: this.did,
+      agent_name: this.config?.name,
       session_id: await this.getOrCreateSessionId(),
       event_type: input.event_type,
+      // Makes it possible to subscribe to loop events via RelayDO `collections=loop.*`.
+      collection: input.event_type,
       outcome: input.outcome ?? 'success',
       timestamp: new Date().toISOString(),
       trace_id: input.trace_id,
@@ -269,19 +271,73 @@ export class AgentDO extends DurableObject {
 
     const message = JSON.stringify(payload)
 
-    for (const ws of sockets) {
-      try {
-        // 1 === OPEN in standard WebSocket API.
-        if ((ws as unknown as { readyState?: number }).readyState !== 1) continue
-        ws.send(message)
-      } catch {
-        // Best-effort: stale sockets can linger in DO hibernation lists.
+    if (sockets.length) {
+      for (const ws of sockets) {
         try {
-          ws.close(1011, 'stale connection')
+          // 1 === OPEN in standard WebSocket API.
+          if ((ws as unknown as { readyState?: number }).readyState !== 1) continue
+          ws.send(message)
         } catch {
-          // ignore
+          // Best-effort: stale sockets can linger in DO hibernation lists.
+          try {
+            ws.close(1011, 'stale connection')
+          } catch {
+            // ignore
+          }
         }
       }
+    }
+
+    // Emit to the relay for cross-agent fanout (e.g. a single firehose connection).
+    await this.emitToRelay(payload)
+  }
+
+  private async safeBroadcastEvent(input: {
+    event_type: string
+    context?: Record<string, unknown>
+    outcome?: AgentEvent['outcome']
+    error?: AgentEvent['error']
+  }): Promise<void> {
+    try {
+      await this.broadcastLoopEvent({
+        event_type: input.event_type,
+        trace_id: createTraceId(),
+        span_id: createSpanId(),
+        context: input.context,
+        outcome: input.outcome,
+        error: input.error,
+      })
+    } catch {
+      // Best-effort eventing should never fail the caller path.
+    }
+  }
+
+  private async emitToRelay(event: AgentEvent): Promise<void> {
+    const relayNamespace = this.agentEnv.RELAY
+    if (!relayNamespace) return
+
+    try {
+      const relayId = relayNamespace.idFromName('main')
+      const relay = relayNamespace.get(relayId)
+
+      const p = relay.fetch(
+        new Request('https://relay/relay/emit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(event),
+        })
+      ).catch(() => {})
+
+      const waitUntil = (this.ctx as unknown as { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil
+      if (typeof waitUntil === 'function') {
+        waitUntil.call(this.ctx, p)
+        return
+      }
+
+      // Fallback for unit tests that don't provide waitUntil.
+      await p
+    } catch {
+      // Best-effort: relay is an optional performance/UX feature.
     }
   }
   
@@ -2022,6 +2078,7 @@ export class AgentDO extends DurableObject {
     const did = this.did
     const env = this.agentEnv
     const broadcastLoopEvent = this.broadcastLoopEvent.bind(this)
+    const safeBroadcastEvent = this.safeBroadcastEvent.bind(this)
 
     const toTextContent = (text: string) => [{ type: 'text', text }] as Array<{ type: 'text'; text: string }>
 
@@ -2153,6 +2210,14 @@ export class AgentDO extends DurableObject {
 
           const id = await memory.store(validated.value)
           await vectorizeUpsert(id, validated.value)
+          await safeBroadcastEvent({
+            event_type: 'agent.memory.store',
+            context: {
+              source: 'tool.remember',
+              id,
+              collection: validated.value.$type,
+            },
+          })
           return { content: toTextContent(`Stored memory ${id}`), details: { id } }
         },
       },
@@ -2175,11 +2240,13 @@ export class AgentDO extends DurableObject {
           if (!query) throw new Error('recall requires a query string')
 
           const results: Array<{ id: string; record: unknown; score?: number; metadata?: unknown }> = []
+          let usedVectorize = false
 
           if (env.VECTORIZE && typeof env.VECTORIZE.query === 'function') {
             const embedding = await embedText(query)
             if (embedding) {
               try {
+                usedVectorize = true
                 const response = (await env.VECTORIZE.query(embedding, {
                   topK: limit,
                   filter: { did },
@@ -2213,6 +2280,18 @@ export class AgentDO extends DurableObject {
               }
             }
           }
+
+          await safeBroadcastEvent({
+            event_type: 'agent.memory.recall',
+            context: {
+              source: 'tool.recall',
+              query,
+              limit,
+              results: results.length,
+              usedVectorize,
+              ids: results.slice(0, 10).map((result) => result.id),
+            },
+          })
 
           const summary = results.length
             ? results.map((r) => `- ${r.id}`).join('\n')
@@ -3137,6 +3216,14 @@ export class AgentDO extends DurableObject {
       }
 
       const id = await this.memory.store(validated.value)
+      await this.safeBroadcastEvent({
+        event_type: 'agent.memory.store',
+        context: {
+          source: 'api.memory.post',
+          id,
+          collection: validated.value.$type,
+        },
+      })
       return Response.json({ id })
     }
 
@@ -3145,14 +3232,33 @@ export class AgentDO extends DurableObject {
       if (id) {
         const record = await this.memory.retrieve(id)
         if (!record) {
+          await this.safeBroadcastEvent({
+            event_type: 'agent.memory.retrieve',
+            outcome: 'error',
+            context: { source: 'api.memory.get', id },
+            error: { code: 'not_found', message: 'Memory not found', retryable: false },
+          })
           return Response.json({ error: 'Not found' }, { status: 404 })
         }
+        await this.safeBroadcastEvent({
+          event_type: 'agent.memory.retrieve',
+          context: { source: 'api.memory.get', id },
+        })
         return Response.json({ id, record })
       }
 
       const collection = url.searchParams.get('collection') ?? undefined
       const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
       const entries = await this.memory.list({ collection, limit })
+      await this.safeBroadcastEvent({
+        event_type: 'agent.memory.list',
+        context: {
+          source: 'api.memory.get',
+          collection: collection ?? '*',
+          limit: limit ?? null,
+          count: entries.length,
+        },
+      })
       return Response.json({ entries })
     }
 
@@ -3178,12 +3284,31 @@ export class AgentDO extends DurableObject {
       try {
         const ok = await this.memory.update(id, validated.value)
         if (!ok) {
+          await this.safeBroadcastEvent({
+            event_type: 'agent.memory.update',
+            outcome: 'error',
+            context: {
+              source: 'api.memory.put',
+              id,
+              collection: validated.value.$type,
+            },
+            error: { code: 'not_found', message: 'Memory not found', retryable: false },
+          })
           return Response.json({ error: 'Not found' }, { status: 404 })
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         return Response.json({ error: message }, { status: 400 })
       }
+
+      await this.safeBroadcastEvent({
+        event_type: 'agent.memory.update',
+        context: {
+          source: 'api.memory.put',
+          id,
+          collection: validated.value.$type,
+        },
+      })
 
       return Response.json({ id, ok: true })
     }
@@ -3196,8 +3321,19 @@ export class AgentDO extends DurableObject {
 
       const ok = await this.memory.softDelete(id)
       if (!ok) {
+        await this.safeBroadcastEvent({
+          event_type: 'agent.memory.delete',
+          outcome: 'error',
+          context: { source: 'api.memory.delete', id },
+          error: { code: 'not_found', message: 'Memory not found', retryable: false },
+        })
         return Response.json({ error: 'Not found' }, { status: 404 })
       }
+
+      await this.safeBroadcastEvent({
+        event_type: 'agent.memory.delete',
+        context: { source: 'api.memory.delete', id },
+      })
 
       return Response.json({ id, ok: true })
     }
@@ -3243,12 +3379,23 @@ export class AgentDO extends DurableObject {
     try {
       const ok = await this.memory.share(id, recipientDid, recipientPublicKey)
       if (!ok) {
+        await this.safeBroadcastEvent({
+          event_type: 'agent.memory.share',
+          outcome: 'error',
+          context: { source: 'api.share.post', id, recipientDid },
+          error: { code: 'not_found', message: 'Memory not found', retryable: false },
+        })
         return Response.json({ error: 'Not found' }, { status: 404 })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return Response.json({ error: message }, { status: 400 })
     }
+
+    await this.safeBroadcastEvent({
+      event_type: 'agent.memory.share',
+      context: { source: 'api.share.post', id, recipientDid },
+    })
 
     return Response.json({ ok: true })
   }
@@ -3268,14 +3415,33 @@ export class AgentDO extends DurableObject {
     if (id) {
       const record = await this.memory.retrieveShared(id)
       if (!record) {
+        await this.safeBroadcastEvent({
+          event_type: 'agent.memory.retrieve_shared',
+          outcome: 'error',
+          context: { source: 'api.shared.get', id },
+          error: { code: 'not_found', message: 'Shared memory not found', retryable: false },
+        })
         return Response.json({ error: 'Not found' }, { status: 404 })
       }
+      await this.safeBroadcastEvent({
+        event_type: 'agent.memory.retrieve_shared',
+        context: { source: 'api.shared.get', id },
+      })
       return Response.json({ id, record })
     }
 
     const collection = url.searchParams.get('collection') ?? undefined
     const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
     const entries = await this.memory.listShared({ collection, limit })
+    await this.safeBroadcastEvent({
+      event_type: 'agent.memory.list_shared',
+      context: {
+        source: 'api.shared.get',
+        collection: collection ?? '*',
+        limit: limit ?? null,
+        count: entries.length,
+      },
+    })
     return Response.json({ entries })
   }
   
@@ -3313,6 +3479,16 @@ export class AgentDO extends DurableObject {
 
       const incomingMessage = validated.value
       const id = await this.memory.store(incomingMessage)
+      await this.safeBroadcastEvent({
+        event_type: 'agent.comms.inbox.store',
+        context: {
+          source: 'api.inbox.post',
+          id,
+          sender: incomingMessage.sender,
+          recipient: incomingMessage.recipient,
+          contentKind: incomingMessage.content.kind,
+        },
+      })
 
       if (this.config?.webhookUrl) {
         // Extract token from URL query param and send as Authorization header
@@ -3350,6 +3526,15 @@ export class AgentDO extends DurableObject {
     if (request.method === 'GET') {
       const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
       const entries = await this.memory.list({ collection: 'agent.comms.message', limit })
+      await this.safeBroadcastEvent({
+        event_type: 'agent.comms.inbox.list',
+        context: {
+          source: 'api.inbox.get',
+          collection: 'agent.comms.message',
+          limit: limit ?? null,
+          count: entries.length,
+        },
+      })
       return Response.json({ entries })
     }
 

@@ -1,0 +1,11 @@
+{
+  "name": "@atproto-agent-network/ios",
+  "private": true,
+  "scripts": {
+    "gen": "xcodegen generate --spec project.yml",
+    "open": "open HighswarmFeed.xcodeproj",
+    "ios:build": "pnpm gen && xcodebuild -project HighswarmFeed.xcodeproj -scheme HighswarmFeed -configuration Debug -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' build",
+    "ios:test": "pnpm gen && xcodebuild -project HighswarmFeed.xcodeproj -scheme HighswarmFeed -configuration Debug -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' test",
+    "ios:testflight": "./scripts/deploy-testflight.sh"
+  }
+}

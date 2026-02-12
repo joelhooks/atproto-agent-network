@@ -30,6 +30,8 @@ importers:
         specifier: ^4.63.0
         version: 4.63.0(@cloudflare/workers-types@4.20260207.0)
 
+  apps/ios: {}
+
   apps/network:
     dependencies:
       '@atproto-agent/agent':
@@ -56,10 +58,10 @@ importers:
         version: link:../core
       '@mariozechner/pi-agent-core':
         specifier: 0.52.8
-        version: 0.52.8(ws@8.18.0)(zod@3.22.3)
+        version: 0.52.8(ws@8.18.0)(zod@4.3.6)
       '@mariozechner/pi-ai':
         specifier: 0.52.8
-        version: 0.52.8(ws@8.18.0)(zod@3.22.3)
+        version: 0.52.8(ws@8.18.0)(zod@4.3.6)
     devDependencies:
       tsup:
         specifier: ^8.5.1
@@ -123,8 +125,6 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@25.2.2)(jiti@2.6.1)(lightningcss@1.30.2)
-
-  packages/turbo: {}
 
 packages:
 
@@ -2631,12 +2631,6 @@ snapshots:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
 
-  '@anthropic-ai/sdk@0.73.0(zod@3.22.3)':
-    dependencies:
-      json-schema-to-ts: 3.1.1
-    optionalDependencies:
-      zod: 3.22.3
-
   '@anthropic-ai/sdk@0.73.0(zod@4.3.6)':
     dependencies:
       json-schema-to-ts: 3.1.1
@@ -3524,33 +3518,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mariozechner/pi-agent-core@0.52.8(ws@8.18.0)(zod@3.22.3)':
+  '@mariozechner/pi-agent-core@0.52.8(ws@8.18.0)(zod@4.3.6)':
     dependencies:
-      '@mariozechner/pi-ai': 0.52.8(ws@8.18.0)(zod@3.22.3)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - aws-crt
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
-  '@mariozechner/pi-ai@0.52.8(ws@8.18.0)(zod@3.22.3)':
-    dependencies:
-      '@anthropic-ai/sdk': 0.73.0(zod@3.22.3)
-      '@aws-sdk/client-bedrock-runtime': 3.985.0
-      '@google/genai': 1.40.0
-      '@mistralai/mistralai': 1.10.0
-      '@sinclair/typebox': 0.34.48
-      ajv: 8.17.1
-      ajv-formats: 3.0.1(ajv@8.17.1)
-      chalk: 5.6.2
-      openai: 6.10.0(ws@8.18.0)(zod@3.22.3)
-      partial-json: 0.1.7
-      proxy-agent: 6.5.0
-      undici: 7.21.0
-      zod-to-json-schema: 3.25.1(zod@3.22.3)
+      '@mariozechner/pi-ai': 0.52.8(ws@8.18.0)(zod@4.3.6)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - aws-crt
@@ -4783,11 +4753,6 @@ snapshots:
   node-releases@2.0.27: {}
 
   object-assign@4.1.1: {}
-
-  openai@6.10.0(ws@8.18.0)(zod@3.22.3):
-    optionalDependencies:
-      ws: 8.18.0
-      zod: 3.22.3
 
   openai@6.10.0(ws@8.18.0)(zod@4.3.6):
     optionalDependencies:

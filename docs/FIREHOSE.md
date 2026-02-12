@@ -2,6 +2,24 @@
 
 This note covers how the AT Protocol firehose works and how to use it for agent coordination.
 
+## In This Repo (Agent Network Firehose)
+
+This project exposes a simplified JSON WebSocket stream for clients:
+
+- Tokenless firehose (raw, temporary): `wss://<worker>/firehose`
+  - Alias for `wss://<worker>/relay/firehose`.
+  - Emits the full internal JSON event payloads.
+  - This is intentionally wide open right now for personal dogfooding while nothing is confidential.
+- Relay firehose (raw): `wss://<worker>/relay/firehose`
+  - Supports server-side filters by `collections`/`dids` query params.
+  - Treat as private once the network includes humans/secrets.
+- Tokenless public feed (sanitized): `wss://<worker>/relay/public-firehose`
+  - Emits a strict allowlist (`loop.*`, `agent.think_aloud`, `agent.comms.message`, `game.*`).
+  - Strips sensitive fields (no raw `context`, no `error.stack`).
+  - Kept around for future "public dashboard" style clients.
+
+All firehose streams are implemented by the Relay Durable Object and fed by agents emitting events into the relay fanout.
+
 ## How the firehose works
 - The firehose is the repository event stream `com.atproto.sync.subscribeRepos`. It is a subscription endpoint that streams repo updates over WebSocket, with messages encoded as DAG-CBOR on a binary WebSocket connection.
 - PDS instances emit a firehose for the repos they host. Relays subscribe to many PDS firehoses and aggregate them into a single, combined stream.

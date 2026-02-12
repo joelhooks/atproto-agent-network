@@ -86,6 +86,22 @@ This document outlines a pragmatic security model for agent networks built on at
   - Reputation computation
 - Prefer minimal privileges for automation agents and limit token scope.
 
+## Current Reality (2026-02-10)
+
+This repo currently exposes a tokenless WebSocket firehose:
+
+- `wss://<worker>/firehose`
+- Currently forwards the full internal event payloads (raw).
+- This is intentionally wide open for personal dogfooding while the network is "agents playing D&D".
+- A sanitized stream also exists at `wss://<worker>/relay/public-firehose`.
+
+This is intentionally "good enough for local dogfooding" while the system is mostly agents playing D&D.
+As the network grows to include humans, multi-tenant environments, and real secrets, we must tighten this:
+
+- Add member auth (capability-based, DID-signed, aligned with epic `#101`)
+- Reduce public event surface or require explicit opt-in per environment
+- Enforce strict schema + size limits for any public-facing events
+
 ## Open Questions
 - Standardizing a portable trust-endorsement lexicon for agents.
 - Best practices for encrypted record schemas and key distribution.
