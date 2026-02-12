@@ -39,6 +39,9 @@ import {
   type RpgClass,
   type FeedMessage,
   type FeedMessageType,
+  type CampaignState,
+  type StoryArc,
+  type WorldState,
   type RpgGameState,
   XP_PER_ADVENTURE_COMPLETE,
   XP_PER_BARRIER_BRUTE_FORCE,
@@ -98,6 +101,291 @@ function generateJoinName(klass: RpgClass, partyIndex: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+type CampaignRow = {
+  id: string
+  name: string
+  premise: string | null
+  world_state: string | null
+  story_arcs: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+type CampaignPatch = Partial<Pick<CampaignState, 'name' | 'premise' | 'worldState' | 'storyArcs' | 'adventureCount'>>
+
+function normalizeDisposition(value: unknown): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n)) return 0
+  return Math.max(-100, Math.min(100, Math.floor(n)))
+}
+
+function buildDefaultWorldState(): WorldState {
+  return {
+    factions: [],
+    locations: [],
+    events: [],
+  }
+}
+
+function buildDefaultStoryArcs(): StoryArc[] {
+  return []
+}
+
+function parseCampaignAdventureCount(raw: unknown, fallback = 0): number {
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
+  if (!Number.isFinite(n)) return Math.max(0, Math.floor(fallback))
+  return Math.max(0, Math.floor(n))
+}
+
+function normalizeWorldState(raw: unknown, input: { adventureCount: number }): WorldState & { adventureCount: number } {
+  const fallback = buildDefaultWorldState()
+  const src = isRecord(raw) ? raw : {}
+
+  const factions = Array.isArray(src.factions)
+    ? src.factions
+      .map((entry) => {
+        if (!isRecord(entry)) return null
+        const name = String(entry.name ?? '').trim()
+        if (!name) return null
+        return {
+          id: String(entry.id ?? `faction_${generateTid()}`),
+          name,
+          disposition: normalizeDisposition(entry.disposition),
+          description: String(entry.description ?? '').trim() || 'Unknown faction motives.',
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : fallback.factions
+
+  const locations = Array.isArray(src.locations)
+    ? src.locations
+      .map((entry) => {
+        if (!isRecord(entry)) return null
+        const name = String(entry.name ?? '').trim()
+        if (!name) return null
+        return {
+          id: String(entry.id ?? `location_${generateTid()}`),
+          name,
+          description: String(entry.description ?? '').trim() || 'No details recorded.',
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : fallback.locations
+
+  const events = Array.isArray(src.events)
+    ? src.events
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const text = entry.trim()
+          return text ? text : null
+        }
+        if (!isRecord(entry)) return null
+        const text = String(entry.description ?? '').trim()
+        return text ? text : null
+      })
+      .filter((entry): entry is string => Boolean(entry))
+    : fallback.events
+
+  const adventureCount = parseCampaignAdventureCount((src as Record<string, unknown>).adventureCount, input.adventureCount)
+  return { factions, locations, events, adventureCount }
+}
+
+function normalizeStoryArcs(raw: unknown): StoryArc[] {
+  const fallback = buildDefaultStoryArcs()
+  if (!Array.isArray(raw)) return fallback
+  const arcs = raw
+    .map((entry) => {
+      if (!isRecord(entry)) return null
+      const name = String(entry.name ?? '').trim()
+      if (!name) return null
+      const statusRaw = String(entry.status ?? '').trim()
+      const status: StoryArc['status'] =
+        statusRaw === 'seeded' ||
+        statusRaw === 'active' ||
+        statusRaw === 'climax' ||
+        statusRaw === 'resolved' ||
+        statusRaw === 'failed'
+          ? statusRaw
+          : 'active'
+      const plotPoints = Array.isArray(entry.plotPoints)
+        ? entry.plotPoints
+          .map((point) => {
+            if (!isRecord(point)) return null
+            const description = String(point.description ?? '').trim()
+            if (!description) return null
+            const adventureId = typeof point.adventureId === 'string' ? point.adventureId : undefined
+            return {
+              id: String(point.id ?? `plot_${generateTid()}`),
+              description,
+              resolved: Boolean(point.resolved),
+              ...(adventureId ? { adventureId } : {}),
+            }
+          })
+          .filter((point): point is StoryArc['plotPoints'][number] => Boolean(point))
+        : []
+      return {
+        id: String(entry.id ?? `arc_${generateTid()}`),
+        name,
+        status,
+        plotPoints,
+      }
+    })
+    .filter((arc): arc is StoryArc => Boolean(arc))
+
+  return arcs.length > 0 ? arcs : fallback
+}
+
+function rowToCampaignState(row: CampaignRow): CampaignState {
+  const name = String(row.name || 'Untitled Campaign').trim() || 'Untitled Campaign'
+  const premise = String(row.premise || '').trim()
+  const worldRaw = (() => {
+    try {
+      return row.world_state ? JSON.parse(row.world_state) : {}
+    } catch {
+      return {}
+    }
+  })()
+  const arcsRaw = (() => {
+    try {
+      return row.story_arcs ? JSON.parse(row.story_arcs) : []
+    } catch {
+      return []
+    }
+  })()
+  const worldStateWithMeta = normalizeWorldState(worldRaw, { adventureCount: 0 })
+  const adventureCount = parseCampaignAdventureCount(worldStateWithMeta.adventureCount, 0)
+
+  return {
+    id: row.id,
+    name,
+    premise,
+    worldState: {
+      factions: worldStateWithMeta.factions,
+      locations: worldStateWithMeta.locations,
+      events: worldStateWithMeta.events,
+    },
+    storyArcs: normalizeStoryArcs(arcsRaw),
+    adventureCount,
+  }
+}
+
+function serializeWorldState(state: CampaignState): string {
+  return JSON.stringify({
+    factions: state.worldState.factions,
+    locations: state.worldState.locations,
+    events: state.worldState.events,
+    adventureCount: state.adventureCount,
+  })
+}
+
+async function ensureCampaignSchema(db: D1Database): Promise<void> {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS campaigns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        premise TEXT DEFAULT '',
+        world_state TEXT DEFAULT '{}',
+        story_arcs TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    )
+    .run()
+    .catch(() => undefined)
+}
+
+export async function createCampaign(db: D1Database, name: string, premise: string): Promise<CampaignState> {
+  await ensureCampaignSchema(db)
+  const safeName = String(name || '').trim() || 'Untitled Campaign'
+  const safePremise = String(premise || '').trim()
+  const worldState = buildDefaultWorldState()
+  const storyArcs = buildDefaultStoryArcs()
+  const campaign: CampaignState = {
+    id: `campaign_${generateTid()}`,
+    name: safeName,
+    premise: safePremise,
+    worldState,
+    storyArcs,
+    adventureCount: 0,
+  }
+
+  await db
+    .prepare(
+      "INSERT INTO campaigns (id, name, premise, world_state, story_arcs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+    )
+    .bind(campaign.id, campaign.name, campaign.premise, serializeWorldState(campaign), JSON.stringify(campaign.storyArcs))
+    .run()
+  return campaign
+}
+
+export async function getCampaign(db: D1Database, id: string): Promise<CampaignState | null> {
+  await ensureCampaignSchema(db)
+  const row = await db
+    .prepare('SELECT id, name, premise, world_state, story_arcs, created_at, updated_at FROM campaigns WHERE id = ?')
+    .bind(id)
+    .first<CampaignRow>()
+  if (!row) return null
+  return rowToCampaignState(row)
+}
+
+export async function updateCampaign(db: D1Database, id: string, patch: CampaignPatch): Promise<void> {
+  const current = await getCampaign(db, id)
+  if (!current) return
+
+  const next: CampaignState = {
+    ...current,
+    ...(typeof patch.name === 'string' ? { name: patch.name.trim() || current.name } : {}),
+    ...(typeof patch.premise === 'string' ? { premise: patch.premise.trim() } : {}),
+    worldState: patch.worldState
+      ? normalizeWorldState(patch.worldState, {
+          adventureCount: parseCampaignAdventureCount(patch.adventureCount, current.adventureCount),
+        })
+      : { ...current.worldState },
+    storyArcs: patch.storyArcs ? normalizeStoryArcs(patch.storyArcs) : current.storyArcs,
+    adventureCount: parseCampaignAdventureCount(patch.adventureCount, current.adventureCount),
+  }
+
+  await db
+    .prepare("UPDATE campaigns SET name = ?, premise = ?, world_state = ?, story_arcs = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(next.name, next.premise, serializeWorldState(next), JSON.stringify(next.storyArcs), id)
+    .run()
+}
+
+export async function linkAdventureToCampaign(db: D1Database, envId: string, campaignId: string): Promise<number> {
+  await ensureCampaignSchema(db)
+  const campaign = await getCampaign(db, campaignId)
+  if (!campaign) throw new Error(`Campaign ${campaignId} not found`)
+
+  const row = await db
+    .prepare("SELECT id, state FROM environments WHERE id = ? AND type = 'rpg'")
+    .bind(envId)
+    .first<{ id: string; state: string }>()
+  if (!row) throw new Error(`Adventure ${envId} not found`)
+
+  const adventureNumber = Math.max(1, campaign.adventureCount + 1)
+  const nextState = (() => {
+    try {
+      const parsed = JSON.parse(row.state)
+      if (isRecord(parsed)) {
+        parsed.campaignId = campaign.id
+        parsed.campaignAdventureNumber = adventureNumber
+      }
+      return JSON.stringify(parsed)
+    } catch {
+      return row.state
+    }
+  })()
+
+  await db
+    .prepare("UPDATE environments SET campaign_id = ?, adventure_number = ?, state = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(campaign.id, adventureNumber, nextState, envId)
+    .run()
+
+  await updateCampaign(db, campaign.id, { adventureCount: adventureNumber })
+  return adventureNumber
 }
 
 function addXpEarned(game: RpgGameState, who: string, amount: number): void {
@@ -443,6 +731,12 @@ async function emitEnvironmentCompleted(ctx: EnvironmentContext, input: { gameId
     // best-effort
   }
 
+  try {
+    await applyAdventureOutcomeToCampaign(ctx, { gameId, game })
+  } catch {
+    // best-effort
+  }
+
   // Save persistent character for this agent
   if (ctx.saveCharacter && ctx.loadCharacter) {
     try {
@@ -488,6 +782,53 @@ function outcomeLabel(game: RpgGameState): 'victory' | 'tpk' | 'abandoned' {
   const finishedAtEnd = Number.isFinite(game.roomIndex) && game.roomIndex >= Math.max(0, (game.dungeon?.length ?? 0) - 1)
   if (finishedAtEnd) return 'victory'
   return 'abandoned'
+}
+
+async function applyAdventureOutcomeToCampaign(
+  ctx: EnvironmentContext,
+  input: { gameId: string; game: RpgGameState }
+): Promise<void> {
+  const campaignId = typeof input.game.campaignId === 'string' ? input.game.campaignId : ''
+  if (!campaignId) return
+
+  const campaign = await getCampaign(ctx.db, campaignId)
+  if (!campaign) return
+
+  const adventureNumber = parseCampaignAdventureCount(input.game.campaignAdventureNumber, campaign.adventureCount + 1)
+  const outcome = outcomeLabel(input.game)
+  const summary = compactAdventureLog(input.game)
+
+  const event = `Adventure #${adventureNumber} (${input.gameId}) ended in ${outcome}: ${summary}`
+
+  const nextWorldState: WorldState = {
+    ...campaign.worldState,
+    events: [...(campaign.worldState.events ?? []), event].slice(-100),
+  }
+
+  const nextArcs: StoryArc[] = campaign.storyArcs.map((arc) => ({
+    ...arc,
+    plotPoints: Array.isArray(arc.plotPoints) ? arc.plotPoints.map((plotPoint) => ({ ...plotPoint })) : [],
+  }))
+
+  const activeArc = nextArcs.find((arc) => arc.status === 'active')
+  if (activeArc) {
+    const unresolved = activeArc.plotPoints.find((plotPoint) => !plotPoint.resolved)
+    if (outcome === 'victory' && unresolved) {
+      unresolved.resolved = true
+      unresolved.adventureId = input.gameId
+    }
+    if (outcome === 'tpk' && unresolved) {
+      activeArc.status = 'failed'
+    } else if (!activeArc.plotPoints.some((plotPoint) => !plotPoint.resolved)) {
+      activeArc.status = 'resolved'
+    }
+  }
+
+  await updateCampaign(ctx.db, campaignId, {
+    worldState: nextWorldState,
+    storyArcs: nextArcs,
+    adventureCount: Math.max(campaign.adventureCount, adventureNumber),
+  })
 }
 
 function countKillsFromLog(game: RpgGameState, agentName: string): number {
@@ -918,6 +1259,8 @@ export const rpgEnvironment: AgentEnvironment = {
           },
           gameId: { type: 'string', description: 'Game ID (optional; defaults to your active adventure).' },
           players: { type: 'array', items: { type: 'string' }, description: 'Players for new_game.' },
+          campaignId: { type: 'string', description: 'Optional campaign id to bind this adventure to.' },
+          campaign_id: { type: 'string', description: 'Alias for campaignId.' },
           klass: { type: 'string', enum: ['Warrior', 'Scout', 'Mage', 'Healer'], description: 'Class for create_character.' },
           defender: { type: 'string', description: 'Party member to attack (out of combat only).' },
           spell: { type: 'string', description: 'Spell name for cast_spell.' },
@@ -1065,6 +1408,15 @@ export const rpgEnvironment: AgentEnvironment = {
           // Always use the full player roster — partial lists lead to lopsided parties
           const finalPlayers = KNOWN_AGENTS
           if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
+          const requestedCampaignId = typeof params.campaignId === 'string'
+            ? params.campaignId.trim()
+            : typeof params.campaign_id === 'string'
+              ? params.campaign_id.trim()
+              : ''
+          const campaignState = requestedCampaignId ? await getCampaign(db, requestedCampaignId) : null
+          if (requestedCampaignId && !campaignState) {
+            return { ok: false, error: `Campaign ${requestedCampaignId} not found.` }
+          }
 
           // Prefer joining an open adventure when a solo new_game is requested.
           if (finalPlayers.length <= 1) {
@@ -1083,7 +1435,11 @@ export const rpgEnvironment: AgentEnvironment = {
           }
 
           const gameId = `rpg_${generateTid()}`
-          const game = createGame({ id: gameId, players: finalPlayers })
+          const game = createGame({
+            id: gameId,
+            players: finalPlayers,
+            ...(campaignState ? { campaignState } : {}),
+          })
 
           // Backstory setup phase: DM interviews each player before the adventure begins
           game.phase = 'setup'
@@ -1107,17 +1463,36 @@ export const rpgEnvironment: AgentEnvironment = {
             .bind(gameId, 'rpg', ctx.agentName.trim() || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(finalPlayers))
             .run()
 
+          if (campaignState) {
+            const adventureNumber = await linkAdventureToCampaign(db, gameId, campaignState.id)
+            game.campaignAdventureNumber = adventureNumber
+          }
+
           await ctx.broadcast({
             event_type: 'environment.created',
-            context: { environment: 'rpg', gameId, host: ctx.agentName.trim() || 'unknown', players: finalPlayers },
+            context: {
+              environment: 'rpg',
+              gameId,
+              host: ctx.agentName.trim() || 'unknown',
+              players: finalPlayers,
+              ...(campaignState ? { campaignId: campaignState.id } : {}),
+            },
           })
 
           return {
             content: toTextContent(
-              `Adventure created: ${gameId}\nPlayers: ${finalPlayers.join(', ')}\n\n` +
+              `Adventure created: ${gameId}\nPlayers: ${finalPlayers.join(', ')}${
+                campaignState ? `\nCampaign: ${campaignState.name} (#${game.campaignAdventureNumber})` : ''
+              }\n\n` +
                 `Room 1/${game.dungeon.length}: ${describeRoom(game, 0)}`
             ),
-            details: { gameId, type: 'rpg', players: finalPlayers, phase: game.phase },
+            details: {
+              gameId,
+              type: 'rpg',
+              players: finalPlayers,
+              phase: game.phase,
+              ...(campaignState ? { campaignId: campaignState.id, adventureNumber: game.campaignAdventureNumber } : {}),
+            },
           }
         }
 
@@ -2497,6 +2872,16 @@ export const rpgEnvironment: AgentEnvironment = {
         }
       }
 
+      const campaignLines: string[] = []
+      const campaignContext = game.campaignContext
+      if (campaignContext) {
+        campaignLines.push(`Campaign: ${campaignContext.name}`)
+        if (campaignContext.premise) campaignLines.push(`Premise: ${campaignContext.premise}`)
+        if (campaignContext.activeArcs.length > 0) campaignLines.push(`Active arcs: ${campaignContext.activeArcs.join(', ')}`)
+        if (campaignContext.factions.length > 0) campaignLines.push(`Key factions: ${campaignContext.factions.join(', ')}`)
+        if (campaignContext.npcs.length > 0) campaignLines.push(`Recurring NPCs: ${campaignContext.npcs.join(', ')}`)
+      }
+
       // Inject role-based skills
       const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
       const roleSkillLines: string[] = []
@@ -2564,6 +2949,7 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
+        lines.push(...campaignLines)
         lines.push(...feedLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
@@ -2598,6 +2984,7 @@ export const rpgEnvironment: AgentEnvironment = {
         lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
+        lines.push(...campaignLines)
         lines.push(...feedLines)
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)

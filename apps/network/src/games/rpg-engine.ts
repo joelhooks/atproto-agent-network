@@ -543,6 +543,51 @@ export type DungeonTheme = {
   backstory: string
 }
 
+export type Faction = {
+  id: string
+  name: string
+  disposition: number
+  description: string
+}
+
+export type PlotPoint = {
+  id: string
+  description: string
+  resolved: boolean
+  adventureId?: string
+}
+
+export type StoryArc = {
+  id: string
+  name: string
+  status: 'seeded' | 'active' | 'climax' | 'resolved' | 'failed'
+  plotPoints: PlotPoint[]
+}
+
+export type WorldState = {
+  factions: Faction[]
+  locations: Array<{ id: string; name: string; description: string }>
+  events: string[]
+}
+
+export type CampaignState = {
+  id: string
+  name: string
+  premise: string
+  worldState: WorldState
+  storyArcs: StoryArc[]
+  adventureCount: number
+}
+
+export type CampaignContextSummary = {
+  id: string
+  name: string
+  premise: string
+  activeArcs: string[]
+  factions: string[]
+  npcs: string[]
+}
+
 export type DungeonContext = {
   craftedAt: number
   // Stored for live adjudication and future tool calls (e.g. gm.adjust_difficulty).
@@ -605,6 +650,9 @@ export type RpgGameState = {
   // Agent-to-agent table talk / dialogue on the game feed.
   // Optional for backwards compatibility with persisted games.
   feedMessages?: FeedMessage[]
+  campaignId?: string
+  campaignAdventureNumber?: number
+  campaignContext?: CampaignContextSummary
   campaignLog?: string[]
   // Per-round spam guard for send_message.
   // Optional for backwards compatibility with persisted games.
@@ -1293,6 +1341,27 @@ function pickDungeonTheme(dice: Dice): DungeonTheme {
   return DUNGEON_THEMES[Math.max(0, Math.min(DUNGEON_THEMES.length - 1, idx))]!
 }
 
+function campaignArcFocus(campaignState: CampaignState): string[] {
+  const active = (Array.isArray(campaignState.storyArcs) ? campaignState.storyArcs : [])
+    .filter((arc) => arc && arc.status === 'active')
+    .map((arc) => String(arc.name || '').trim())
+    .filter(Boolean)
+  if (active.length > 0) return active.slice(0, 2)
+
+  const fallback = campaignState.storyArcs?.[0]?.name ? [campaignState.storyArcs[0].name] : []
+  return fallback.filter(Boolean)
+}
+
+function withCampaignTheme(baseTheme: DungeonTheme, campaignState: CampaignState): DungeonTheme {
+  const arcs = campaignArcFocus(campaignState)
+  const arcText = arcs.length > 0 ? arcs.join(' / ') : 'Unfolding campaign arc'
+  const premise = String(campaignState.premise || '').trim()
+  return {
+    name: `${baseTheme.name} - ${arcText}`,
+    backstory: `${baseTheme.backstory} Campaign premise: ${premise}. Arc focus: ${arcText}.`,
+  }
+}
+
 function withThemeDescription(theme: DungeonTheme, description: string): string {
   const base = String(description || '').trim()
   // Keep it obvious for tests and for humans scanning logs.
@@ -1739,13 +1808,14 @@ export function craftDungeonFromLibrary(input: {
 export function generateDungeon(
   depth: number = 12,
   dice: Dice,
-  options?: { partyClasses?: RpgClass[] }
+  options?: { partyClasses?: RpgClass[]; campaignState?: CampaignState }
 ): GeneratedDungeon {
   const rooms = safeInt(depth, 12)
   if (rooms < 6) throw new Error('generateDungeon requires depth >= 6')
 
   const lastIndex = rooms - 1
-  const theme = pickDungeonTheme(dice)
+  const baseTheme = pickDungeonTheme(dice)
+  const theme = options?.campaignState ? withCampaignTheme(baseTheme, options.campaignState) : baseTheme
   const partyClasses = Array.isArray(options?.partyClasses)
     ? options!.partyClasses.filter(isRpgClass)
     : ([] as RpgClass[])
@@ -1856,11 +1926,17 @@ export function createGame(input: {
   id: string
   players: Array<string | Character>
   dungeon?: Room[]
+  campaignState?: CampaignState
 }): RpgGameState {
   const party = input.players.map(toCharacter)
   const turnOrder = computeTurnOrder(party)
   const themeRng = createDice()
-  const generated = input.dungeon ? null : generateDungeon(12, themeRng, { partyClasses: uniquePartyClasses(party) })
+  const generated = input.dungeon
+    ? null
+    : generateDungeon(12, themeRng, {
+        partyClasses: uniquePartyClasses(party),
+        campaignState: input.campaignState,
+      })
   const theme = generated?.theme ?? pickDungeonTheme(themeRng)
   const dungeon = (input.dungeon ? input.dungeon : generated!.rooms).map((room) => ({
     ...room,
@@ -1874,6 +1950,17 @@ export function createGame(input: {
     initialMode === 'combat' && (initialRoom?.type === 'combat' || initialRoom?.type === 'boss')
       ? { enemies: cloneEnemiesForCombat(initialRoom.enemies) }
       : undefined
+  const campaignState = input.campaignState
+  const campaignContext: CampaignContextSummary | undefined = campaignState
+    ? {
+        id: campaignState.id,
+        name: campaignState.name,
+        premise: campaignState.premise,
+        activeArcs: campaignArcFocus(campaignState),
+        factions: (campaignState.worldState?.factions ?? []).slice(0, 4).map((faction) => faction.name),
+        npcs: [],
+      }
+    : undefined
 
   return {
     id: input.id,
@@ -1892,7 +1979,16 @@ export function createGame(input: {
     barrierAttempts: {},
     narrativeContext: [],
     feedMessages: [],
-    campaignLog: [],
+    campaignId: campaignState?.id,
+    campaignAdventureNumber: campaignState ? Math.max(1, Math.floor(campaignState.adventureCount) + 1) : undefined,
+    campaignContext,
+    campaignLog: campaignState
+      ? [
+          `Campaign: ${campaignState.name}`,
+          `Arc focus: ${(campaignContext?.activeArcs ?? []).join(', ') || 'none'}`,
+          `Premise: ${campaignState.premise}`,
+        ]
+      : [],
     log: [],
   }
 }

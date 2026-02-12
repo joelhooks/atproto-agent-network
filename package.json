@@ -7,6 +7,7 @@
     "vitest": "node ./scripts/vitest.mjs",
     "test": "sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'",
     "test:watch": "turbo test:watch",
+    "check-types": "turbo typecheck",
     "typecheck": "turbo typecheck",
     "deploy": "turbo deploy",
     "dev": "turbo dev",

@@ -25,6 +25,7 @@ import {
   selectTarget,
   attackEnemy,
   type RpgClass,
+  type CampaignState,
 } from './rpg-engine'
 
 function makeDiceFromD100(rolls: number[]) {
@@ -1345,5 +1346,43 @@ describe('awardXp', () => {
     expect(pc.skills.cast_spell).toBe(15)
     expect(pc.skills.dodge).toBe(15)
     expect(pc.skills.use_skill).toBe(15)
+  })
+})
+
+describe('campaign-aware dungeon setup', () => {
+  it('threads campaign arcs and world context into a newly created adventure', () => {
+    const campaign: CampaignState = {
+      id: 'campaign_ironlands',
+      name: 'Ironlands War',
+      premise: 'The Shadow Court rises in the Ironlands',
+      worldState: {
+        factions: [
+          { id: 'f1', name: 'Shadow Court', disposition: -90, description: 'Ancient nobles bent on conquest.' },
+        ],
+        locations: [
+          { id: 'l1', name: 'Ironlands Keep', status: 'contested', description: 'Frontier stronghold under siege.' },
+        ],
+        npcs: [
+          { id: 'n1', name: 'Marshal Vey', role: 'ally', factionId: 'f1', description: 'A scarred veteran commander.' },
+        ],
+        events: [],
+      },
+      storyArcs: [
+        {
+          id: 'arc_shadow',
+          name: 'War for the Ironlands',
+          status: 'active',
+          plotPoints: [{ id: 'pp1', description: 'Secure a foothold at Ironlands Keep', resolved: false }],
+        },
+      ],
+      adventureCount: 2,
+    }
+
+    const game = createGame({ id: 'rpg_campaign_1', players: ['alice', 'bob'], campaignState: campaign })
+
+    expect(game.campaignId).toBe(campaign.id)
+    expect(game.campaignAdventureNumber).toBe(3)
+    expect(game.campaignContext?.activeArcs[0]).toContain('War for the Ironlands')
+    expect(`${game.theme.name} ${game.theme.backstory}`).toContain('War for the Ironlands')
   })
 })

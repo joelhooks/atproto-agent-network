@@ -887,6 +887,76 @@
         "apps/network/src/index.ts",
         "apps/network/src/environments/types.ts"
       ]
+    },
+    {
+      "id": "story-mlip8uf4",
+      "title": "Campaign data layer — types, D1 schema, CRUD helpers",
+      "description": "Create two new files. Do NOT modify any existing files.\n\nFile 1: apps/network/migrations/0002_add_campaigns.sql\nContents:\nCREATE TABLE IF NOT EXISTS campaigns (id TEXT PRIMARY KEY, name TEXT NOT NULL, premise TEXT DEFAULT '', world_state TEXT DEFAULT '{}', story_arcs TEXT DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n\nFile 2: apps/network/src/campaign.ts\nContents: Export TypeScript types (Faction, PlotPoint, StoryArc, WorldState, CampaignState) and three async functions (createCampaign, getCampaign, updateCampaign) that do D1 SQL operations on the campaigns table. Use crypto.randomUUID() for IDs. Store worldState and storyArcs as JSON strings in D1.",
+      "priority": 93,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "rpg-engine.ts",
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlip8v51",
+      "title": "Campaign API endpoints — create, get, list, start adventure",
+      "description": "Add HTTP routes for campaign management in apps/network/src/index.ts:\n\n1. POST /environments/rpg/campaign — create campaign (body: {name, premise?})\n2. GET /environments/rpg/campaign/:id — get campaign state\n3. GET /environments/rpg/campaigns — list all campaigns\n4. POST /environments/rpg/campaign/:id/start-adventure — create RPG env linked to campaign\n\nAll require admin auth. Use the CRUD helpers from previous story.\nAdd tests in index.test.ts.",
+      "priority": 94,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "index.ts"
+      ]
+    },
+    {
+      "id": "story-mlip8vr6",
+      "title": "Adventure threading — dungeon themes from campaign story arcs",
+      "description": "When generating a dungeon for a campaign-linked environment, use the campaign's active story arcs to determine theme and objectives.\n\nIn rpg.ts, when starting a new RPG game that has campaign_id:\n1. Load campaign state\n2. Pick the active story arc with next unresolved plot point\n3. Pass arc name + plot point as dungeon theme context to generateDungeon/craft_dungeon\n4. After adventure completes, mark the plot point as resolved\n5. Update campaign with adventure outcome\n\nModify the GM system prompt to include \"Previously on...\" from campaign adventure log (last 2-3 adventures summarized in 1 sentence each).\n\nKeep changes focused on rpg.ts — the engine types are already in place from the data layer story.",
+      "priority": 95,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlip8wfo",
+      "title": "Faction reputation — disposition tracking with gameplay consequences",
+      "description": "Add faction disposition mechanics to the campaign system.\n\n1. In rpg-engine.ts add helper functions:\n   adjustDisposition(campaign, factionId, delta, reason) → updated campaign\n   getDispositionTier(disposition: number) → 'hostile'|'unfriendly'|'neutral'|'friendly'|'allied'\n\n2. Thresholds: hostile(<-50), unfriendly(-50 to -10), neutral(-9 to +9), friendly(+10 to +49), allied(>=50)\n\n3. In rpg.ts, after combat encounters:\n   - If enemies belong to a faction, adjust disposition on kill (-20) or negotiate (+10)\n   - Log disposition changes in campaign events\n\n4. Add get_reputation RPG tool command for agents to check faction standing\n\n5. Include faction context in GM prompt: \"The Iron Brotherhood considers you allies (+65)\"\n\nTests for disposition math and tier calculation.",
+      "priority": 96,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "rpg-engine.ts",
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlip8x1w",
+      "title": "Hub town — downtime phase between campaign adventures",
+      "description": "Add hub_town game phase between dungeon crawls in campaign mode.\n\n1. Add 'hub_town' to RPG game phases in rpg-engine.ts\n2. After adventure completion in campaign mode, transition to hub_town instead of auto-restart\n3. Hub town actions (new RPG tool commands):\n   - visit_location(location) — tavern, market, temple, guild_hall\n   - buy_item(itemId) — spend gold on equipment\n   - sell_item(itemId) — sell loot\n   - rest — full heal\n   - embark — leave town, start next adventure\n4. Auto-embark after 5 idle turns\n5. GM narrates hub based on campaign context\n\nKeep it simple — hub is a state machine with locations, not a full simulation.",
+      "priority": 97,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "rpg-engine.ts",
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlip8xov",
+      "title": "Session zero — auto-generate campaign premise from party composition",
+      "description": "When creating a campaign, auto-generate a premise based on the party's persistent characters.\n\n1. In createCampaign, accept optional theme parameter\n2. Generate premise with: 3-4 factions, starting location, central conflict, 2-3 seeded story arcs\n3. Use character classes/levels to inform world (high-level party = bigger threats)\n4. Add previously_on helper that generates narrative recap from campaign history\n5. Inject previously_on into GM prompt at adventure start\n\nGeneration is deterministic from inputs (theme + party) — no LLM call needed, use template tables.",
+      "priority": 98,
+      "passes": false,
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
+      "targetFiles": [
+        "rpg-engine.ts",
+        "rpg.ts"
+      ]
     }
   ],
   "metadata": {

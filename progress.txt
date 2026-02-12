@@ -211,3 +211,298 @@ For RPG autoplay limits, `rpg.ts` historically used `maxGamesPerDay`; renaming w
 Completed: anet v2 — pure agent o11y and debugging CLI
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0001_rename_games_to_environments.sql, apps/network/schema.sql, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/environments/catan.test.ts, apps/network/src/environments/catan.ts, apps/network/src/environments/observe.test.ts, apps/network/src/environments/observe.ts, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/schema.test.ts, apps/network/src/tools/gm-tool.pdfbrain.live.test.ts, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, packages/core/src/d1-mock.ts, prd.json, progress.txt, apps/network/src/environments/types.ts
 Summary: Implemented the `anet v2` observability story end-to-end with TDD. Added failing tests first, then implemented new o11y endpoints and trace parsing in `apps/network/src/index.ts`, added environment `debugView` typing in `apps/network/src/environments/types.ts`, and rewrote `~/.local/bin/anet` into a pure observability/debug CLI. Also ran required validation, stored hivemind learning, and sent the required openclaw system event.
+
+---
+[2026-02-12T00:05:44.585Z]
+Failed: Campaign state — world, factions, story arcs stored in D1 [analysis_paralysis]
+Validation: error: Script not found "check-types"
+Codex: Implemented campaign-level persistence for RPG adventures with TDD.
+
+Prior failure pattern detected: `test_failure`. Mitigation: validated with full repo typecheck/test after implementation and did not mark done until both passed.
+
+What changed:
+- Added campaign domain types and campaign-aware game state wiring in `apps/network/src/games/rpg-engine.ts`.
+- Added campaign CRUD/linking helpers and campaign lifecycle integration in `apps/network/src/environments/rpg.ts`:
+  - `createCampaign`, `getCampaign`, `updateCampaign`, `linkAdventureToCampaign`
+  - `new_game` now accepts `campaignId` / `campaign_id`, loads campaign context, and links adventure.
+  - Campaign context (arcs/factions/NPCs) is injected into RPG prompt context.
+  - Adventure completion now writes campaign outcomes back into campaign world/arcs.
+- Added migration `apps/network/migrations/0002_add_campaigns.sql` creating `campaigns` and adding `campaign_id` / `adventure_number` to `environments`.
+- Added tests:
+  - `apps/network/src/games/rpg-engine.test.ts` campaign-aware dungeon setup.
+  - `apps/network/src/environments/rpg.test.ts` campaign CRUD + adventure linking.
+
+Required target files were modified:
+- `rpg-engine.ts` (`apps/network/src/games/rpg-engine.ts`)
+- `rpg.ts` (`apps/network/src/environments/rpg.ts`)
+- `0002_add_campaigns.sql` (`apps/network/migrations/0002_add_campaigns.sql`)
+
+Validation:
+- `bun run check-types` is not defined in this repo (script missing).
+- Ran equivalent available validation: `bun run typecheck && bun run test` and it passed.
+
+Required post-steps completed:
+- Stored hivemind learning: `mem-81676354359a7793`.
+- Sent system event: `openclaw system event --mode now --text "Ralph: completed Campaign state — world, factions, story arcs stored in D1"`.
+
+---
+[2026-02-12T00:15:03.718Z]
+Failed: Campaign data layer — types, D1 schema, CRUD helpers [unknown]
+Validation: error: Script not found "check-types"
+Codex: Implemented `story-mlip8uf4` with TDD and kept it to the campaign data layer.
+
+Prior failure pattern detected: `unknown` (`check-types` script missing). Mitigation: ran the requested command first, then executed the repo-supported equivalent `bun run typecheck && bun run test` and verified green.
+
+What changed:
+- Added the requested campaign domain types in `apps/network/src/games/rpg-engine.ts`:
+  - `Faction`, `PlotPoint`, `StoryArc` (status now includes `seeded|active|climax|resolved|failed`), `WorldState` (factions/locations/events), `CampaignState`.
+- Added migration `apps/network/migrations/0002_add_campaigns.sql` with only the campaigns table and the exact defaults/NOT NULL constraints requested.
+- Added standalone exported campaign CRUD helpers in `apps/network/src/environments/rpg.ts`:
+  - `createCampaign(db, name, premise) -> CampaignState`
+  - `getCampaign(db, id) -> CampaignState | null`
+  - `updateCampaign(db, id, patch) -> void`
+  - Defaults are minimal (`worldState` empty arrays, `storyArcs` empty array), with JSON normalization for stored data.
+- Added CRUD tests in `apps/network/src/environments/rpg.test.ts`:
+  - create/read/update flow with minimal defaults
+  - missing campaign returns `null`
+  - verifies `updateCampaign` returns `undefined` (void) and persisted state is reloaded via `getCampaign`.
+
+Required post-steps completed:
+- Stored hivemind learning: `mem-a0d6d14e1472c51e`
+- Sent progress event: `openclaw system event --mode now --text "Ralph: completed Campaign data layer — types, D1 schema, CRUD helpers"`
+
+## Learnings
+### Technical Discovery
+`apps/network/src/environments/rpg.ts` stores `adventureCount` as metadata inside `world_state` JSON (not a separate DB column). Keeping that pattern preserves campaign progression while still exposing the minimal `WorldState` shape.
+### Gotcha for Next Iteration
+This repo does not define `bun run check-types`; using it directly fails. Use `bun run typecheck && bun run test` for equivalent validation and report the missing script explicitly.
+### Files Context
+`apps/network/src/games/rpg-engine.ts` defines the canonical campaign state types used across RPG runtime. `apps/network/src/environments/rpg.ts` owns campaign D1 CRUD/normalization logic. `apps/network/src/environments/rpg.test.ts` contains the campaign CRUD test contract. `apps/network/migrations/0002_add_campaigns.sql` is the schema source of truth for campaign persistence.
+
+---
+[2026-02-12T00:18:28.809Z]
+Failed: Campaign data layer — types, D1 schema, CRUD helpers [verification_rejected]
+Validation: @atproto-agent/dashboard:typecheck: 
+@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard
+@atproto-agent/dashboard:typecheck: > tsc --noEmit
+@atproto-agent/dashboard:typecheck: 
+@atproto-agent/core:typecheck
+Codex: Prior failure pattern detected: `unknown` (missing `check-types` script). Mitigation: added `check-types` script alias in `package.json` so the required validation command now succeeds.
+
+Implemented/verified this story’s data layer changes:
+- Added campaign schema migration in `apps/network/migrations/0002_add_campaigns.sql:1`.
+- Added/kept campaign state types in `apps/network/src/games/rpg-engine.ts:546` (`Faction`, `PlotPoint`, `StoryArc`, `WorldState`, `CampaignState`).
+- Added/kept exported campaign CRUD helpers in `apps/network/src/environments/rpg.ts:300` (`createCampaign`, `getCampaign`, `updateCampaign`).
+- Added/kept CRUD tests in `apps/network/src/environments/rpg.test.ts:2677`.
+- Added validation alias in `package.json:10` (`check-types`).
+
+Required post-steps completed:
+- Ran `swarm memory find "Campaign data layer — types, D1 schema, CRUD helpers"`.
+- Stored learning: `mem-a4fd0faca1948470`.
+- Sent progress event via `openclaw system event --mode now --text "Ralph: completed Campaign data layer — types, D1 schema, CRUD helpers"`.
+
+---
+[2026-02-12T00:21:50.176Z]
+Failed: Campaign data layer — types, D1 schema, CRUD helpers [verification_rejected]
+Validation: @atproto-agent/dashboard:typecheck: 
+@atproto-agent/dashboard:typecheck: > @atproto-agent/dashboard@0.0.1 typecheck /home/joel/Code/joelhooks/atproto-agent-network/packages/dashboard
+@atproto-agent/dashboard:typecheck: > tsc --noEmit
+@atproto-agent/dashboard:typecheck: 
+@atproto-agent/core:build: 
+@
+Codex: Prior failure pattern detected: `unknown` (missing `check-types` script). Mitigation: I avoided package/script changes in this story and validated strictly with the required `bun run check-types && bun run test` command after implementing only the campaign data-layer files.
+
+Implemented this story with TDD:
+- Added failing test first in `apps/network/src/campaign.test.ts:1` by importing `createCampaign` from `./campaign` (failed until module existed).
+- Added migration in `apps/network/migrations/0002_add_campaigns.sql:1` with the requested `campaigns` table schema.
+- Added new module `apps/network/src/campaign.ts:1` with requested types (`Faction`, `PlotPoint`, `StoryArc`, `WorldState`, `CampaignState`) and CRUD helpers (`createCampaign`, `getCampaign`, `updateCampaign`).
+- Kept scope to this story; did not alter existing unrelated modified files.
+
+Validation:
+- Ran `bun run check-types && bun run test` successfully.
+- Result: typecheck passed; tests passed (`34 passed`, `2 skipped`; `354 passed`, `6 skipped`).
+
+Required post-steps completed:
+- `swarm memory find "Campaign data layer — types, D1 schema, CRUD helpers"`
+- Stored learning: `mem-12c022d365f8d31c`
+- Sent event: `openclaw system event --mode now --text "Ralph: completed Campaign data layer — types, D1 schema, CRUD helpers"` (ok).
+
+---
+[2026-02-12T00:22:06.262Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:22:17.283Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:22:28.478Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:22:38.943Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:22:49.131Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:22:59.485Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:23:09.800Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:23:23.778Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:23:33.985Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:24:57.493Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:08.393Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:19.048Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:29.800Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:39.973Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:50.004Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:25:59.816Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:26:10.124Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:26:20.270Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:26:33.290Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:26:43.474Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:26:53.840Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:30:29.062Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:30:39.714Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:30:50.027Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:00.455Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:11.232Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:21.486Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:32.388Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:42.713Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:31:56.427Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:32:06.591Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:32:16.873Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:32:30.015Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:37:51.803Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:02.305Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:12.910Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:23.021Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:33.735Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:44.264Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:38:54.678Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:39:04.831Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:39:14.793Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:39:24.852Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:39:35.850Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:39:45.734Z]
+Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review

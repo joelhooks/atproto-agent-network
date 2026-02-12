@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../../packages/core/src/d1-mock'
 import { createCharacter, createGame, findCharacter } from '../games/rpg-engine'
-import { compactAdventureLog, rpgEnvironment } from './rpg'
+import {
+  compactAdventureLog,
+  createCampaign,
+  getCampaign,
+  rpgEnvironment,
+  updateCampaign,
+} from './rpg'
 import { DM_SKILL_BRIEF, WARRIOR_SKILL_BRIEF } from './rpg-skills'
 
 describe('rpgEnvironment', () => {
@@ -2518,5 +2524,206 @@ describe('compactAdventureLog', () => {
 
     const summary = compactAdventureLog(game as any)
     expect(summary.length).toBeLessThanOrEqual(200)
+  })
+})
+
+type CampaignDbCampaignRow = {
+  id: string
+  name: string
+  premise: string
+  world_state: string
+  story_arcs: string
+  created_at: string
+  updated_at: string
+}
+
+type CampaignDbEnvironmentRow = {
+  id: string
+  type: string
+  host_agent: string
+  state: string
+  phase: string
+  players: string
+  winner: string | null
+  created_at: string
+  updated_at: string
+  campaign_id: string | null
+  adventure_number: number
+}
+
+class CampaignDbStatement {
+  constructor(
+    private readonly db: CampaignDbMock,
+    private readonly sql: string,
+    private readonly params: unknown[] = [],
+  ) {}
+
+  bind(...params: unknown[]): CampaignDbStatement {
+    return new CampaignDbStatement(this.db, this.sql, params)
+  }
+
+  async run(): Promise<{ success: true }> {
+    await this.db.run(this.sql, this.params)
+    return { success: true }
+  }
+
+  async first<T>(): Promise<T | null> {
+    return this.db.first<T>(this.sql, this.params)
+  }
+}
+
+class CampaignDbMock {
+  readonly campaigns = new Map<string, CampaignDbCampaignRow>()
+  readonly environments = new Map<string, CampaignDbEnvironmentRow>()
+
+  prepare(sql: string): CampaignDbStatement {
+    return new CampaignDbStatement(this, sql)
+  }
+
+  seedEnvironment(row: Partial<CampaignDbEnvironmentRow> & Pick<CampaignDbEnvironmentRow, 'id'>): void {
+    this.environments.set(row.id, {
+      id: row.id,
+      type: row.type ?? 'rpg',
+      host_agent: row.host_agent ?? 'grimlock',
+      state: row.state ?? JSON.stringify({ id: row.id, type: 'rpg' }),
+      phase: row.phase ?? 'playing',
+      players: row.players ?? '[]',
+      winner: row.winner ?? null,
+      created_at: row.created_at ?? new Date().toISOString(),
+      updated_at: row.updated_at ?? new Date().toISOString(),
+      campaign_id: row.campaign_id ?? null,
+      adventure_number: row.adventure_number ?? 0,
+    })
+  }
+
+  private normalizeSql(sql: string): string {
+    return sql.toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+
+  async run(sql: string, params: unknown[]): Promise<void> {
+    const normalized = this.normalizeSql(sql)
+    const now = new Date().toISOString()
+
+    if (normalized.startsWith('create table if not exists campaigns')) return
+    if (normalized.startsWith('alter table environments add column campaign_id')) return
+    if (normalized.startsWith('alter table environments add column adventure_number')) return
+
+    if (normalized.startsWith('insert into campaigns')) {
+      const [id, name, premise, worldState, storyArcs] = params
+      this.campaigns.set(String(id), {
+        id: String(id),
+        name: String(name),
+        premise: String(premise ?? ''),
+        world_state: String(worldState ?? '{}'),
+        story_arcs: String(storyArcs ?? '[]'),
+        created_at: now,
+        updated_at: now,
+      })
+      return
+    }
+
+    if (normalized.startsWith('update campaigns set')) {
+      const [name, premise, worldState, storyArcs, id] = params
+      const existing = this.campaigns.get(String(id))
+      if (!existing) return
+      existing.name = String(name ?? existing.name)
+      existing.premise = String(premise ?? existing.premise)
+      existing.world_state = String(worldState ?? existing.world_state)
+      existing.story_arcs = String(storyArcs ?? existing.story_arcs)
+      existing.updated_at = now
+      this.campaigns.set(existing.id, existing)
+      return
+    }
+
+    if (normalized.startsWith('update environments set campaign_id = ?')) {
+      const [campaignId, adventureNumber, state, id] = params
+      const existing = this.environments.get(String(id))
+      if (!existing) return
+      existing.campaign_id = campaignId == null ? null : String(campaignId)
+      existing.adventure_number = Number(adventureNumber ?? 0)
+      existing.state = String(state ?? existing.state)
+      existing.updated_at = now
+      this.environments.set(existing.id, existing)
+      return
+    }
+
+    throw new Error(`Unsupported SQL in CampaignDbMock.run: ${normalized}`)
+  }
+
+  async first<T>(sql: string, params: unknown[]): Promise<T | null> {
+    const normalized = this.normalizeSql(sql)
+
+    if (normalized.startsWith('select id, name, premise, world_state, story_arcs, created_at, updated_at from campaigns where id = ?')) {
+      const row = this.campaigns.get(String(params[0]))
+      return (row ?? null) as T | null
+    }
+
+    if (normalized.startsWith('select id, state from environments where id = ? and type =')) {
+      const row = this.environments.get(String(params[0]))
+      if (!row || row.type !== 'rpg') return null
+      return ({ id: row.id, state: row.state } as unknown) as T
+    }
+
+    if (normalized.startsWith('select campaign_id, adventure_number from environments where id = ?')) {
+      const row = this.environments.get(String(params[0]))
+      if (!row) return null
+      return ({ campaign_id: row.campaign_id, adventure_number: row.adventure_number } as unknown) as T
+    }
+
+    throw new Error(`Unsupported SQL in CampaignDbMock.first: ${normalized}`)
+  }
+}
+
+describe('campaign persistence helpers', () => {
+  it('creates, reads, and updates a campaign in D1 with minimal defaults', async () => {
+    const db = new CampaignDbMock()
+    const created = await createCampaign(db as any, 'Ironlands Saga', 'The Shadow Court rises in the Ironlands')
+
+    expect(created.name).toBe('Ironlands Saga')
+    expect(created.worldState).toEqual({
+      factions: [],
+      locations: [],
+      events: [],
+    })
+    expect(created.storyArcs).toEqual([])
+    expect(created.adventureCount).toBe(0)
+
+    const loaded = await getCampaign(db as any, created.id)
+    expect(loaded?.premise).toContain('Shadow Court')
+    expect(loaded?.worldState.events).toEqual([])
+
+    const worldStatePatch = {
+      factions: [{ id: 'f1', name: 'Iron Vanguard', disposition: 25, description: 'Local defenders' }],
+      locations: [{ id: 'l1', name: 'Old Keep', description: 'A contested outpost' }],
+      events: ['The keep walls cracked under siege.'],
+    }
+    const storyArcPatch = [
+      {
+        id: 'arc-1',
+        name: 'Opening Siege',
+        status: 'active' as const,
+        plotPoints: [{ id: 'pp-1', description: 'Secure the eastern gate', resolved: false }],
+      },
+    ]
+    const updated = await updateCampaign(db as any, created.id, {
+      premise: 'The Shadow Court fractures as new claimants emerge',
+      worldState: worldStatePatch,
+      storyArcs: storyArcPatch,
+      adventureCount: 2,
+    })
+
+    expect(updated).toBeUndefined()
+
+    const reloaded = await getCampaign(db as any, created.id)
+    expect(reloaded?.premise).toContain('fractures')
+    expect(reloaded?.worldState).toEqual(worldStatePatch)
+    expect(reloaded?.storyArcs).toEqual(storyArcPatch)
+    expect(reloaded?.adventureCount).toBe(2)
+  })
+
+  it('returns null when campaign does not exist', async () => {
+    const db = new CampaignDbMock()
+    const campaign = await getCampaign(db as any, 'campaign_missing')
+    expect(campaign).toBeNull()
   })
 })
