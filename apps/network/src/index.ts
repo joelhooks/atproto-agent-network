@@ -970,6 +970,11 @@ export default {
                   campaignState: campaignThread.themedCampaignState,
                 })
 
+                // Campaign adventures skip backstory setup — they already have
+                // campaign context. Start in 'playing' so agents can explore
+                // immediately. The GM will craft_dungeon on first turn.
+                game.phase = 'playing'
+
                 if (campaignThread.objective) {
                   ;(game as Record<string, unknown>).campaignObjective = {
                     ...campaignThread.objective,
