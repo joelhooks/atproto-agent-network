@@ -103,8 +103,8 @@ async function findActiveGameForGrimlock(ctx: EnvironmentContext): Promise<strin
   const agentName = ctx.agentName.trim()
   if (!agentName) return null
   const row = await ctx.db
-    .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND players LIKE ? ORDER BY updated_at DESC LIMIT 1")
-    .bind(`%${agentName}%`)
+    .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') AND (players LIKE ? OR host_agent = ?) ORDER BY updated_at DESC LIMIT 1")
+    .bind(`%${agentName}%`, agentName)
     .first<{ id: string }>()
   return row?.id ?? null
 }
