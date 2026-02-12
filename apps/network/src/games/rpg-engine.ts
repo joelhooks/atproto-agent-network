@@ -533,6 +533,8 @@ export type HubTownState = {
   autoEmbarkAfter: number
 }
 
+export const DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS = 5
+
 export type RpgActionHistoryEntry = {
   action: string
   target: string
@@ -741,7 +743,9 @@ export type RpgGameState = {
 export function createHubTownState(input?: Partial<HubTownState>): HubTownState {
   const location = input?.location
   const idleTurns = Number.isFinite(input?.idleTurns) ? Math.max(0, Math.floor(input!.idleTurns as number)) : 0
-  const autoEmbarkAfterRaw = Number.isFinite(input?.autoEmbarkAfter) ? Math.floor(input!.autoEmbarkAfter as number) : 5
+  const autoEmbarkAfterRaw = Number.isFinite(input?.autoEmbarkAfter)
+    ? Math.floor(input!.autoEmbarkAfter as number)
+    : DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS
   const autoEmbarkAfter = Math.max(1, Math.min(20, autoEmbarkAfterRaw))
   return {
     location:

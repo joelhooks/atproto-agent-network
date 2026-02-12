@@ -609,3 +609,18 @@ What changed:
 Also completed required reporting:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Faction reputation — disposition tracking with gameplay consequences"`
+
+---
+[2026-02-12T01:20:20.140Z]
+Completed: Hub town — downtime phase between campaign adventures
+Files: .ralph/research/story-mlip8x1w.md, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts
+Summary: Prior failure pattern detected: `analysis_paralysis` / `timeout`. Mitigation: I skipped broad re-reading, validated existing hub-town coverage quickly, then made scoped required-file changes and ran full validation.
+
+Implemented a small hardening pass for hub-town defaults in the required files:
+- `apps/network/src/games/rpg-engine.ts`: added `DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS` and used it in `createHubTownState()` so the hub auto-embark default is centralized.
+- `apps/network/src/environments/rpg.ts`: switched campaign-completion hub transition to use that shared constant instead of a magic `5`.
+- `apps/network/src/games/rpg-engine.test.ts`: updated assertion/import to validate the shared default constant.
+
+Also completed mandatory story reporting commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Hub town — downtime phase between campaign adventures"`

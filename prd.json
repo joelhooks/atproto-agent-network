@@ -939,7 +939,7 @@
       "title": "Hub town — downtime phase between campaign adventures",
       "description": "Add hub_town game phase between dungeon crawls in campaign mode.\n\n1. Add 'hub_town' to RPG game phases in rpg-engine.ts\n2. After adventure completion in campaign mode, transition to hub_town instead of auto-restart\n3. Hub town actions (new RPG tool commands):\n   - visit_location(location) — tavern, market, temple, guild_hall\n   - buy_item(itemId) — spend gold on equipment\n   - sell_item(itemId) — sell loot\n   - rest — full heal\n   - embark — leave town, start next adventure\n4. Auto-embark after 5 idle turns\n5. GM narrates hub based on campaign context\n\nKeep it simple — hub is a state machine with locations, not a full simulation.",
       "priority": 97,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "rpg-engine.ts",
@@ -961,8 +961,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 83,
-    "lastIteration": "2026-02-12T01:03:02.430Z"
+    "totalIterations": 84,
+    "lastIteration": "2026-02-12T01:20:20.134Z"
   },
   "totalStories": 11
 }

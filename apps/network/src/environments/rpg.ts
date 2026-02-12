@@ -11,6 +11,7 @@ import {
   cloneEnemiesForCombat,
   advanceHubTownIdleTurns,
   createHubTownState,
+  DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
   createCharacter,
   createDice,
   createGame,
@@ -903,7 +904,7 @@ function transitionCampaignCompletionToHubTown(game: RpgGameState, beforePhase: 
   const hub = ensureHubTownState(game)
   hub.location = 'tavern'
   hub.idleTurns = 0
-  hub.autoEmbarkAfter = Math.max(1, hub.autoEmbarkAfter || 5)
+  hub.autoEmbarkAfter = Math.max(1, hub.autoEmbarkAfter || DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS)
 
   game.phase = 'hub_town'
   game.mode = 'finished'

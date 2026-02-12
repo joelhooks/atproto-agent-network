@@ -6,6 +6,7 @@ import {
   awardXp,
   createHubTownState,
   advanceHubTownIdleTurns,
+  DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
   createCharacter,
   createGame,
   createTestDice,
@@ -1358,7 +1359,7 @@ describe('campaign-aware dungeon setup', () => {
     expect(createHubTownState()).toEqual({
       location: 'tavern',
       idleTurns: 0,
-      autoEmbarkAfter: 5,
+      autoEmbarkAfter: DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
     })
   })
 
