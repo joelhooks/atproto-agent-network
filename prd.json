@@ -1022,7 +1022,7 @@
       "title": "Auto-play: grimlock craft_dungeon when dungeon is empty",
       "description": "In `apps/network/src/environments/rpg.ts` in `getAutoPlayActions`, when grimlock finds an active game where it's the host and `state.dungeon.length === 0`, inject a `craft_dungeon` GM tool call instead of returning empty. Add this check after the `findActiveGameWhereItsMyTurn` logic — if grimlock has an active game (via findActiveGameForAgent) but dungeon is empty, return `[{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: row.id } }]`. This ensures campaign adventures get their dungeon crafted automatically.",
       "priority": 111,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && bun test",
       "targetFiles": [
         "rpg.ts"
@@ -1033,7 +1033,7 @@
       "title": "Grimlock auto-create uses campaign instead of standalone",
       "description": "In `apps/network/src/environments/rpg.ts` in `getAutoPlayActions`, when grimlock auto-creates because no playing environments exist, it should check for an active campaign first. Change the grimlock auto-create block: query D1 for `SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 1`. If a campaign exists, use `{ command: 'new_game', players: ['slag', 'snarl', 'swoop'], campaignId: campaign.id }` instead of just `{ command: 'new_game', players: ['slag', 'snarl', 'swoop'] }`. The `new_game` handler already supports `campaignId` parameter.",
       "priority": 112,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && bun test",
       "targetFiles": [
         "rpg.ts"
@@ -1044,17 +1044,61 @@
       "title": "Fix embark: link new adventure to campaign in D1",
       "description": "In `apps/network/src/environments/rpg.ts` in the `embark` command handler (~line 2400), after the game state is updated in D1, call `linkAdventureToCampaign(db, gameId, campaignId)` if `campaignId` is present. Currently embark updates the game in-place but never calls linkAdventureToCampaign, so the campaign adventure count doesn't track properly. Import `linkAdventureToCampaign` from `../campaign` if not already imported.",
       "priority": 113,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && bun test",
       "targetFiles": [
         "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlj0cc10",
+      "title": "AgentSkill type + DO storage CRUD",
+      "description": "Add AgentSkill type {id, name, description, content, envType, role, version} to agent.ts. Add DO storage methods: writeSkill(skill), readSkill(envType, role), listSkills(), deleteSkill(id). Skills stored under 'skill:{envType}:{role}' keys in agent DO storage. Add write_skill and list_skills tool definitions (alongside existing write_extension). Add GET/PUT /agents/:name/skills/:envType/:role HTTP endpoints for external seeding.",
+      "priority": 120,
+      "passes": true,
+      "validationCommand": "npx vitest run",
+      "targetFiles": [
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlj0cjqj",
+      "title": "Skill loading in buildContext — inject matched skill into agent prompt",
+      "description": "In agent.ts alarm cycle, after determining active environment type, load the matching skill from DO storage via readSkill(envType, role). Role is determined by: if agent is host_agent → 'gm', else → character class or 'player'. Inject the skill content into the system prompt BEFORE the environment buildContext lines. If no skill found in DO, fall back to the existing hardcoded rpg-skills.ts constants. This makes the transition gradual — existing behavior preserved, but DO skills override when present.",
+      "priority": 121,
+      "passes": true,
+      "validationCommand": "npx vitest run",
+      "targetFiles": [
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlj0cqs7",
+      "title": "Seed default RPG skills via config endpoint",
+      "description": "Add a POST /admin/seed-skills endpoint that writes the existing rpg-skills.ts skill constants into each agent's DO storage as proper AgentSkill objects. GM skill → grimlock's DO as skill:rpg:gm. Warrior/Scout/Mage/Healer skills → respective agent DOs as skill:rpg:{class}. Also write a generic skill:rpg:player that includes PARTY_TACTICS. This migrates from hardcoded to DO-stored skills. The endpoint should be idempotent (overwrite existing).",
+      "priority": 122,
+      "passes": true,
+      "validationCommand": "npx vitest run",
+      "targetFiles": [
+        "index.ts"
+      ]
+    },
+    {
+      "id": "story-mlj0cyai",
+      "title": "GM campaign lifecycle skill — teach grimlock the full GM playbook",
+      "description": "Enhance the GM skill content (rpg-skills.ts DM_SKILL) with explicit campaign lifecycle instructions that currently live in auto-play heuristics. Add sections: \"When dungeon has 0 rooms\" (consult_library then craft_dungeon), \"When adventure ends\" (advance_campaign, transition hub_town), \"When in hub_town and party embarks\" (start next adventure). \"When it's not your turn\" (observe, prepare next encounter, consult_library for upcoming rooms). This encodes the auto-play logic AS skill instructions so grimlock follows them autonomously.",
+      "priority": 123,
+      "passes": true,
+      "validationCommand": "npx vitest run",
+      "targetFiles": [
+        "rpg-skills.ts"
       ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 91,
-    "lastIteration": "2026-02-12T02:43:31.120Z"
+    "totalIterations": 95,
+    "lastIteration": "2026-02-12T05:35:16.031Z"
   },
   "totalStories": 11
 }

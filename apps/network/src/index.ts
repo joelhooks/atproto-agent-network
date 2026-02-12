@@ -15,6 +15,7 @@ import { applyCorsHeaders, corsPreflightResponse } from './cors'
 import './environments/builtins'
 import { getEnvironment } from './environments'
 import { buildCampaignDungeonThread, createCampaign, getCampaign, linkAdventureToCampaign } from './environments/rpg'
+import { DM_SKILL, HEALER_SKILL, MAGE_SKILL, PARTY_TACTICS, SCOUT_SKILL, WARRIOR_SKILL } from './environments/rpg-skills'
 import { createGame as createRpgGame } from './games/rpg-engine'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
@@ -107,6 +108,89 @@ function listMissingBindings(env: Partial<Env>): string[] {
 }
 
 type AgentRegistryRow = { name: string; did: string; created_at: string }
+
+type SeedSkillPayload = {
+  id: string
+  name: string
+  description: string
+  content: string
+  version: string
+}
+
+type SeedSkillTarget = {
+  agentName: string
+  role: string
+  payload: SeedSkillPayload
+}
+
+const DEFAULT_RPG_SKILL_SEED_TARGETS: SeedSkillTarget[] = [
+  {
+    agentName: 'grimlock',
+    role: 'gm',
+    payload: {
+      id: 'skill:rpg:gm',
+      name: 'RPG GM',
+      description: 'Default GM skill for the RPG environment.',
+      content: DM_SKILL,
+      version: '1.0.0',
+    },
+  },
+  {
+    agentName: 'slag',
+    role: 'warrior',
+    payload: {
+      id: 'skill:rpg:warrior',
+      name: 'RPG Warrior',
+      description: 'Default Warrior skill for the RPG environment.',
+      content: WARRIOR_SKILL,
+      version: '1.0.0',
+    },
+  },
+  {
+    agentName: 'snarl',
+    role: 'scout',
+    payload: {
+      id: 'skill:rpg:scout',
+      name: 'RPG Scout',
+      description: 'Default Scout skill for the RPG environment.',
+      content: SCOUT_SKILL,
+      version: '1.0.0',
+    },
+  },
+  {
+    agentName: 'swoop',
+    role: 'mage',
+    payload: {
+      id: 'skill:rpg:mage',
+      name: 'RPG Mage',
+      description: 'Default Mage skill for the RPG environment.',
+      content: MAGE_SKILL,
+      version: '1.0.0',
+    },
+  },
+  {
+    agentName: 'sludge',
+    role: 'healer',
+    payload: {
+      id: 'skill:rpg:healer',
+      name: 'RPG Healer',
+      description: 'Default Healer skill for the RPG environment.',
+      content: HEALER_SKILL,
+      version: '1.0.0',
+    },
+  },
+  {
+    agentName: 'sludge',
+    role: 'player',
+    payload: {
+      id: 'skill:rpg:player',
+      name: 'RPG Player',
+      description: 'Shared player coordination skill for RPG agents.',
+      content: PARTY_TACTICS,
+      version: '1.0.0',
+    },
+  },
+]
 
 async function getAgentRegistryRow(db: D1Database, name: string): Promise<AgentRegistryRow | null> {
   const row = await db
@@ -1376,6 +1460,41 @@ export default {
                 })
 
                 return Response.json({ agents })
+              }
+
+              if (normalizedPathname === '/admin/seed-skills') {
+                if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+
+                const seeded = await Promise.all(
+                  DEFAULT_RPG_SKILL_SEED_TARGETS.map(async (target) => {
+                    const agentId = env.AGENTS.idFromName(target.agentName)
+                    const agent = env.AGENTS.get(agentId)
+                    const skillPath = `/agents/${encodeURIComponent(target.agentName)}/skills/rpg/${encodeURIComponent(target.role)}`
+                    const skillUrl = new URL(skillPath, request.url)
+                    const response = await agent.fetch(
+                      new Request(skillUrl.toString(), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(target.payload),
+                      })
+                    )
+
+                    if (!response.ok) {
+                      const details = await response.text().catch(() => '')
+                      throw new Error(
+                        `Failed to seed ${target.payload.id} for ${target.agentName}: ${response.status}${details ? ` ${details}` : ''}`
+                      )
+                    }
+
+                    return {
+                      agentName: target.agentName,
+                      role: target.role,
+                      id: target.payload.id,
+                    }
+                  })
+                )
+
+                return Response.json({ ok: true, seeded: seeded.length, skills: seeded })
               }
 
               if (normalizedPathname === '/admin/pipeline-test') {

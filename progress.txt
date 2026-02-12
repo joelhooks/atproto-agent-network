@@ -809,3 +809,103 @@ Required post-work commands completed:
 `cd apps/network && bun test` currently reports many unrelated failures (for example `vi.stubGlobal`, `vi.resetModules`, `vi.setSystemTime` missing in Bun test runner, plus unrelated route/DO failures). Use focused suite runs to verify story behavior while noting full-suite instability is pre-existing.
 ### Files Context
 `apps/network/src/environments/rpg.ts` is the autoplay decision point. The changed block is in `getAutoPlayActions` around lines 4055-4071; this is where grimlock fallback behavior (`!row`) now triggers `gm craft_dungeon` for empty dungeons before new-game logic.
+
+---
+[2026-02-12T05:23:03.620Z]
+Completed: AgentSkill type + DO storage CRUD
+Files: apps/network/src/tools/gm-tool.ts, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json
+Summary: Implemented `AgentSkill` support and DO skill storage CRUD in `apps/network/src/agent.ts`, plus tests in `apps/network/src/agent-do.test.ts` using TDD (red -> green). Added:
+- `AgentSkill` type and `skill:` storage prefix
+- DO methods: `writeSkill`, `readSkill`, `listSkills`, `deleteSkill`
+- HTTP route handling for `GET/PUT /agents/:name/skills/:envType/:role`
+- New tools: `write_skill`, `list_skills`
+- Default `enabledTools` now includes `write_skill` and `list_skills`
+- Tests for tool behavior, storage CRUD, and new endpoint behavior
+
+Prior failure pattern detected: `test_failure` and `verification_rejected`. Mitigation: added focused failing tests first for this story, implemented only requested scope in `agent.ts`, and ran full `npx vitest run` to verify green.
+
+Also completed required post-work commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed AgentSkill type + DO storage CRUD"`
+
+---
+[2026-02-12T05:28:03.263Z]
+Completed: Skill loading in buildContext — inject matched skill into agent prompt
+Files: apps/network/src/tools/gm-tool.ts, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Implemented story `story-mlj0cjqj` with TDD.
+
+Prior failure pattern detected: `test_failure`. Mitigation: added failing prompt-order/override tests first, then implemented only `agent.ts` changes, then ran full `npx vitest run`.
+
+### What changed
+- Added RPG skill fallback constants and mapping imports in `apps/network/src/agent.ts:34` and `apps/network/src/agent.ts:193`.
+- Updated `buildThinkPrompt` to:
+  - capture active environment type,
+  - resolve role as `gm` (host) or class/`player`,
+  - load DO skill via `readSkill(envType, role)`,
+  - fallback to hardcoded RPG skills when missing,
+  - inject skill content before environment `buildContext` text,
+  - strip legacy RPG skill blocks from buildContext so DO skills truly override.
+  See `apps/network/src/agent.ts:1255` and `apps/network/src/agent.ts:1335`.
+- Added helper methods for role resolution/fallback/legacy-skill stripping in `apps/network/src/agent.ts:1387`.
+
+### Tests (RED -> GREEN)
+- Extended and added tests in `apps/network/src/agent-do.test.ts:2550` and `apps/network/src/agent-do.test.ts:2600` to verify:
+  - skill text appears before environment context,
+  - DO-stored skill overrides hardcoded fallback,
+  - fallback behavior still works for non-host class role.
+
+### Validation
+- Ran `npx vitest run`.
+- Result: passed (`34` test files passed, `2` skipped; `380` tests passed, `6` skipped).
+
+### Required post-work commands
+- Ran `swarm memory store "..." --tags "ralph,learning,atproto-agent-network-pi-loop"`.
+- Ran `openclaw system event --mode now --text "Ralph: completed Skill loading in buildContext — inject matched skill into agent prompt"`.
+
+---
+[2026-02-12T05:32:31.395Z]
+Completed: Seed default RPG skills via config endpoint
+Files: apps/network/src/tools/gm-tool.ts, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/index.test.ts, apps/network/src/index.ts, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: `test_failure`. Mitigation used: strict RED→GREEN (added failing test first, then minimal route implementation, then full `npx vitest run`).
+
+Implemented `POST /admin/seed-skills` in `apps/network/src/index.ts` and added coverage in `apps/network/src/index.test.ts`.
+
+What was added:
+- Admin route `POST /admin/seed-skills` that seeds deterministic `AgentSkill` payloads via DO `PUT /agents/:name/skills/rpg/:role`.
+- Seeded IDs are stable (`skill:rpg:*`) so reruns overwrite existing values (idempotent behavior).
+- Seeds include:
+  - `skill:rpg:gm` -> `grimlock`
+  - `skill:rpg:warrior` -> `slag`
+  - `skill:rpg:scout` -> `snarl`
+  - `skill:rpg:mage` -> `swoop`
+  - `skill:rpg:healer` -> `sludge`
+  - `skill:rpg:player` (content includes `PARTY_TACTICS`) -> `sludge`
+
+TDD proof:
+- New test in `apps/network/src/index.test.ts` initially failed with `501` before implementation.
+- After implementation, test and full suite passed.
+
+Required post-work commands completed:
+- `swarm memory store "..." --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Seed default RPG skills via config endpoint"`
+
+---
+[2026-02-12T05:35:16.033Z]
+Completed: GM campaign lifecycle skill — teach grimlock the full GM playbook
+Files: apps/network/src/tools/gm-tool.ts, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg-skills.ts, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: test_failure. Mitigation: enforced RED→GREEN by first adding a failing test for GM lifecycle instructions, then updating `DM_SKILL` only after the test failed.
+
+Implemented story `story-mlj0cyai` by adding explicit campaign lifecycle guidance into `apps/network/src/environments/rpg-skills.ts`:
+- Added `## Campaign Lifecycle Playbook`
+- Added `### When dungeon has 0 rooms` with `consult_library` then `craft_dungeon`
+- Added `### When adventure ends` with `advance_campaign` and transition to `hub_town`
+- Added `### When in hub_town and party embarks` with `start next adventure`
+- Added `### When it's not your turn` with `observe`, `prepare next encounter`, and `consult_library` for upcoming rooms
+
+TDD coverage added in `apps/network/src/environments/rpg-skills.test.ts` to assert these lifecycle headings and directives exist in `DM_SKILL`.
+
+Validation run: `npx vitest run` (passed).
+
+Post-work required commands completed:
+- `swarm memory store "..." --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed GM campaign lifecycle skill — teach grimlock the full GM playbook"`

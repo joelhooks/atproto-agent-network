@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { D1MockDatabase } from '../../../packages/core/src/d1-mock'
 import { createGame } from './games/catan'
+import {
+  DM_SKILL,
+  HEALER_SKILL,
+  MAGE_SKILL,
+  PARTY_TACTICS,
+  SCOUT_SKILL,
+  WARRIOR_SKILL,
+} from './environments/rpg-skills'
 
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
@@ -1317,6 +1325,131 @@ describe('admin analytics endpoint', () => {
       extensions: [],
       lastReflection: null,
     })
+  })
+})
+
+describe('admin seed skills endpoint', () => {
+  it('POST /admin/seed-skills seeds RPG skills into agent DO storage and remains idempotent', async () => {
+    type SeedCall = {
+      agent: string
+      pathname: string
+      method: string
+      body: Record<string, unknown> | null
+    }
+
+    const calls: SeedCall[] = []
+    const env = createHealthEnv({
+      AGENTS: {
+        idFromName: vi.fn((name: string) => name),
+        get: vi.fn((id: unknown) => {
+          const agent = String(id)
+          return {
+            fetch: vi.fn(async (req: Request) => {
+              const pathname = new URL(req.url).pathname
+              const body = await req.json().catch(() => null)
+              calls.push({ agent, pathname, method: req.method, body })
+              return Response.json({ ok: true })
+            }),
+          }
+        }),
+      },
+    })
+
+    const expectedPayloadByPath = new Map<string, Record<string, unknown>>([
+      [
+        '/agents/grimlock/skills/rpg/gm',
+        {
+          id: 'skill:rpg:gm',
+          name: 'RPG GM',
+          description: 'Default GM skill for the RPG environment.',
+          content: DM_SKILL,
+          version: '1.0.0',
+        },
+      ],
+      [
+        '/agents/slag/skills/rpg/warrior',
+        {
+          id: 'skill:rpg:warrior',
+          name: 'RPG Warrior',
+          description: 'Default Warrior skill for the RPG environment.',
+          content: WARRIOR_SKILL,
+          version: '1.0.0',
+        },
+      ],
+      [
+        '/agents/snarl/skills/rpg/scout',
+        {
+          id: 'skill:rpg:scout',
+          name: 'RPG Scout',
+          description: 'Default Scout skill for the RPG environment.',
+          content: SCOUT_SKILL,
+          version: '1.0.0',
+        },
+      ],
+      [
+        '/agents/swoop/skills/rpg/mage',
+        {
+          id: 'skill:rpg:mage',
+          name: 'RPG Mage',
+          description: 'Default Mage skill for the RPG environment.',
+          content: MAGE_SKILL,
+          version: '1.0.0',
+        },
+      ],
+      [
+        '/agents/sludge/skills/rpg/healer',
+        {
+          id: 'skill:rpg:healer',
+          name: 'RPG Healer',
+          description: 'Default Healer skill for the RPG environment.',
+          content: HEALER_SKILL,
+          version: '1.0.0',
+        },
+      ],
+      [
+        '/agents/sludge/skills/rpg/player',
+        {
+          id: 'skill:rpg:player',
+          name: 'RPG Player',
+          description: 'Shared player coordination skill for RPG agents.',
+          content: PARTY_TACTICS,
+          version: '1.0.0',
+        },
+      ],
+    ])
+
+    const { default: worker } = await import('./index')
+    const sendSeed = async () =>
+      worker.fetch(
+        new Request('https://example.com/admin/seed-skills', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+        env
+      )
+
+    const first = await sendSeed()
+    expect(first.status).toBe(200)
+    await expect(first.json()).resolves.toMatchObject({
+      ok: true,
+      seeded: expectedPayloadByPath.size,
+    })
+
+    const second = await sendSeed()
+    expect(second.status).toBe(200)
+    await expect(second.json()).resolves.toMatchObject({
+      ok: true,
+      seeded: expectedPayloadByPath.size,
+    })
+
+    expect(calls).toHaveLength(expectedPayloadByPath.size * 2)
+
+    for (const call of calls) {
+      expect(call.method).toBe('PUT')
+      const expected = expectedPayloadByPath.get(call.pathname)
+      expect(expected).toBeDefined()
+      expect(call.body).toMatchObject(expected!)
+    }
   })
 })
 

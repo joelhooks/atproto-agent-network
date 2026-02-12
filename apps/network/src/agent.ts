@@ -31,6 +31,19 @@ import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../..
 import { withErrorHandling } from './http-errors'
 import { createLogger, logEvent, toErrorDetails } from './logger'
 import { createGmTool } from './tools/gm-tool'
+import {
+  DM_SKILL,
+  DM_SKILL_BRIEF,
+  HEALER_SKILL,
+  HEALER_SKILL_BRIEF,
+  MAGE_SKILL,
+  MAGE_SKILL_BRIEF,
+  PARTY_TACTICS,
+  SCOUT_SKILL,
+  SCOUT_SKILL_BRIEF,
+  WARRIOR_SKILL,
+  WARRIOR_SKILL_BRIEF,
+} from './environments/rpg-skills'
 
 interface AgentEnv {
   AGENTS?: DurableObjectNamespace
@@ -101,6 +114,16 @@ export interface Observations {
   events: ObservationEvent[]
 }
 
+export interface AgentSkill {
+  id: string
+  name: string
+  description: string
+  content: string
+  envType: string
+  role: string
+  version: string
+}
+
 interface ThinkToolCall {
   name: string
   arguments?: unknown
@@ -154,6 +177,7 @@ const DEFAULT_MAX_COMPLETED_GOALS = 2
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
 const EXTENSION_PREFIX = 'extensions'
+const SKILL_STORAGE_PREFIX = 'skill:'
 const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
 const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
@@ -165,6 +189,29 @@ const EMBEDDING_MODEL_DIMENSIONS: Partial<Record<WorkersAiModelName, number>> = 
   '@cf/baai/bge-base-en-v1.5': 768,
   '@cf/baai/bge-large-en-v1.5': 1024,
 }
+
+const RPG_SKILL_MAP: Record<string, { full: string; brief: string }> = {
+  warrior: { full: WARRIOR_SKILL, brief: WARRIOR_SKILL_BRIEF },
+  scout: { full: SCOUT_SKILL, brief: SCOUT_SKILL_BRIEF },
+  mage: { full: MAGE_SKILL, brief: MAGE_SKILL_BRIEF },
+  healer: { full: HEALER_SKILL, brief: HEALER_SKILL_BRIEF },
+}
+
+const RPG_SKILL_SEGMENTS = [
+  DM_SKILL,
+  DM_SKILL_BRIEF,
+  WARRIOR_SKILL,
+  WARRIOR_SKILL_BRIEF,
+  SCOUT_SKILL,
+  SCOUT_SKILL_BRIEF,
+  MAGE_SKILL,
+  MAGE_SKILL_BRIEF,
+  HEALER_SKILL,
+  HEALER_SKILL_BRIEF,
+  PARTY_TACTICS,
+  'Play your class to its strengths.',
+  'Wait for your turn. Coordinate with the party.',
+] as const
 
 function extractAgentNameFromPath(pathname: string): string | undefined {
   const parts = pathname.split('/').filter(Boolean)
@@ -298,6 +345,20 @@ export class AgentDO extends DurableObject {
         const parts = url.pathname.split('/').filter(Boolean)
         const leaf = parts.at(-1)
         const penultimate = parts.at(-2)
+
+        // External skill seeding API:
+        // - GET /agents/:name/skills/:envType/:role
+        // - PUT /agents/:name/skills/:envType/:role
+        if (parts[0] === 'agents' && parts[2] === 'skills' && parts.length === 5) {
+          const envType = parts[3]
+          const role = parts[4]
+          if (envType && role) {
+            return withErrorHandling(
+              () => this.handleSkillRoute(request, envType, role),
+              { route: 'AgentDO.skills', request }
+            )
+          }
+        }
 
         // ===== Story 4a: Bare alarm chain + start/stop API =====
         // Support both:
@@ -1226,6 +1287,8 @@ export class AgentDO extends DurableObject {
 
     // Game-aware context via environment registry
     let gameContext = ''
+    let activeEnvironmentType: string | null = null
+    let skillContext = ''
     console.log('buildContext gate', { agent: this.config?.name, hasDB: Boolean(this.agentEnv?.DB) })
     if (this.agentEnv?.DB) {
       const agentName = this.config?.name ?? ''
@@ -1252,6 +1315,7 @@ export class AgentDO extends DurableObject {
           const lines = await env.buildContext(envCtx)
           if (lines.length > 0) {
             gameContext = lines.join('\n')
+            activeEnvironmentType = env.type
             break
           }
         }
@@ -1268,6 +1332,22 @@ export class AgentDO extends DurableObject {
       this.intervalReason = 'default'
     }
 
+    if (activeEnvironmentType) {
+      try {
+        const agentName = this.config?.name ?? ''
+        const role = await this.resolveSkillRole(activeEnvironmentType, agentName)
+        const fromStorage = await this.readSkill(activeEnvironmentType, role)
+        const isMyTurn = gameContext.includes('🎮🎮🎮')
+        const fallback = this.getFallbackSkillContent(activeEnvironmentType, role, isMyTurn)
+        skillContext = fromStorage?.content?.trim() || fallback || ''
+        if (activeEnvironmentType === 'rpg') {
+          gameContext = this.stripRpgSkillSegments(gameContext)
+        }
+      } catch (err) {
+        console.error('skill context resolution failed', { agent: this.config?.name, error: String(err) })
+      }
+    }
+
     return [
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
       this.config?.personality ? `Personality: ${this.config.personality}` : '',
@@ -1280,6 +1360,8 @@ export class AgentDO extends DurableObject {
       '',
       'Observations this cycle:',
       JSON.stringify(observations, null, 2),
+      '',
+      skillContext,
       '',
       gameContext,
       hasInbox ? '⚠️ You have UNREAD MESSAGES in your inbox. RESPOND using the "message" tool.' : '',
@@ -1300,6 +1382,68 @@ export class AgentDO extends DurableObject {
       '5. If you want to update goals, include an updated `goals` array in your response.',
       '6. If you encounter errors, bugs, or stuck situations, use notify({"to":"grimlock","text":"description","level":"error"}) to report them.',
     ].filter(Boolean).join('\n')
+  }
+
+  private async resolveSkillRole(envType: string, agentName: string): Promise<string> {
+    if (!this.agentEnv?.DB || !agentName) return 'player'
+
+    const playerLike = `%${JSON.stringify(agentName)}%`
+    const row = await this.agentEnv.DB
+      .prepare(
+        "SELECT host_agent, state FROM environments WHERE type = ? AND phase IN ('playing', 'setup') AND players LIKE ? ORDER BY updated_at DESC LIMIT 1"
+      )
+      .bind(envType, playerLike)
+      .first<{ host_agent?: string; state?: string }>()
+
+    const normalizedName = agentName.trim().toLowerCase()
+    const hostAgent = typeof row?.host_agent === 'string' ? row.host_agent.trim().toLowerCase() : ''
+    if (hostAgent && hostAgent === normalizedName) {
+      return 'gm'
+    }
+
+    if (envType === 'rpg' && typeof row?.state === 'string') {
+      try {
+        const state = JSON.parse(row.state) as { party?: unknown[] }
+        if (Array.isArray(state.party)) {
+          const member = state.party.find((entry) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+            const name = (entry as { name?: unknown }).name
+            return typeof name === 'string' && name.trim().toLowerCase() === normalizedName
+          }) as { klass?: unknown } | undefined
+          const klass = typeof member?.klass === 'string' ? member.klass.trim().toLowerCase() : ''
+          if (klass) return klass
+        }
+      } catch {
+        // Best effort role resolution.
+      }
+    }
+
+    return 'player'
+  }
+
+  private getFallbackSkillContent(envType: string, role: string, isMyTurn: boolean): string {
+    if (envType !== 'rpg') return ''
+
+    if (role === 'gm') {
+      return isMyTurn ? DM_SKILL : DM_SKILL_BRIEF
+    }
+
+    const classSkill = RPG_SKILL_MAP[role]
+    if (isMyTurn) {
+      return [classSkill?.full ?? 'Play your class to its strengths.', PARTY_TACTICS].filter(Boolean).join('\n')
+    }
+    return classSkill?.brief ?? 'Wait for your turn. Coordinate with the party.'
+  }
+
+  private stripRpgSkillSegments(gameContext: string): string {
+    if (!gameContext) return gameContext
+
+    let cleaned = gameContext
+    for (const segment of RPG_SKILL_SEGMENTS) {
+      cleaned = cleaned.replace(segment, '')
+    }
+
+    return cleaned.replace(/\n{3,}/g, '\n\n').trim()
   }
 
   private normalizeThinkResult(result: unknown): ThinkResult {
@@ -1876,6 +2020,8 @@ export class AgentDO extends DurableObject {
         'write_extension',
         'list_extensions',
         'remove_extension',
+        'write_skill',
+        'list_skills',
       ],
     }
   }
@@ -2042,6 +2188,178 @@ export class AgentDO extends DurableObject {
     this.config = pruned
 
     return Response.json(pruned)
+  }
+
+  private normalizeSkillPart(raw: unknown, field: 'envType' | 'role'): string {
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (!value) throw new Error(`${field} is required`)
+    if (value.length > 64) throw new Error(`${field} is too long`)
+    if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
+      throw new Error(`${field} must match ^[a-zA-Z0-9._-]+$`)
+    }
+    return value
+  }
+
+  private normalizeSkillText(raw: unknown, field: 'id' | 'name' | 'description' | 'content' | 'version'): string {
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (!value) throw new Error(`${field} is required`)
+    return value
+  }
+
+  private skillKey(envType: string, role: string): string {
+    const safeEnvType = this.normalizeSkillPart(envType, 'envType')
+    const safeRole = this.normalizeSkillPart(role, 'role')
+    return `${SKILL_STORAGE_PREFIX}${safeEnvType}:${safeRole}`
+  }
+
+  private isAgentSkill(value: unknown): value is AgentSkill {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const rec = value as Record<string, unknown>
+    return (
+      typeof rec.id === 'string' &&
+      typeof rec.name === 'string' &&
+      typeof rec.description === 'string' &&
+      typeof rec.content === 'string' &&
+      typeof rec.envType === 'string' &&
+      typeof rec.role === 'string' &&
+      typeof rec.version === 'string'
+    )
+  }
+
+  private normalizeSkill(input: AgentSkill): AgentSkill {
+    return {
+      id: this.normalizeSkillText(input.id, 'id'),
+      name: this.normalizeSkillText(input.name, 'name'),
+      description: this.normalizeSkillText(input.description, 'description'),
+      content: this.normalizeSkillText(input.content, 'content'),
+      envType: this.normalizeSkillPart(input.envType, 'envType'),
+      role: this.normalizeSkillPart(input.role, 'role'),
+      version: this.normalizeSkillText(input.version, 'version'),
+    }
+  }
+
+  private async listSkillEntries(): Promise<Array<{ key: string; skill: AgentSkill }>> {
+    const storage = this.ctx.storage as unknown as {
+      list?: (options?: { prefix?: string }) => Promise<Map<string, unknown>>
+    }
+    if (typeof storage.list !== 'function') return []
+    const records = await storage.list({ prefix: SKILL_STORAGE_PREFIX })
+    const entries = Array.from(records.entries())
+      .map(([key, value]) => ({ key, value }))
+      .filter((entry): entry is { key: string; value: unknown } => typeof entry.key === 'string')
+      .map((entry) => {
+        if (!this.isAgentSkill(entry.value)) return null
+        try {
+          return { key: entry.key, skill: this.normalizeSkill(entry.value) }
+        } catch {
+          return null
+        }
+      })
+      .filter((entry): entry is { key: string; skill: AgentSkill } => entry !== null)
+
+    entries.sort((a, b) => {
+      const envCmp = a.skill.envType.localeCompare(b.skill.envType)
+      if (envCmp !== 0) return envCmp
+      const roleCmp = a.skill.role.localeCompare(b.skill.role)
+      if (roleCmp !== 0) return roleCmp
+      return a.skill.name.localeCompare(b.skill.name)
+    })
+
+    return entries
+  }
+
+  async writeSkill(skill: AgentSkill): Promise<AgentSkill> {
+    const normalized = this.normalizeSkill(skill)
+    const key = this.skillKey(normalized.envType, normalized.role)
+    await this.ctx.storage.put(key, normalized)
+    return normalized
+  }
+
+  async readSkill(envType: string, role: string): Promise<AgentSkill | null> {
+    const key = this.skillKey(envType, role)
+    const raw = await this.ctx.storage.get<unknown>(key)
+    if (!this.isAgentSkill(raw)) return null
+    try {
+      return this.normalizeSkill(raw)
+    } catch {
+      return null
+    }
+  }
+
+  async listSkills(): Promise<AgentSkill[]> {
+    const entries = await this.listSkillEntries()
+    return entries.map((entry) => entry.skill)
+  }
+
+  async deleteSkill(id: string): Promise<boolean> {
+    const targetId = typeof id === 'string' ? id.trim() : ''
+    if (!targetId) return false
+
+    const entries = await this.listSkillEntries()
+    const target = entries.find((entry) => entry.skill.id === targetId)
+    if (!target) return false
+
+    const storageWithDelete = this.ctx.storage as unknown as { delete?: (key: string) => Promise<void> }
+    if (typeof storageWithDelete.delete === 'function') {
+      await storageWithDelete.delete(target.key)
+    } else {
+      // Test storage mocks may omit delete(); writing null keeps list/read behavior consistent.
+      await this.ctx.storage.put(target.key, null)
+    }
+    return true
+  }
+
+  private async handleSkillRoute(request: Request, envTypeRaw: string, roleRaw: string): Promise<Response> {
+    let envType: string
+    let role: string
+    try {
+      envType = this.normalizeSkillPart(envTypeRaw, 'envType')
+      role = this.normalizeSkillPart(roleRaw, 'role')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return Response.json({ error: message }, { status: 400 })
+    }
+
+    if (request.method === 'GET') {
+      const skill = await this.readSkill(envType, role)
+      if (!skill) return Response.json({ error: 'Not found' }, { status: 404 })
+      return Response.json({ skill })
+    }
+
+    if (request.method !== 'PUT') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const payload = body as Record<string, unknown>
+    const existing = await this.readSkill(envType, role)
+
+    try {
+      const skill = await this.writeSkill({
+        id:
+          typeof payload.id === 'string' && payload.id.trim().length > 0
+            ? payload.id
+            : (existing?.id ?? `skill_${generateTid()}`),
+        name: payload.name,
+        description: payload.description,
+        content: payload.content,
+        envType,
+        role,
+        version:
+          typeof payload.version === 'string' && payload.version.trim().length > 0
+            ? payload.version
+            : (existing?.version ?? '1.0.0'),
+      })
+
+      return Response.json({ ok: true, skill })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return Response.json({ error: message }, { status: 400 })
+    }
   }
 
   /**
@@ -2820,6 +3138,85 @@ export class AgentDO extends DurableObject {
               sha: result.content?.sha,
               commit: result.commit?.sha,
               action: existingSha ? 'updated' : 'created',
+            },
+          }
+        },
+      },
+      {
+        name: 'write_skill',
+        label: 'Write Skill',
+        description:
+          'Store an agent skill profile in DO storage under skill:{envType}:{role}. ' +
+          'Use this to seed reusable role instructions per environment.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Skill id (optional; generated if omitted).' },
+            name: { type: 'string', description: 'Skill name.' },
+            description: { type: 'string', description: 'Short summary of what the skill does.' },
+            content: { type: 'string', description: 'Full skill instructions/content.' },
+            envType: { type: 'string', description: 'Environment type, e.g. "rpg".' },
+            role: { type: 'string', description: 'Role name for this environment, e.g. "scout".' },
+            version: { type: 'string', description: 'Skill version string.' },
+          },
+          required: ['name', 'description', 'content', 'envType', 'role', 'version'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{
+            id?: unknown
+            name?: unknown
+            description?: unknown
+            content?: unknown
+            envType?: unknown
+            role?: unknown
+            version?: unknown
+          }>(toolCallIdOrParams, maybeParams)
+
+          const safeEnvType = typeof params.envType === 'string' ? params.envType : ''
+          const safeRole = typeof params.role === 'string' ? params.role : ''
+          const existing = await this.readSkill(safeEnvType, safeRole).catch(() => null)
+
+          const skill = await this.writeSkill({
+            id:
+              typeof params.id === 'string' && params.id.trim().length > 0
+                ? params.id
+                : (existing?.id ?? `skill_${generateTid()}`),
+            name: params.name as string,
+            description: params.description as string,
+            content: params.content as string,
+            envType: safeEnvType,
+            role: safeRole,
+            version:
+              typeof params.version === 'string' && params.version.trim().length > 0
+                ? params.version
+                : (existing?.version ?? '1.0.0'),
+          })
+
+          return {
+            content: toTextContent(`Stored skill ${skill.envType}/${skill.role} (${skill.version}).`),
+            details: {
+              skill,
+              replaced: Boolean(existing),
+            },
+          }
+        },
+      },
+      {
+        name: 'list_skills',
+        label: 'List Skills',
+        description: 'List agent skills stored in DO storage under skill:{envType}:{role}.',
+        parameters: { type: 'object', properties: {} },
+        execute: async () => {
+          const entries = await this.listSkills()
+          const lines = entries.length
+            ? entries.map((entry) => `- ${entry.envType}/${entry.role} (${entry.version})`).join('\n')
+            : 'No skills.'
+
+          return {
+            content: toTextContent(lines),
+            details: {
+              count: entries.length,
+              entries,
             },
           }
         },

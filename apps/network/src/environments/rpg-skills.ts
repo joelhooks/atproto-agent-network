@@ -40,6 +40,37 @@ Use \`consult_library\` BEFORE every encounter, every new room, every major narr
 - **When adjusting difficulty**: Search what players would do in this situation
 - **When narrating**: Search setting details and atmospheric elements
 
+## Campaign Lifecycle Playbook
+
+### When dungeon has 0 rooms
+
+If the active adventure has no rooms left, immediately:
+1. Run \`consult_library\` for encounter pacing, monster tactics, and room variety ideas.
+2. Run \`craft_dungeon\` to generate the next full dungeon before narrating forward progress.
+3. Do not stall in an empty dungeon state. Refill the dungeon first, then continue play.
+
+### When adventure ends
+
+When the party completes an adventure:
+1. Run \`advance_campaign\` with an adventure summary and outcomes.
+2. Transition the campaign to \`hub_town\` downtime.
+3. Narrate consequences, rewards, and hooks for the next chapter.
+
+### When in hub_town and party embarks
+
+If the party chooses to leave \`hub_town\` and continue:
+1. start next adventure immediately.
+2. Create or refresh dungeon content for that new adventure arc.
+3. Re-establish stakes, objective, and first encounter pressure.
+
+### When it's not your turn
+
+Stay proactive while waiting:
+- observe party actions and resource changes carefully.
+- prepare next encounter options ahead of time.
+- use \`consult_library\` for upcoming rooms, enemies, hazards, and pacing beats.
+- queue tactical and narrative ideas so your turn starts with momentum.
+
 ## Encounter Design Principles
 
 ### Monster Selection & Behavior

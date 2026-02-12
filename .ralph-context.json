@@ -395,6 +395,68 @@
         "apps/network/src/environments/rpg.ts"
       ],
       "learnings": "[test_failure] src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [565.00ms]\n"
+    },
+    {
+      "id": "story-mlj0cc10",
+      "title": "AgentSkill type + DO storage CRUD",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/tools/gm-tool.ts",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json"
+      ],
+      "learnings": "Technical Discovery: `AgentSkill` deletion is id-based while storage is keyed by `envType/role`, so `deleteSkill(id)` must scan `skill:` prefixed entries to resolve the key before deletion. This avoids exposing storage-key internals to callers while preserving the required key shape.\nGotcha: In test environments, DO storage mocks may not implement `storage.delete()`. A safe fallback (writing `null`) keeps `readSkill/listSkills` behavior correct because they strictly filter by `isAgentSkill` shape.\nFiles Context: `apps/network/src/agent.ts` now contains all skill primitives: type (`AgentSkill`), storage CRUD (`writeSkill/readSkill/listSkills/deleteSkill`), route handler (`handleSkillRoute`), and tool definitions (`write_skill`, `list_skills`). `apps/network/src/agent-do.test.ts` has the story coverage for default tool exposure, tool CRUD behavior, and `/agents/:name/skills/:envType/:role` endpoint seeding."
+    },
+    {
+      "id": "story-mlj0cjqj",
+      "title": "Skill loading in buildContext — inject matched skill into agent prompt",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/tools/gm-tool.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `buildThinkPrompt` in `apps/network/src/agent.ts` is the correct integration point for gradual DO skill rollout: resolving `envType` from the same buildContext pass, then resolving role from `environments.host_agent` plus RPG `state.party[].klass`, allows `readSkill(envType, role)` without changing environment modules.\nGotcha: RPG `buildContext` already embeds hardcoded role skill content (`rpg.ts`), so DO skill injection must remove those known segments first; otherwise prompts contain duplicated/conflicting instructions and overrides are not true overrides.\nFiles Context: `apps/network/src/agent.ts` now contains all runtime skill-selection logic (`resolveSkillRole`, `getFallbackSkillContent`, `stripRpgSkillSegments`) and prompt injection order. `apps/network/src/agent-do.test.ts` has the regression coverage for prompt ordering and DO override behavior."
+    },
+    {
+      "id": "story-mlj0cqs7",
+      "title": "Seed default RPG skills via config endpoint",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/tools/gm-tool.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` already exposes an external seeding path (`PUT /agents/:name/skills/:envType/:role`) that persists to `skill:{envType}:{role}`. Reusing that path from `apps/network/src/index.ts` avoids duplicating storage rules and guarantees proper `AgentSkill` normalization.\nGotcha: If seeding logic changes, keep skill IDs deterministic (`skill:rpg:*`). Non-deterministic IDs would break idempotence and create duplicate semantic records even though storage keys overwrite by role.\nFiles Context: `apps/network/src/index.ts` now owns the admin orchestration endpoint and default seed target map. `apps/network/src/index.test.ts` contains the route contract test (payload shape, routing path, and idempotence by calling endpoint twice)."
+    },
+    {
+      "id": "story-mlj0cyai",
+      "title": "GM campaign lifecycle skill — teach grimlock the full GM playbook",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/tools/gm-tool.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg-skills.ts",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `DM_SKILL` in `apps/network/src/environments/rpg-skills.ts` is a direct prompt contract, so adding explicit lifecycle trigger headings makes autoplay behavior auditable and testable as prompt text. A dedicated assertion file (`apps/network/src/environments/rpg-skills.test.ts`) is the cleanest way to lock these instructions without coupling to broader environment tests.\nGotcha: String-content tests on prompt text are case-sensitive; wording drift (for example `Start` vs `start`) can fail tests even when semantics are unchanged. Keep required trigger/action phrases stable when editing skill copy.\nFiles Context: `apps/network/src/environments/rpg-skills.ts` contains `DM_SKILL` and is the source of GM autonomous behavior instructions. `apps/network/src/environments/rpg-skills.test.ts` now validates campaign lifecycle directives so future skill edits do not remove the encoded autoplay heuristics."
     }
   ],
   "failures": [

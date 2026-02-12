@@ -298,7 +298,7 @@ describe('AgentDO', () => {
     })
   })
 
-  it('includes extension tools in the default enabledTools config', async () => {
+  it('includes extension and skill tools in the default enabledTools config', async () => {
     const { state } = createState('agent-default-tools')
     const { env } = createEnv()
 
@@ -310,7 +310,13 @@ describe('AgentDO', () => {
 
     expect(Array.isArray(body.enabledTools)).toBe(true)
     expect(body.enabledTools).toEqual(
-      expect.arrayContaining(['write_extension', 'list_extensions', 'remove_extension'])
+      expect.arrayContaining([
+        'write_extension',
+        'list_extensions',
+        'remove_extension',
+        'write_skill',
+        'list_skills',
+      ])
     )
   })
 
@@ -2562,7 +2568,7 @@ describe('AgentDO', () => {
       .bind(
         'rpg_test_1',
         'rpg',
-        agentName,
+        'grimlock',
         JSON.stringify({
           type: 'rpg',
           phase: 'playing',
@@ -2575,7 +2581,7 @@ describe('AgentDO', () => {
           log: [],
         }),
         'playing',
-        JSON.stringify([agentName])
+        JSON.stringify([agentName, 'grimlock'])
       )
       .run()
 
@@ -2588,6 +2594,69 @@ describe('AgentDO', () => {
     expect(thinkPrompt).toContain('Focus fire')
     expect(thinkPrompt).toContain('Positioning')
     expect(thinkPrompt).toContain('Party Coordination')
+    expect(thinkPrompt.indexOf('YOUR ROLE')).toBeLessThan(thinkPrompt.indexOf('🎮🎮🎮 IT IS YOUR TURN'))
+  })
+
+  it('injects DO RPG skill before environment context and overrides hardcoded fallback', async () => {
+    const { state } = createState('agent-rpg-do-skill-prompt')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+    await agent.fetch(new Request(`https://example/agents/${agentName}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: agentName, enabledTools: [] }),
+    }))
+
+    await db
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(
+        'rpg_test_do_skill_1',
+        'rpg',
+        'grimlock',
+        JSON.stringify({
+          type: 'rpg',
+          phase: 'playing',
+          mode: 'exploring',
+          roomIndex: 0,
+          currentPlayer: agentName,
+          party: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          turnOrder: [{ name: agentName, klass: 'Warrior', hp: 10, maxHp: 10, mp: 2, maxMp: 2, stats: { STR: 75, DEX: 50, INT: 40, WIS: 40 }, skills: { attack: 60, dodge: 45, cast_spell: 40, use_skill: 35 } }],
+          dungeon: [{ type: 'trap', description: 'A pressure plate clicks underfoot.' }],
+          log: [],
+        }),
+        'playing',
+        JSON.stringify([agentName, 'grimlock'])
+      )
+      .run()
+
+    await (agent as any).writeSkill({
+      id: 'skill-warrior-do',
+      name: 'Warrior override',
+      description: 'Custom warrior directives',
+      content: 'CUSTOM RPG SKILL: Hold the left flank and protect healers.',
+      envType: 'rpg',
+      role: 'warrior',
+      version: '1.0.0',
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    const thinkPrompt = prompt.mock.calls[0]?.[0]
+    expect(typeof thinkPrompt).toBe('string')
+    expect(thinkPrompt).toContain('CUSTOM RPG SKILL: Hold the left flank and protect healers.')
+    expect(thinkPrompt.indexOf('CUSTOM RPG SKILL: Hold the left flank and protect healers.')).toBeLessThan(
+      thinkPrompt.indexOf('🎮🎮🎮 IT IS YOUR TURN')
+    )
+    expect(thinkPrompt).not.toContain('Focus fire')
   })
 
   it('adds a blocked-mode recruitment message when an RPG barrier requires a missing class', async () => {
@@ -3648,6 +3717,152 @@ describe('AgentDO', () => {
     await remove.execute!({ name: 'a' })
     const reloadNeeded = await storage.get<boolean>('extensionsReloadNeeded')
     expect(reloadNeeded).toBe(true)
+  })
+
+  it('write_skill and list_skills tools persist AgentSkill records in DO storage', async () => {
+    const bucket = createFakeR2Bucket()
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state, storage } = createState('agent-skill-tools')
+    const { env } = createEnv({
+      BLOBS: bucket,
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => any }>
+    const writeSkill = tools.find((t) => t.name === 'write_skill')!
+    const listSkills = tools.find((t) => t.name === 'list_skills')!
+    expect(typeof writeSkill.execute).toBe('function')
+    expect(typeof listSkills.execute).toBe('function')
+
+    const first = await writeSkill.execute!({
+      name: 'Dungeon Scout',
+      description: 'Exploration heuristics for room sequencing.',
+      content: 'Prioritize barrier rooms after rest nodes.',
+      envType: 'rpg',
+      role: 'scout',
+      version: '1.0.0',
+    })
+    const firstId = first?.details?.skill?.id as string
+    expect(typeof firstId).toBe('string')
+    expect(firstId.length).toBeGreaterThan(0)
+
+    const stored = await storage.get<Record<string, unknown>>('skill:rpg:scout')
+    expect(stored).toMatchObject({
+      id: firstId,
+      name: 'Dungeon Scout',
+      description: 'Exploration heuristics for room sequencing.',
+      content: 'Prioritize barrier rooms after rest nodes.',
+      envType: 'rpg',
+      role: 'scout',
+      version: '1.0.0',
+    })
+
+    await writeSkill.execute!({
+      name: 'Dungeon Scout',
+      description: 'Updated strategy',
+      content: 'Re-check traps before engaging.',
+      envType: 'rpg',
+      role: 'scout',
+      version: '1.1.0',
+    })
+
+    const listed = await listSkills.execute!({})
+    expect(listed.details.count).toBe(1)
+    expect(listed.details.entries[0]).toMatchObject({
+      name: 'Dungeon Scout',
+      envType: 'rpg',
+      role: 'scout',
+      version: '1.1.0',
+    })
+  })
+
+  it('skill storage CRUD methods write/read/list/delete skill records by envType/role key', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state } = createState('agent-skill-crud')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const storedSkill = await (agent as any).writeSkill({
+      id: 'skill-1',
+      name: 'Campaign Planner',
+      description: 'Plans campaign arcs.',
+      content: 'Use faction tension as pacing.',
+      envType: 'rpg',
+      role: 'planner',
+      version: '2.0.0',
+    })
+    expect(storedSkill).toMatchObject({ id: 'skill-1', envType: 'rpg', role: 'planner' })
+
+    const readSkill = await (agent as any).readSkill('rpg', 'planner')
+    expect(readSkill).toMatchObject({ id: 'skill-1', name: 'Campaign Planner' })
+
+    const listed = await (agent as any).listSkills()
+    expect(Array.isArray(listed)).toBe(true)
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'skill-1', envType: 'rpg', role: 'planner' }),
+      ])
+    )
+
+    const deleted = await (agent as any).deleteSkill('skill-1')
+    expect(deleted).toBe(true)
+    await expect((agent as any).readSkill('rpg', 'planner')).resolves.toBeNull()
+  })
+
+  it('supports GET and PUT /agents/:name/skills/:envType/:role for external skill seeding', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state } = createState('agent-skill-route')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const putResponse = await agent.fetch(
+      new Request('https://example/agents/alice/skills/rpg/scout', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Scout Seed',
+          description: 'External seed for scout role.',
+          content: 'Prefer stealth approach.',
+          version: '0.1.0',
+        }),
+      })
+    )
+    expect(putResponse.status).toBe(200)
+    const putBody = (await putResponse.json()) as { skill?: Record<string, unknown> }
+    expect(putBody.skill).toMatchObject({
+      name: 'Scout Seed',
+      description: 'External seed for scout role.',
+      content: 'Prefer stealth approach.',
+      envType: 'rpg',
+      role: 'scout',
+      version: '0.1.0',
+    })
+
+    const getResponse = await agent.fetch(new Request('https://example/agents/alice/skills/rpg/scout'))
+    expect(getResponse.status).toBe(200)
+    const getBody = (await getResponse.json()) as { skill?: Record<string, unknown> }
+    expect(getBody.skill).toMatchObject({
+      name: 'Scout Seed',
+      envType: 'rpg',
+      role: 'scout',
+      version: '0.1.0',
+    })
   })
 
   it('enforces extension safety limits (max 10, max 50KB, no eval)', async () => {
