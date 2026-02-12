@@ -4056,6 +4056,7 @@ export const rpgEnvironment: AgentEnvironment = {
     const row = await findActiveGameWhereItsMyTurn(ctx)
     const agentName = ctx.agentName.trim()
 
+    // Grimlock: if there's an active game with 0 dungeon rooms, craft_dungeon first
     if (agentName === 'grimlock') {
       const active = row ?? (await findActiveGameForAgent(ctx))
       if (active) {
@@ -4065,7 +4066,7 @@ export const rpgEnvironment: AgentEnvironment = {
             return [{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: active.id } }]
           }
         } catch {
-          // Ignore malformed state and continue autoplay checks.
+          // Ignore malformed state
         }
         if (!row) return []
       }

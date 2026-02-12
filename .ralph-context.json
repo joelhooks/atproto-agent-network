@@ -386,6 +386,15 @@
         "prd.json"
       ],
       "learnings": "[test_failure] src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [530.00ms]\n"
+    },
+    {
+      "id": "story-mlizbwr4",
+      "title": "Auto-play: grimlock craft_dungeon when dungeon is empty",
+      "status": "failed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "[test_failure] src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [565.00ms]\n"
     }
   ],
   "failures": [
@@ -505,6 +514,20 @@
         "openclaw system"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlizbwr4",
+      "storyTitle": "Auto-play: grimlock craft_dungeon when dungeon is empty",
+      "category": "test_failure",
+      "error": "src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [565.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies\n(pass) network worker lexicon validation > rejects invalid lexicon records at the worker b",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "git diff",
+        "git show",
+        "nl -ba"
+      ],
+      "iterationNumber": 2
     }
   ]
 }

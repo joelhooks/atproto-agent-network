@@ -774,3 +774,38 @@ src/index.test.ts:
 (pass) network worker lexicon validation > rejects requests without a bearer token before routing [530.00ms]
 
 Codex: Implemented the campaign `start-adventure` fix in `apps/network/src/index.ts` so newly started campaign adventures no longer remain in setup defaults. The route now sets `game.mode = 'exploring'` and `game.currentPlayer = 'grimlock'` right after `game.phase = 'playing'`. Added assertions in `apps/network/src/index.test.ts` to lock this behavior. Also ran required hivemind operations: `swarm memory find`, `swarm memory store`, and `openclaw system event`.
+
+---
+[2026-02-12T05:01:23.261Z]
+Failed: Auto-play: grimlock craft_dungeon when dungeon is empty [test_failure]
+Validation: src/network.ws.live.test.ts:
+(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects
+
+src/index.test.ts:
+(pass) network worker lexicon validation > rejects requests without a bearer token before routing [565.00ms]
+
+Codex: Implemented the autoplay fix in `apps/network/src/environments/rpg.ts:4055`.
+
+Prior failure pattern detected: `test_failure`. Mitigation: narrowed the logic to only check `findActiveGameForAgent` when `findActiveGameWhereItsMyTurn` returns no row, so grimlock injects `craft_dungeon` for empty active games instead of broad `row ?? active` behavior.
+
+What changed:
+- Updated `getAutoPlayActions` so grimlock now does:
+  - If no turn-owned active row (`!row`), look up active game via `findActiveGameForAgent`.
+  - If active game dungeon is empty, return `[{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: active.id } }]`.
+  - Otherwise return `[]` (preserving existing non-creation behavior when an active game exists).
+
+Validation run:
+- `cd apps/network && bun test src/environments/rpg.test.ts` ✅ passed
+- `cd apps/network && bun test` ❌ fails due pre-existing unrelated suite issues (Bun runner incompatibilities and unrelated endpoint/DO test failures).
+
+Required post-work commands completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` ✅
+- `openclaw system event --mode now --text "Ralph: completed Auto-play: grimlock craft_dungeon when dungeon is empty"` ✅
+
+## Learnings
+### Technical Discovery
+`getAutoPlayActions` behavior depends heavily on whether `row` comes from `findActiveGameWhereItsMyTurn`; using `row ?? findActiveGameForAgent` widens autoplay side effects. Restricting the empty-dungeon `craft_dungeon` check to the `!row` path aligns with the intended “instead of returning empty” host-active fallback.
+### Gotcha for Next Iteration
+`cd apps/network && bun test` currently reports many unrelated failures (for example `vi.stubGlobal`, `vi.resetModules`, `vi.setSystemTime` missing in Bun test runner, plus unrelated route/DO failures). Use focused suite runs to verify story behavior while noting full-suite instability is pre-existing.
+### Files Context
+`apps/network/src/environments/rpg.ts` is the autoplay decision point. The changed block is in `getAutoPlayActions` around lines 4055-4071; this is where grimlock fallback behavior (`!row`) now triggers `gm craft_dungeon` for empty dungeons before new-game logic.
