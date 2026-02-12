@@ -2752,6 +2752,9 @@ export const rpgEnvironment: AgentEnvironment = {
           if (game.currentPlayer !== ctx.agentName.trim()) {
             return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
           }
+          if (game.dungeon.length === 0) {
+            return { ok: false, error: 'No dungeon yet — the GM must craft_dungeon before the adventure can begin. Wait for the Dungeon Master.' }
+          }
           const atDungeonEnd = game.roomIndex >= Math.max(0, game.dungeon.length - 1)
           if (atDungeonEnd) {
             // Allow completion from final room even if stale combat state leaked in.

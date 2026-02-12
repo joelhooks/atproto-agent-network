@@ -664,7 +664,11 @@ describe('rpgEnvironment', () => {
     }
 
     const gameId = 'rpg_test_game_completed'
-    const game = createGame({ id: gameId, players: ['alice'] })
+    const game = createGame({
+      id: gameId,
+      players: ['alice'],
+      dungeon: [{ name: 'Final Chamber', description: 'The last room.', type: 'treasure', enemies: [] }],
+    })
 
     // Force immediate completion: explore() finishes if roomIndex is already at last room.
     game.phase = 'playing'
