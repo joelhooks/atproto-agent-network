@@ -976,6 +976,8 @@ export default {
                 // not by createRpgGame(), so starting in 'setup' here would
                 // leave agents in a limbo with no phase machine.
                 game.phase = 'playing'
+                game.mode = 'exploring'
+                game.currentPlayer = 'grimlock'
 
                 if (campaignThread.objective) {
                   ;(game as Record<string, unknown>).campaignObjective = {

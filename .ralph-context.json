@@ -373,6 +373,19 @@
         "apps/network/src/index.ts"
       ],
       "learnings": "Technical Discovery: `createGame` is the effective `createRpgGame` constructor used across network paths; changing its no-dungeon branch (rather than route-level logic) cleanly enforces setup-mode bootstrap everywhere. `craftDungeonFromLibrary` is a viable non-procedural fallback for GM dungeon crafting when AI output is invalid.\nGotcha: Any caller that previously relied on implicit procedural dungeon population from `createGame({ players, id })` now gets an empty dungeon in setup mode. If immediate gameplay is required, provide an explicit `dungeon` or run `craft_dungeon` first.\nFiles Context: `apps/network/src/games/rpg-engine.ts` now contains default-theme + setup bootstrap behavior and no procedural generation APIs (`DEFAULT_DUNGEON_THEME` at :1493, `createGame` behavior at :1770). `apps/network/src/tools/gm-tool.ts` fallback path now uses `craftDungeonFromLibrary` (`if (!craftedByAi)` around :1396). `apps/network/src/games/rpg-engine.test.ts` includes the new no-dungeon setup assertion at :329 and removed generation-specific tests."
+    },
+    {
+      "id": "story-mlizbw13",
+      "title": "Fix campaign start-adventure: set mode='exploring' and currentPlayer",
+      "status": "failed",
+      "filesModified": [
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/index.test.ts",
+        "apps/network/src/index.ts",
+        "prd.json"
+      ],
+      "learnings": "[test_failure] src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [530.00ms]\n"
     }
   ],
   "failures": [
@@ -478,6 +491,20 @@
         "sed -n"
       ],
       "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlizbw13",
+      "storyTitle": "Fix campaign start-adventure: set mode='exploring' and currentPlayer",
+      "category": "test_failure",
+      "error": "src/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [530.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies\n(pass) network worker lexicon validation > rejects invalid lexicon records at the worker b",
+      "toolNames": [
+        "swarm memory",
+        "rg -n",
+        "/usr/bin/zsh -lc",
+        "nl -ba",
+        "openclaw system"
+      ],
+      "iterationNumber": 1
     }
   ]
 }

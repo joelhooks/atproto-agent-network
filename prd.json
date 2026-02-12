@@ -1005,6 +1005,50 @@
       "priority": 105,
       "passes": true,
       "validationCommand": "cd apps/network && npx vitest run 2>&1 | tail -5"
+    },
+    {
+      "id": "story-mlizbw13",
+      "title": "Fix campaign start-adventure: set mode='exploring' and currentPlayer",
+      "description": "In `apps/network/src/index.ts`, the `start-adventure` route creates games with `mode: 'setup'` (the createRpgGame default) but phase='playing'. This leaves a 0-dungeon game in limbo. Fix: after `game.phase = 'playing'`, also set `game.mode = 'exploring'` and set `game.currentPlayer = 'grimlock'` so the GM gets first turn to craft_dungeon. The dungeon starts empty — that's fine, grimlock will craft_dungeon on its first auto-play turn.",
+      "priority": 110,
+      "passes": true,
+      "validationCommand": "cd apps/network && bun test",
+      "targetFiles": [
+        "index.ts"
+      ]
+    },
+    {
+      "id": "story-mlizbwr4",
+      "title": "Auto-play: grimlock craft_dungeon when dungeon is empty",
+      "description": "In `apps/network/src/environments/rpg.ts` in `getAutoPlayActions`, when grimlock finds an active game where it's the host and `state.dungeon.length === 0`, inject a `craft_dungeon` GM tool call instead of returning empty. Add this check after the `findActiveGameWhereItsMyTurn` logic — if grimlock has an active game (via findActiveGameForAgent) but dungeon is empty, return `[{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: row.id } }]`. This ensures campaign adventures get their dungeon crafted automatically.",
+      "priority": 111,
+      "passes": false,
+      "validationCommand": "cd apps/network && bun test",
+      "targetFiles": [
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlizbxc1",
+      "title": "Grimlock auto-create uses campaign instead of standalone",
+      "description": "In `apps/network/src/environments/rpg.ts` in `getAutoPlayActions`, when grimlock auto-creates because no playing environments exist, it should check for an active campaign first. Change the grimlock auto-create block: query D1 for `SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 1`. If a campaign exists, use `{ command: 'new_game', players: ['slag', 'snarl', 'swoop'], campaignId: campaign.id }` instead of just `{ command: 'new_game', players: ['slag', 'snarl', 'swoop'] }`. The `new_game` handler already supports `campaignId` parameter.",
+      "priority": 112,
+      "passes": false,
+      "validationCommand": "cd apps/network && bun test",
+      "targetFiles": [
+        "rpg.ts"
+      ]
+    },
+    {
+      "id": "story-mlizby0h",
+      "title": "Fix embark: link new adventure to campaign in D1",
+      "description": "In `apps/network/src/environments/rpg.ts` in the `embark` command handler (~line 2400), after the game state is updated in D1, call `linkAdventureToCampaign(db, gameId, campaignId)` if `campaignId` is present. Currently embark updates the game in-place but never calls linkAdventureToCampaign, so the campaign adventure count doesn't track properly. Import `linkAdventureToCampaign` from `../campaign` if not already imported.",
+      "priority": 113,
+      "passes": false,
+      "validationCommand": "cd apps/network && bun test",
+      "targetFiles": [
+        "rpg.ts"
+      ]
     }
   ],
   "metadata": {

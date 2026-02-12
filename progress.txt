@@ -763,3 +763,14 @@ Summary: Rewrote `craft_dungeon` in `apps/network/src/tools/gm-tool.ts` to use `
 Completed: Remove procedural dungeon generation — delete generateDungeon and template arrays
 Files: apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/tools/gm-tool.test.ts, apps/network/src/tools/gm-tool.ts, apps/network/src/agent.ts, apps/network/src/environments/types.ts, apps/network/src/index.test.ts, apps/network/src/index.ts
 Summary: Removed procedural dungeon generation from the RPG engine and updated startup behavior. Specifically, deleted `DUNGEON_THEMES`, `pickDungeonTheme`, `generateDungeon`, `buildCombatRoom`, `buildBossRoom`, and associated bestiary template arrays from `apps/network/src/games/rpg-engine.ts`. Updated `createGame` (used as `createRpgGame`) to start with `dungeon: []`, `phase: 'setup'`, and `mode: 'setup'` when no dungeon is provided. Kept `Room`/`Enemy`/`DungeonTheme` types, `withCampaignTheme`, and `craftDungeonFromLibrary`. Updated GM fallback in `apps/network/src/tools/gm-tool.ts` to use `craftDungeonFromLibrary` instead of deleted procedural generation. Removed tests tied to deleted generation APIs and added setup-mode startup coverage.
+
+---
+[2026-02-12T04:51:52.984Z]
+Failed: Fix campaign start-adventure: set mode='exploring' and currentPlayer [test_failure]
+Validation: src/network.ws.live.test.ts:
+(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects
+
+src/index.test.ts:
+(pass) network worker lexicon validation > rejects requests without a bearer token before routing [530.00ms]
+
+Codex: Implemented the campaign `start-adventure` fix in `apps/network/src/index.ts` so newly started campaign adventures no longer remain in setup defaults. The route now sets `game.mode = 'exploring'` and `game.currentPlayer = 'grimlock'` right after `game.phase = 'playing'`. Added assertions in `apps/network/src/index.test.ts` to lock this behavior. Also ran required hivemind operations: `swarm memory find`, `swarm memory store`, and `openclaw system event`.

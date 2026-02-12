@@ -1181,6 +1181,7 @@ describe('network worker campaign API', () => {
     expect(started).toMatchObject({
       id: expect.stringMatching(/^rpg_/),
       type: 'rpg',
+      phase: 'playing',
       campaignId: campaign.id,
       adventureNumber: 1,
     })
@@ -1191,6 +1192,9 @@ describe('network worker campaign API', () => {
       .first<{ state: string }>()
     expect(createdRow).not.toBeNull()
     const state = JSON.parse(String(createdRow?.state ?? '{}')) as any
+    expect(state.phase).toBe('playing')
+    expect(state.mode).toBe('exploring')
+    expect(state.currentPlayer).toBe('grimlock')
     expect(state.campaignId).toBe(campaign.id)
     expect(state.campaignAdventureNumber).toBe(1)
     expect(state.theme?.name).toContain('The Waking Titan')
