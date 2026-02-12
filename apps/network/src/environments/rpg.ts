@@ -2464,6 +2464,15 @@ export const rpgEnvironment: AgentEnvironment = {
             .bind(JSON.stringify(next), next.phase, (next as any).winner ?? null, gameId)
             .run()
 
+          // Track adventure in campaign linkage table
+          if (campaignId) {
+            try {
+              await linkAdventureToCampaign(db, gameId, campaignId)
+            } catch {
+              // best effort — don't break embark
+            }
+          }
+
           return {
             content: toTextContent(`You leave town and embark on the next adventure.\n\nParty: ${summarizeParty(next)}`),
             details: {
@@ -4045,12 +4054,25 @@ export const rpgEnvironment: AgentEnvironment = {
 
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
     const row = await findActiveGameWhereItsMyTurn(ctx)
-    if (!row) {
-      const active = await findActiveGameForAgent(ctx)
-      if (active) return []
+    const agentName = ctx.agentName.trim()
 
+    if (agentName === 'grimlock') {
+      const active = row ?? (await findActiveGameForAgent(ctx))
+      if (active) {
+        try {
+          const state = JSON.parse(active.state) as RpgGameState
+          if (Array.isArray(state.dungeon) && state.dungeon.length === 0) {
+            return [{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: active.id } }]
+          }
+        } catch {
+          // Ignore malformed state and continue autoplay checks.
+        }
+        if (!row) return []
+      }
+    }
+
+    if (!row) {
       // Grimlock: when there are no playing environments, auto-create a fresh dungeon.
-      const agentName = ctx.agentName.trim()
       if (agentName === 'grimlock') {
         const anyPlaying = await anyPlayingRpgEnvironmentsExist(ctx)
         if (anyPlaying) return []
@@ -4059,6 +4081,17 @@ export const rpgEnvironment: AgentEnvironment = {
         const finishedToday = await countFinishedRpgEnvironmentsToday(ctx)
         if (finishedToday >= maxEnvironmentsPerDay) return []
 
+        // Prefer campaign continuation over standalone dungeons
+        try {
+          const campaignRow = await ctx.db
+            .prepare('SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 1')
+            .first<{ id: string }>()
+          if (campaignRow?.id) {
+            return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'], campaignId: campaignRow.id } }]
+          }
+        } catch {
+          // No campaigns table or no campaigns — fall through to standalone
+        }
         return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'] } }]
       }
 
