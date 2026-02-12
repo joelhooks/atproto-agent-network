@@ -84,6 +84,92 @@ async function registerGame(
   }
 }
 
+type CampaignRow = {
+  id: string
+  name: string
+  premise: string
+  world_state: string
+  story_arcs: string
+  created_at: string
+  updated_at: string
+}
+
+class CampaignAwareD1MockDatabase extends D1MockDatabase {
+  readonly campaigns = new Map<string, CampaignRow>()
+
+  private normalizeSql(sql: string): string {
+    return sql.toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+
+  override async run(sql: string, params: unknown[]): Promise<void> {
+    const normalized = this.normalizeSql(sql)
+    const now = new Date().toISOString()
+
+    if (normalized.startsWith('create table if not exists campaigns')) return
+
+    if (normalized.startsWith('insert into campaigns')) {
+      const [id, name, premise, worldState, storyArcs] = params
+      this.campaigns.set(String(id), {
+        id: String(id),
+        name: String(name),
+        premise: String(premise ?? ''),
+        world_state: String(worldState ?? '{}'),
+        story_arcs: String(storyArcs ?? '[]'),
+        created_at: now,
+        updated_at: now,
+      })
+      return
+    }
+
+    if (normalized.startsWith('update campaigns set')) {
+      const [name, premise, worldState, storyArcs, id] = params
+      const existing = this.campaigns.get(String(id))
+      if (!existing) return
+
+      existing.name = String(name ?? existing.name)
+      existing.premise = String(premise ?? existing.premise)
+      existing.world_state = String(worldState ?? existing.world_state)
+      existing.story_arcs = String(storyArcs ?? existing.story_arcs)
+      existing.updated_at = now
+      this.campaigns.set(existing.id, existing)
+      return
+    }
+
+    if (normalized.startsWith('update environments set campaign_id = ?')) {
+      const [campaignId, adventureNumber, state, id] = params
+      const existing = this.games.get(String(id))
+      if (!existing) return
+
+      ;(existing as Record<string, unknown>).campaign_id = campaignId == null ? null : String(campaignId)
+      ;(existing as Record<string, unknown>).adventure_number = Number(adventureNumber ?? 0)
+      existing.state = String(state ?? existing.state)
+      existing.updated_at = now
+      this.games.set(existing.id, existing)
+      return
+    }
+
+    return super.run(sql, params)
+  }
+
+  override async all<T>(sql: string, params: unknown[]): Promise<{ results: T[] }> {
+    const normalized = this.normalizeSql(sql)
+
+    if (normalized.startsWith('select id, name, premise, world_state, story_arcs, created_at, updated_at from campaigns where id = ?')) {
+      const row = this.campaigns.get(String(params[0]))
+      return { results: row ? [row as T] : [] }
+    }
+
+    if (normalized.startsWith('select id from campaigns order by updated_at desc')) {
+      const results = Array.from(this.campaigns.values())
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .map((row) => ({ id: row.id } as T))
+      return { results }
+    }
+
+    return super.all<T>(sql, params)
+  }
+}
+
 describe('network worker lexicon validation', () => {
   it('rejects requests without a bearer token before routing', async () => {
     const agentFetch = vi.fn(async () => new Response('ok'))
@@ -963,6 +1049,173 @@ describe('network worker environments API', () => {
     expect(deleteAlias.status).toBe(200)
     expect(deleteAlias.headers.get('Deprecation')).toBe('true')
     await expect(deleteAlias.json()).resolves.toMatchObject({ ok: true })
+  })
+})
+
+describe('network worker campaign API', () => {
+  it('requires admin auth for campaign routes', async () => {
+    const db = new CampaignAwareD1MockDatabase()
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const routes = [
+      new Request('https://example.com/environments/rpg/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'No Auth Campaign' }),
+      }),
+      new Request('https://example.com/environments/rpg/campaign/campaign_missing'),
+      new Request('https://example.com/environments/rpg/campaigns'),
+      new Request('https://example.com/environments/rpg/campaign/campaign_missing/start-adventure', {
+        method: 'POST',
+      }),
+    ]
+
+    for (const request of routes) {
+      const response = await worker.fetch(request, env)
+      expect(response.status).toBe(401)
+    }
+  })
+
+  it('creates, fetches, and lists campaigns', async () => {
+    const db = new CampaignAwareD1MockDatabase()
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const createOne = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: 'Ironlands Saga', premise: 'The Iron Court fractures at dawn.' }),
+      }),
+      env
+    )
+    expect(createOne.status).toBe(200)
+    const campaignOne = await createOne.json() as any
+    expect(campaignOne).toMatchObject({
+      id: expect.stringMatching(/^campaign_/),
+      name: 'Ironlands Saga',
+      premise: 'The Iron Court fractures at dawn.',
+      adventureCount: 0,
+    })
+
+    const createTwo = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: 'Stormwatch', premise: 'A storm cult gathers relics.' }),
+      }),
+      env
+    )
+    expect(createTwo.status).toBe(200)
+    const campaignTwo = await createTwo.json() as any
+
+    const getResponse = await worker.fetch(
+      new Request(`https://example.com/environments/rpg/campaign/${campaignOne.id}`, {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(getResponse.status).toBe(200)
+    await expect(getResponse.json()).resolves.toMatchObject({
+      id: campaignOne.id,
+      name: 'Ironlands Saga',
+      premise: 'The Iron Court fractures at dawn.',
+    })
+
+    const listResponse = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaigns', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(listResponse.status).toBe(200)
+    const listBody = await listResponse.json() as any
+    expect(listBody.campaigns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: campaignOne.id, name: 'Ironlands Saga' }),
+        expect.objectContaining({ id: campaignTwo.id, name: 'Stormwatch' }),
+      ])
+    )
+  })
+
+  it('starts a campaign adventure and links the created RPG environment', async () => {
+    const db = new CampaignAwareD1MockDatabase()
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const createRes = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ name: 'Ashen Frontier', premise: 'The dead roads are waking.' }),
+      }),
+      env
+    )
+    expect(createRes.status).toBe(200)
+    const campaign = await createRes.json() as any
+
+    const startRes = await worker.fetch(
+      new Request(`https://example.com/environments/rpg/campaign/${campaign.id}/start-adventure`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(startRes.status).toBe(200)
+    const started = await startRes.json() as any
+    expect(started).toMatchObject({
+      id: expect.stringMatching(/^rpg_/),
+      type: 'rpg',
+      campaignId: campaign.id,
+      adventureNumber: 1,
+    })
+
+    const createdRow = await db
+      .prepare('SELECT * FROM environments WHERE id = ?')
+      .bind(started.id)
+      .first<{ state: string }>()
+    expect(createdRow).not.toBeNull()
+    const state = JSON.parse(String(createdRow?.state ?? '{}')) as any
+    expect(state.campaignId).toBe(campaign.id)
+    expect(state.campaignAdventureNumber).toBe(1)
+
+    const campaignAfter = await worker.fetch(
+      new Request(`https://example.com/environments/rpg/campaign/${campaign.id}`, {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(campaignAfter.status).toBe(200)
+    await expect(campaignAfter.json()).resolves.toMatchObject({
+      id: campaign.id,
+      adventureCount: 1,
+    })
+  })
+
+  it('returns 404 when campaign does not exist', async () => {
+    const db = new CampaignAwareD1MockDatabase()
+    const env = createHealthEnv({ DB: db })
+    const { default: worker } = await import('./index')
+
+    const getRes = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaign/campaign_missing', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(getRes.status).toBe(404)
+    await expect(getRes.json()).resolves.toMatchObject({ error: 'Campaign not found' })
+
+    const startRes = await worker.fetch(
+      new Request('https://example.com/environments/rpg/campaign/campaign_missing/start-adventure', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(startRes.status).toBe(404)
+    await expect(startRes.json()).resolves.toMatchObject({ error: 'Campaign not found' })
   })
 })
 

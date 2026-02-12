@@ -506,3 +506,28 @@ Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 r
 ---
 [2026-02-12T00:39:45.734Z]
 Skipped: Campaign data layer — types, D1 schema, CRUD helpers — exceeded 3 retries, needs human review
+
+---
+[2026-02-12T00:47:11.615Z]
+Completed: Campaign API endpoints — create, get, list, start adventure
+Files: .ralph-context.json, .ralph-iterations.jsonl, .ralph/research/story-mliotb9y.md, apps/network/migrations/0002_add_campaigns.sql, apps/network/src/campaign.test.ts, apps/network/src/campaign.ts, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, apps/network/src/games/rpg-engine.test.ts, apps/network/src/games/rpg-engine.ts, package.json, prd.json, progress.txt, apps/network/src/index.test.ts, apps/network/src/index.ts
+Summary: Implemented campaign management HTTP routes in `apps/network/src/index.ts` and added route coverage in `apps/network/src/index.test.ts`.
+
+Changes in `apps/network/src/index.ts`:
+- Added `CampaignCreateSchema` and imports for campaign helpers and RPG game creation.
+- Added `POST /environments/rpg/campaign` (create).
+- Added `GET /environments/rpg/campaign/:id` (get).
+- Added `GET /environments/rpg/campaigns` (list).
+- Added `POST /environments/rpg/campaign/:id/start-adventure` (create RPG environment and link to campaign).
+- Inserted campaign route block before generic `/environments/:id` routing to avoid path shadowing.
+
+Changes in `apps/network/src/index.test.ts`:
+- Added `CampaignAwareD1MockDatabase` test double for campaign SQL + campaign-link environment updates.
+- Added campaign API tests for auth requirements, create/get/list flow, start-adventure flow, and 404 behavior.
+
+Prior failure pattern detected: `unknown` (`check-types` script missing) and `verification_rejected` (required target file not modified).
+Mitigation applied: ran validation from repo root with `bun run check-types && bun run test`, and explicitly modified required target file `apps/network/src/index.ts`.
+
+Also executed required project reporting commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Campaign API endpoints — create, get, list, start adventure"`

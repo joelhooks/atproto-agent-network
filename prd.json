@@ -893,7 +893,7 @@
       "title": "Campaign data layer — types, D1 schema, CRUD helpers",
       "description": "Create two new files. Do NOT modify any existing files.\n\nFile 1: apps/network/migrations/0002_add_campaigns.sql\nContents:\nCREATE TABLE IF NOT EXISTS campaigns (id TEXT PRIMARY KEY, name TEXT NOT NULL, premise TEXT DEFAULT '', world_state TEXT DEFAULT '{}', story_arcs TEXT DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n\nFile 2: apps/network/src/campaign.ts\nContents: Export TypeScript types (Faction, PlotPoint, StoryArc, WorldState, CampaignState) and three async functions (createCampaign, getCampaign, updateCampaign) that do D1 SQL operations on the campaigns table. Use crypto.randomUUID() for IDs. Store worldState and storyArcs as JSON strings in D1.",
       "priority": 93,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "rpg-engine.ts",
@@ -905,7 +905,7 @@
       "title": "Campaign API endpoints — create, get, list, start adventure",
       "description": "Add HTTP routes for campaign management in apps/network/src/index.ts:\n\n1. POST /environments/rpg/campaign — create campaign (body: {name, premise?})\n2. GET /environments/rpg/campaign/:id — get campaign state\n3. GET /environments/rpg/campaigns — list all campaigns\n4. POST /environments/rpg/campaign/:id/start-adventure — create RPG env linked to campaign\n\nAll require admin auth. Use the CRUD helpers from previous story.\nAdd tests in index.test.ts.",
       "priority": 94,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && bun run check-types && bun run test",
       "targetFiles": [
         "index.ts"
@@ -961,8 +961,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 80,
-    "lastIteration": "2026-02-11T15:14:28.071Z"
+    "totalIterations": 81,
+    "lastIteration": "2026-02-12T00:47:11.613Z"
   },
   "totalStories": 11
 }

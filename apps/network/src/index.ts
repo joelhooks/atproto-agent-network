@@ -8,12 +8,14 @@ import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
 
 import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
-import { createDid } from '../../../packages/core/src/identity'
+import { createDid, generateTid } from '../../../packages/core/src/identity'
 
 import { requireAdminBearerAuth } from './auth'
 import { applyCorsHeaders, corsPreflightResponse } from './cors'
 import './environments/builtins'
 import { getEnvironment } from './environments'
+import { createCampaign, getCampaign, linkAdventureToCampaign } from './environments/rpg'
+import { createGame as createRpgGame } from './games/rpg-engine'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
 
@@ -47,6 +49,11 @@ const AgentConfigCreateSchema = z
 const EnvironmentCreateSchema = z.object({
   type: z.string().trim().min(1, 'type is required'),
   players: z.array(z.string().trim().min(1)).min(2, 'at least 2 players are required'),
+})
+
+const CampaignCreateSchema = z.object({
+  name: z.string().trim().min(1, 'name is required'),
+  premise: z.string().optional().default(''),
 })
 
 export interface Env {
@@ -886,6 +893,122 @@ export default {
           )
 
           return isLegacyAlias ? withDeprecationHeaders(result, '/environments') : result
+        }
+
+        if (normalizedPathname === '/environments/rpg/campaign') {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'POST') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const validated = await validateRequestJson(request, CampaignCreateSchema, {
+                invalidBodyError: 'Invalid campaign create request',
+              })
+              if (!validated.ok) return validated.response
+
+              const created = await createCampaign(env.DB, validated.data.name, validated.data.premise)
+              return Response.json(created)
+            },
+            { route: 'network.environments.rpg.campaign.create', request }
+          )
+        }
+
+        if (normalizedPathname === '/environments/rpg/campaigns') {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'GET') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const rows = await env.DB
+                .prepare('SELECT id FROM campaigns ORDER BY updated_at DESC')
+                .all<{ id: string }>()
+                .catch(() => ({ results: [] as Array<{ id: string }> }))
+
+              const campaigns = await Promise.all(
+                (rows.results ?? []).map(async (row) => {
+                  const id = typeof row.id === 'string' ? row.id : ''
+                  if (!id) return null
+                  return getCampaign(env.DB, id)
+                })
+              )
+
+              return Response.json({
+                campaigns: campaigns.filter((campaign): campaign is NonNullable<typeof campaign> => campaign !== null),
+              })
+            },
+            { route: 'network.environments.rpg.campaign.list', request }
+          )
+        }
+
+        const campaignStartMatch = normalizedPathname.match(/^\/environments\/rpg\/campaign\/([^/]+)\/start-adventure$/)
+        if (campaignStartMatch) {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'POST') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const campaignId = decodeURIComponent(campaignStartMatch[1] ?? '').trim()
+              if (!campaignId) {
+                return Response.json({ error: 'Campaign ID required' }, { status: 400 })
+              }
+
+              const campaign = await getCampaign(env.DB, campaignId)
+              if (!campaign) {
+                return Response.json({ error: 'Campaign not found' }, { status: 404 })
+              }
+
+              const players = ['slag', 'snarl', 'swoop']
+              const id = `rpg_${generateTid()}`
+              const game = createRpgGame({ id, players, campaignState: campaign })
+
+              await env.DB
+                .prepare(
+                  "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+                )
+                .bind(id, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(players))
+                .run()
+
+              const adventureNumber = await linkAdventureToCampaign(env.DB, id, campaign.id)
+
+              return Response.json({
+                id,
+                type: 'rpg',
+                hostAgent: 'grimlock',
+                phase: game.phase,
+                players,
+                campaignId: campaign.id,
+                adventureNumber,
+              })
+            },
+            { route: 'network.environments.rpg.campaign.start-adventure', request }
+          )
+        }
+
+        const campaignMatch = normalizedPathname.match(/^\/environments\/rpg\/campaign\/([^/]+)$/)
+        if (campaignMatch) {
+          return withErrorHandling(
+            async () => {
+              if (request.method !== 'GET') {
+                return new Response('Method not allowed', { status: 405 })
+              }
+
+              const campaignId = decodeURIComponent(campaignMatch[1] ?? '').trim()
+              if (!campaignId) {
+                return Response.json({ error: 'Campaign ID required' }, { status: 400 })
+              }
+
+              const campaign = await getCampaign(env.DB, campaignId)
+              if (!campaign) {
+                return Response.json({ error: 'Campaign not found' }, { status: 404 })
+              }
+
+              return Response.json(campaign)
+            },
+            { route: 'network.environments.rpg.campaign.get', request }
+          )
         }
 
         if (normalizedPathname.startsWith('/environments/') || normalizedPathname.startsWith('/games/')) {
