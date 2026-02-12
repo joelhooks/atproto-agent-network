@@ -1,5 +1,5 @@
 -- story-mli4cnxe: rename legacy games table to environments.
-BEGIN TRANSACTION;
+-- D1 wraps each migration in an implicit transaction, no explicit BEGIN/COMMIT.
 
 CREATE TABLE IF NOT EXISTS environments (
   id TEXT PRIMARY KEY,
@@ -37,5 +37,3 @@ SELECT
 FROM games;
 
 DROP TABLE games;
-
-COMMIT;

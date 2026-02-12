@@ -2400,9 +2400,9 @@ export class AgentDO extends DurableObject {
           typeof payload.id === 'string' && payload.id.trim().length > 0
             ? payload.id
             : (existing?.id ?? `skill_${generateTid()}`),
-        name: payload.name,
-        description: payload.description,
-        content: payload.content,
+        name: String(payload.name ?? ''),
+        description: String(payload.description ?? ''),
+        content: String(payload.content ?? ''),
         envType,
         role,
         version:
