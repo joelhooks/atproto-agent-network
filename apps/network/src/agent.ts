@@ -159,6 +159,22 @@ type ExtensionMetrics = {
   lastUsed: number
 }
 
+const BROADCAST_INTENTS = ['plan', 'request', 'status', 'response', 'alert'] as const
+type BroadcastIntent = (typeof BROADCAST_INTENTS)[number]
+
+interface AgentCommsBroadcastRecord extends EncryptedMemoryRecord {
+  $type: 'agent.comms.broadcast'
+  sender: string
+  senderName: string
+  recipient: string
+  intent?: BroadcastIntent
+  content: { kind: 'text'; text: string }
+  createdAt: string
+  processedAt?: string
+}
+
+const INBOX_COLLECTIONS = ['agent.comms.message', 'agent.comms.broadcast'] as const
+
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
 const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
@@ -223,6 +239,10 @@ function extractAgentNameFromPath(pathname: string): string | undefined {
 
 function isGrimlock(name: string | undefined | null): boolean {
   return String(name ?? '').trim().toLowerCase() === 'grimlock'
+}
+
+function isBroadcastIntent(value: unknown): value is BroadcastIntent {
+  return typeof value === 'string' && (BROADCAST_INTENTS as readonly string[]).includes(value)
 }
 
 function randomHex(bytes: number): string {
@@ -1278,12 +1298,16 @@ export class AgentDO extends DurableObject {
     const inbox: Array<ObservationInboxEntry> = []
 
     if (this.memory) {
-      const entries = await this.memory.list({ collection: 'agent.comms.message', limit: 100 })
+      const messageEntries = await this.memory.list({ collection: 'agent.comms.message', limit: 100 })
+      const broadcastEntries = await this.memory.list({ collection: 'agent.comms.broadcast', limit: 100 })
+      const entries = [...messageEntries, ...broadcastEntries]
       const processedAt = new Date(observedAt).toISOString()
 
       for (const entry of entries) {
         const record = entry.record as Record<string, unknown>
-        if (!record || record.$type !== 'agent.comms.message') continue
+        if (!record) continue
+        const type = typeof record.$type === 'string' ? record.$type : ''
+        if (type !== 'agent.comms.message' && type !== 'agent.comms.broadcast') continue
         if (record.recipient !== this.did) continue
         if (typeof record.processedAt === 'string' && record.processedAt.length > 0) continue
 
@@ -2065,6 +2089,7 @@ export class AgentDO extends DurableObject {
         'remember',
         'recall',
         'message',
+        'environment_broadcast',
         'notify',
         'search',
         'set_goal',
@@ -2584,6 +2609,204 @@ export class AgentDO extends DurableObject {
       return { toolCallId: `tc_${generateTid()}`, params }
     }
 
+    type ActiveEnvironmentRow = {
+      id: string
+      type?: string | null
+      phase?: string | null
+      host_agent?: string | null
+      players?: string | null
+      state?: string | null
+    }
+
+    const senderDidLower = did.trim().toLowerCase()
+    const senderDidSuffix = did.startsWith('did:cf:') ? did.slice('did:cf:'.length).trim().toLowerCase() : senderDidLower
+
+    const normalizeMemberToken = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      if (!trimmed) return null
+      return trimmed.toLowerCase()
+    }
+
+    const collectMemberTokens = (value: unknown, out: Set<string>, depth = 0): void => {
+      if (depth > 4 || value === null || value === undefined) return
+
+      if (Array.isArray(value)) {
+        for (const entry of value) collectMemberTokens(entry, out, depth + 1)
+        return
+      }
+
+      const token = normalizeMemberToken(value)
+      if (token) {
+        out.add(token)
+        return
+      }
+
+      if (!value || typeof value !== 'object') return
+      const rec = value as Record<string, unknown>
+
+      for (const key of ['name', 'agent', 'agentName', 'player', 'host_agent', 'hostAgent']) {
+        const v = rec[key]
+        const normalized = normalizeMemberToken(v)
+        if (normalized) out.add(normalized)
+      }
+
+      for (const key of ['players', 'members', 'party', 'participants', 'agents', 'roster', 'team']) {
+        if (key in rec) collectMemberTokens(rec[key], out, depth + 1)
+      }
+    }
+
+    const isActiveEnvironmentPhase = (phase: unknown): boolean => {
+      if (typeof phase !== 'string') return true
+      const normalized = phase.trim().toLowerCase()
+      if (!normalized) return true
+      return !['finished', 'complete', 'completed', 'ended', 'archived', 'closed', 'cancelled'].includes(normalized)
+    }
+
+    const resolveBroadcastTargets = async (): Promise<{ environmentIds: string[]; recipients: string[] }> => {
+      if (!env.DB) return { environmentIds: [], recipients: [] }
+
+      const senderName = normalizeMemberToken(this.config?.name) ?? senderDidSuffix
+      const senderCandidates = new Set<string>([senderName, senderDidLower, senderDidSuffix])
+
+      const rows = await env.DB
+        .prepare(
+          `SELECT id, type, phase, host_agent, players, state
+           FROM environments
+           ORDER BY updated_at DESC
+           LIMIT 50`
+        )
+        .all<ActiveEnvironmentRow>()
+
+      const recipientTokens = new Set<string>()
+      const environmentIds: string[] = []
+      const allRows = Array.isArray(rows?.results) ? rows.results : []
+
+      for (const row of allRows) {
+        if (!row || typeof row !== 'object') continue
+        if (!isActiveEnvironmentPhase(row.phase)) continue
+
+        const members = new Set<string>()
+        collectMemberTokens(row.host_agent, members)
+        if (typeof row.players === 'string' && row.players.trim().length > 0) {
+          try {
+            collectMemberTokens(JSON.parse(row.players), members)
+          } catch {
+            collectMemberTokens(row.players, members)
+          }
+        }
+        if (typeof row.state === 'string' && row.state.trim().length > 0) {
+          try {
+            collectMemberTokens(JSON.parse(row.state), members)
+          } catch {
+            // Best effort: membership might not be parseable JSON.
+          }
+        }
+
+        const includesSender = Array.from(senderCandidates).some((candidate) => members.has(candidate))
+        if (!includesSender) continue
+
+        if (typeof row.id === 'string' && row.id.length > 0) {
+          environmentIds.push(row.id)
+        }
+        for (const member of members) {
+          if (senderCandidates.has(member)) continue
+          recipientTokens.add(member)
+        }
+      }
+
+      const recipients: string[] = []
+      for (const token of recipientTokens) {
+        let recipientDid: string | null = null
+        if (token.startsWith('did:')) {
+          recipientDid = token
+        } else {
+          const row = await env.DB
+            .prepare('SELECT did FROM agents WHERE name = ? LIMIT 1')
+            .bind(token)
+            .first<{ did?: string }>()
+          recipientDid =
+            typeof row?.did === 'string' && row.did.length > 0
+              ? row.did
+              : token.startsWith('did:cf:')
+                ? token
+                : `did:cf:${token}`
+        }
+        if (!recipientDid) continue
+        if (recipientDid.trim().toLowerCase() === senderDidLower) continue
+        recipients.push(recipientDid)
+      }
+
+      return {
+        environmentIds: Array.from(new Set(environmentIds)),
+        recipients: Array.from(new Set(recipients)),
+      }
+    }
+
+    const deliverBroadcastRecord = async (input: {
+      recipientDid: string
+      message: string
+      intent?: BroadcastIntent
+      senderName: string
+      createdAt: string
+    }): Promise<void> => {
+      const { recipientDid, message, intent, senderName, createdAt } = input
+
+      if (env.RELAY && typeof env.RELAY.idFromName === 'function' && typeof env.RELAY.get === 'function') {
+        const relayId = env.RELAY.idFromName('main')
+        const relay = env.RELAY.get(relayId)
+        const response = await relay.fetch(
+          new Request('https://relay/relay/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              senderDid: did,
+              senderName,
+              recipientDid,
+              message,
+              intent,
+              timestamp: createdAt,
+            }),
+          })
+        )
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          throw new Error(`Relay broadcast delivery failed (${response.status}): ${text}`)
+        }
+        return
+      }
+
+      const agents = env.AGENTS
+      if (!agents || typeof agents.idFromName !== 'function' || typeof agents.get !== 'function') {
+        throw new Error('RELAY and AGENTS bindings unavailable')
+      }
+
+      const record: AgentCommsBroadcastRecord = {
+        $type: 'agent.comms.broadcast',
+        sender: did,
+        senderName,
+        recipient: recipientDid,
+        content: { kind: 'text', text: message },
+        createdAt,
+      }
+      if (intent) record.intent = intent
+
+      const target = recipientDid.startsWith('did:cf:') ? recipientDid.slice('did:cf:'.length) : recipientDid
+      const agentId = agents.idFromName(target)
+      const stub = agents.get(agentId)
+      const response = await stub.fetch(
+        new Request('https://agent/inbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(record),
+        })
+      )
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw new Error(`Direct broadcast delivery failed (${response.status}): ${text}`)
+      }
+    }
+
     const extractSearchableText = (record: EncryptedMemoryRecord): string => {
       const parts: string[] = []
       const summary = (record as Record<string, unknown>).summary
@@ -2929,6 +3152,102 @@ export class AgentDO extends DurableObject {
           return {
             content: toTextContent(`Sent message to ${recipientDid}`),
             details: { recipientDid },
+          }
+        },
+      },
+      {
+        name: 'environment_broadcast',
+        label: 'Environment Broadcast',
+        description: 'Broadcast a message to all other members in your active environment(s).',
+        parameters: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', description: 'Message text to broadcast to environment members.' },
+            intent: { type: 'string', enum: [...BROADCAST_INTENTS], description: 'Optional intent hint for receivers.' },
+          },
+          required: ['message'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ message?: unknown; intent?: unknown }>(toolCallIdOrParams, maybeParams)
+          const message = typeof params.message === 'string' ? params.message.trim() : ''
+          if (!message) throw new Error('environment_broadcast requires message')
+
+          const intentRaw = typeof params.intent === 'string' ? params.intent : undefined
+          if (intentRaw !== undefined && !isBroadcastIntent(intentRaw)) {
+            throw new Error('environment_broadcast intent must be one of plan/request/status/response/alert')
+          }
+          const intent = intentRaw as BroadcastIntent | undefined
+
+          const configuredSenderName = this.config?.name?.trim() ?? ''
+          const senderName =
+            configuredSenderName.length > 0 && !configuredSenderName.startsWith('did:')
+              ? configuredSenderName
+              : senderDidSuffix || configuredSenderName || did
+          const createdAt = new Date().toISOString()
+          const { environmentIds, recipients } = await resolveBroadcastTargets()
+
+          if (environmentIds.length === 0) {
+            throw new Error('environment_broadcast found no active environments for this agent')
+          }
+          if (recipients.length === 0) {
+            throw new Error('environment_broadcast found no other members in active environments')
+          }
+
+          const delivered: string[] = []
+          const failures: Array<{ recipientDid: string; error: string }> = []
+
+          for (const recipientDid of recipients) {
+            try {
+              await deliverBroadcastRecord({
+                recipientDid,
+                message,
+                intent,
+                senderName,
+                createdAt,
+              })
+              delivered.push(recipientDid)
+            } catch (error) {
+              failures.push({
+                recipientDid,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+
+          if (delivered.length === 0) {
+            const detail = failures.map((failure) => `${failure.recipientDid}: ${failure.error}`).join('; ')
+            throw new Error(`environment_broadcast failed for all recipients${detail ? ` (${detail})` : ''}`)
+          }
+
+          await broadcastLoopEvent({
+            event_type: 'agent.comms.broadcast',
+            trace_id: createTraceId(),
+            span_id: createSpanId(),
+            context: {
+              senderDid: did,
+              senderName,
+              message,
+              intent: intent ?? null,
+              timestamp: createdAt,
+              environments: environmentIds,
+              recipients: delivered,
+              delivered: delivered.length,
+              failed: failures.length,
+            },
+          })
+
+          return {
+            content: toTextContent(`Broadcast delivered to ${delivered.length} agent(s).`),
+            details: {
+              message,
+              intent: intent ?? null,
+              timestamp: createdAt,
+              environments: environmentIds,
+              recipients: delivered,
+              delivered: delivered.length,
+              failed: failures.length,
+              failures,
+            },
           }
         },
       },
@@ -4046,6 +4365,84 @@ export class AgentDO extends DurableObject {
     })
     return Response.json({ entries })
   }
+
+  private normalizeBroadcastInboxRecord(record: unknown):
+    | { ok: true; value: AgentCommsBroadcastRecord }
+    | { ok: false; error: string } {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      return { ok: false, error: 'Invalid broadcast record' }
+    }
+
+    const value = record as Record<string, unknown>
+    if (value.$type !== 'agent.comms.broadcast') {
+      return { ok: false, error: 'Invalid broadcast type' }
+    }
+
+    const sender = typeof value.sender === 'string' ? value.sender.trim() : ''
+    const recipient = typeof value.recipient === 'string' ? value.recipient.trim() : ''
+    const senderName = typeof value.senderName === 'string' && value.senderName.trim().length > 0
+      ? value.senderName.trim()
+      : sender
+
+    let text = ''
+    if (value.content && typeof value.content === 'object' && !Array.isArray(value.content)) {
+      const content = value.content as Record<string, unknown>
+      if (typeof content.text === 'string') text = content.text
+    }
+    if (!text && typeof value.message === 'string') {
+      text = value.message
+    }
+
+    if (!sender || !recipient || !text) {
+      return { ok: false, error: 'Broadcast records require sender, recipient, and message text' }
+    }
+
+    const createdAtRaw = typeof value.createdAt === 'string' ? value.createdAt : null
+    const createdAt = createdAtRaw && Number.isFinite(Date.parse(createdAtRaw))
+      ? createdAtRaw
+      : new Date().toISOString()
+
+    const intent = value.intent
+    if (intent !== undefined && !isBroadcastIntent(intent)) {
+      return { ok: false, error: 'Broadcast intent must be one of plan/request/status/response/alert' }
+    }
+
+    const normalized: AgentCommsBroadcastRecord = {
+      $type: 'agent.comms.broadcast',
+      sender,
+      senderName,
+      recipient,
+      content: { kind: 'text', text },
+      createdAt,
+    }
+    if (intent !== undefined) normalized.intent = intent
+    if (typeof value.processedAt === 'string') normalized.processedAt = value.processedAt
+
+    return { ok: true, value: normalized }
+  }
+
+  private async listInboxEntries(limit?: number): Promise<Array<{ id: string; record: EncryptedMemoryRecord }>> {
+    if (!this.memory) return []
+
+    const safeLimit =
+      typeof limit === 'number' && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : undefined
+    const perCollectionLimit = safeLimit ? Math.max(1, safeLimit) : undefined
+
+    const messages = await this.memory.list({ collection: 'agent.comms.message', limit: perCollectionLimit })
+    const broadcasts = await this.memory.list({ collection: 'agent.comms.broadcast', limit: perCollectionLimit })
+    const merged = [...messages, ...broadcasts]
+    merged.sort((a, b) => {
+      const aCreated = Date.parse(String((a.record as { createdAt?: unknown }).createdAt ?? ''))
+      const bCreated = Date.parse(String((b.record as { createdAt?: unknown }).createdAt ?? ''))
+      const aScore = Number.isFinite(aCreated) ? aCreated : 0
+      const bScore = Number.isFinite(bCreated) ? bCreated : 0
+      return bScore - aScore
+    })
+
+    return safeLimit ? merged.slice(0, safeLimit) : merged
+  }
   
   private async handleInbox(request: Request): Promise<Response> {
     if (!this.memory) {
@@ -4060,35 +4457,52 @@ export class AgentDO extends DurableObject {
         return Response.json({ error: 'record is required' }, { status: 400 })
       }
 
-      const validated = validateLexiconRecord(record)
-      if (!validated.ok) {
-        return Response.json(
-          { error: validated.error, issues: validated.issues },
-          { status: 400 }
-        )
+      let incomingRecord: EncryptedMemoryRecord | null = null
+      const recordType = (record as { $type?: unknown }).$type
+
+      if (recordType === 'agent.comms.broadcast') {
+        const normalized = this.normalizeBroadcastInboxRecord(record)
+        if (!normalized.ok) {
+          return Response.json({ error: normalized.error }, { status: 400 })
+        }
+        incomingRecord = normalized.value
+      } else {
+        const validated = validateLexiconRecord(record)
+        if (!validated.ok) {
+          return Response.json(
+            { error: validated.error, issues: validated.issues },
+            { status: 400 }
+          )
+        }
+
+        if (validated.value.$type !== 'agent.comms.message') {
+          return Response.json(
+            { error: 'Inbox only accepts agent.comms.message or agent.comms.broadcast records' },
+            { status: 400 }
+          )
+        }
+
+        incomingRecord = validated.value
       }
 
-      if (validated.value.$type !== 'agent.comms.message') {
-        return Response.json(
-          { error: 'Inbox only accepts agent.comms.message records' },
-          { status: 400 }
-        )
-      }
-
-      if (validated.value.recipient !== this.did) {
+      if (!incomingRecord || (incomingRecord as { recipient?: unknown }).recipient !== this.did) {
         return Response.json({ error: 'Recipient mismatch' }, { status: 403 })
       }
 
-      const incomingMessage = validated.value
-      const id = await this.memory.store(incomingMessage)
+      const incomingContent =
+        incomingRecord.content && typeof incomingRecord.content === 'object' && !Array.isArray(incomingRecord.content)
+          ? (incomingRecord.content as Record<string, unknown>)
+          : null
+      const id = await this.memory.store(incomingRecord)
       await this.safeBroadcastEvent({
         event_type: 'agent.comms.inbox.store',
         context: {
           source: 'api.inbox.post',
           id,
-          sender: incomingMessage.sender,
-          recipient: incomingMessage.recipient,
-          contentKind: incomingMessage.content.kind,
+          sender: (incomingRecord as { sender?: unknown }).sender ?? null,
+          recipient: (incomingRecord as { recipient?: unknown }).recipient ?? null,
+          contentKind: typeof incomingContent?.kind === 'string' ? incomingContent.kind : null,
+          recordType: incomingRecord.$type,
         },
       })
 
@@ -4102,7 +4516,7 @@ export class AgentDO extends DurableObject {
         fetch(webhookParsed.toString(), {
           method: 'POST',
           headers: webhookHeaders,
-          body: JSON.stringify({ type: 'inbox', message: incomingMessage }),
+          body: JSON.stringify({ type: 'inbox', message: incomingRecord }),
         }).catch(() => {}) // fire and forget
       }
 
@@ -4127,12 +4541,12 @@ export class AgentDO extends DurableObject {
 
     if (request.method === 'GET') {
       const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
-      const entries = await this.memory.list({ collection: 'agent.comms.message', limit })
+      const entries = await this.listInboxEntries(limit)
       await this.safeBroadcastEvent({
         event_type: 'agent.comms.inbox.list',
         context: {
           source: 'api.inbox.get',
-          collection: 'agent.comms.message',
+          collection: INBOX_COLLECTIONS.join(','),
           limit: limit ?? null,
           count: entries.length,
         },

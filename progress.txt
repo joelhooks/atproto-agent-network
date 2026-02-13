@@ -909,3 +909,25 @@ Validation run: `npx vitest run` (passed).
 Post-work required commands completed:
 - `swarm memory store "..." --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed GM campaign lifecycle skill — teach grimlock the full GM playbook"`
+
+---
+[2026-02-13T15:46:40.495Z]
+Completed: environment_broadcast tool — core implementation
+Files: apps/network/migrations/0001_rename_games_to_environments.sql, apps/network/src/agent.ts, apps/network/src/agent-do.test.ts, apps/network/src/relay.test.ts, apps/network/src/relay.ts, prd.json
+Summary: Prior failure pattern detected: test_failure. Mitigation: I followed strict RED→GREEN by adding failing tests first (`apps/network/src/agent-do.test.ts`, `apps/network/src/relay.test.ts`), then implemented only the required story scope in `apps/network/src/agent.ts` and `apps/network/src/relay.ts`, then re-ran targeted and full validation.
+
+Implemented `environment_broadcast` end-to-end:
+- Added tool definition + execution in `apps/network/src/agent.ts:3159` with params `message` and optional `intent` enum (`plan/request/status/response/alert`).
+- Added generic active-environment membership resolution (state + players + host) and relay-first delivery/fallback-to-AGENTS delivery pattern in `apps/network/src/agent.ts:2643` and `apps/network/src/agent.ts:2752`.
+- Broadcast records now use `$type: 'agent.comms.broadcast'` with sender name, intent, and timestamp payload fields in `apps/network/src/agent.ts:2785` and `apps/network/src/agent.ts:3223`.
+- Added relay/o11y emission `agent.comms.broadcast` via `broadcastLoopEvent` in `apps/network/src/agent.ts:3223`.
+- Extended inbox handling to accept/list broadcast records and keep inbox semantics for both message+broadcast in `apps/network/src/agent.ts:4369` and `apps/network/src/agent.ts:4424`.
+- Added `agent.comms.broadcast` to Relay public collections and sanitization path; added `/relay/broadcast` delivery route in `apps/network/src/relay.ts:40`, `apps/network/src/relay.ts:99`, and `apps/network/src/relay.ts:524`.
+
+Tests added/updated:
+- `apps/network/src/agent-do.test.ts:1152` validates tool behavior, multi-recipient inbox delivery, no self-delivery, relay usage, and event emission.
+- `apps/network/src/relay.test.ts:467` validates public firehose sanitization for `agent.comms.broadcast`.
+
+Mandatory post-work commands completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed environment_broadcast tool — core implementation"`

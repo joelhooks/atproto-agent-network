@@ -459,6 +459,54 @@ describe('RelayDO', () => {
     })
   })
 
+  it('sanitizes comms.broadcast events and allows them on the public firehose', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const publicWs = createSocket({ collections: ['agent.comms.broadcast'], dids: ['*'], mode: 'public' })
+    state.getWebSockets = vi.fn().mockReturnValue([publicWs] as WebSocket[])
+
+    const record = {
+      $type: 'agent.comms.broadcast',
+      sender: 'did:cf:alpha',
+      senderName: 'agent-alpha',
+      recipient: 'did:cf:beta',
+      intent: 'status',
+      content: { kind: 'text', text: 'All systems nominal.' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const event = {
+      event_type: 'agent.comms.broadcast',
+      timestamp: record.createdAt,
+      agent_did: record.sender,
+      record,
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const parsed = JSON.parse((publicWs as any).send.mock.calls[0]?.[0])
+    expect(parsed).toMatchObject({
+      event_type: 'agent.comms.broadcast',
+      agent_did: 'did:cf:alpha',
+      context: {
+        sender: 'did:cf:alpha',
+        senderName: 'agent-alpha',
+        recipient: 'did:cf:beta',
+        intent: 'status',
+        message: 'All systems nominal.',
+      },
+    })
+  })
+
   it('rejects websocket filter updates for public firehose subscriptions', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')

@@ -1149,6 +1149,166 @@ describe('AgentDO', () => {
     expect(relayFetch.mock.calls.some(([req]) => new URL(req.url).pathname.endsWith('/relay/message'))).toBe(true)
   })
 
+  it('broadcasts a message to all other members in active environments via environment_broadcast', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env: baseEnv, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const { RelayDO } = await import('./relay')
+
+    const senderState = createState('agent-alpha')
+    const betaState = createState('agent-beta')
+    const gammaState = createState('agent-gamma')
+    const relayState = createState('relay-main').state
+
+    const senderEnv = { ...baseEnv } as any
+    const betaEnv = { ...baseEnv } as any
+    const gammaEnv = { ...baseEnv } as any
+
+    const sender = new AgentDO(senderState.state as never, senderEnv as never)
+    const beta = new AgentDO(betaState.state as never, betaEnv as never)
+    const gamma = new AgentDO(gammaState.state as never, gammaEnv as never)
+
+    const agentsById = new Map<string, any>([
+      ['agent-alpha', sender],
+      ['agent-beta', beta],
+      ['agent-gamma', gamma],
+    ])
+
+    const agentsNamespace = {
+      idFromString: (id: string) => id,
+      idFromName: (name: string) => name,
+      get: (id: string) => ({
+        fetch: (req: Request) => agentsById.get(id)!.fetch(req),
+      }),
+    }
+
+    const relayEnv = { ...baseEnv, AGENTS: agentsNamespace } as any
+    const relay = new RelayDO(relayState as never, relayEnv as never)
+
+    const relayFetch = vi.fn((req: Request) => relay.fetch(req))
+    const relayNamespace = {
+      idFromName: vi.fn().mockReturnValue('relay-main'),
+      get: vi.fn().mockReturnValue({ fetch: relayFetch }),
+    }
+
+    senderEnv.RELAY = relayNamespace
+    senderEnv.AGENTS = agentsNamespace
+    betaEnv.RELAY = relayNamespace
+    betaEnv.AGENTS = agentsNamespace
+    gammaEnv.RELAY = relayNamespace
+    gammaEnv.AGENTS = agentsNamespace
+
+    await (db as any)
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('agent-alpha', 'did:cf:agent-alpha')
+      .run()
+    await (db as any)
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('agent-beta', 'did:cf:agent-beta')
+      .run()
+    await (db as any)
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('agent-gamma', 'did:cf:agent-gamma')
+      .run()
+
+    const environmentState = {
+      members: [{ name: 'agent-alpha' }, { name: 'agent-beta' }, { name: 'agent-gamma' }],
+      mode: 'coordination',
+    }
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'ralph_env_broadcast_1',
+        'ralph',
+        'agent-alpha',
+        JSON.stringify(environmentState),
+        'playing',
+        JSON.stringify(['agent-alpha']),
+      )
+      .run()
+
+    // Force init (so tools are built and identity is present).
+    await sender.fetch(new Request('https://example/identity'))
+    await beta.fetch(new Request('https://example/identity'))
+    await gamma.fetch(new Request('https://example/identity'))
+
+    const ws = { readyState: 1, send: vi.fn(), close: vi.fn() } as any as WebSocket
+    senderState.acceptWebSocket(ws)
+
+    const tools = (sender as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const environmentBroadcast = tools.find((t) => t.name === 'environment_broadcast')
+    expect(environmentBroadcast).toBeTruthy()
+
+    const result = await environmentBroadcast!.execute('tc-env-broadcast-1', {
+      message: 'Status check: regroup at base camp.',
+      intent: 'status',
+    })
+
+    expect(result.details).toMatchObject({
+      delivered: 2,
+      intent: 'status',
+      recipients: ['did:cf:agent-beta', 'did:cf:agent-gamma'],
+    })
+
+    const betaInbox = await beta.fetch(new Request('https://example/inbox?limit=10'))
+    expect(betaInbox.status).toBe(200)
+    const betaBody = (await betaInbox.json()) as { entries: Array<{ record: any }> }
+    expect(betaBody.entries[0]?.record).toMatchObject({
+      $type: 'agent.comms.broadcast',
+      sender: 'did:cf:agent-alpha',
+      senderName: 'agent-alpha',
+      recipient: 'did:cf:agent-beta',
+      intent: 'status',
+      content: { kind: 'text', text: 'Status check: regroup at base camp.' },
+    })
+    expect(typeof betaBody.entries[0]?.record?.createdAt).toBe('string')
+
+    const gammaInbox = await gamma.fetch(new Request('https://example/inbox?limit=10'))
+    expect(gammaInbox.status).toBe(200)
+    const gammaBody = (await gammaInbox.json()) as { entries: Array<{ record: any }> }
+    expect(gammaBody.entries[0]?.record).toMatchObject({
+      $type: 'agent.comms.broadcast',
+      recipient: 'did:cf:agent-gamma',
+      intent: 'status',
+    })
+
+    // Sender should not receive its own broadcast.
+    const senderInbox = await sender.fetch(new Request('https://example/inbox?limit=10'))
+    expect(senderInbox.status).toBe(200)
+    const senderBody = (await senderInbox.json()) as { entries: Array<{ record: any }> }
+    expect(senderBody.entries.some((entry) => entry.record?.$type === 'agent.comms.broadcast')).toBe(false)
+
+    // Delivery should use RelayDO route + emit broadcast event for dashboards/o11y.
+    expect(relayFetch).toHaveBeenCalled()
+    expect(relayFetch.mock.calls.some(([req]) => new URL(req.url).pathname.endsWith('/relay/broadcast'))).toBe(true)
+    expect(relayFetch.mock.calls.some(([req]) => new URL(req.url).pathname.endsWith('/relay/emit'))).toBe(true)
+
+    expect((ws as any).send).toHaveBeenCalled()
+    const sentEvents = (ws as any).send.mock.calls
+      .map((call: any[]) => {
+        try {
+          return JSON.parse(String(call[0]))
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean) as Array<Record<string, unknown>>
+    const broadcastEvent = sentEvents.find((event) => event.event_type === 'agent.comms.broadcast')
+    expect(broadcastEvent).toBeTruthy()
+    expect(broadcastEvent?.context).toMatchObject({
+      message: 'Status check: regroup at base camp.',
+      intent: 'status',
+      recipients: ['did:cf:agent-beta', 'did:cf:agent-gamma'],
+      delivered: 2,
+    })
+  })
+
   it('updates agent goals via the set_goal tool', async () => {
     const { state, storage } = createState('agent-set-goal')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })

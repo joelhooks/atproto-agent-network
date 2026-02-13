@@ -37,7 +37,7 @@ interface AgentRegistration {
 export class RelayDO extends DurableObject {
   private readonly relayEnv: RelayEnv
   // Tokenless feed allowlist. Keep this tight until "member auth" exists.
-  private static readonly PUBLIC_COLLECTIONS = ['loop.*', 'agent.think_aloud', 'agent.comms.message', 'game.*']
+  private static readonly PUBLIC_COLLECTIONS = ['loop.*', 'agent.think_aloud', 'agent.comms.message', 'agent.comms.broadcast', 'game.*']
 
   private static isWebSocketHandshake(request: Request): boolean {
     // RFC 8441 "Extended CONNECT" for WebSockets over HTTP/2 uses method CONNECT
@@ -94,6 +94,12 @@ export class RelayDO extends DurableObject {
           return withErrorHandling(
             () => this.handleMessage(request),
             { route: 'RelayDO.message', request }
+          )
+        }
+        if (path === '/broadcast' && request.method === 'POST') {
+          return withErrorHandling(
+            () => this.handleBroadcast(request),
+            { route: 'RelayDO.broadcast', request }
           )
         }
 
@@ -216,6 +222,116 @@ export class RelayDO extends DurableObject {
       const payload = sub.mode === 'public' ? this.sanitizeEventForPublic(event) : event
       if (!payload) continue
       ws.send(JSON.stringify(payload))
+    }
+
+    return Response.json({ ok: true })
+  }
+
+  private async handleBroadcast(request: Request): Promise<Response> {
+    const payload = await request.json().catch(() => null)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const senderDid =
+      'senderDid' in payload && typeof (payload as { senderDid?: unknown }).senderDid === 'string'
+        ? (payload as { senderDid: string }).senderDid
+        : null
+    const senderName =
+      'senderName' in payload && typeof (payload as { senderName?: unknown }).senderName === 'string'
+        ? (payload as { senderName: string }).senderName
+        : null
+    const recipientDid =
+      'recipientDid' in payload &&
+      typeof (payload as { recipientDid?: unknown }).recipientDid === 'string'
+        ? (payload as { recipientDid: string }).recipientDid
+        : null
+    const message =
+      'message' in payload && typeof (payload as { message?: unknown }).message === 'string'
+        ? (payload as { message: string }).message
+        : null
+    const intentRaw =
+      'intent' in payload && typeof (payload as { intent?: unknown }).intent === 'string'
+        ? (payload as { intent: string }).intent
+        : null
+    const intent = intentRaw && ['plan', 'request', 'status', 'response', 'alert'].includes(intentRaw)
+      ? intentRaw
+      : null
+    const timestamp =
+      'timestamp' in payload && typeof (payload as { timestamp?: unknown }).timestamp === 'string'
+        ? (payload as { timestamp: string }).timestamp
+        : new Date().toISOString()
+
+    if (!senderDid || !recipientDid || !message) {
+      return Response.json(
+        { error: 'senderDid, recipientDid, and message are required' },
+        { status: 400 }
+      )
+    }
+
+    const record: Record<string, unknown> = {
+      $type: 'agent.comms.broadcast',
+      sender: senderDid,
+      senderName: senderName ?? senderDid,
+      recipient: recipientDid,
+      content: { kind: 'text', text: message },
+      createdAt: timestamp,
+    }
+    if (intent) record.intent = intent
+
+    // Resolve DID → agent name via D1 registry (DOs are keyed by name, not DID hash)
+    let agentName: string
+    if (this.relayEnv.DB) {
+      const row = await this.relayEnv.DB.prepare('SELECT name FROM agents WHERE did = ?').bind(recipientDid).first<{ name: string }>()
+      if (row) {
+        agentName = row.name
+      } else {
+        // Fallback: try using DID hash as name (legacy behavior)
+        agentName = recipientDid.startsWith('did:cf:')
+          ? recipientDid.slice('did:cf:'.length)
+          : recipientDid
+      }
+    } else {
+      agentName = recipientDid.startsWith('did:cf:')
+        ? recipientDid.slice('did:cf:'.length)
+        : recipientDid
+    }
+
+    const agents = this.relayEnv.AGENTS
+    const agentId = agents.idFromName(agentName)
+    const stub = agents.get(agentId)
+
+    const deliver = await stub.fetch(
+      new Request('https://agent/inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+      })
+    )
+
+    if (!deliver.ok) {
+      const text = await deliver.text().catch(() => '')
+      return Response.json(
+        { error: 'Delivery failed', status: deliver.status, body: text },
+        { status: 502 }
+      )
+    }
+
+    // Fanout to firehose subscribers (same matching logic as /emit).
+    const event = {
+      event_type: 'agent.comms.broadcast',
+      collection: 'agent.comms.broadcast',
+      timestamp,
+      did: senderDid,
+      agent_did: senderDid,
+      record,
+    }
+    for (const ws of this.ctx.getWebSockets()) {
+      const sub = (ws.deserializeAttachment?.() as Subscription | undefined) ?? { collections: ['*'], dids: ['*'] }
+      if (!this.matchesSubscription(event, sub)) continue
+      const eventPayload = sub.mode === 'public' ? this.sanitizeEventForPublic(event) : event
+      if (!eventPayload) continue
+      ws.send(JSON.stringify(eventPayload))
     }
 
     return Response.json({ ok: true })
@@ -415,6 +531,7 @@ export class RelayDO extends DurableObject {
       event_type.startsWith('loop.') ||
       event_type === 'agent.think_aloud' ||
       event_type === 'agent.comms.message' ||
+      event_type === 'agent.comms.broadcast' ||
       event_type.startsWith('game.')
     if (!isAllowed) return null
 
@@ -472,8 +589,8 @@ export class RelayDO extends DurableObject {
       }
     }
 
-    // Comms messages: canonicalize into a small `context` payload for clients.
-    if (event_type === 'agent.comms.message') {
+    // Comms messages/broadcasts: canonicalize into a small `context` payload for clients.
+    if (event_type === 'agent.comms.message' || event_type === 'agent.comms.broadcast') {
       const record =
         e.record && typeof e.record === 'object' && !Array.isArray(e.record)
           ? (e.record as Record<string, unknown>)
@@ -497,6 +614,8 @@ export class RelayDO extends DurableObject {
           : typeof (e as { recipientDid?: unknown }).recipientDid === 'string'
             ? (e as { recipientDid: string }).recipientDid
             : undefined
+      const senderName = typeof record?.senderName === 'string' ? record.senderName : undefined
+      const intent = typeof record?.intent === 'string' ? record.intent : undefined
 
       const message =
         typeof content?.text === 'string'
@@ -510,7 +629,9 @@ export class RelayDO extends DurableObject {
                 : undefined
 
       publicCtx.sender = sender
+      if (senderName) publicCtx.senderName = senderName
       if (recipient) publicCtx.recipient = recipient
+      if (intent) publicCtx.intent = intent
       if (typeof message === 'string' && message.length > 0) {
         publicCtx.message = message.length > 2000 ? message.slice(0, 2000) + '…' : message
       } else if (content) {
