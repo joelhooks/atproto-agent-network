@@ -1146,7 +1146,7 @@
       "title": "Broadcast message aging and context cleanup",
       "description": "Add aging/expiry logic for broadcast messages so they don't accumulate and bloat agent context.\n\n**Requirements:**\n1. After broadcast messages are shown in the think prompt (from story 3), mark them as \"consumed\" so they age out\n2. Keep broadcasts in context for a configurable number of cycles (default: 3 cycles) — after that, auto-delete from the agent's inbox/memory\n3. Add a `maxBroadcastAge` config option to environment settings (optional, defaults to 3)\n4. On each loop cycle in the observe phase, prune expired broadcast records from memory\n5. The pruning should happen in the observation phase before building the think prompt, similar to how housekeeping mode prunes old goals\n\n**Key files:** `apps/network/src/agent.ts` (observation phase, memory cleanup)",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "targetFiles": [
         "agent.ts"
@@ -1155,8 +1155,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 99,
-    "lastIteration": "2026-02-13T16:05:19.632Z"
+    "totalIterations": 100,
+    "lastIteration": "2026-02-13T16:13:06.723Z"
   },
   "totalStories": 11
 }

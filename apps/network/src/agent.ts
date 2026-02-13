@@ -180,6 +180,8 @@ interface AgentCommsBroadcastRecord extends EncryptedMemoryRecord {
   content: { kind: 'text'; text: string }
   createdAt: string
   processedAt?: string
+  consumedAt?: string
+  consumedCycles?: number
 }
 
 const INBOX_COLLECTIONS = ['agent.comms.message', 'agent.comms.broadcast'] as const
@@ -200,6 +202,7 @@ const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protoc
 const DEFAULT_MAX_COMPLETED_GOALS = 2
 const DEFAULT_TEAM_COMMS_LIMIT = 5
 const MAX_TEAM_COMMS_LIMIT = 20
+const DEFAULT_MAX_BROADCAST_AGE = 3
 
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
@@ -209,7 +212,7 @@ const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
 const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
 
-type AgentConfigWithTeamComms = AgentConfig & { teamCommsLimit?: number }
+type AgentConfigWithTeamComms = AgentConfig & { teamCommsLimit?: number; maxBroadcastAge?: number }
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
 type WorkersAiModelName = Parameters<Ai['run']>[0]
@@ -662,7 +665,7 @@ export class AgentDO extends DurableObject {
 
     // Build a full config with defaults, then apply validated overrides.
     const base = this.createDefaultConfig(agentName)
-    const next: AgentConfig = {
+    const next: AgentConfigWithTeamComms = {
       ...base,
       personality,
       specialty: typeof input.specialty === 'string' ? input.specialty : base.specialty,
@@ -676,6 +679,10 @@ export class AgentDO extends DurableObject {
         typeof input.maxCompletedGoals === 'number' && Number.isFinite(input.maxCompletedGoals)
           ? this.normalizeMaxCompletedGoals(input.maxCompletedGoals)
           : base.maxCompletedGoals,
+      maxBroadcastAge:
+        typeof input.maxBroadcastAge === 'number' && Number.isFinite(input.maxBroadcastAge)
+          ? this.normalizeMaxBroadcastAge(input.maxBroadcastAge)
+          : base.maxBroadcastAge,
       goals: Array.isArray(input.goals) ? (input.goals.filter((g) => g && typeof g === 'object') as AgentConfig['goals']) : base.goals,
       enabledTools: Array.isArray(input.enabledTools)
         ? input.enabledTools.filter((tool): tool is string => typeof tool === 'string')
@@ -1314,14 +1321,12 @@ export class AgentDO extends DurableObject {
     if (this.memory) {
       const messageEntries = await this.memory.list({ collection: 'agent.comms.message', limit: 100 })
       const broadcastEntries = await this.memory.list({ collection: 'agent.comms.broadcast', limit: 100 })
-      const entries = [...messageEntries, ...broadcastEntries]
       const processedAt = new Date(observedAt).toISOString()
+      const maxBroadcastAge = this.getMaxBroadcastAge()
 
-      for (const entry of entries) {
+      for (const entry of messageEntries) {
         const record = entry.record as Record<string, unknown>
-        if (!record) continue
-        const type = typeof record.$type === 'string' ? record.$type : ''
-        if (type !== 'agent.comms.message' && type !== 'agent.comms.broadcast') continue
+        if (!record || record.$type !== 'agent.comms.message') continue
         if (record.recipient !== this.did) continue
         if (typeof record.processedAt === 'string' && record.processedAt.length > 0) continue
 
@@ -1334,26 +1339,81 @@ export class AgentDO extends DurableObject {
         }
 
         inbox.push({ id: entry.id, record: updated })
+      }
 
-        if (type === 'agent.comms.broadcast') {
-          const senderName =
-            typeof updated.senderName === 'string' && updated.senderName.trim().length > 0
-              ? updated.senderName.trim()
-              : typeof updated.sender === 'string' && updated.sender.trim().length > 0
-                ? updated.sender.trim()
-                : 'unknown'
-          const createdAtRaw = typeof updated.createdAt === 'string' ? updated.createdAt : ''
-          const createdAt = Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : processedAt
-          const intentRaw = updated.intent
-          const intent = isBroadcastIntent(intentRaw) ? intentRaw : undefined
-          const contentRaw =
-            updated.content && typeof updated.content === 'object' && !Array.isArray(updated.content)
-              ? (updated.content as Record<string, unknown>)
-              : null
-          const text = typeof contentRaw?.text === 'string' ? contentRaw.text.trim() : ''
+      for (const entry of broadcastEntries) {
+        const record = entry.record as Record<string, unknown>
+        if (!record || record.$type !== 'agent.comms.broadcast') continue
+        if (record.recipient !== this.did) continue
+
+        const senderName =
+          typeof record.senderName === 'string' && record.senderName.trim().length > 0
+            ? record.senderName.trim()
+            : typeof record.sender === 'string' && record.sender.trim().length > 0
+              ? record.sender.trim()
+              : 'unknown'
+        const createdAtRaw = typeof record.createdAt === 'string' ? record.createdAt : ''
+        const createdAt = Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : processedAt
+        const intentRaw = record.intent
+        const intent = isBroadcastIntent(intentRaw) ? intentRaw : undefined
+        const contentRaw =
+          record.content && typeof record.content === 'object' && !Array.isArray(record.content)
+            ? (record.content as Record<string, unknown>)
+            : null
+        const text = typeof contentRaw?.text === 'string' ? contentRaw.text.trim() : ''
+
+        const processedAtRaw = typeof record.processedAt === 'string' ? record.processedAt.trim() : ''
+        if (!processedAtRaw) {
+          const updated: AgentCommsBroadcastRecord = {
+            ...(record as AgentCommsBroadcastRecord),
+            processedAt,
+            consumedAt: processedAt,
+            consumedCycles: 1,
+          }
+          try {
+            const ok = await this.memory.update(entry.id, updated)
+            if (!ok) continue
+          } catch {
+            continue
+          }
+
+          inbox.push({ id: entry.id, record: updated })
           if (text.length > 0) {
             teamComms.push({ id: entry.id, senderName, intent, text, createdAt })
           }
+          continue
+        }
+
+        const consumedAtRaw = typeof record.consumedAt === 'string' ? record.consumedAt.trim() : ''
+        const consumedCyclesRaw = typeof record.consumedCycles === 'number' && Number.isFinite(record.consumedCycles)
+          ? Math.max(1, Math.floor(record.consumedCycles))
+          : 1
+        const consumedCycles = consumedCyclesRaw + 1
+
+        if (consumedCycles > maxBroadcastAge) {
+          try {
+            await this.memory.softDelete(entry.id)
+          } catch {
+            // Skip failed deletes; retry next cycle.
+          }
+          continue
+        }
+
+        const updated: AgentCommsBroadcastRecord = {
+          ...(record as AgentCommsBroadcastRecord),
+          processedAt: processedAtRaw,
+          consumedAt: consumedAtRaw || processedAtRaw,
+          consumedCycles,
+        }
+        try {
+          const ok = await this.memory.update(entry.id, updated)
+          if (!ok) continue
+        } catch {
+          continue
+        }
+
+        if (text.length > 0) {
+          teamComms.push({ id: entry.id, senderName, intent, text, createdAt })
         }
       }
     }
@@ -2112,7 +2172,7 @@ export class AgentDO extends DurableObject {
     await this.initializing
   }
 
-  private createDefaultConfig(name: string): AgentConfig {
+  private createDefaultConfig(name: string): AgentConfigWithTeamComms {
     const grimlock = isGrimlock(name)
     const config: AgentConfigWithTeamComms = {
       name,
@@ -2123,6 +2183,7 @@ export class AgentDO extends DurableObject {
       loopIntervalMs: DEFAULT_AGENT_LOOP_INTERVAL_MS,
       maxCompletedGoals: DEFAULT_MAX_COMPLETED_GOALS,
       teamCommsLimit: DEFAULT_TEAM_COMMS_LIMIT,
+      maxBroadcastAge: DEFAULT_MAX_BROADCAST_AGE,
       goals: [],
       enabledTools: [
         'remember',
@@ -2157,9 +2218,19 @@ export class AgentDO extends DurableObject {
     return Math.min(MAX_TEAM_COMMS_LIMIT, Math.max(1, Math.floor(raw)))
   }
 
+  private normalizeMaxBroadcastAge(value: unknown): number {
+    const raw = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_MAX_BROADCAST_AGE
+    return Math.max(1, Math.floor(raw))
+  }
+
   private getTeamCommsLimit(config: AgentConfig | null = this.config): number {
     const cfg = config as AgentConfigWithTeamComms | null
     return this.normalizeTeamCommsLimit(cfg?.teamCommsLimit)
+  }
+
+  private getMaxBroadcastAge(config: AgentConfig | null = this.config): number {
+    const cfg = config as AgentConfigWithTeamComms | null
+    return this.normalizeMaxBroadcastAge(cfg?.maxBroadcastAge)
   }
 
   private formatRelativeAgeLabel(createdAt: string, observedAt: number): string {
@@ -2245,7 +2316,13 @@ export class AgentDO extends DurableObject {
 
     // Always persist: callers expect passing config here updates stored config,
     // with the only mutation being completed-goal pruning and maxCompletedGoals normalization.
-    const next: AgentConfig = { ...config, maxCompletedGoals: maxCompleted, goals: nextGoals }
+    const cfg = config as AgentConfigWithTeamComms
+    const next: AgentConfigWithTeamComms = {
+      ...config,
+      maxCompletedGoals: maxCompleted,
+      maxBroadcastAge: this.normalizeMaxBroadcastAge(cfg.maxBroadcastAge),
+      goals: nextGoals,
+    }
     await this.ctx.storage.put('config', next)
     return next
   }
@@ -2334,6 +2411,9 @@ export class AgentDO extends DurableObject {
     }
     if (typeof patch.teamCommsLimit === 'number' && Number.isFinite(patch.teamCommsLimit)) {
       ;(next as AgentConfigWithTeamComms).teamCommsLimit = this.normalizeTeamCommsLimit(patch.teamCommsLimit)
+    }
+    if (typeof patch.maxBroadcastAge === 'number' && Number.isFinite(patch.maxBroadcastAge)) {
+      ;(next as AgentConfigWithTeamComms).maxBroadcastAge = this.normalizeMaxBroadcastAge(patch.maxBroadcastAge)
     }
     if (Array.isArray(patch.goals)) {
       next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']

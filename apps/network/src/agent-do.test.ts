@@ -306,7 +306,7 @@ describe('AgentDO', () => {
     const agent = new AgentDO(state as never, env as never)
 
     const response = await agent.fetch(new Request('https://example/config'))
-    const body = (await response.json()) as { enabledTools?: unknown }
+    const body = (await response.json()) as { enabledTools?: unknown; maxBroadcastAge?: unknown }
 
     expect(Array.isArray(body.enabledTools)).toBe(true)
     expect(body.enabledTools).toEqual(
@@ -318,6 +318,7 @@ describe('AgentDO', () => {
         'list_skills',
       ])
     )
+    expect(body.maxBroadcastAge).toBe(3)
   })
 
   it('enables the gm tool by default only for grimlock', async () => {
@@ -3330,7 +3331,7 @@ describe('AgentDO', () => {
     expect(promptArg).toContain('seed-event')
   })
 
-  it('injects recent environment broadcasts into the think prompt Team Comms section and does not repeat consumed entries', async () => {
+  it('keeps consumed environment broadcasts in think prompt Team Comms for maxBroadcastAge cycles, then prunes them', async () => {
     const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
     const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
     const { state } = createState('agent-team-comms')
@@ -3346,7 +3347,7 @@ describe('AgentDO', () => {
       new Request('https://example/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamCommsLimit: 5 }),
+        body: JSON.stringify({ teamCommsLimit: 5, maxBroadcastAge: 3 }),
       })
     )
 
@@ -3415,16 +3416,33 @@ describe('AgentDO', () => {
     expect(promptFn).toHaveBeenCalledTimes(1)
     const promptArg1 = promptFn.mock.calls[0][0] as string
     expect(promptArg1).toContain('🗣️ Team Comms (recent broadcasts from your environment):')
-    expect(promptArg1).toContain('[1m ago] swoop (status): MP at 60%, saving AoE for grouped enemies.')
-    expect(promptArg1).toContain('[30s ago] snarl (alert): Backline under pressure; rotating defensive stance.')
-    expect(promptArg1).toContain('[5s ago] wheeljack (status): Repair kit deployed at rally point.')
-    expect(promptArg1).not.toContain("[2m ago] slag (plan): I'll tank the boss. Focus fire on adds.")
+    expect(promptArg1).toContain('wheeljack (status): Repair kit deployed at rally point.')
+    expect(promptArg1).not.toContain("slag (plan): I'll tank the boss. Focus fire on adds.")
 
     await agent.alarm()
     expect(promptFn).toHaveBeenCalledTimes(2)
     const promptArg2 = promptFn.mock.calls[1][0] as string
-    expect(promptArg2).not.toContain('🗣️ Team Comms (recent broadcasts from your environment):')
-    expect(promptArg2).not.toContain('wheeljack')
+    expect(promptArg2).toContain('🗣️ Team Comms (recent broadcasts from your environment):')
+    expect(promptArg2).toContain('wheeljack (status): Repair kit deployed at rally point.')
+
+    await agent.alarm()
+    expect(promptFn).toHaveBeenCalledTimes(3)
+    const promptArg3 = promptFn.mock.calls[2][0] as string
+    expect(promptArg3).toContain('🗣️ Team Comms (recent broadcasts from your environment):')
+    expect(promptArg3).toContain('wheeljack (status): Repair kit deployed at rally point.')
+
+    await agent.alarm()
+    expect(promptFn).toHaveBeenCalledTimes(4)
+    const promptArg4 = promptFn.mock.calls[3][0] as string
+    expect(promptArg4).not.toContain('🗣️ Team Comms (recent broadcasts from your environment):')
+    expect(promptArg4).not.toContain('wheeljack')
+
+    const listResponse = await agent.fetch(new Request('https://example/inbox?limit=20'))
+    expect(listResponse.status).toBe(200)
+    const listBody = (await listResponse.json()) as { entries: Array<{ record: { $type?: unknown } }> }
+    expect(
+      listBody.entries.some((entry) => entry.record?.$type === 'agent.comms.broadcast')
+    ).toBe(false)
   })
 
   it('prunes completed goals to maxCompletedGoals and archives overflow in DO storage', async () => {
