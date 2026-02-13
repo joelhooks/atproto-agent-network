@@ -30,6 +30,7 @@ interface OpenRouterToolDef {
 
 // Pi philosophy: agent decides when it's done, timeout is the only limit
 const TOOL_LOOP_TIMEOUT_MS = 25_000
+const FETCH_TIMEOUT_MS = 20_000
 
 /** A single step in the agentic tool loop — for o11y */
 export interface LoopStep {
@@ -141,16 +142,24 @@ export function createOpenRouterAgentFactory(
         body.tool_choice = 'auto'
       }
 
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://highswarm.com',
-          'X-Title': 'HighSwarm Agent Network',
-        },
-        body: JSON.stringify(body),
-      })
+      const controller = new AbortController()
+      const fetchTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      let response: Response
+      try {
+        response = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://highswarm.com',
+            'X-Title': 'HighSwarm Agent Network',
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(fetchTimer)
+      }
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '')
