@@ -650,6 +650,7 @@ describe('rpgEnvironment', () => {
     const snarlLines = await rpgEnvironment.buildContext({ agentName: 'snarl', agentDid: 'did:cf:snarl', db: db as any, broadcast } as any)
     expect(snarlLines.join('\n')).toContain('Waiting')
     expect(snarlLines.join('\n')).toContain('slag')
+    expect(snarlLines.join('\n')).toContain('environment_broadcast')
   })
 
   it("logs a structured game.completed event when the adventure finishes (phase becomes 'finished')", async () => {

@@ -271,6 +271,18 @@ export const DM_SKILL_BRIEF = `You are the Dungeon Master. Observe the party's a
 Use \`consult_library\` to research monster tactics and dungeon design while waiting.
 When it's your turn, craft tactical encounters that challenge the party based on their composition.`
 
+export const TEAM_COORDINATION_PROTOCOL_TEMPLATE = `## Team Coordination Protocol
+- ANNOUNCE your intent BEFORE acting using \`environment_broadcast\`
+- RESPOND to teammate broadcasts — acknowledge plans, suggest modifications
+- REQUEST help when facing challenges beyond your capability
+- WARN teammates about threats or blockers you observe
+- AGREE on roles before engaging — don't duplicate effort
+- Use \`environment_broadcast\` for ALL team communication, not think_aloud`
+
+function buildTeamCoordinationProtocol(roleLines: string[]): string {
+  return [TEAM_COORDINATION_PROTOCOL_TEMPLATE, ...roleLines.map((line) => `- ${line}`)].join('\n')
+}
+
 // ---------------------------------------------------------------------------
 // WARRIOR SKILL (full)
 // ---------------------------------------------------------------------------
@@ -307,7 +319,13 @@ export const WARRIOR_SKILL = `## YOUR ROLE — WARRIOR (Frontline Tank)
 - **100-75%**: Fight normally
 - **75-50%**: Consider defensive positioning. Healer monitors.
 - **50-25%**: Active healing priority. Consider retreat to rest.
-- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.`
+- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.
+
+${buildTeamCoordinationProtocol([
+  'ANNOUNCE when taunting/tanking so allies can time focus fire.',
+  'call for heals when low HP before you collapse.',
+  'WARN the party about incoming threats moving toward the backline.',
+])}`
 
 // ---------------------------------------------------------------------------
 // SCOUT SKILL (full)
@@ -348,7 +366,13 @@ export const SCOUT_SKILL = `## YOUR ROLE — SCOUT (Striker & Utility)
 - **100-75%**: Fight normally
 - **75-50%**: Consider defensive positioning. Healer monitors.
 - **50-25%**: Active healing priority. Consider retreat to rest.
-- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.`
+- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.
+
+${buildTeamCoordinationProtocol([
+  'Report scouted dangers via broadcast before the party commits.',
+  'Call trap locations immediately with exact position cues.',
+  'Announce flanking plans before committing to split movement.',
+])}`
 
 // ---------------------------------------------------------------------------
 // MAGE SKILL (full)
@@ -393,7 +417,13 @@ export const MAGE_SKILL = `## YOUR ROLE — MAGE (Artillery & Control)
 - **100-75%**: Fight normally
 - **75-50%**: Consider defensive positioning. Healer monitors.
 - **50-25%**: Active healing priority. Consider retreat to rest.
-- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.`
+- **Below 25%**: EMERGENCY. Heal immediately or Dodge/Disengage.
+
+${buildTeamCoordinationProtocol([
+  'Announce AoE targeting before casting so allies can reposition.',
+  'Request protection when channeling/casting to avoid interruption.',
+  'Report MP status as fights evolve so the party can pace resources.',
+])}`
 
 // ---------------------------------------------------------------------------
 // HEALER SKILL (full)
@@ -457,7 +487,7 @@ Every turn you get:
 **The Rule**: A wounded enemy deals the same damage as a fresh one. Focus fire — kill one enemy at a time.
 
 ### Party Coordination
-- Use \`think_aloud\` to share tactical plans BEFORE acting
+- Use \`environment_broadcast\` to share tactical plans BEFORE acting
 - Call out enemy weaknesses you discover
 - **Coordinate focus fire** — all attack the same target
 - Retreat together — never leave someone behind

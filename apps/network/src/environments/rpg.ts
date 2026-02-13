@@ -3748,7 +3748,10 @@ export const rpgEnvironment: AgentEnvironment = {
             ]
           }
           if (phase && !pm.isActiveAgent(agentName)) {
-            return [`Waiting for ${phase.activeAgent} to act in phase: ${phase.name}.`]
+            return [
+              `Waiting for ${phase.activeAgent} to act in phase: ${phase.name}.`,
+              'Use environment_broadcast to coordinate with teammates while you wait.',
+            ]
           }
         }
 
@@ -3783,7 +3786,10 @@ export const rpgEnvironment: AgentEnvironment = {
           ]
         }
 
-        return [`Waiting for ${currentAgent || 'the current player'} to finish backstory with DM.`]
+        return [
+          `Waiting for ${currentAgent || 'the current player'} to finish backstory with DM.`,
+          'Use environment_broadcast to coordinate with teammates while you wait.',
+        ]
       }
 
       if (game.phase === 'hub_town') {
@@ -3893,7 +3899,7 @@ export const rpgEnvironment: AgentEnvironment = {
           roleSkillLines.push(classSkill?.full ?? 'Play your class to its strengths.')
           roleSkillLines.push(PARTY_TACTICS)
         } else {
-          roleSkillLines.push(classSkill?.brief ?? 'Wait for your turn. Coordinate with the party.')
+          roleSkillLines.push(classSkill?.brief ?? 'Wait for your turn. Coordinate with the party via environment_broadcast.')
         }
       }
 
@@ -3982,6 +3988,7 @@ export const rpgEnvironment: AgentEnvironment = {
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
         lines.push('Wait for your turn.')
+        lines.push('Use environment_broadcast to coordinate with teammates while waiting.')
         lines.push(`DO NOT create a new environment.`)
       }
 

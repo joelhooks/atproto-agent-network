@@ -51,5 +51,33 @@ describe('catanEnvironment', () => {
       logSpy.mockRestore()
     }
   })
-})
 
+  it('tells waiting players to coordinate with environment_broadcast instead of think_aloud', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+
+    const gameId = 'catan_test_waiting_context'
+    const game = createGame(gameId, ['alice', 'bob'])
+    game.phase = 'playing'
+    game.currentPlayer = 'bob'
+    game.turn = 4
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const lines = await catanEnvironment.buildContext({
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+    } as any)
+
+    const prompt = lines.join('\n')
+    expect(prompt).toContain('Use environment_broadcast to strategize or trash talk the other players while you wait.')
+    expect(prompt).not.toContain('Use think_aloud to strategize or trash talk the other players while you wait.')
+  })
+})

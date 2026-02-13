@@ -948,3 +948,24 @@ Implemented story scope:
 Completed: Inject broadcast messages into agent think prompt context
 Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
 Summary: Implemented Team Comms broadcast injection into the think prompt in `apps/network/src/agent.ts`, with consumed broadcast extraction during `observe()`, prompt rendering with sender/intent/text/relative age, max-message limiting (default 5, configurable via `teamCommsLimit`), and omission when empty. Added a RED→GREEN regression test in `apps/network/src/agent-do.test.ts` to verify section formatting, max-5 behavior, and non-repetition after consumption. Also ran required hivemind/openclaw post-work commands.
+
+---
+[2026-02-13T16:05:19.635Z]
+Completed: Coordination prompt patterns in agent personality configs
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt, apps/network/src/environments/catan.test.ts, apps/network/src/environments/catan.ts, apps/network/src/environments/rpg-skills.test.ts, apps/network/src/environments/rpg-skills.ts, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts
+Summary: Prior failure pattern detected: test_failure. Mitigation: strict RED→GREEN with failing prompt-string tests first, then minimal prompt updates in required files and full validation.
+
+Implemented coordination prompt updates across required files:
+- Updated `apps/network/src/environments/rpg-skills.ts` to add a reusable `TEAM_COORDINATION_PROTOCOL_TEMPLATE` and appended role-specific Team Coordination Protocol sections to warrior/scout/mage skills (`WARRIOR_SKILL`, `SCOUT_SKILL`, `MAGE_SKILL`).
+- Replaced coordination wording in `apps/network/src/environments/rpg-skills.ts` Party Tactics from `think_aloud` to `environment_broadcast`.
+- Updated `apps/network/src/environments/catan.ts` waiting-player guidance to use `environment_broadcast`.
+- Updated `apps/network/src/environments/rpg.ts` waiting/setup context prompts to explicitly direct coordination via `environment_broadcast`, including setup-phase early-return branches and non-turn prompt branch.
+
+Added/updated tests (TDD RED→GREEN):
+- `apps/network/src/environments/rpg-skills.test.ts`
+- `apps/network/src/environments/catan.test.ts`
+- `apps/network/src/environments/rpg.test.ts`
+
+Required post-work commands completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed Coordination prompt patterns in agent personality configs"`

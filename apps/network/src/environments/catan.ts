@@ -516,7 +516,7 @@ export const catanEnvironment: AgentEnvironment = {
           `📊 YOUR STATUS: ${me?.victoryPoints ?? 0}VP | ${mySettlements} settlements | ${myRoads} roads | ${resStr}`,
           `🏆 Scoreboard: ${scoreboard}`,
           'DO NOT create a new game. You are already in one.',
-          'Use think_aloud to strategize or trash talk the other players while you wait.',
+          'Use environment_broadcast to strategize or trash talk the other players while you wait.',
         ]
       }
     } catch {

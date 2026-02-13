@@ -1133,7 +1133,7 @@
       "title": "Coordination prompt patterns in agent personality configs",
       "description": "Update the personality configs for slag, snarl, and swoop to emphasize team coordination via environment_broadcast. Also create a reusable coordination prompt template.\n\n**Requirements:**\n1. Add a \"Team Coordination Protocol\" section to each agent's personality config. This should be appended to the existing personality text. For example:\n\n```\n## Team Coordination Protocol\n- ANNOUNCE your intent BEFORE acting using environment_broadcast\n- RESPOND to teammate broadcasts — acknowledge plans, suggest modifications  \n- REQUEST help when facing challenges beyond your capability\n- WARN teammates about threats or blockers you observe\n- AGREE on roles before engaging — don't duplicate effort\n- Use environment_broadcast for ALL team communication, not think_aloud\n```\n\n2. Customize per role:\n   - **slag (warrior/tank):** Announce when taunting/tanking, call for heals when low, warn party about incoming threats\n   - **snarl (scout):** Report scouted dangers via broadcast, call trap locations, announce flanking plans\n   - **swoop (mage):** Announce AoE targeting so allies can position, request protection when casting, report MP status\n\n3. Update the personality strings in agent configs. These are set via the `/agents/{name}/config` PATCH endpoint and stored in DO. The default personalities are in `apps/network/src/agent.ts` or set via API calls. Check where the personality strings for slag/snarl/swoop are defined and update them there.\n\n4. Replace any prompt text that says \"Use think_aloud to...\" with \"Use environment_broadcast to...\" since think_aloud doesn't reach other agents.\n\n**Search for:** `think_aloud` references in personality text, rpg prompts (`apps/network/src/environments/rpg.ts`, `rpg-skills.ts`), and catan prompts (`apps/network/src/environments/catan.ts`). Replace coordination-related think_aloud references with environment_broadcast.\n\n**Key files:** `apps/network/src/environments/rpg.ts`, `apps/network/src/environments/rpg-skills.ts`, `apps/network/src/environments/catan.ts`",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "targetFiles": [
         "rpg.ts",
@@ -1155,8 +1155,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 98,
-    "lastIteration": "2026-02-13T15:58:54.635Z"
+    "totalIterations": 99,
+    "lastIteration": "2026-02-13T16:05:19.632Z"
   },
   "totalStories": 11
 }
