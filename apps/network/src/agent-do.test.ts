@@ -2797,6 +2797,71 @@ describe('AgentDO', () => {
     expect(filterEvent?.suppressed).toEqual(['think_aloud', 'recall'])
   })
 
+  it('keeps message and environment_broadcast available during setup-phase turns', async () => {
+    const { state } = createState('agent-setup-tools')
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { tools?: Array<{ function?: { name?: string } }> }
+      const names = (body.tools ?? []).map((t) => t.function?.name).filter(Boolean) as string[]
+
+      expect(names).toContain('message')
+      expect(names).toContain('environment_broadcast')
+      expect(names).not.toContain('think_aloud')
+      expect(names).not.toContain('recall')
+      expect(names).not.toContain('remember')
+
+      return new Response(
+        JSON.stringify({
+          model: 'test-model',
+          choices: [{ message: { role: 'assistant', content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { env, db } = createEnv({
+      CF_ACCOUNT_ID: 'acct',
+      AI_GATEWAY_SLUG: 'slug',
+      OPENROUTER_API_KEY: 'test-key',
+      OPENROUTER_MODEL_DEFAULT: 'test-model',
+      BLOBS: createFakeR2Bucket(),
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const agentName = 'Ada'
+    await agent.fetch(
+      new Request(`https://example/agents/${agentName}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: agentName }),
+      })
+    )
+
+    const game = createCatanGame('catan_setup_tools_1', [agentName, 'Bob'])
+
+    await db
+      .prepare('INSERT INTO environments (id, type, host_agent, state, phase, players) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(game.id, 'catan', agentName, JSON.stringify(game), game.phase, JSON.stringify([agentName, 'Bob']))
+      .run()
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    const events = parseJsonLogs(logSpy.mock.calls)
+    const filterEvent = events.find((e) => e.event_type === 'tools.gameplay_filter')
+    expect(filterEvent).toBeTruthy()
+    expect(filterEvent?.suppressed).toEqual(['think_aloud', 'recall', 'remember', 'gm'])
+  })
+
   it('includes RPG cooperation rules in the think prompt', async () => {
     const { state } = createState('agent-rpg-coop-prompt')
     const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })

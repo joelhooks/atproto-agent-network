@@ -1111,7 +1111,7 @@
       "title": "Un-suppress communication tools during active phases",
       "description": "Remove `message` from the setup-phase tool suppression list and ensure `environment_broadcast` is never suppressed.\n\n**Current code (agent.ts ~line 1581-1584):**\n```typescript\nconst suppressed = suppressGameplayTools\n  ? isSetupPhase\n    ? ['think_aloud', 'recall', 'message', 'remember', 'gm']\n    : ['think_aloud', 'recall']\n  : []\n```\n\n**Change to:**\n```typescript\nconst suppressed = suppressGameplayTools\n  ? isSetupPhase\n    ? ['think_aloud', 'recall', 'remember', 'gm']  // message removed\n    : ['think_aloud', 'recall']\n  : []\n```\n\nAlso ensure `environment_broadcast` is NEVER added to any suppression list anywhere in the codebase. Search for all places tools are suppressed and verify.\n\nAdd `environment_broadcast` to the `enabledTools` array for all agent configs (slag, snarl, swoop) if tools are filtered by enabledTools.\n\n**Key file:** `apps/network/src/agent.ts` (suppression logic), `apps/network/src/agent-factory.ts` (tool filtering)",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "targetFiles": [
         "agent.ts"
@@ -1155,8 +1155,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 96,
-    "lastIteration": "2026-02-13T15:46:40.492Z"
+    "totalIterations": 97,
+    "lastIteration": "2026-02-13T15:51:53.728Z"
   },
   "totalStories": 11
 }

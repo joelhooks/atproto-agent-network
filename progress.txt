@@ -931,3 +931,14 @@ Tests added/updated:
 Mandatory post-work commands completed:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed environment_broadcast tool — core implementation"`
+
+---
+[2026-02-13T15:51:53.731Z]
+Completed: Un-suppress communication tools during active phases
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/relay.test.ts, apps/network/src/relay.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: test_failure. Mitigation: strict RED→GREEN (added a failing setup-phase tool-exposure test first, then changed only the suppression logic).
+
+Implemented story scope:
+- Updated setup-phase suppression in `apps/network/src/agent.ts:1605` to remove `message` from suppressed tools.
+- Added regression test `apps/network/src/agent-do.test.ts:2800` to verify setup-phase turns keep `message` and `environment_broadcast` available while suppressing `think_aloud`, `recall`, and `remember`.
+- Verified `environment_broadcast` is not suppressed anywhere and is present in default enabled tools at `apps/network/src/agent.ts:2088` (shared default config path used for agents including slag/snarl/swoop).
