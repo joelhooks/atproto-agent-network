@@ -1102,21 +1102,3 @@ Required post-work commands completed:
 If a memory lacks a numeric vector score (fallback recall path), keep stable order behavior; recency weighting should boost scored semantic matches, not unintentionally reshuffle non-scored fallback items.
 ### Files Context
 `apps/network/src/agent.ts` now owns both recency weighting (`applyAutoRecallRecencyWeight`) and human-readable age labels (`formatMemoryAgeLabel`) for auto-recall prompt injection. `apps/network/src/agent-do.test.ts` contains the acceptance-style coverage for ranking and label formatting under the AgentDO alarm loop.
-
----
-[2026-02-13T21:36:06.289Z]
-Completed: Fix: wrap auto-recall and memory.retrieve in try-catch to handle decryption failures gracefully
-Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
-Summary: Prior failure pattern detected: `test_failure`, `unknown`, `verification_rejected`. Mitigation: strict TDD (RED→GREEN), exact required target file edit, and exact required validation command.
-
-Implemented the fix in `apps/network/src/agent.ts`:
-- Wrapped `buildRelevantMemoriesSection()` inside `buildThinkPrompt()` with try/catch to degrade to empty section instead of failing think (`apps/network/src/agent.ts:1550`).
-- Added per-memory try/catch around `memory.retrieve(id)` and `this.memory!.retrieveShared(id)` inside `recallMemories()` so decryption failures skip only that memory and continue (`apps/network/src/agent.ts:1969`, `apps/network/src/agent.ts:1979`).
-- Added guarded try/catch for fallback `memory.list()` and `listShared()` paths to avoid loop crashes on list-time decrypt errors (`apps/network/src/agent.ts:2002`, `apps/network/src/agent.ts:2023`).
-- Added observability logs with agent + memory ID for skipped decrypt failures.
-
-Added RED/GREEN tests in `apps/network/src/agent-do.test.ts`:
-- `apps/network/src/agent-do.test.ts:4032` decryption failure in `retrieve` skips bad memory and still surfaces good memory.
-- `apps/network/src/agent-do.test.ts:4105` partial shared decryption failure skips bad shared memory and still returns good shared memory.
-- `apps/network/src/agent-do.test.ts:4171` `buildRelevantMemoriesSection` failure does not break think prompt.
-- `apps/network/src/agent-do.test.ts:4201` fallback `memory.list()` failure is caught and returns graceful empty results.

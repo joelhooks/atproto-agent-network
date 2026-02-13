@@ -1195,23 +1195,12 @@
       "targetFiles": [
         "apps/network/src/agent.ts"
       ]
-    },
-    {
-      "id": "story-mllejdkb",
-      "title": "Fix: wrap auto-recall and memory.retrieve in try-catch to handle decryption failures gracefully",
-      "description": "**Bug:** After deploy, agents hit \"Decryption failed\" errors when auto-recall tries to read memories encrypted with a previous key. The error bubbles up from `memory.retrieve(id)` inside `recallMemories()` and crashes the think phase.\n\n**Root cause:** In `recallMemories()` (~line 1899), the `memory.retrieve(id)` call on line ~1948 is NOT wrapped in try-catch. Only the outer Vectorize query has a catch block. When a memory record can't be decrypted (key rotation, corruption), it throws and kills the entire loop.\n\n**Fix:**\n1. Wrap `memory.retrieve(id)` and `memory.retrieveShared(id)` calls in try-catch inside `recallMemories()`. On decryption failure, skip that memory and continue.\n2. Wrap `this.buildRelevantMemoriesSection()` call in `buildThinkPrompt()` in try-catch. On failure, return empty array (no memories section) instead of crashing.\n3. Log skipped memories for observability (console.error with agent name + memory ID).\n4. Same treatment for `memory.list()` calls in the fallback path.\n\n**Key files:**\n- `apps/network/src/agent.ts` — `recallMemories()` method, `buildThinkPrompt()` method\n\n**Tests:**\n- Unit test: decryption failure in retrieve skips memory, returns remaining results\n- Unit test: buildRelevantMemoriesSection failure returns empty array\n- Unit test: partial decryption failures don't prevent other memories from loading\n\n**Acceptance criteria:**\n- Decryption failures are caught and logged, not thrown\n- Agent loop continues even with corrupted/unreadable memories\n- Other valid memories still surface despite individual failures",
-      "priority": 1,
-      "passes": true,
-      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
-      "targetFiles": [
-        "apps/network/src/agent.ts"
-      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 105,
-    "lastIteration": "2026-02-13T21:36:06.284Z"
+    "totalIterations": 104,
+    "lastIteration": "2026-02-13T21:07:27.588Z"
   },
   "totalStories": 11
 }

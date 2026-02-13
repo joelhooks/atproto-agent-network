@@ -1547,15 +1547,7 @@ export class AgentDO extends DurableObject {
         console.error('skill context resolution failed', { agent: this.config?.name, error: String(err) })
       }
     }
-    let relevantMemoriesSection: string[] = []
-    try {
-      relevantMemoriesSection = await this.buildRelevantMemoriesSection(observations, gameContext)
-    } catch (error) {
-      console.error('Auto-recall section generation failed', {
-        agent: this.config?.name ?? this.did,
-        error: String(error),
-      })
-    }
+    const relevantMemoriesSection = await this.buildRelevantMemoriesSection(observations, gameContext)
 
     return [
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
@@ -1920,29 +1912,13 @@ export class AgentDO extends DurableObject {
     const sharedPrefixes = includeShared
       ? (options.sharedIdPrefixes ?? []).filter((prefix) => typeof prefix === 'string' && prefix.length > 0)
       : []
-    const agentName = this.config?.name ?? this.did
 
     // Fast-path: skip semantic lookup when no memories exist.
-    let ownEntries: Awaited<ReturnType<typeof memory.list>> = []
-    try {
-      ownEntries = await memory.list({ limit: 1 })
-    } catch (error) {
-      console.error('Auto-recall fast-path list failed', {
-        agent: agentName,
-        error: String(error),
-      })
-    }
+    const ownEntries = await memory.list({ limit: 1 })
     let hasAnyMemories = ownEntries.length > 0
     if (!hasAnyMemories && includeShared && sharedPrefixes.length > 0) {
-      try {
-        const sharedEntries = await this.memory!.listShared({ limit: 25 })
-        hasAnyMemories = sharedEntries.some((entry) => sharedPrefixes.some((prefix) => entry.id.startsWith(prefix)))
-      } catch (error) {
-        console.error('Auto-recall fast-path shared list failed', {
-          agent: agentName,
-          error: String(error),
-        })
-      }
+      const sharedEntries = await this.memory!.listShared({ limit: 25 })
+      hasAnyMemories = sharedEntries.some((entry) => sharedPrefixes.some((prefix) => entry.id.startsWith(prefix)))
     }
     if (!hasAnyMemories) return { results: [], usedVectorize: false }
 
@@ -1966,26 +1942,9 @@ export class AgentDO extends DurableObject {
           for (const match of matches) {
             const id = typeof match.id === 'string' ? match.id : ''
             if (!id) continue
-            let record: EncryptedMemoryRecord | null = null
-            try {
-              record = await memory.retrieve(id)
-            } catch (error) {
-              console.error('Skipping unreadable memory during auto-recall', {
-                agent: agentName,
-                memoryId: id,
-                error: String(error),
-              })
-            }
+            let record = await memory.retrieve(id)
             if (!record && includeShared && sharedPrefixes.some((prefix) => id.startsWith(prefix))) {
-              try {
-                record = await this.memory!.retrieveShared(id)
-              } catch (error) {
-                console.error('Skipping unreadable shared memory during auto-recall', {
-                  agent: agentName,
-                  memoryId: id,
-                  error: String(error),
-                })
-              }
+              record = await this.memory!.retrieveShared(id)
             }
             if (!record) continue
             const score = typeof match.score === 'number' ? match.score : undefined
@@ -1999,45 +1958,27 @@ export class AgentDO extends DurableObject {
 
     if (results.length === 0) {
       // Fallback: list + filter over decrypted records.
-      let entries: Awaited<ReturnType<typeof memory.list>> = []
-      try {
-        entries = await memory.list({ limit: Math.max(50, safeLimit) })
-      } catch (error) {
-        console.error('Auto-recall fallback list failed', {
-          agent: agentName,
-          error: String(error),
-        })
-      }
+      const entries = await memory.list({ limit: Math.max(50, safeLimit) })
       const needle = normalizedQuery.toLowerCase()
       const seen = new Set<string>()
       for (const entry of entries) {
-        const record = entry.record as EncryptedMemoryRecord
-        const haystack = this.extractSearchableText(record).toLowerCase()
+        const haystack = this.extractSearchableText(entry.record).toLowerCase()
         if (haystack.includes(needle)) {
           seen.add(entry.id)
-          results.push({ id: entry.id, record })
+          results.push({ id: entry.id, record: entry.record })
           if (results.length >= safeLimit) break
         }
       }
 
       if (results.length < safeLimit && includeShared && sharedPrefixes.length > 0) {
-        let sharedEntries: Awaited<ReturnType<NonNullable<AgentDO['memory']>['listShared']>> = []
-        try {
-          sharedEntries = await this.memory!.listShared({ limit: Math.max(50, safeLimit * 10) })
-        } catch (error) {
-          console.error('Auto-recall fallback shared list failed', {
-            agent: agentName,
-            error: String(error),
-          })
-        }
+        const sharedEntries = await this.memory!.listShared({ limit: Math.max(50, safeLimit * 10) })
         for (const entry of sharedEntries) {
           if (!sharedPrefixes.some((prefix) => entry.id.startsWith(prefix))) continue
           if (seen.has(entry.id)) continue
-          const record = entry.record as EncryptedMemoryRecord
-          const haystack = this.extractSearchableText(record).toLowerCase()
+          const haystack = this.extractSearchableText(entry.record).toLowerCase()
           if (!haystack.includes(needle)) continue
           seen.add(entry.id)
-          results.push({ id: entry.id, record, shared: true })
+          results.push({ id: entry.id, record: entry.record, shared: true })
           if (results.length >= safeLimit) break
         }
       }
