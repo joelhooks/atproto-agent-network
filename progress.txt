@@ -942,3 +942,9 @@ Implemented story scope:
 - Updated setup-phase suppression in `apps/network/src/agent.ts:1605` to remove `message` from suppressed tools.
 - Added regression test `apps/network/src/agent-do.test.ts:2800` to verify setup-phase turns keep `message` and `environment_broadcast` available while suppressing `think_aloud`, `recall`, and `remember`.
 - Verified `environment_broadcast` is not suppressed anywhere and is present in default enabled tools at `apps/network/src/agent.ts:2088` (shared default config path used for agents including slag/snarl/swoop).
+
+---
+[2026-02-13T15:58:54.638Z]
+Completed: Inject broadcast messages into agent think prompt context
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Implemented Team Comms broadcast injection into the think prompt in `apps/network/src/agent.ts`, with consumed broadcast extraction during `observe()`, prompt rendering with sender/intent/text/relative age, max-message limiting (default 5, configurable via `teamCommsLimit`), and omission when empty. Added a RED→GREEN regression test in `apps/network/src/agent-do.test.ts` to verify section formatting, max-5 behavior, and non-repetition after consumption. Also ran required hivemind/openclaw post-work commands.

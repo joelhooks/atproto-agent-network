@@ -106,11 +106,20 @@ export interface ObservationInboxEntry<T = unknown> {
   record: T
 }
 
+export interface ObservationTeamCommsEntry {
+  id: string
+  senderName: string
+  intent?: BroadcastIntent
+  text: string
+  createdAt: string
+}
+
 export interface Observations {
   did: string
   observedAt: number
   sinceAlarmAt: number | null
   inbox: Array<ObservationInboxEntry>
+  teamComms: Array<ObservationTeamCommsEntry>
   events: ObservationEvent[]
 }
 
@@ -189,6 +198,8 @@ const PERSISTENT_BACKOFF_MS = [60_000, 120_000, 300_000] as const
 const GAME_BACKOFF_MS = 15_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
 const DEFAULT_MAX_COMPLETED_GOALS = 2
+const DEFAULT_TEAM_COMMS_LIMIT = 5
+const MAX_TEAM_COMMS_LIMIT = 20
 
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
@@ -197,6 +208,8 @@ const SKILL_STORAGE_PREFIX = 'skill:'
 const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
 const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
+
+type AgentConfigWithTeamComms = AgentConfig & { teamCommsLimit?: number }
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
 type WorkersAiModelName = Parameters<Ai['run']>[0]
@@ -1296,6 +1309,7 @@ export class AgentDO extends DurableObject {
     await this.ctx.storage.put('lastAlarmAt', observedAt)
 
     const inbox: Array<ObservationInboxEntry> = []
+    const teamComms: Array<ObservationTeamCommsEntry> = []
 
     if (this.memory) {
       const messageEntries = await this.memory.list({ collection: 'agent.comms.message', limit: 100 })
@@ -1320,6 +1334,27 @@ export class AgentDO extends DurableObject {
         }
 
         inbox.push({ id: entry.id, record: updated })
+
+        if (type === 'agent.comms.broadcast') {
+          const senderName =
+            typeof updated.senderName === 'string' && updated.senderName.trim().length > 0
+              ? updated.senderName.trim()
+              : typeof updated.sender === 'string' && updated.sender.trim().length > 0
+                ? updated.sender.trim()
+                : 'unknown'
+          const createdAtRaw = typeof updated.createdAt === 'string' ? updated.createdAt : ''
+          const createdAt = Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : processedAt
+          const intentRaw = updated.intent
+          const intent = isBroadcastIntent(intentRaw) ? intentRaw : undefined
+          const contentRaw =
+            updated.content && typeof updated.content === 'object' && !Array.isArray(updated.content)
+              ? (updated.content as Record<string, unknown>)
+              : null
+          const text = typeof contentRaw?.text === 'string' ? contentRaw.text.trim() : ''
+          if (text.length > 0) {
+            teamComms.push({ id: entry.id, senderName, intent, text, createdAt })
+          }
+        }
       }
     }
 
@@ -1328,6 +1363,7 @@ export class AgentDO extends DurableObject {
       observedAt,
       sinceAlarmAt,
       inbox,
+      teamComms,
       events,
     }
   }
@@ -1344,6 +1380,7 @@ export class AgentDO extends DurableObject {
 
     const hasInbox = observations.inbox.length > 0
     const hasEvents = observations.events.length > 0
+    const teamCommsSection = this.buildTeamCommsSection(observations)
 
     const outcomesRaw = await this.ctx.storage.get<unknown>('actionOutcomes')
     const outcomes: ActionOutcome[] = Array.isArray(outcomesRaw)
@@ -1447,6 +1484,7 @@ export class AgentDO extends DurableObject {
       hasInbox ? '⚠️ You have UNREAD MESSAGES in your inbox. RESPOND using the "message" tool.' : '',
       hasEvents ? 'You have pending events to process.' : '',
       '',
+      ...teamCommsSection,
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
       ((this.config?.enabledTools ?? []).includes('write_extension') ||
         (this.config?.enabledTools ?? []).includes('list_extensions') ||
@@ -2076,7 +2114,7 @@ export class AgentDO extends DurableObject {
 
   private createDefaultConfig(name: string): AgentConfig {
     const grimlock = isGrimlock(name)
-    return {
+    const config: AgentConfigWithTeamComms = {
       name,
       personality: this.agentEnv.PI_SYSTEM_PROMPT ?? DEFAULT_AGENT_SYSTEM_PROMPT,
       specialty: '',
@@ -2084,6 +2122,7 @@ export class AgentDO extends DurableObject {
       fastModel: DEFAULT_AGENT_FAST_MODEL,
       loopIntervalMs: DEFAULT_AGENT_LOOP_INTERVAL_MS,
       maxCompletedGoals: DEFAULT_MAX_COMPLETED_GOALS,
+      teamCommsLimit: DEFAULT_TEAM_COMMS_LIMIT,
       goals: [],
       enabledTools: [
         'remember',
@@ -2105,11 +2144,59 @@ export class AgentDO extends DurableObject {
         'list_skills',
       ],
     }
+    return config
   }
 
   private normalizeMaxCompletedGoals(value: unknown): number {
     const raw = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_MAX_COMPLETED_GOALS
     return Math.max(0, Math.floor(raw))
+  }
+
+  private normalizeTeamCommsLimit(value: unknown): number {
+    const raw = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_TEAM_COMMS_LIMIT
+    return Math.min(MAX_TEAM_COMMS_LIMIT, Math.max(1, Math.floor(raw)))
+  }
+
+  private getTeamCommsLimit(config: AgentConfig | null = this.config): number {
+    const cfg = config as AgentConfigWithTeamComms | null
+    return this.normalizeTeamCommsLimit(cfg?.teamCommsLimit)
+  }
+
+  private formatRelativeAgeLabel(createdAt: string, observedAt: number): string {
+    const createdAtMs = Date.parse(createdAt)
+    if (!Number.isFinite(createdAtMs)) return 'unknown time'
+    const deltaMs = Math.max(0, observedAt - createdAtMs)
+    const seconds = Math.max(1, Math.floor(deltaMs / 1000))
+    if (seconds < 60) return `${seconds}s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
+  }
+
+  private buildTeamCommsSection(observations: Observations): string[] {
+    const raw = Array.isArray(observations.teamComms) ? observations.teamComms : []
+    const sorted = [...raw].sort((a, b) => {
+      const aMs = Date.parse(a.createdAt)
+      const bMs = Date.parse(b.createdAt)
+      const aSafe = Number.isFinite(aMs) ? aMs : 0
+      const bSafe = Number.isFinite(bMs) ? bMs : 0
+      return bSafe - aSafe
+    })
+    const recent = sorted.slice(0, this.getTeamCommsLimit())
+    if (recent.length === 0) return []
+
+    return [
+      '🗣️ Team Comms (recent broadcasts from your environment):',
+      ...recent.map((entry) => {
+        const senderName = entry.senderName.trim() || 'unknown'
+        const intentPart = entry.intent ? ` (${entry.intent})` : ''
+        return `  [${this.formatRelativeAgeLabel(entry.createdAt, observations.observedAt)}] ${senderName}${intentPart}: ${entry.text}`
+      }),
+      '',
+    ]
   }
 
   private selectGoalsForPrompt(goals: AgentGoal[], maxCompleted: number): AgentGoal[] {
@@ -2244,6 +2331,9 @@ export class AgentDO extends DurableObject {
     }
     if (typeof patch.maxCompletedGoals === 'number' && Number.isFinite(patch.maxCompletedGoals)) {
       next.maxCompletedGoals = this.normalizeMaxCompletedGoals(patch.maxCompletedGoals)
+    }
+    if (typeof patch.teamCommsLimit === 'number' && Number.isFinite(patch.teamCommsLimit)) {
+      ;(next as AgentConfigWithTeamComms).teamCommsLimit = this.normalizeTeamCommsLimit(patch.teamCommsLimit)
     }
     if (Array.isArray(patch.goals)) {
       next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']

@@ -1122,7 +1122,7 @@
       "title": "Inject broadcast messages into agent think prompt context",
       "description": "When building the agent's think prompt (buildContext), include recent environment_broadcast messages as a visible \"Team Comms\" section so agents can actually read and respond to what teammates said.\n\n**Requirements:**\n1. In the observations/context gathering phase (~line 1278 in agent.ts where inbox is processed), also collect recent `agent.comms.broadcast` records from the agent's inbox/memory\n2. When building the think prompt, add a new section BEFORE the action prompt:\n```\n🗣️ Team Comms (recent broadcasts from your environment):\n  [2m ago] slag (plan): I'll tank the boss. Focus fire on adds.\n  [1m ago] swoop (status): MP at 60%, saving AoE for grouped enemies.\n```\n3. Include last 5 broadcast messages max (configurable)\n4. Show: sender name, intent tag, message text, relative timestamp\n5. Messages should be consumed/marked after being shown (so they don't repeat every cycle). Use the same pattern as inbox message consumption.\n6. If no broadcasts exist, omit the section entirely (don't show empty \"Team Comms\")\n\n**Key insight:** The inbox handling at ~line 1278 already reads `agent.comms.message` from memory. Extend this pattern to also read `agent.comms.broadcast` records and surface them with full attribution.\n\n**Key files:** `apps/network/src/agent.ts` (buildContext, inbox observation ~line 1278, think prompt construction ~line 1420)",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "targetFiles": [
         "agent.ts"
@@ -1155,8 +1155,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 97,
-    "lastIteration": "2026-02-13T15:51:53.728Z"
+    "totalIterations": 98,
+    "lastIteration": "2026-02-13T15:58:54.635Z"
   },
   "totalStories": 11
 }

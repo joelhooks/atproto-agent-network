@@ -3330,6 +3330,103 @@ describe('AgentDO', () => {
     expect(promptArg).toContain('seed-event')
   })
 
+  it('injects recent environment broadcasts into the think prompt Team Comms section and does not repeat consumed entries', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state } = createState('agent-team-comms')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamCommsLimit: 5 }),
+      })
+    )
+
+    const now = Date.now()
+    const messages = [
+      {
+        senderName: 'slag',
+        intent: 'plan',
+        text: "I'll tank the boss. Focus fire on adds.",
+        createdAt: new Date(now - 2 * 60_000).toISOString(),
+      },
+      {
+        senderName: 'swoop',
+        intent: 'status',
+        text: 'MP at 60%, saving AoE for grouped enemies.',
+        createdAt: new Date(now - 60_000).toISOString(),
+      },
+      {
+        senderName: 'snarl',
+        intent: 'alert',
+        text: 'Backline under pressure; rotating defensive stance.',
+        createdAt: new Date(now - 30_000).toISOString(),
+      },
+      {
+        senderName: 'grimlock',
+        intent: 'request',
+        text: 'Need crowd control near the eastern gate.',
+        createdAt: new Date(now - 20_000).toISOString(),
+      },
+      {
+        senderName: 'bumble',
+        intent: 'response',
+        text: 'On my way with crowd control support.',
+        createdAt: new Date(now - 10_000).toISOString(),
+      },
+      {
+        senderName: 'wheeljack',
+        intent: 'status',
+        text: 'Repair kit deployed at rally point.',
+        createdAt: new Date(now - 5_000).toISOString(),
+      },
+    ] as const
+
+    for (const msg of messages) {
+      const post = await agent.fetch(
+        new Request('https://example/inbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            $type: 'agent.comms.broadcast',
+            sender: `did:cf:${msg.senderName}`,
+            senderName: msg.senderName,
+            recipient: 'did:cf:agent-team-comms',
+            intent: msg.intent,
+            content: { kind: 'text', text: msg.text },
+            createdAt: msg.createdAt,
+          }),
+        })
+      )
+      expect(post.status).toBe(200)
+    }
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    expect(promptFn).toHaveBeenCalledTimes(1)
+    const promptArg1 = promptFn.mock.calls[0][0] as string
+    expect(promptArg1).toContain('🗣️ Team Comms (recent broadcasts from your environment):')
+    expect(promptArg1).toContain('[1m ago] swoop (status): MP at 60%, saving AoE for grouped enemies.')
+    expect(promptArg1).toContain('[30s ago] snarl (alert): Backline under pressure; rotating defensive stance.')
+    expect(promptArg1).toContain('[5s ago] wheeljack (status): Repair kit deployed at rally point.')
+    expect(promptArg1).not.toContain("[2m ago] slag (plan): I'll tank the boss. Focus fire on adds.")
+
+    await agent.alarm()
+    expect(promptFn).toHaveBeenCalledTimes(2)
+    const promptArg2 = promptFn.mock.calls[1][0] as string
+    expect(promptArg2).not.toContain('🗣️ Team Comms (recent broadcasts from your environment):')
+    expect(promptArg2).not.toContain('wheeljack')
+  })
+
   it('prunes completed goals to maxCompletedGoals and archives overflow in DO storage', async () => {
     const promptFn = vi.fn().mockResolvedValue({ content: 'No-op', toolCalls: [] })
     const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
