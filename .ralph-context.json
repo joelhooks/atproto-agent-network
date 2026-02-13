@@ -531,6 +531,20 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: Auto-recall ranking is safest in `buildRelevantMemoriesSection()` after personal + shared recall are combined, so one weighting/sorting pass applies consistently regardless of source.\nGotcha: Do not treat recency as a filter. Keep it as score multiplication only (`score * (1 + bonus)`) so old but highly relevant memories still surface.\nFiles Context: `apps/network/src/agent.ts` contains new helpers for timestamp parsing, recency bonus, weighted sorting, and age-label formatting. `apps/network/src/agent-do.test.ts` has the new deterministic fake-time tests validating ranking and labels."
+    },
+    {
+      "id": "story-mllejdkb",
+      "title": "Fix: wrap auto-recall and memory.retrieve in try-catch to handle decryption failures gracefully",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: In `recallMemories()`, a single decrypt throw inside the Vectorize match loop must be caught at per-record granularity; an outer block-level catch can drop remaining valid matches and force brittle fallback behavior.\nGotcha: `agent` log identity may be a DID (`did:cf:*`) rather than raw state ID; tests should assert via `stringContaining(...)` for stability.\nFiles Context: `apps/network/src/agent.ts` now contains all resilience guards for auto-recall retrieval and prompt injection. `apps/network/src/agent-do.test.ts` contains regression coverage for unreadable memory handling and think-prompt graceful degradation near lines 4032-4237."
     }
   ],
   "failures": [

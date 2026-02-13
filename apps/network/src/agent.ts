@@ -202,7 +202,7 @@ const INBOX_COLLECTIONS = ['agent.comms.message', 'agent.comms.broadcast'] as co
 
 const DEFAULT_AGENT_MODEL = 'moonshotai/kimi-k2.5'
 const DEFAULT_AGENT_FAST_MODEL = 'google/gemini-2.0-flash-001'
-const DEFAULT_AGENT_LOOP_INTERVAL_MS = 60_000
+const DEFAULT_AGENT_LOOP_INTERVAL_MS = 10_000
 const MIN_AGENT_LOOP_INTERVAL_MS = 5_000
 
 type AlarmErrorCategory = 'transient' | 'persistent' | 'game' | 'unknown'
