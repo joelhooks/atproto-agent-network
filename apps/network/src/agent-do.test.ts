@@ -321,6 +321,40 @@ describe('AgentDO', () => {
     expect(body.maxBroadcastAge).toBe(3)
   })
 
+  it('adds environment shared-memory tools to default enabledTools only for active environments', async () => {
+    const { AgentDO } = await import('./agent')
+
+    const { state: idleState } = createState('agent-env-tools-idle')
+    const { env: idleEnv } = createEnv()
+    const idleAgent = new AgentDO(idleState as never, idleEnv as never)
+    const idleRes = await idleAgent.fetch(new Request('https://example/agents/agent-env-tools-idle/config'))
+    const idleConfig = (await idleRes.json()) as { enabledTools?: unknown }
+    expect(Array.isArray(idleConfig.enabledTools)).toBe(true)
+    expect(idleConfig.enabledTools).not.toEqual(expect.arrayContaining(['environment_remember', 'environment_recall']))
+
+    const { state: activeState } = createState('agent-env-tools-active')
+    const { env: activeEnv, db } = createEnv()
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_tools',
+        'ralph',
+        'agent-env-tools-active',
+        JSON.stringify({ members: [{ name: 'agent-env-tools-active' }] }),
+        'playing',
+        JSON.stringify(['agent-env-tools-active'])
+      )
+      .run()
+
+    const activeAgent = new AgentDO(activeState as never, activeEnv as never)
+    const activeRes = await activeAgent.fetch(new Request('https://example/agents/agent-env-tools-active/config'))
+    const activeConfig = (await activeRes.json()) as { enabledTools?: unknown }
+    expect(Array.isArray(activeConfig.enabledTools)).toBe(true)
+    expect(activeConfig.enabledTools).toEqual(expect.arrayContaining(['environment_remember', 'environment_recall']))
+  })
+
   it('enables the gm tool by default only for grimlock', async () => {
     const { state: stateGrimlock } = createState('agent-gm-grimlock')
     const { env: envGrimlock } = createEnv()
@@ -940,6 +974,130 @@ describe('AgentDO', () => {
     expect(fallback.details.results[0]).toMatchObject({
       id: stored.details.id,
       record: { summary: 'alpha' },
+    })
+  })
+
+  it('stores environment memories with a did:env namespace via environment_remember', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const { state } = createState('agent-env-remember')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_1',
+        'rpg',
+        'agent-env-remember',
+        JSON.stringify({ members: [{ name: 'agent-env-remember' }] }),
+        'playing',
+        JSON.stringify(['agent-env-remember'])
+      )
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const environmentRemember = tools.find((t) => t.name === 'environment_remember')
+    expect(environmentRemember).toBeTruthy()
+
+    const result = await environmentRemember!.execute('tc-env-rem-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Shared room intel',
+        text: 'We already explored room 3 and found nothing.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+    expect(result.details.id).toContain('did:env:env_shared_1/agent.memory.note/')
+
+    const [firstUpsert] = vectorizeUpsert.mock.calls
+    expect(Array.isArray(firstUpsert?.[0])).toBe(true)
+    expect(firstUpsert?.[0]?.[0]).toMatchObject({
+      id: result.details.id,
+      metadata: { did: 'did:env:env_shared_1', collection: 'agent.memory.note' },
+    })
+  })
+
+  it('recalls environment memories via semantic search in environment_recall', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const { state } = createState('agent-env-recall')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_2',
+        'rpg',
+        'agent-env-recall',
+        JSON.stringify({ members: [{ name: 'agent-env-recall' }] }),
+        'playing',
+        JSON.stringify(['agent-env-recall'])
+      )
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const environmentRemember = tools.find((t) => t.name === 'environment_remember')
+    const environmentRecall = tools.find((t) => t.name === 'environment_recall')
+    expect(environmentRemember).toBeTruthy()
+    expect(environmentRecall).toBeTruthy()
+
+    const stored = await environmentRemember!.execute('tc-env-rem-2', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Merchant pricing',
+        text: 'The merchant in town sells healing potions for 50 gold.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: stored.details.id,
+          score: 0.96,
+          metadata: { did: 'did:env:env_shared_2', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    const recalled = await environmentRecall!.execute('tc-env-rec-1', { query: 'healing potions', limit: 3 })
+    expect(vectorizeQuery).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: { did: 'did:env:env_shared_2' },
+      })
+    )
+    expect(recalled.details.results[0]).toMatchObject({
+      id: stored.details.id,
+      record: { summary: 'Merchant pricing' },
     })
   })
 
@@ -3469,6 +3627,140 @@ describe('AgentDO', () => {
     const memorySection = promptArg.slice(start, end)
     const approxTokens = Math.ceil(memorySection.length / 4)
     expect(approxTokens).toBeLessThanOrEqual(500)
+  })
+
+  it('injects shared environment memories into the think prompt with [shared] labels', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-auto-recall-shared')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery, upsert: vectorizeUpsert },
+    })
+
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_prompt',
+        'rpg',
+        'agent-auto-recall-shared',
+        JSON.stringify({ members: [{ name: 'agent-auto-recall-shared' }] }),
+        'playing',
+        JSON.stringify(['agent-auto-recall-shared'])
+      )
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const environmentRemember = tools.find((t) => t.name === 'environment_remember')
+    expect(environmentRemember).toBeTruthy()
+
+    const sharedStored = await environmentRemember!.execute('tc-auto-shared-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Shared merchant intel',
+        text: 'The merchant in town sells healing potions for 50 gold.',
+        createdAt: '2026-01-20T12:00:00.000Z',
+      },
+    })
+
+    // Personal recall is skipped when no agent-scoped memories exist; shared lookup issues one query.
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: sharedStored.details.id,
+          score: 0.97,
+          metadata: { did: 'did:env:env_shared_prompt', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'shared-intel-check' }])
+    await agent.alarm()
+
+    const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+    expect(promptArg).toContain('📝 Relevant memories:')
+    expect(promptArg).toContain('[shared]')
+    expect(promptArg).toContain('The merchant in town sells healing potions for 50 gold.')
+  })
+
+  it('isolates environment memories between different active environments', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env: baseEnv, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_alpha',
+        'rpg',
+        'agent-env-alpha',
+        JSON.stringify({ members: [{ name: 'agent-env-alpha' }] }),
+        'playing',
+        JSON.stringify(['agent-env-alpha'])
+      )
+      .run()
+    await (db as any)
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(
+        'env_shared_beta',
+        'rpg',
+        'agent-env-beta',
+        JSON.stringify({ members: [{ name: 'agent-env-beta' }] }),
+        'playing',
+        JSON.stringify(['agent-env-beta'])
+      )
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const alphaState = createState('agent-env-alpha').state
+    const betaState = createState('agent-env-beta').state
+    const alpha = new AgentDO(alphaState as never, { ...baseEnv } as never)
+    const beta = new AgentDO(betaState as never, { ...baseEnv } as never)
+
+    await alpha.fetch(new Request('https://example/identity'))
+    await beta.fetch(new Request('https://example/identity'))
+
+    const alphaTools = (alpha as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const betaTools = (beta as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const alphaEnvRemember = alphaTools.find((t) => t.name === 'environment_remember')
+    const betaEnvRecall = betaTools.find((t) => t.name === 'environment_recall')
+    expect(alphaEnvRemember).toBeTruthy()
+    expect(betaEnvRecall).toBeTruthy()
+
+    await alphaEnvRemember!.execute('tc-env-iso-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Room 3 intel',
+        text: 'We already explored room 3 and found nothing.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    const betaResults = await betaEnvRecall!.execute('tc-env-iso-2', {
+      query: 'room 3',
+      limit: 5,
+    })
+    expect(Array.isArray(betaResults.details.results)).toBe(true)
+    expect(betaResults.details.results).toHaveLength(0)
   })
 
   it('keeps consumed environment broadcasts in think prompt Team Comms for maxBroadcastAge cycles, then prunes them', async () => {

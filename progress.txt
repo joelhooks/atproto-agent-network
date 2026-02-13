@@ -1015,3 +1015,48 @@ What changed:
 Post-work required commands completed:
 - `swarm memory store ...` (stored as `mem-625fbad11f86bdaa`)
 - `openclaw system event --mode now --text "Ralph: completed Auto-recall — inject relevant memories into think prompt at turn start"`
+
+---
+[2026-02-13T20:56:35.422Z]
+Completed: Environment shared memory — remember and recall across all agents in an environment
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Implemented `story-mllcqwh8` end-to-end with TDD.
+
+Prior failure pattern detected: `test_failure`. Mitigation: wrote focused RED tests first in `apps/network/src/agent-do.test.ts`, then implemented minimal runtime changes in `apps/network/src/agent.ts`, then re-ran the required validation command.
+
+What changed:
+- Added environment shared-memory primitives in `apps/network/src/agent.ts`:
+  - Active membership resolver: `resolveActiveEnvironmentMemberships()` (`apps/network/src/agent.ts:1661`)
+  - Env namespace memory factory using `did:env:<envId>`: `createEnvironmentDid()` / `createEnvironmentMemory()` (`apps/network/src/agent.ts:1646`)
+  - Config gating for active environments: `applyEnvironmentSharedToolPolicy()` (`apps/network/src/agent.ts:1800`), wired into config load/create paths (`apps/network/src/agent.ts:2786`)
+- Added tools in `apps/network/src/agent.ts`:
+  - `environment_remember` (`apps/network/src/agent.ts:3453`)
+  - `environment_recall` (`apps/network/src/agent.ts:3528`)
+- Extended recall path to support environment namespaces + shared retrieval fallback:
+  - `recallMemories(..., options)` with namespace DID filtering and shared-prefix fallback (`apps/network/src/agent.ts:1890`)
+  - `recallEnvironmentMemories()` (`apps/network/src/agent.ts:1987`)
+- Updated think prompt memory injection:
+  - Auto-inject top-3 shared environment memories into the same `📝 Relevant memories:` section (`apps/network/src/agent.ts:2052`)
+  - Labeled shared entries as `[shared]` (`apps/network/src/agent.ts:2044`)
+- Updated tests in `apps/network/src/agent-do.test.ts`:
+  - Active-environment tool enablement (`apps/network/src/agent-do.test.ts:324`)
+  - `environment_remember` namespace storage (`apps/network/src/agent-do.test.ts:980`)
+  - `environment_recall` semantic search (`apps/network/src/agent-do.test.ts:1034`)
+  - `[shared]` prompt injection (`apps/network/src/agent-do.test.ts:3632`)
+  - Environment isolation (`apps/network/src/agent-do.test.ts:3699`)
+
+Validation run:
+- Executed exactly: `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20`
+- Result: `23 passed | 2 skipped` files, `356 passed | 6 skipped` tests.
+
+Post-work required commands completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` (stored `mem-d95fb445a2225b8b`)
+- `openclaw system event --mode now --text "Ralph: completed Environment shared memory — remember and recall across all agents in an environment"`
+
+## Learnings
+### Technical Discovery
+`apps/network/src/agent.ts` can reuse one generalized `recallMemories()` path for both private and environment-shared recall by parameterizing `memory`, `did`, and `sharedIdPrefixes`; this avoided duplicate vectorize/fallback logic and made `[shared]` prompt injection straightforward.
+### Gotcha for Next Iteration
+Cross-agent shared recall depends on `environment_remember` being able to resolve recipients’ encryption public keys through `AGENTS` (`/identity`). If `AGENTS` is unavailable, environment writes still work for the writer, but cross-agent decryptability falls back to best-effort.
+### Files Context
+`apps/network/src/agent.ts` now contains the full environment-shared memory path: membership resolution, config gating, tools, and prompt injection. `apps/network/src/agent-do.test.ts` has the story’s acceptance tests and should be the first place to update if environment membership semantics change.

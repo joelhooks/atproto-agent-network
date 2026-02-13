@@ -159,7 +159,20 @@ interface ActResult {
 }
 
 type ActionOutcome = { tool: string; success: boolean; timestamp: number; goalId?: string }
-type RecallResult = { id: string; record: EncryptedMemoryRecord; score?: number; metadata?: unknown }
+type RecallResult = {
+  id: string
+  record: EncryptedMemoryRecord
+  score?: number
+  metadata?: unknown
+  shared?: boolean
+  environmentId?: string
+}
+type RecallMemoriesOptions = {
+  memory?: EncryptedMemory
+  did?: string
+  includeShared?: boolean
+  sharedIdPrefixes?: string[]
+}
 
 type ExtensionMetrics = {
   name: string
@@ -205,6 +218,7 @@ const DEFAULT_TEAM_COMMS_LIMIT = 5
 const MAX_TEAM_COMMS_LIMIT = 20
 const DEFAULT_MAX_BROADCAST_AGE = 3
 const AUTO_RECALL_LIMIT = 5
+const AUTO_RECALL_SHARED_LIMIT = 3
 const AUTO_RECALL_MAX_TOKENS = 500
 
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
@@ -1629,6 +1643,190 @@ export class AgentDO extends DurableObject {
     return cleaned.replace(/\n{3,}/g, '\n\n').trim()
   }
 
+  private createEnvironmentDid(environmentId: string): string {
+    return `did:env:${environmentId}`
+  }
+
+  private createEnvironmentMemory(environmentId: string): EncryptedMemory | null {
+    if (!this.identity) return null
+    const normalizedId = environmentId.trim()
+    if (!normalizedId) return null
+
+    const sharedIdentity: AgentIdentity = {
+      ...this.identity,
+      did: this.createEnvironmentDid(normalizedId),
+    }
+
+    return new EncryptedMemory(this.agentEnv.DB, this.agentEnv.BLOBS, sharedIdentity)
+  }
+
+  private async resolveActiveEnvironmentMemberships(
+    agentNameOverride?: string
+  ): Promise<Array<{ environmentId: string; recipients: string[] }>> {
+    if (!this.agentEnv.DB) return []
+
+    type ActiveEnvironmentRow = {
+      id?: unknown
+      phase?: unknown
+      host_agent?: unknown
+      players?: unknown
+      state?: unknown
+    }
+
+    const normalizeMemberToken = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null
+      const normalized = value.trim().toLowerCase()
+      return normalized.length > 0 ? normalized : null
+    }
+
+    const collectMemberTokens = (value: unknown, out: Set<string>, depth = 0): void => {
+      if (depth > 6 || value === null || value === undefined) return
+
+      if (Array.isArray(value)) {
+        for (const entry of value) collectMemberTokens(entry, out, depth + 1)
+        return
+      }
+
+      const token = normalizeMemberToken(value)
+      if (token) {
+        out.add(token)
+        return
+      }
+
+      if (typeof value === 'object') {
+        const rec = value as Record<string, unknown>
+        for (const [k, v] of Object.entries(rec)) {
+          const normalized = normalizeMemberToken(v)
+          if (normalized && ['did', 'name', 'id', 'host', 'agent', 'player', 'member'].some((hint) => k.toLowerCase().includes(hint))) {
+            out.add(normalized)
+            continue
+          }
+          if (k in rec) collectMemberTokens(rec[k], out, depth + 1)
+        }
+      }
+    }
+
+    const isActiveEnvironmentPhase = (phase: unknown): boolean => {
+      if (typeof phase !== 'string') return true
+      const normalized = phase.trim().toLowerCase()
+      if (!normalized) return true
+      return !['finished', 'complete', 'completed', 'ended', 'archived', 'closed', 'cancelled'].includes(normalized)
+    }
+
+    const senderDidLower = this.did.trim().toLowerCase()
+    const senderDidSuffix = senderDidLower.startsWith('did:cf:') ? senderDidLower.slice('did:cf:'.length) : senderDidLower
+    const senderName = normalizeMemberToken(agentNameOverride ?? this.config?.name) ?? senderDidSuffix
+    const senderCandidates = new Set<string>([senderName, senderDidLower, senderDidSuffix].filter(Boolean))
+
+    const rows = await this.agentEnv.DB
+      .prepare(
+        `SELECT id, phase, host_agent, players, state
+         FROM environments
+         ORDER BY updated_at DESC
+         LIMIT 50`
+      )
+      .all<ActiveEnvironmentRow>()
+
+    const resolveTokenCache = new Map<string, string | null>()
+    const resolveRecipientDid = async (token: string): Promise<string | null> => {
+      if (resolveTokenCache.has(token)) return resolveTokenCache.get(token) ?? null
+
+      let recipientDid: string | null = null
+      if (token.startsWith('did:')) {
+        recipientDid = token
+      } else {
+        const row = await this.agentEnv.DB
+          .prepare('SELECT did FROM agents WHERE name = ? LIMIT 1')
+          .bind(token)
+          .first<{ did?: string }>()
+        recipientDid =
+          typeof row?.did === 'string' && row.did.length > 0
+            ? row.did
+            : token.startsWith('did:cf:')
+              ? token
+              : `did:cf:${token}`
+      }
+
+      resolveTokenCache.set(token, recipientDid)
+      return recipientDid
+    }
+
+    const memberships = new Map<string, Set<string>>()
+    const allRows = Array.isArray(rows?.results) ? rows.results : []
+    for (const row of allRows) {
+      if (!row || typeof row !== 'object') continue
+      if (!isActiveEnvironmentPhase(row.phase)) continue
+
+      const members = new Set<string>()
+      collectMemberTokens(row.host_agent, members)
+      if (typeof row.players === 'string' && row.players.trim().length > 0) {
+        try {
+          collectMemberTokens(JSON.parse(row.players), members)
+        } catch {
+          collectMemberTokens(row.players, members)
+        }
+      }
+      if (typeof row.state === 'string' && row.state.trim().length > 0) {
+        try {
+          collectMemberTokens(JSON.parse(row.state), members)
+        } catch {
+          // Best effort: state may be malformed JSON.
+        }
+      }
+
+      const includesSender = Array.from(senderCandidates).some((candidate) => members.has(candidate))
+      if (!includesSender) continue
+
+      const environmentId = typeof row.id === 'string' ? row.id : ''
+      if (!environmentId) continue
+      if (!memberships.has(environmentId)) memberships.set(environmentId, new Set<string>())
+
+      const recipientSet = memberships.get(environmentId)!
+      for (const memberToken of members) {
+        if (senderCandidates.has(memberToken)) continue
+        const recipientDid = await resolveRecipientDid(memberToken)
+        if (!recipientDid) continue
+        if (recipientDid.trim().toLowerCase() === senderDidLower) continue
+        recipientSet.add(recipientDid)
+      }
+    }
+
+    return Array.from(memberships.entries()).map(([environmentId, recipients]) => ({
+      environmentId,
+      recipients: Array.from(recipients),
+    }))
+  }
+
+  private async applyEnvironmentSharedToolPolicy(config: AgentConfig): Promise<AgentConfig> {
+    const enabledTools = Array.isArray(config.enabledTools)
+      ? config.enabledTools.filter((tool): tool is string => typeof tool === 'string')
+      : []
+    const nextTools = new Set(enabledTools)
+    const hasActiveEnvironment = (await this.resolveActiveEnvironmentMemberships(config.name)).length > 0
+    let changed = false
+
+    if (hasActiveEnvironment) {
+      for (const tool of ['environment_remember', 'environment_recall'] as const) {
+        if (!nextTools.has(tool)) {
+          nextTools.add(tool)
+          changed = true
+        }
+      }
+    } else {
+      for (const tool of ['environment_remember', 'environment_recall'] as const) {
+        if (nextTools.delete(tool)) {
+          changed = true
+        }
+      }
+    }
+
+    if (!changed) return config
+    return {
+      ...config,
+      enabledTools: Array.from(nextTools),
+    }
+  }
+
   private extractSearchableText(record: EncryptedMemoryRecord): string {
     const parts: string[] = []
     const summary = (record as Record<string, unknown>).summary
@@ -1692,16 +1890,31 @@ export class AgentDO extends DurableObject {
     }
   }
 
-  private async recallMemories(query: string, limit = 5): Promise<{ results: RecallResult[]; usedVectorize: boolean }> {
-    if (!this.memory) return { results: [], usedVectorize: false }
+  private async recallMemories(
+    query: string,
+    limit = 5,
+    options: RecallMemoriesOptions = {}
+  ): Promise<{ results: RecallResult[]; usedVectorize: boolean }> {
+    const memory = options.memory ?? this.memory
+    if (!memory) return { results: [], usedVectorize: false }
 
     const normalizedQuery = query.trim()
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 5
     if (!normalizedQuery) return { results: [], usedVectorize: false }
+    const targetDid = typeof options.did === 'string' && options.did.trim().length > 0 ? options.did.trim() : this.did
+    const includeShared = Boolean(options.includeShared && this.memory)
+    const sharedPrefixes = includeShared
+      ? (options.sharedIdPrefixes ?? []).filter((prefix) => typeof prefix === 'string' && prefix.length > 0)
+      : []
 
     // Fast-path: skip semantic lookup when no memories exist.
-    const hasAnyMemories = await this.memory.list({ limit: 1 })
-    if (hasAnyMemories.length === 0) return { results: [], usedVectorize: false }
+    const ownEntries = await memory.list({ limit: 1 })
+    let hasAnyMemories = ownEntries.length > 0
+    if (!hasAnyMemories && includeShared && sharedPrefixes.length > 0) {
+      const sharedEntries = await this.memory!.listShared({ limit: 25 })
+      hasAnyMemories = sharedEntries.some((entry) => sharedPrefixes.some((prefix) => entry.id.startsWith(prefix)))
+    }
+    if (!hasAnyMemories) return { results: [], usedVectorize: false }
 
     const results: RecallResult[] = []
     let usedVectorize = false
@@ -1714,7 +1927,7 @@ export class AgentDO extends DurableObject {
           usedVectorize = true
           const response = (await vectorize.query(embedding, {
             topK: safeLimit,
-            filter: { did: this.did },
+            filter: { did: targetDid },
             returnMetadata: true,
           })) as unknown
           const matches = Array.isArray((response as { matches?: unknown }).matches)
@@ -1723,7 +1936,10 @@ export class AgentDO extends DurableObject {
           for (const match of matches) {
             const id = typeof match.id === 'string' ? match.id : ''
             if (!id) continue
-            const record = await this.memory.retrieve(id)
+            let record = await memory.retrieve(id)
+            if (!record && includeShared && sharedPrefixes.some((prefix) => id.startsWith(prefix))) {
+              record = await this.memory!.retrieveShared(id)
+            }
             if (!record) continue
             const score = typeof match.score === 'number' ? match.score : undefined
             results.push({ id, record, score, metadata: match.metadata })
@@ -1736,12 +1952,27 @@ export class AgentDO extends DurableObject {
 
     if (results.length === 0) {
       // Fallback: list + filter over decrypted records.
-      const entries = await this.memory.list({ limit: Math.max(50, safeLimit) })
+      const entries = await memory.list({ limit: Math.max(50, safeLimit) })
       const needle = normalizedQuery.toLowerCase()
+      const seen = new Set<string>()
       for (const entry of entries) {
         const haystack = this.extractSearchableText(entry.record).toLowerCase()
         if (haystack.includes(needle)) {
+          seen.add(entry.id)
           results.push({ id: entry.id, record: entry.record })
+          if (results.length >= safeLimit) break
+        }
+      }
+
+      if (results.length < safeLimit && includeShared && sharedPrefixes.length > 0) {
+        const sharedEntries = await this.memory!.listShared({ limit: Math.max(50, safeLimit * 10) })
+        for (const entry of sharedEntries) {
+          if (!sharedPrefixes.some((prefix) => entry.id.startsWith(prefix))) continue
+          if (seen.has(entry.id)) continue
+          const haystack = this.extractSearchableText(entry.record).toLowerCase()
+          if (!haystack.includes(needle)) continue
+          seen.add(entry.id)
+          results.push({ id: entry.id, record: entry.record, shared: true })
           if (results.length >= safeLimit) break
         }
       }
@@ -1751,6 +1982,46 @@ export class AgentDO extends DurableObject {
       results: results.slice(0, safeLimit),
       usedVectorize,
     }
+  }
+
+  private async recallEnvironmentMemories(query: string, environmentIds: string[], limit = 3): Promise<RecallResult[]> {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 3
+    if (!Array.isArray(environmentIds) || environmentIds.length === 0) return []
+
+    const deduped = new Map<string, RecallResult>()
+    const uniqueEnvironmentIds = Array.from(new Set(environmentIds.map((id) => id.trim()).filter(Boolean)))
+    for (const environmentId of uniqueEnvironmentIds) {
+      const environmentMemory = this.createEnvironmentMemory(environmentId)
+      if (!environmentMemory) continue
+      const environmentDid = this.createEnvironmentDid(environmentId)
+      const { results } = await this.recallMemories(query, safeLimit, {
+        memory: environmentMemory,
+        did: environmentDid,
+        includeShared: true,
+        sharedIdPrefixes: [`${environmentDid}/`],
+      })
+      for (const result of results) {
+        const candidate: RecallResult = {
+          ...result,
+          shared: true,
+          environmentId,
+        }
+        const existing = deduped.get(result.id)
+        const existingScore = typeof existing?.score === 'number' ? existing.score : Number.NEGATIVE_INFINITY
+        const candidateScore = typeof candidate.score === 'number' ? candidate.score : Number.NEGATIVE_INFINITY
+        if (!existing || candidateScore >= existingScore) {
+          deduped.set(result.id, candidate)
+        }
+      }
+    }
+
+    return Array.from(deduped.values())
+      .sort((a, b) => {
+        const scoreA = typeof a.score === 'number' ? a.score : Number.NEGATIVE_INFINITY
+        const scoreB = typeof b.score === 'number' ? b.score : Number.NEGATIVE_INFINITY
+        return scoreB - scoreA
+      })
+      .slice(0, safeLimit)
   }
 
   private buildAutoRecallQuery(observations: Observations, gameContext: string): string {
@@ -1770,19 +2041,23 @@ export class AgentDO extends DurableObject {
     const text = typeof rec.text === 'string' ? rec.text : ''
     const payload = [summary, text].filter((part) => part.trim().length > 0).join(' ')
     const normalizedPayload = (payload || JSON.stringify(memory.record)).replace(/\s+/g, ' ').trim()
-    return `- [${createdAt}] ${normalizedPayload}`
+    const sharedLabel = memory.shared ? '[shared] ' : ''
+    return `- ${sharedLabel}[${createdAt}] ${normalizedPayload}`
   }
 
   private async buildRelevantMemoriesSection(observations: Observations, gameContext: string): Promise<string[]> {
     const query = this.buildAutoRecallQuery(observations, gameContext)
     const { results } = await this.recallMemories(query, AUTO_RECALL_LIMIT)
-    if (results.length === 0) return []
+    const activeEnvironmentIds = (await this.resolveActiveEnvironmentMemberships()).map((membership) => membership.environmentId)
+    const sharedResults = await this.recallEnvironmentMemories(query, activeEnvironmentIds, AUTO_RECALL_SHARED_LIMIT)
+    const combinedResults = [...results.slice(0, AUTO_RECALL_LIMIT), ...sharedResults]
+    if (combinedResults.length === 0) return []
 
     const sectionLines = ['📝 Relevant memories:']
     // Reserve a tiny buffer for join/newline overhead so the section stays within ~500 tokens.
     const maxChars = AUTO_RECALL_MAX_TOKENS * 4 - 8
 
-    for (const memory of results.slice(0, AUTO_RECALL_LIMIT)) {
+    for (const memory of combinedResults) {
       const rawLine = this.buildMemoryBulletLine(memory)
       const currentText = sectionLines.join('\n')
       const availableChars = maxChars - currentText.length - 1
@@ -2508,6 +2783,11 @@ export class AgentDO extends DurableObject {
         this.config = { ...this.config, name: agentName }
         await this.ctx.storage.put('config', this.config)
       }
+      const policyAdjusted = await this.applyEnvironmentSharedToolPolicy(this.config)
+      if (policyAdjusted !== this.config) {
+        this.config = policyAdjusted
+        await this.ctx.storage.put('config', policyAdjusted)
+      }
       return this.config
     }
 
@@ -2515,10 +2795,11 @@ export class AgentDO extends DurableObject {
     if (stored) {
       const normalized = await this.pruneAndArchiveCompletedGoals(stored)
       // Migration: ensure Grimlock always has the gm tool enabled when loading older configs.
-      const migrated =
+      const withGmMigration =
         isGrimlock(agentName ?? normalized.name) && !normalized.enabledTools?.includes('gm')
           ? { ...normalized, enabledTools: [...(normalized.enabledTools ?? []), 'gm'] }
           : normalized
+      const migrated = await this.applyEnvironmentSharedToolPolicy(withGmMigration)
       if (migrated !== normalized) {
         await this.ctx.storage.put('config', migrated)
       }
@@ -2526,10 +2807,11 @@ export class AgentDO extends DurableObject {
       this.config = migrated
       if (agentName && migrated.name !== agentName) {
         const renamedBase = await this.pruneAndArchiveCompletedGoals({ ...migrated, name: agentName })
-        const renamed =
+        const withRenamedGm =
           isGrimlock(agentName) && !renamedBase.enabledTools?.includes('gm')
             ? { ...renamedBase, enabledTools: [...(renamedBase.enabledTools ?? []), 'gm'] }
             : renamedBase
+        const renamed = await this.applyEnvironmentSharedToolPolicy(withRenamedGm)
         if (renamed !== renamedBase) {
           await this.ctx.storage.put('config', renamed)
         }
@@ -2538,7 +2820,7 @@ export class AgentDO extends DurableObject {
       return this.config
     }
 
-    const created = this.createDefaultConfig(agentName ?? this.did)
+    const created = await this.applyEnvironmentSharedToolPolicy(this.createDefaultConfig(agentName ?? this.did))
     this.config = created
     await this.ctx.storage.put('config', created)
     return created
@@ -2954,137 +3236,24 @@ export class AgentDO extends DurableObject {
       return { toolCallId: `tc_${generateTid()}`, params }
     }
 
-    type ActiveEnvironmentRow = {
-      id: string
-      type?: string | null
-      phase?: string | null
-      host_agent?: string | null
-      players?: string | null
-      state?: string | null
-    }
-
     const senderDidLower = did.trim().toLowerCase()
     const senderDidSuffix = did.startsWith('did:cf:') ? did.slice('did:cf:'.length).trim().toLowerCase() : senderDidLower
 
-    const normalizeMemberToken = (value: unknown): string | null => {
-      if (typeof value !== 'string') return null
-      const trimmed = value.trim()
-      if (!trimmed) return null
-      return trimmed.toLowerCase()
-    }
-
-    const collectMemberTokens = (value: unknown, out: Set<string>, depth = 0): void => {
-      if (depth > 4 || value === null || value === undefined) return
-
-      if (Array.isArray(value)) {
-        for (const entry of value) collectMemberTokens(entry, out, depth + 1)
-        return
-      }
-
-      const token = normalizeMemberToken(value)
-      if (token) {
-        out.add(token)
-        return
-      }
-
-      if (!value || typeof value !== 'object') return
-      const rec = value as Record<string, unknown>
-
-      for (const key of ['name', 'agent', 'agentName', 'player', 'host_agent', 'hostAgent']) {
-        const v = rec[key]
-        const normalized = normalizeMemberToken(v)
-        if (normalized) out.add(normalized)
-      }
-
-      for (const key of ['players', 'members', 'party', 'participants', 'agents', 'roster', 'team']) {
-        if (key in rec) collectMemberTokens(rec[key], out, depth + 1)
-      }
-    }
-
-    const isActiveEnvironmentPhase = (phase: unknown): boolean => {
-      if (typeof phase !== 'string') return true
-      const normalized = phase.trim().toLowerCase()
-      if (!normalized) return true
-      return !['finished', 'complete', 'completed', 'ended', 'archived', 'closed', 'cancelled'].includes(normalized)
-    }
-
     const resolveBroadcastTargets = async (): Promise<{ environmentIds: string[]; recipients: string[] }> => {
-      if (!env.DB) return { environmentIds: [], recipients: [] }
-
-      const senderName = normalizeMemberToken(this.config?.name) ?? senderDidSuffix
-      const senderCandidates = new Set<string>([senderName, senderDidLower, senderDidSuffix])
-
-      const rows = await env.DB
-        .prepare(
-          `SELECT id, type, phase, host_agent, players, state
-           FROM environments
-           ORDER BY updated_at DESC
-           LIMIT 50`
-        )
-        .all<ActiveEnvironmentRow>()
-
-      const recipientTokens = new Set<string>()
+      const memberships = await this.resolveActiveEnvironmentMemberships()
+      const recipients = new Set<string>()
       const environmentIds: string[] = []
-      const allRows = Array.isArray(rows?.results) ? rows.results : []
-
-      for (const row of allRows) {
-        if (!row || typeof row !== 'object') continue
-        if (!isActiveEnvironmentPhase(row.phase)) continue
-
-        const members = new Set<string>()
-        collectMemberTokens(row.host_agent, members)
-        if (typeof row.players === 'string' && row.players.trim().length > 0) {
-          try {
-            collectMemberTokens(JSON.parse(row.players), members)
-          } catch {
-            collectMemberTokens(row.players, members)
-          }
+      for (const membership of memberships) {
+        environmentIds.push(membership.environmentId)
+        for (const recipient of membership.recipients) {
+          if (recipient.trim().toLowerCase() === senderDidLower) continue
+          recipients.add(recipient)
         }
-        if (typeof row.state === 'string' && row.state.trim().length > 0) {
-          try {
-            collectMemberTokens(JSON.parse(row.state), members)
-          } catch {
-            // Best effort: membership might not be parseable JSON.
-          }
-        }
-
-        const includesSender = Array.from(senderCandidates).some((candidate) => members.has(candidate))
-        if (!includesSender) continue
-
-        if (typeof row.id === 'string' && row.id.length > 0) {
-          environmentIds.push(row.id)
-        }
-        for (const member of members) {
-          if (senderCandidates.has(member)) continue
-          recipientTokens.add(member)
-        }
-      }
-
-      const recipients: string[] = []
-      for (const token of recipientTokens) {
-        let recipientDid: string | null = null
-        if (token.startsWith('did:')) {
-          recipientDid = token
-        } else {
-          const row = await env.DB
-            .prepare('SELECT did FROM agents WHERE name = ? LIMIT 1')
-            .bind(token)
-            .first<{ did?: string }>()
-          recipientDid =
-            typeof row?.did === 'string' && row.did.length > 0
-              ? row.did
-              : token.startsWith('did:cf:')
-                ? token
-                : `did:cf:${token}`
-        }
-        if (!recipientDid) continue
-        if (recipientDid.trim().toLowerCase() === senderDidLower) continue
-        recipients.push(recipientDid)
       }
 
       return {
         environmentIds: Array.from(new Set(environmentIds)),
-        recipients: Array.from(new Set(recipients)),
+        recipients: Array.from(recipients),
       }
     }
 
@@ -3155,7 +3324,7 @@ export class AgentDO extends DurableObject {
     const extractSearchableText = (record: EncryptedMemoryRecord): string => this.extractSearchableText(record)
     const embedText = async (text: string): Promise<number[] | null> => this.embedText(text)
 
-    const vectorizeUpsert = async (id: string, record: EncryptedMemoryRecord): Promise<void> => {
+    const vectorizeUpsert = async (id: string, record: EncryptedMemoryRecord, namespaceDid = did): Promise<void> => {
       if (!env.VECTORIZE || typeof env.VECTORIZE.upsert !== 'function') return
       const embedding = await embedText(extractSearchableText(record))
       if (!embedding) return
@@ -3164,12 +3333,53 @@ export class AgentDO extends DurableObject {
           {
             id,
             values: embedding,
-            metadata: { did, collection: record.$type },
+            metadata: { did: namespaceDid, collection: record.$type },
           },
         ])
       } catch {
         // best-effort
       }
+    }
+
+    const normalizeRememberRecord = (record: unknown): EncryptedMemoryRecord => {
+      if (!record || typeof record !== 'object') {
+        throw new Error('remember requires a record object')
+      }
+      let validated = validateLexiconRecord(record)
+      if (!validated.ok) {
+        // Auto-wrap freeform records as MemoryNote so agents don't need to know the lexicon schema.
+        const wrapped = {
+          $type: 'agent.memory.note' as const,
+          summary:
+            typeof (record as any).summary === 'string'
+              ? (record as any).summary
+              : typeof (record as any).text === 'string'
+                ? (record as any).text
+                : JSON.stringify(record).slice(0, 200),
+          text: JSON.stringify(record),
+          tags: Array.isArray((record as any).tags) ? (record as any).tags : [],
+          createdAt: new Date().toISOString(),
+        }
+        validated = validateLexiconRecord(wrapped)
+        if (!validated.ok) {
+          throw new Error('Invalid lexicon record: ' + JSON.stringify(validated.issues))
+        }
+      }
+
+      return validated.value
+    }
+
+    const resolveRecipientEncryptionPublicKey = async (recipientDid: string): Promise<string | null> => {
+      const agents = env.AGENTS
+      if (!agents || typeof agents.idFromName !== 'function' || typeof agents.get !== 'function') return null
+
+      const target = recipientDid.startsWith('did:cf:') ? recipientDid.slice('did:cf:'.length) : recipientDid
+      const agentId = agents.idFromName(target)
+      const stub = agents.get(agentId)
+      const response = await stub.fetch(new Request('https://agent/identity'))
+      if (!response.ok) return null
+      const payload = (await response.json().catch(() => null)) as { encryptionPublicKey?: unknown } | null
+      return typeof payload?.encryptionPublicKey === 'string' ? payload.encryptionPublicKey : null
     }
 
     return [
@@ -3187,35 +3397,16 @@ export class AgentDO extends DurableObject {
         execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
           const { params } = parseArgs<{ record?: unknown }>(toolCallIdOrParams, maybeParams)
           const record = params && typeof params === 'object' && 'record' in params ? params.record : null
-          if (!record || typeof record !== 'object') {
-            throw new Error('remember requires a record object')
-          }
-          let validated = validateLexiconRecord(record)
-          if (!validated.ok) {
-            // Auto-wrap freeform records as MemoryNote so agents don't need to know the lexicon schema
-            const wrapped = {
-              $type: 'agent.memory.note' as const,
-              summary: typeof (record as any).summary === 'string' ? (record as any).summary
-                : typeof (record as any).text === 'string' ? (record as any).text
-                : JSON.stringify(record).slice(0, 200),
-              text: JSON.stringify(record),
-              tags: Array.isArray((record as any).tags) ? (record as any).tags : [],
-              createdAt: new Date().toISOString(),
-            }
-            validated = validateLexiconRecord(wrapped)
-            if (!validated.ok) {
-              throw new Error('Invalid lexicon record: ' + JSON.stringify(validated.issues))
-            }
-          }
+          const validated = normalizeRememberRecord(record)
 
-          const id = await memory.store(validated.value)
-          await vectorizeUpsert(id, validated.value)
+          const id = await memory.store(validated)
+          await vectorizeUpsert(id, validated)
           await safeBroadcastEvent({
             event_type: 'agent.memory.store',
             context: {
               source: 'tool.remember',
               id,
-              collection: validated.value.$type,
+              collection: validated.$type,
             },
           })
           return { content: toTextContent(`Stored memory ${id}`), details: { id } }
@@ -3256,6 +3447,140 @@ export class AgentDO extends DurableObject {
             ? results.map((r) => `- ${r.id}`).join('\n')
             : 'No matches.'
           return { content: toTextContent(summary), details: { results } }
+        },
+      },
+      {
+        name: 'environment_remember',
+        label: 'Environment Remember',
+        description: 'Store memory in the active environment shared namespace.',
+        parameters: {
+          type: 'object',
+          properties: {
+            record: { type: 'object', description: 'Memory record payload.' },
+            environmentId: { type: 'string', description: 'Optional active environment ID override.' },
+          },
+          required: ['record'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ record?: unknown; environmentId?: unknown }>(toolCallIdOrParams, maybeParams)
+          const validated = normalizeRememberRecord(params.record)
+          const memberships = await this.resolveActiveEnvironmentMemberships()
+          if (memberships.length === 0) {
+            throw new Error('environment_remember found no active environments for this agent')
+          }
+
+          const requestedEnvironmentId =
+            typeof params.environmentId === 'string' && params.environmentId.trim().length > 0
+              ? params.environmentId.trim()
+              : null
+          const activeMembership = requestedEnvironmentId
+            ? memberships.find((membership) => membership.environmentId === requestedEnvironmentId)
+            : memberships[0]
+          if (!activeMembership) {
+            throw new Error('environment_remember requires an active environmentId when provided')
+          }
+
+          const environmentMemory = this.createEnvironmentMemory(activeMembership.environmentId)
+          if (!environmentMemory) {
+            throw new Error('environment_remember could not initialize shared environment memory')
+          }
+
+          const environmentDid = this.createEnvironmentDid(activeMembership.environmentId)
+          const id = await environmentMemory.store(validated)
+          await vectorizeUpsert(id, validated, environmentDid)
+
+          const sharedWith: string[] = []
+          for (const recipientDid of activeMembership.recipients) {
+            try {
+              const recipientKey = await resolveRecipientEncryptionPublicKey(recipientDid)
+              if (!recipientKey) continue
+              const shared = await environmentMemory.share(id, recipientDid, recipientKey)
+              if (shared) sharedWith.push(recipientDid)
+            } catch {
+              // best-effort sharing for cross-agent recall
+            }
+          }
+
+          await safeBroadcastEvent({
+            event_type: 'agent.memory.environment_store',
+            context: {
+              source: 'tool.environment_remember',
+              id,
+              did: environmentDid,
+              environmentId: activeMembership.environmentId,
+              collection: validated.$type,
+              sharedWith,
+            },
+          })
+
+          return {
+            content: toTextContent(`Stored shared environment memory ${id}`),
+            details: {
+              id,
+              did: environmentDid,
+              environmentId: activeMembership.environmentId,
+              sharedWith,
+            },
+          }
+        },
+      },
+      {
+        name: 'environment_recall',
+        label: 'Environment Recall',
+        description: 'Recall memories from active environment shared namespace(s).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query.' },
+            limit: { type: 'number', description: 'Max results (default 5).' },
+            environmentId: { type: 'string', description: 'Optional active environment ID override.' },
+          },
+          required: ['query'],
+        },
+        execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
+          const { params } = parseArgs<{ query?: unknown; limit?: unknown; environmentId?: unknown }>(toolCallIdOrParams, maybeParams)
+          const query = typeof params.query === 'string' ? params.query.trim() : ''
+          const limit = typeof params.limit === 'number' && Number.isFinite(params.limit) ? params.limit : 5
+          if (!query) throw new Error('environment_recall requires a query string')
+
+          const memberships = await this.resolveActiveEnvironmentMemberships()
+          if (memberships.length === 0) {
+            throw new Error('environment_recall found no active environments for this agent')
+          }
+
+          const requestedEnvironmentId =
+            typeof params.environmentId === 'string' && params.environmentId.trim().length > 0
+              ? params.environmentId.trim()
+              : null
+          const environmentIds = requestedEnvironmentId
+            ? memberships
+                .filter((membership) => membership.environmentId === requestedEnvironmentId)
+                .map((membership) => membership.environmentId)
+            : memberships.map((membership) => membership.environmentId)
+          if (environmentIds.length === 0) {
+            throw new Error('environment_recall requires an active environmentId when provided')
+          }
+
+          const results = await this.recallEnvironmentMemories(query, environmentIds, limit)
+          await safeBroadcastEvent({
+            event_type: 'agent.memory.environment_recall',
+            context: {
+              source: 'tool.environment_recall',
+              query,
+              limit,
+              environmentIds,
+              results: results.length,
+              ids: results.slice(0, 10).map((result) => result.id),
+            },
+          })
+
+          const summary = results.length
+            ? results.map((r) => `- ${r.id}`).join('\n')
+            : 'No matches.'
+          return {
+            content: toTextContent(summary),
+            details: { results, environmentIds },
+          }
         },
       },
       {

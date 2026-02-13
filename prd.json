@@ -1168,7 +1168,7 @@
       "title": "Environment shared memory — remember and recall across all agents in an environment",
       "description": "Add environment-level shared memory that all agents in an environment can read/write.\n\n**Implementation:**\n1. Add `environment_remember` tool — stores a memory record in a shared namespace keyed by environment ID\n2. Add `environment_recall` tool — semantic search across environment memories\n3. Use existing EncryptedMemory class but with a shared DID/namespace per environment (e.g., `did:env:{env_id}`)\n4. Auto-inject top-3 relevant environment memories into think prompt alongside agent memories\n5. Include environment memories in the same `📝 Relevant memories:` section, labeled as \"[shared]\"\n6. Add `environment_remember` and `environment_recall` to default enabledTools for agents in active environments\n\n**Key files:**\n- `apps/network/src/agent.ts` — new tools, buildThinkPrompt update\n- `apps/network/src/types.ts` — if new types needed\n\n**Use cases:**\n- \"We already explored room 3 and found nothing\"\n- \"The merchant in town sells healing potions for 50 gold\"  \n- \"Slag tends to hoard wheat — trade ore instead\"\n- \"The boss is weak to fire attacks\"\n\n**Tests:**\n- Unit test: environment_remember stores with environment namespace\n- Unit test: environment_recall searches environment memories\n- Unit test: environment memories appear in think prompt as [shared]\n- Unit test: environment memories isolated between different environments\n\n**Acceptance criteria:**\n- Agents can store and recall shared environment memories\n- Environment memories auto-injected into think prompt\n- Memories isolated per environment (env A can't see env B's memories)\n- Tools only available when agent is in an active environment",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
       "targetFiles": [
         "apps/network/src/agent.ts"
@@ -1199,8 +1199,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 101,
-    "lastIteration": "2026-02-13T20:46:33.008Z"
+    "totalIterations": 102,
+    "lastIteration": "2026-02-13T20:56:35.420Z"
   },
   "totalStories": 11
 }

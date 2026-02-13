@@ -475,6 +475,20 @@
         "apps/network/src/agent.ts"
       ],
       "learnings": "Technical Discovery: In `AgentDO.observe()` (`apps/network/src/agent.ts`), broadcast lifecycle is best handled as per-record cycle state (`consumedCycles`) rather than timestamps alone. This allows deterministic pruning by loop count, matching prompt-cycle semantics and avoiding context bloat while preserving short-lived coordination memory.\nGotcha: `createDefaultConfig()` must return the local extended config type (`AgentConfigWithTeamComms`) if defaults include extra optional fields like `maxBroadcastAge`; otherwise `TS2339` appears when reading those fields in create/patch flows.\nFiles Context: `apps/network/src/agent.ts` is the authoritative place for observe-phase inbox processing, broadcast prompt context, and config normalization. `apps/network/src/agent-do.test.ts` contains the behavior contract for Team Comms prompt inclusion and non-regression checks around loop-cycle behavior and inbox pruning."
+    },
+    {
+      "id": "story-mllcqvvx",
+      "title": "Auto-recall — inject relevant memories into think prompt at turn start",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl"
+      ],
+      "learnings": "Technical Discovery: `buildThinkPrompt()` is the right integration point for automatic recall because it already has both `observations` and computed `gameContext`; factoring recall into a shared `recallMemories()` method avoids drift between prompt injection and the `recall` tool path.\nGotcha: A strict 500-token cap can fail by a small margin if newline/join overhead isn’t reserved; keep a small char buffer when truncating the injected section. Also keep the no-memory fast-path before embedding to avoid unnecessary Vectorize/AI calls.\nFiles Context: `apps/network/src/agent.ts` now contains: auto-recall config constants, shared embedding/model-selection helpers, `recallMemories()`, and `buildRelevantMemoriesSection()` used by `buildThinkPrompt()` and the `recall` tool. `apps/network/src/agent-do.test.ts` contains story tests asserting memory section presence, omission when empty, and token-budget capping."
     }
   ],
   "failures": [
