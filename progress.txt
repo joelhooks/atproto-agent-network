@@ -1060,3 +1060,9 @@ Post-work required commands completed:
 Cross-agent shared recall depends on `environment_remember` being able to resolve recipients’ encryption public keys through `AGENTS` (`/identity`). If `AGENTS` is unavailable, environment writes still work for the writer, but cross-agent decryptability falls back to best-effort.
 ### Files Context
 `apps/network/src/agent.ts` now contains the full environment-shared memory path: membership resolution, config gating, tools, and prompt injection. `apps/network/src/agent-do.test.ts` has the story’s acceptance tests and should be the first place to update if environment membership semantics change.
+
+---
+[2026-02-13T21:02:31.293Z]
+Completed: Memory dedup on store — skip or merge when >0.9 similarity exists
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Implemented memory dedup on store in `apps/network/src/agent.ts` for both `remember` and `environment_remember` using Vectorize semantic similarity (top-1). Behavior now is: score `> 0.9` skips store and returns existing ID, score `0.7-0.9` attempts merge via `EncryptedMemory.update`, and score `< 0.7` stores normally; all dedup actions emit `agent.memory.dedup` observability events. Added RED/GREEN unit tests in `apps/network/src/agent-do.test.ts` for duplicate skip, novel store, and dedup event logging.

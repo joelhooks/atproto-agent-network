@@ -1179,7 +1179,7 @@
       "title": "Memory dedup on store — skip or merge when >0.9 similarity exists",
       "description": "Prevent agents from storing redundant memories by checking similarity before writing.\n\n**Implementation:**\n1. In the `remember` tool execute handler (~line 3060), before storing:\n   a. Extract the text content from the new memory record\n   b. Run a Vectorize semantic search with that text (top-1, threshold 0.9)\n   c. If a match with score > 0.9 exists, skip the store and return \"Memory already exists: {id}\"\n   d. If score is 0.7-0.9, consider merging (append new info to existing record)\n2. Apply same logic to `environment_remember`\n3. Log dedup events for observability\n\n**Key files:**\n- `apps/network/src/agent.ts` — `remember` tool, `environment_remember` tool\n\n**Tests:**\n- Unit test: duplicate memory (>0.9 similarity) is skipped\n- Unit test: novel memory (<0.7 similarity) is stored normally\n- Unit test: dedup event is logged\n\n**Acceptance criteria:**\n- Storing a near-duplicate memory returns existing ID instead of creating new\n- Dedup uses Vectorize semantic similarity, not exact string match\n- Falls back to storing if Vectorize is unavailable",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
       "targetFiles": [
         "apps/network/src/agent.ts"
@@ -1199,8 +1199,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 102,
-    "lastIteration": "2026-02-13T20:56:35.420Z"
+    "totalIterations": 103,
+    "lastIteration": "2026-02-13T21:02:31.290Z"
   },
   "totalStories": 11
 }

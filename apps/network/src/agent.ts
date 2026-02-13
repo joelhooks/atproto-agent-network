@@ -232,6 +232,8 @@ const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
 type AgentConfigWithTeamComms = AgentConfig & { teamCommsLimit?: number; maxBroadcastAge?: number }
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
+const MEMORY_DEDUP_MERGE_THRESHOLD = 0.7
+const MEMORY_DEDUP_SKIP_THRESHOLD = 0.9
 type WorkersAiModelName = Parameters<Ai['run']>[0]
 const DEFAULT_EMBEDDING_MODEL: WorkersAiModelName = '@cf/baai/bge-large-en-v1.5'
 const EMBEDDING_MODEL_DIMENSIONS: Partial<Record<WorkersAiModelName, number>> = {
@@ -3341,6 +3343,155 @@ export class AgentDO extends DurableObject {
       }
     }
 
+    const mergeRememberRecords = (
+      existing: EncryptedMemoryRecord,
+      incoming: EncryptedMemoryRecord
+    ): EncryptedMemoryRecord | null => {
+      if (existing.$type !== incoming.$type) return null
+
+      const existingRecord = existing as Record<string, unknown>
+      const incomingRecord = incoming as Record<string, unknown>
+      const mergedRecord: Record<string, unknown> = { ...existingRecord }
+      let changed = false
+
+      const appendUniqueText = (current: unknown, next: unknown): string | null => {
+        const currentText = typeof current === 'string' ? current.trim() : ''
+        const nextText = typeof next === 'string' ? next.trim() : ''
+        if (!nextText) return currentText || null
+        if (!currentText) return nextText
+        const currentLower = currentText.toLowerCase()
+        const nextLower = nextText.toLowerCase()
+        if (currentLower.includes(nextLower)) return currentText
+        if (nextLower.includes(currentLower)) return nextText
+        return `${currentText}\n${nextText}`
+      }
+
+      const mergedSummary = appendUniqueText(existingRecord.summary, incomingRecord.summary)
+      if (mergedSummary && mergedSummary !== existingRecord.summary) {
+        mergedRecord.summary = mergedSummary
+        changed = true
+      }
+
+      const mergedText = appendUniqueText(existingRecord.text, incomingRecord.text)
+      if (mergedText && mergedText !== existingRecord.text) {
+        mergedRecord.text = mergedText
+        changed = true
+      }
+
+      const existingTags = Array.isArray(existingRecord.tags)
+        ? existingRecord.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+        : []
+      const incomingTags = Array.isArray(incomingRecord.tags)
+        ? incomingRecord.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+        : []
+      const mergedTags = Array.from(new Set([...existingTags, ...incomingTags]))
+      if (mergedTags.length > 0 && mergedTags.join('\u0000') !== existingTags.join('\u0000')) {
+        mergedRecord.tags = mergedTags
+        changed = true
+      }
+
+      if (!changed) return null
+      return {
+        ...mergedRecord,
+        $type: existing.$type,
+      } as EncryptedMemoryRecord
+    }
+
+    type MemoryDedupOutcome =
+      | { action: 'store' }
+      | { action: 'skip'; id: string; score: number }
+      | { action: 'merge'; id: string; score: number }
+
+    const detectMemoryDedup = async (options: {
+      record: EncryptedMemoryRecord
+      memory: EncryptedMemory
+      namespaceDid: string
+      retrieveShared?: (id: string) => Promise<EncryptedMemoryRecord | null>
+    }): Promise<MemoryDedupOutcome> => {
+      const vectorize = env.VECTORIZE
+      if (!vectorize || typeof vectorize.query !== 'function') return { action: 'store' }
+
+      const embedding = await embedText(extractSearchableText(options.record))
+      if (!embedding) return { action: 'store' }
+
+      let matchedId = ''
+      let matchedScore = 0
+      try {
+        const response = (await vectorize.query(embedding, {
+          topK: 1,
+          filter: { did: options.namespaceDid },
+          returnMetadata: true,
+        })) as unknown
+        const matches = Array.isArray((response as { matches?: unknown }).matches)
+          ? ((response as { matches: unknown[] }).matches as Array<Record<string, unknown>>)
+          : []
+        const bestMatch = matches[0]
+        if (!bestMatch) return { action: 'store' }
+        matchedId = typeof bestMatch.id === 'string' ? bestMatch.id : ''
+        matchedScore = typeof bestMatch.score === 'number' ? bestMatch.score : 0
+      } catch {
+        return { action: 'store' }
+      }
+
+      if (!matchedId) return { action: 'store' }
+      if (matchedScore > MEMORY_DEDUP_SKIP_THRESHOLD) {
+        return { action: 'skip', id: matchedId, score: matchedScore }
+      }
+      if (matchedScore < MEMORY_DEDUP_MERGE_THRESHOLD) return { action: 'store' }
+
+      let existingRecord: EncryptedMemoryRecord | null = null
+      try {
+        existingRecord = await options.memory.retrieve<EncryptedMemoryRecord>(matchedId)
+      } catch {
+        existingRecord = null
+      }
+      if (!existingRecord && options.retrieveShared) {
+        try {
+          existingRecord = await options.retrieveShared(matchedId)
+        } catch {
+          existingRecord = null
+        }
+      }
+      if (!existingRecord) return { action: 'store' }
+
+      const mergedRecord = mergeRememberRecords(existingRecord, options.record)
+      if (!mergedRecord) return { action: 'store' }
+
+      let updated = false
+      try {
+        updated = await options.memory.update(matchedId, mergedRecord)
+      } catch {
+        updated = false
+      }
+      if (!updated) return { action: 'store' }
+
+      await vectorizeUpsert(matchedId, mergedRecord, options.namespaceDid)
+      return { action: 'merge', id: matchedId, score: matchedScore }
+    }
+
+    const logDedupEvent = async (input: {
+      source: 'tool.remember' | 'tool.environment_remember'
+      action: 'skip' | 'merge'
+      matchedId: string
+      score: number
+      collection: string
+      did: string
+      environmentId?: string
+    }): Promise<void> => {
+      await safeBroadcastEvent({
+        event_type: 'agent.memory.dedup',
+        context: {
+          source: input.source,
+          action: input.action,
+          matchedId: input.matchedId,
+          score: input.score,
+          collection: input.collection,
+          did: input.did,
+          environmentId: input.environmentId,
+        },
+      })
+    }
+
     const normalizeRememberRecord = (record: unknown): EncryptedMemoryRecord => {
       if (!record || typeof record !== 'object') {
         throw new Error('remember requires a record object')
@@ -3398,6 +3549,40 @@ export class AgentDO extends DurableObject {
           const { params } = parseArgs<{ record?: unknown }>(toolCallIdOrParams, maybeParams)
           const record = params && typeof params === 'object' && 'record' in params ? params.record : null
           const validated = normalizeRememberRecord(record)
+
+          const dedup = await detectMemoryDedup({
+            record: validated,
+            memory,
+            namespaceDid: did,
+          })
+          if (dedup.action === 'skip') {
+            await logDedupEvent({
+              source: 'tool.remember',
+              action: 'skip',
+              matchedId: dedup.id,
+              score: dedup.score,
+              collection: validated.$type,
+              did,
+            })
+            return {
+              content: toTextContent(`Memory already exists: ${dedup.id}`),
+              details: { id: dedup.id, action: 'skip', deduped: true, score: dedup.score },
+            }
+          }
+          if (dedup.action === 'merge') {
+            await logDedupEvent({
+              source: 'tool.remember',
+              action: 'merge',
+              matchedId: dedup.id,
+              score: dedup.score,
+              collection: validated.$type,
+              did,
+            })
+            return {
+              content: toTextContent(`Merged memory into ${dedup.id}`),
+              details: { id: dedup.id, action: 'merge', deduped: true, score: dedup.score },
+            }
+          }
 
           const id = await memory.store(validated)
           await vectorizeUpsert(id, validated)
@@ -3486,6 +3671,62 @@ export class AgentDO extends DurableObject {
           }
 
           const environmentDid = this.createEnvironmentDid(activeMembership.environmentId)
+          const dedup = await detectMemoryDedup({
+            record: validated,
+            memory: environmentMemory,
+            namespaceDid: environmentDid,
+            retrieveShared: async (id: string): Promise<EncryptedMemoryRecord | null> => {
+              if (!this.memory) return null
+              return this.memory.retrieveShared<EncryptedMemoryRecord>(id)
+            },
+          })
+          if (dedup.action === 'skip') {
+            await logDedupEvent({
+              source: 'tool.environment_remember',
+              action: 'skip',
+              matchedId: dedup.id,
+              score: dedup.score,
+              collection: validated.$type,
+              did: environmentDid,
+              environmentId: activeMembership.environmentId,
+            })
+            return {
+              content: toTextContent(`Memory already exists: ${dedup.id}`),
+              details: {
+                id: dedup.id,
+                did: environmentDid,
+                environmentId: activeMembership.environmentId,
+                action: 'skip',
+                deduped: true,
+                score: dedup.score,
+                sharedWith: [],
+              },
+            }
+          }
+          if (dedup.action === 'merge') {
+            await logDedupEvent({
+              source: 'tool.environment_remember',
+              action: 'merge',
+              matchedId: dedup.id,
+              score: dedup.score,
+              collection: validated.$type,
+              did: environmentDid,
+              environmentId: activeMembership.environmentId,
+            })
+            return {
+              content: toTextContent(`Merged shared environment memory ${dedup.id}`),
+              details: {
+                id: dedup.id,
+                did: environmentDid,
+                environmentId: activeMembership.environmentId,
+                action: 'merge',
+                deduped: true,
+                score: dedup.score,
+                sharedWith: [],
+              },
+            }
+          }
+
           const id = await environmentMemory.store(validated)
           await vectorizeUpsert(id, validated, environmentDid)
 

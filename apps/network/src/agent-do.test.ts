@@ -912,6 +912,194 @@ describe('AgentDO', () => {
     expect(loaded.record.priority).toBe(3)
   })
 
+  it('skips storing duplicate memories when Vectorize similarity is above 0.9', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state } = createState('agent-remember-dedup-skip')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    expect(remember).toBeTruthy()
+
+    const first = await remember!.execute('tc-dedup-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Dungeon trap details',
+        text: 'Room 4 has a pressure plate trap by the western door.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: first.details.id,
+          score: 0.95,
+          metadata: { did: 'did:cf:agent-remember-dedup-skip', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    const duplicate = await remember!.execute('tc-dedup-2', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Known dungeon trap',
+        text: 'The west-door pressure plate trap in room 4 is still active.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    expect(duplicate.content[0]?.text).toContain(`Memory already exists: ${first.details.id}`)
+    expect(duplicate.details).toMatchObject({
+      id: first.details.id,
+      action: 'skip',
+      deduped: true,
+    })
+    expect(db.records.size).toBe(1)
+    expect(vectorizeUpsert).toHaveBeenCalledTimes(1)
+    expect(vectorizeQuery).toHaveBeenCalledTimes(2)
+    expect(vectorizeQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Array),
+      expect.objectContaining({
+        topK: 1,
+        filter: { did: 'did:cf:agent-remember-dedup-skip' },
+      })
+    )
+  })
+
+  it('stores novel memories when Vectorize similarity is below 0.7', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state } = createState('agent-remember-dedup-novel')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    expect(remember).toBeTruthy()
+
+    const first = await remember!.execute('tc-novel-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Potion vendor',
+        text: 'Town vendor sells healing potions for 50 gold.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: first.details.id,
+          score: 0.65,
+          metadata: { did: 'did:cf:agent-remember-dedup-novel', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    const second = await remember!.execute('tc-novel-2', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Guard rotation',
+        text: 'Northern gate guards swap shifts every two hours.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    expect(second.content[0]?.text).toContain('Stored memory')
+    expect(second.details.id).not.toBe(first.details.id)
+    expect(db.records.size).toBe(2)
+    expect(vectorizeUpsert).toHaveBeenCalledTimes(2)
+  })
+
+  it('broadcasts dedup observability events when duplicate memories are skipped', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+
+    const { state, acceptWebSocket } = createState('agent-remember-dedup-event')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { upsert: vectorizeUpsert, query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const ws = { readyState: 1, send: vi.fn(), close: vi.fn() } as any as WebSocket
+    acceptWebSocket(ws)
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    expect(remember).toBeTruthy()
+
+    const first = await remember!.execute('tc-dedup-log-1', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Bridge crossing',
+        text: 'The old bridge can hold only one armored person at a time.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: first.details.id,
+          score: 0.96,
+          metadata: { did: 'did:cf:agent-remember-dedup-event', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    await remember!.execute('tc-dedup-log-2', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Old bridge limit',
+        text: 'Only one heavily armored adventurer should cross the old bridge at once.',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    const events = (ws as any).send.mock.calls.map((call: [string]) => JSON.parse(call[0]) as Record<string, unknown>)
+    const dedupEvent = events.find((event) => event.event_type === 'agent.memory.dedup')
+    expect(dedupEvent).toBeTruthy()
+    expect((dedupEvent?.context as Record<string, unknown>)?.action).toBe('skip')
+    expect((dedupEvent?.context as Record<string, unknown>)?.matchedId).toBe(first.details.id)
+  })
+
   it('recalls memories via semantic search when Vectorize is available, otherwise falls back to list+filter', async () => {
     const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
     const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
