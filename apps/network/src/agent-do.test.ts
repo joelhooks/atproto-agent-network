@@ -3331,6 +3331,146 @@ describe('AgentDO', () => {
     expect(promptArg).toContain('seed-event')
   })
 
+  it('injects relevant memories into the think prompt when memories exist', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-auto-recall')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery, upsert: vectorizeUpsert },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    expect(remember).toBeTruthy()
+
+    const createdAt = '2026-01-15T12:00:00.000Z'
+    const stored = await remember!.execute('tc-auto-rec-remember', {
+      record: {
+        $type: 'agent.memory.note',
+        summary: 'Scout saw tracks near the eastern ridge.',
+        text: 'Observed goblin tracks near the eastern ridge by the old watchtower.',
+        tags: ['scout', 'threat'],
+        createdAt,
+      },
+    })
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: [
+        {
+          id: stored.details.id,
+          score: 0.93,
+          metadata: { did: 'did:cf:agent-auto-recall', collection: 'agent.memory.note' },
+        },
+      ],
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'enemy-sighting' }])
+    await agent.alarm()
+
+    const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+    expect(promptArg).toContain('📝 Relevant memories:')
+    expect(promptArg).toContain('Scout saw tracks near the eastern ridge.')
+    expect(promptArg).toContain('2026-01-15')
+    expect(vectorizeQuery).toHaveBeenCalled()
+  })
+
+  it('omits the relevant memories section when no memories exist', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-auto-recall-empty')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'seed-event' }])
+    await agent.alarm()
+
+    const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+    expect(promptArg).not.toContain('📝 Relevant memories:')
+    expect(vectorizeQuery).not.toHaveBeenCalled()
+  })
+
+  it('caps injected relevant memory text to the token budget', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+    const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+    const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+    const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+    const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-auto-recall-cap')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      AI: { run: aiRun },
+      VECTORIZE: { query: vectorizeQuery, upsert: vectorizeUpsert },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+    const remember = tools.find((t) => t.name === 'remember')
+    expect(remember).toBeTruthy()
+
+    const longText = 'A'.repeat(1400)
+    const storedIds: string[] = []
+    for (let i = 0; i < 6; i += 1) {
+      const stored = await remember!.execute(`tc-auto-cap-${i}`, {
+        record: {
+          $type: 'agent.memory.note',
+          summary: `Long memory ${i} ${longText}`,
+          text: `Body ${i} ${longText}`,
+          createdAt: `2026-01-1${(i % 9) + 1}T00:00:00.000Z`,
+        },
+      })
+      storedIds.push(String(stored.details.id))
+    }
+
+    vectorizeQuery.mockResolvedValueOnce({
+      matches: storedIds.slice(0, 5).map((id, idx) => ({
+        id,
+        score: 0.99 - idx * 0.01,
+        metadata: { did: 'did:cf:agent-auto-recall-cap', collection: 'agent.memory.note' },
+      })),
+    })
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await storage.put('pendingEvents', [{ ts: Date.now(), type: 'long-memory-query' }])
+    await agent.alarm()
+
+    const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+    const start = promptArg.indexOf('📝 Relevant memories:')
+    const end = promptArg.indexOf('Available tools:')
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+
+    const memorySection = promptArg.slice(start, end)
+    const approxTokens = Math.ceil(memorySection.length / 4)
+    expect(approxTokens).toBeLessThanOrEqual(500)
+  })
+
   it('keeps consumed environment broadcasts in think prompt Team Comms for maxBroadcastAge cycles, then prunes them', async () => {
     const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
     const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })

@@ -995,3 +995,23 @@ Validation run and passed:
 Required post-work commands completed:
 - `swarm memory store "..." --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed Broadcast message aging and context cleanup"`
+
+---
+[2026-02-13T20:46:33.011Z]
+Completed: Auto-recall — inject relevant memories into think prompt at turn start
+Files: apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Implemented auto-recall memory injection in the think prompt and added RED→GREEN tests for inclusion/omission/token-cap behavior.
+
+Prior failure pattern detected: `test_failure`. Mitigation: strict RED→GREEN with focused failing tests first, then minimal implementation and re-run of the required validation command.
+
+What changed:
+- Added auto-recall constants and shared recall plumbing in `apps/network/src/agent.ts:207`.
+- `buildThinkPrompt()` now injects `📝 Relevant memories:` immediately after team comms via `buildRelevantMemoriesSection(...)` in `apps/network/src/agent.ts:1530`.
+- Added shared `recallMemories()` path (Vectorize semantic search + fallback string match) and reused it for both auto-recall and the `recall` tool in `apps/network/src/agent.ts:1695` and `apps/network/src/agent.ts:3241`.
+- Added no-memory short-circuit (`memory.list({ limit: 1 })`) to skip unnecessary Vectorize/AI calls when empty.
+- Added prompt-size cap for injected memory section (~500-token equivalent char budget) in `apps/network/src/agent.ts:1783`.
+- Added 3 unit tests in `apps/network/src/agent-do.test.ts:3334`, `apps/network/src/agent-do.test.ts:3389`, `apps/network/src/agent-do.test.ts:3414`.
+
+Post-work required commands completed:
+- `swarm memory store ...` (stored as `mem-625fbad11f86bdaa`)
+- `openclaw system event --mode now --text "Ralph: completed Auto-recall — inject relevant memories into think prompt at turn start"`

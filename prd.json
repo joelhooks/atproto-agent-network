@@ -1151,12 +1151,56 @@
       "targetFiles": [
         "agent.ts"
       ]
+    },
+    {
+      "id": "story-mllcqvvx",
+      "title": "Auto-recall — inject relevant memories into think prompt at turn start",
+      "description": "Before each agent loop iteration, automatically recall relevant memories and inject them into the think prompt.\n\n**Implementation:**\n1. In `buildThinkPrompt()` (agent.ts ~line 1528), after the `teamCommsSection`, add a `📝 Relevant memories:` section\n2. Take current observations + game context as a semantic query\n3. Call the existing recall logic (Vectorize semantic search with fallback to string match)\n4. Return top-5 results, formatted as bullet points with timestamps\n5. Cap total injected memory text at ~500 tokens to prevent prompt bloat\n6. Skip auto-recall if no memories exist (don't waste Vectorize calls)\n\n**Key files:**\n- `apps/network/src/agent.ts` — `buildThinkPrompt()` method, existing `recall` tool logic (~line 3108)\n\n**Tests:**\n- Unit test: buildThinkPrompt includes memory section when memories exist\n- Unit test: memory section omitted when no memories\n- Unit test: memory text capped at token budget\n\n**Acceptance criteria:**\n- Agent think prompt includes relevant memories automatically\n- No manual `recall` tool call needed\n- Memory injection uses same Vectorize path as existing recall tool\n- Token budget prevents prompt bloat",
+      "priority": 1,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
+      "targetFiles": [
+        "apps/network/src/agent.ts"
+      ]
+    },
+    {
+      "id": "story-mllcqwh8",
+      "title": "Environment shared memory — remember and recall across all agents in an environment",
+      "description": "Add environment-level shared memory that all agents in an environment can read/write.\n\n**Implementation:**\n1. Add `environment_remember` tool — stores a memory record in a shared namespace keyed by environment ID\n2. Add `environment_recall` tool — semantic search across environment memories\n3. Use existing EncryptedMemory class but with a shared DID/namespace per environment (e.g., `did:env:{env_id}`)\n4. Auto-inject top-3 relevant environment memories into think prompt alongside agent memories\n5. Include environment memories in the same `📝 Relevant memories:` section, labeled as \"[shared]\"\n6. Add `environment_remember` and `environment_recall` to default enabledTools for agents in active environments\n\n**Key files:**\n- `apps/network/src/agent.ts` — new tools, buildThinkPrompt update\n- `apps/network/src/types.ts` — if new types needed\n\n**Use cases:**\n- \"We already explored room 3 and found nothing\"\n- \"The merchant in town sells healing potions for 50 gold\"  \n- \"Slag tends to hoard wheat — trade ore instead\"\n- \"The boss is weak to fire attacks\"\n\n**Tests:**\n- Unit test: environment_remember stores with environment namespace\n- Unit test: environment_recall searches environment memories\n- Unit test: environment memories appear in think prompt as [shared]\n- Unit test: environment memories isolated between different environments\n\n**Acceptance criteria:**\n- Agents can store and recall shared environment memories\n- Environment memories auto-injected into think prompt\n- Memories isolated per environment (env A can't see env B's memories)\n- Tools only available when agent is in an active environment",
+      "priority": 2,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
+      "targetFiles": [
+        "apps/network/src/agent.ts"
+      ]
+    },
+    {
+      "id": "story-mllcqxai",
+      "title": "Memory dedup on store — skip or merge when >0.9 similarity exists",
+      "description": "Prevent agents from storing redundant memories by checking similarity before writing.\n\n**Implementation:**\n1. In the `remember` tool execute handler (~line 3060), before storing:\n   a. Extract the text content from the new memory record\n   b. Run a Vectorize semantic search with that text (top-1, threshold 0.9)\n   c. If a match with score > 0.9 exists, skip the store and return \"Memory already exists: {id}\"\n   d. If score is 0.7-0.9, consider merging (append new info to existing record)\n2. Apply same logic to `environment_remember`\n3. Log dedup events for observability\n\n**Key files:**\n- `apps/network/src/agent.ts` — `remember` tool, `environment_remember` tool\n\n**Tests:**\n- Unit test: duplicate memory (>0.9 similarity) is skipped\n- Unit test: novel memory (<0.7 similarity) is stored normally\n- Unit test: dedup event is logged\n\n**Acceptance criteria:**\n- Storing a near-duplicate memory returns existing ID instead of creating new\n- Dedup uses Vectorize semantic similarity, not exact string match\n- Falls back to storing if Vectorize is unavailable",
+      "priority": 3,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
+      "targetFiles": [
+        "apps/network/src/agent.ts"
+      ]
+    },
+    {
+      "id": "story-mllcqxww",
+      "title": "Memory recency weighting — boost recent memories in auto-recall results",
+      "description": "Weight auto-recall results by recency so recent memories are preferred over stale ones.\n\n**Implementation:**\n1. When auto-recall runs in buildThinkPrompt, after getting Vectorize results:\n   a. Parse the `createdAt` timestamp from each memory record\n   b. Apply a recency multiplier: score * (1 + recency_bonus)\n   c. Recency bonus: 0.3 for <1h old, 0.2 for <6h, 0.1 for <24h, 0.0 for older\n2. Re-sort results by weighted score\n3. Add the age indicator to the injected memory text (e.g., \"[2h ago]\", \"[yesterday]\")\n\n**Key files:**\n- `apps/network/src/agent.ts` — auto-recall logic in buildThinkPrompt\n\n**Tests:**\n- Unit test: recent memory with lower base score ranks above old memory with higher base score\n- Unit test: age labels render correctly\n\n**Acceptance criteria:**\n- Auto-recall results are weighted by recency\n- Age labels shown in injected memory text\n- Old memories still surface if highly relevant (recency is a boost, not a filter)",
+      "priority": 4,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
+      "targetFiles": [
+        "apps/network/src/agent.ts"
+      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 100,
-    "lastIteration": "2026-02-13T16:13:06.723Z"
+    "totalIterations": 101,
+    "lastIteration": "2026-02-13T20:46:33.008Z"
   },
   "totalStories": 11
 }

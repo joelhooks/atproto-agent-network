@@ -457,6 +457,24 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `DM_SKILL` in `apps/network/src/environments/rpg-skills.ts` is a direct prompt contract, so adding explicit lifecycle trigger headings makes autoplay behavior auditable and testable as prompt text. A dedicated assertion file (`apps/network/src/environments/rpg-skills.test.ts`) is the cleanest way to lock these instructions without coupling to broader environment tests.\nGotcha: String-content tests on prompt text are case-sensitive; wording drift (for example `Start` vs `start`) can fail tests even when semantics are unchanged. Keep required trigger/action phrases stable when editing skill copy.\nFiles Context: `apps/network/src/environments/rpg-skills.ts` contains `DM_SKILL` and is the source of GM autonomous behavior instructions. `apps/network/src/environments/rpg-skills.test.ts` now validates campaign lifecycle directives so future skill edits do not remove the encoded autoplay heuristics."
+    },
+    {
+      "id": "story-mll1vpzk",
+      "title": "Broadcast message aging and context cleanup",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/environments/catan.test.ts",
+        "apps/network/src/environments/catan.ts",
+        "apps/network/src/environments/rpg-skills.test.ts",
+        "apps/network/src/environments/rpg-skills.ts",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts"
+      ],
+      "learnings": "Technical Discovery: In `AgentDO.observe()` (`apps/network/src/agent.ts`), broadcast lifecycle is best handled as per-record cycle state (`consumedCycles`) rather than timestamps alone. This allows deterministic pruning by loop count, matching prompt-cycle semantics and avoiding context bloat while preserving short-lived coordination memory.\nGotcha: `createDefaultConfig()` must return the local extended config type (`AgentConfigWithTeamComms`) if defaults include extra optional fields like `maxBroadcastAge`; otherwise `TS2339` appears when reading those fields in create/patch flows.\nFiles Context: `apps/network/src/agent.ts` is the authoritative place for observe-phase inbox processing, broadcast prompt context, and config normalization. `apps/network/src/agent-do.test.ts` contains the behavior contract for Team Comms prompt inclusion and non-regression checks around loop-cycle behavior and inbox pruning."
     }
   ],
   "failures": [

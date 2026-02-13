@@ -159,6 +159,7 @@ interface ActResult {
 }
 
 type ActionOutcome = { tool: string; success: boolean; timestamp: number; goalId?: string }
+type RecallResult = { id: string; record: EncryptedMemoryRecord; score?: number; metadata?: unknown }
 
 type ExtensionMetrics = {
   name: string
@@ -203,6 +204,8 @@ const DEFAULT_MAX_COMPLETED_GOALS = 2
 const DEFAULT_TEAM_COMMS_LIMIT = 5
 const MAX_TEAM_COMMS_LIMIT = 20
 const DEFAULT_MAX_BROADCAST_AGE = 3
+const AUTO_RECALL_LIMIT = 5
+const AUTO_RECALL_MAX_TOKENS = 500
 
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
@@ -1524,6 +1527,7 @@ export class AgentDO extends DurableObject {
         console.error('skill context resolution failed', { agent: this.config?.name, error: String(err) })
       }
     }
+    const relevantMemoriesSection = await this.buildRelevantMemoriesSection(observations, gameContext)
 
     return [
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
@@ -1545,6 +1549,7 @@ export class AgentDO extends DurableObject {
       hasEvents ? 'You have pending events to process.' : '',
       '',
       ...teamCommsSection,
+      ...relevantMemoriesSection,
       'Available tools: ' + (this.config?.enabledTools ?? []).join(', '),
       ((this.config?.enabledTools ?? []).includes('write_extension') ||
         (this.config?.enabledTools ?? []).includes('list_extensions') ||
@@ -1622,6 +1627,176 @@ export class AgentDO extends DurableObject {
     }
 
     return cleaned.replace(/\n{3,}/g, '\n\n').trim()
+  }
+
+  private extractSearchableText(record: EncryptedMemoryRecord): string {
+    const parts: string[] = []
+    const summary = (record as Record<string, unknown>).summary
+    const text = (record as Record<string, unknown>).text
+    if (typeof summary === 'string' && summary.trim().length > 0) parts.push(summary)
+    if (typeof text === 'string' && text.trim().length > 0) parts.push(text)
+    // Always include a JSON fallback so arbitrary records are searchable.
+    parts.push(JSON.stringify(record))
+    return parts.join('\n')
+  }
+
+  private getExpectedVectorizeDimensions(): number {
+    const raw = this.agentEnv.VECTORIZE_DIMENSIONS
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      const parsed = Number.parseInt(raw, 10)
+      if (Number.isFinite(parsed) && parsed > 0) return parsed
+    }
+    // Default to the deployed Vectorize index dimensions (not the embedding model),
+    // so misconfiguration can't accidentally send a wrong-length query vector.
+    return DEFAULT_VECTORIZE_DIMENSIONS
+  }
+
+  private selectEmbeddingModel(expectedDims: number): WorkersAiModelName {
+    const configured = typeof this.agentEnv.EMBEDDING_MODEL === 'string' ? this.agentEnv.EMBEDDING_MODEL.trim() : ''
+    const configuredModel =
+      configured && configured in EMBEDDING_MODEL_DIMENSIONS ? (configured as WorkersAiModelName) : null
+
+    if (configuredModel && EMBEDDING_MODEL_DIMENSIONS[configuredModel] === expectedDims) {
+      return configuredModel
+    }
+
+    const byDims = Object.entries(EMBEDDING_MODEL_DIMENSIONS).find(([, dims]) => dims === expectedDims)?.[0]
+    return (byDims ?? DEFAULT_EMBEDDING_MODEL) as WorkersAiModelName
+  }
+
+  private async embedText(text: string): Promise<number[] | null> {
+    const ai = this.agentEnv.AI
+    if (!ai || typeof ai.run !== 'function') return null
+
+    try {
+      const expected = this.getExpectedVectorizeDimensions()
+      const model = this.selectEmbeddingModel(expected)
+      const result = (await ai.run(model, { text: [text] })) as unknown
+      const data = (result as { data?: unknown })?.data
+      const first = Array.isArray(data) ? data[0] : null
+      const embedding = Array.isArray(first) ? (first as number[]) : null
+      if (!embedding) return null
+
+      if (embedding.length !== expected) {
+        console.error('Vectorize embedding dimension mismatch', {
+          expected,
+          got: embedding.length,
+          model,
+        })
+        return null
+      }
+
+      return embedding
+    } catch {
+      return null
+    }
+  }
+
+  private async recallMemories(query: string, limit = 5): Promise<{ results: RecallResult[]; usedVectorize: boolean }> {
+    if (!this.memory) return { results: [], usedVectorize: false }
+
+    const normalizedQuery = query.trim()
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 5
+    if (!normalizedQuery) return { results: [], usedVectorize: false }
+
+    // Fast-path: skip semantic lookup when no memories exist.
+    const hasAnyMemories = await this.memory.list({ limit: 1 })
+    if (hasAnyMemories.length === 0) return { results: [], usedVectorize: false }
+
+    const results: RecallResult[] = []
+    let usedVectorize = false
+
+    const vectorize = this.agentEnv.VECTORIZE
+    if (vectorize && typeof vectorize.query === 'function') {
+      const embedding = await this.embedText(normalizedQuery)
+      if (embedding) {
+        try {
+          usedVectorize = true
+          const response = (await vectorize.query(embedding, {
+            topK: safeLimit,
+            filter: { did: this.did },
+            returnMetadata: true,
+          })) as unknown
+          const matches = Array.isArray((response as { matches?: unknown }).matches)
+            ? ((response as { matches: unknown[] }).matches as Array<Record<string, unknown>>)
+            : []
+          for (const match of matches) {
+            const id = typeof match.id === 'string' ? match.id : ''
+            if (!id) continue
+            const record = await this.memory.retrieve(id)
+            if (!record) continue
+            const score = typeof match.score === 'number' ? match.score : undefined
+            results.push({ id, record, score, metadata: match.metadata })
+          }
+        } catch {
+          // fall through to fallback
+        }
+      }
+    }
+
+    if (results.length === 0) {
+      // Fallback: list + filter over decrypted records.
+      const entries = await this.memory.list({ limit: Math.max(50, safeLimit) })
+      const needle = normalizedQuery.toLowerCase()
+      for (const entry of entries) {
+        const haystack = this.extractSearchableText(entry.record).toLowerCase()
+        if (haystack.includes(needle)) {
+          results.push({ id: entry.id, record: entry.record })
+          if (results.length >= safeLimit) break
+        }
+      }
+    }
+
+    return {
+      results: results.slice(0, safeLimit),
+      usedVectorize,
+    }
+  }
+
+  private buildAutoRecallQuery(observations: Observations, gameContext: string): string {
+    const queryParts = [
+      'Current observations:',
+      JSON.stringify(observations),
+      gameContext.trim().length > 0 ? `Game context:\n${gameContext}` : '',
+    ]
+    return queryParts.filter(Boolean).join('\n')
+  }
+
+  private buildMemoryBulletLine(memory: RecallResult): string {
+    const rec = memory.record as Record<string, unknown>
+    const createdAtRaw = typeof rec.createdAt === 'string' ? rec.createdAt.trim() : ''
+    const createdAt = createdAtRaw && Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : 'unknown time'
+    const summary = typeof rec.summary === 'string' ? rec.summary : ''
+    const text = typeof rec.text === 'string' ? rec.text : ''
+    const payload = [summary, text].filter((part) => part.trim().length > 0).join(' ')
+    const normalizedPayload = (payload || JSON.stringify(memory.record)).replace(/\s+/g, ' ').trim()
+    return `- [${createdAt}] ${normalizedPayload}`
+  }
+
+  private async buildRelevantMemoriesSection(observations: Observations, gameContext: string): Promise<string[]> {
+    const query = this.buildAutoRecallQuery(observations, gameContext)
+    const { results } = await this.recallMemories(query, AUTO_RECALL_LIMIT)
+    if (results.length === 0) return []
+
+    const sectionLines = ['📝 Relevant memories:']
+    // Reserve a tiny buffer for join/newline overhead so the section stays within ~500 tokens.
+    const maxChars = AUTO_RECALL_MAX_TOKENS * 4 - 8
+
+    for (const memory of results.slice(0, AUTO_RECALL_LIMIT)) {
+      const rawLine = this.buildMemoryBulletLine(memory)
+      const currentText = sectionLines.join('\n')
+      const availableChars = maxChars - currentText.length - 1
+      if (availableChars <= 0) break
+
+      let line = rawLine
+      if (line.length > availableChars) {
+        if (availableChars < 8) break
+        line = `${line.slice(0, availableChars - 3).trimEnd()}...`
+      }
+      sectionLines.push(line)
+    }
+
+    return sectionLines.length > 1 ? [...sectionLines, ''] : []
   }
 
   private normalizeThinkResult(result: unknown): ThinkResult {
@@ -2977,66 +3152,8 @@ export class AgentDO extends DurableObject {
       }
     }
 
-    const extractSearchableText = (record: EncryptedMemoryRecord): string => {
-      const parts: string[] = []
-      const summary = (record as Record<string, unknown>).summary
-      const text = (record as Record<string, unknown>).text
-      if (typeof summary === 'string' && summary.trim().length > 0) parts.push(summary)
-      if (typeof text === 'string' && text.trim().length > 0) parts.push(text)
-      // Always include a JSON fallback so arbitrary records are searchable.
-      parts.push(JSON.stringify(record))
-      return parts.join('\n')
-    }
-
-    const getExpectedVectorizeDimensions = (): number => {
-      const raw = env.VECTORIZE_DIMENSIONS
-      if (typeof raw === 'string' && raw.trim().length > 0) {
-        const parsed = Number.parseInt(raw, 10)
-        if (Number.isFinite(parsed) && parsed > 0) return parsed
-      }
-      // Default to the deployed Vectorize index dimensions (not the embedding model),
-      // so misconfiguration can't accidentally send a wrong-length query vector.
-      return DEFAULT_VECTORIZE_DIMENSIONS
-    }
-
-    const selectEmbeddingModel = (expectedDims: number): WorkersAiModelName => {
-      const configured = typeof env.EMBEDDING_MODEL === 'string' ? env.EMBEDDING_MODEL.trim() : ''
-      const configuredModel =
-        configured && configured in EMBEDDING_MODEL_DIMENSIONS ? (configured as WorkersAiModelName) : null
-
-      if (configuredModel && EMBEDDING_MODEL_DIMENSIONS[configuredModel] === expectedDims) {
-        return configuredModel
-      }
-
-      const byDims = Object.entries(EMBEDDING_MODEL_DIMENSIONS).find(([, dims]) => dims === expectedDims)?.[0]
-      return (byDims ?? DEFAULT_EMBEDDING_MODEL) as WorkersAiModelName
-    }
-
-    const embedText = async (text: string): Promise<number[] | null> => {
-      if (!env.AI || typeof env.AI.run !== 'function') return null
-      try {
-        const expected = getExpectedVectorizeDimensions()
-        const model = selectEmbeddingModel(expected)
-        const result = (await env.AI.run(model, { text: [text] })) as unknown
-        const data = (result as { data?: unknown })?.data
-        const first = Array.isArray(data) ? data[0] : null
-        const embedding = Array.isArray(first) ? (first as number[]) : null
-        if (!embedding) return null
-
-        if (embedding.length !== expected) {
-          console.error('Vectorize embedding dimension mismatch', {
-            expected,
-            got: embedding.length,
-            model,
-          })
-          return null
-        }
-
-        return embedding
-      } catch {
-        return null
-      }
-    }
+    const extractSearchableText = (record: EncryptedMemoryRecord): string => this.extractSearchableText(record)
+    const embedText = async (text: string): Promise<number[] | null> => this.embedText(text)
 
     const vectorizeUpsert = async (id: string, record: EncryptedMemoryRecord): Promise<void> => {
       if (!env.VECTORIZE || typeof env.VECTORIZE.upsert !== 'function') return
@@ -3121,48 +3238,7 @@ export class AgentDO extends DurableObject {
           const query = typeof params.query === 'string' ? params.query.trim() : ''
           const limit = typeof params.limit === 'number' && Number.isFinite(params.limit) ? params.limit : 5
           if (!query) throw new Error('recall requires a query string')
-
-          const results: Array<{ id: string; record: unknown; score?: number; metadata?: unknown }> = []
-          let usedVectorize = false
-
-          if (env.VECTORIZE && typeof env.VECTORIZE.query === 'function') {
-            const embedding = await embedText(query)
-            if (embedding) {
-              try {
-                usedVectorize = true
-                const response = (await env.VECTORIZE.query(embedding, {
-                  topK: limit,
-                  filter: { did },
-                  returnMetadata: true,
-                })) as unknown
-                const matches = Array.isArray((response as { matches?: unknown }).matches)
-                  ? ((response as { matches: unknown[] }).matches as Array<any>)
-                  : []
-                for (const match of matches) {
-                  const id = typeof match?.id === 'string' ? match.id : null
-                  if (!id) continue
-                  const record = await memory.retrieve(id)
-                  if (!record) continue
-                  results.push({ id, record, score: match?.score, metadata: match?.metadata })
-                }
-              } catch {
-                // fall through to fallback
-              }
-            }
-          }
-
-          if (results.length === 0) {
-            // Fallback: list + filter over decrypted records.
-            const entries = await memory.list({ limit: Math.max(50, limit) })
-            const needle = query.toLowerCase()
-            for (const entry of entries) {
-              const haystack = extractSearchableText(entry.record).toLowerCase()
-              if (haystack.includes(needle)) {
-                results.push({ id: entry.id, record: entry.record })
-                if (results.length >= limit) break
-              }
-            }
-          }
+          const { results, usedVectorize } = await this.recallMemories(query, limit)
 
           await safeBroadcastEvent({
             event_type: 'agent.memory.recall',
