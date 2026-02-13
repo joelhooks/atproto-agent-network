@@ -3728,8 +3728,153 @@ describe('AgentDO', () => {
     const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
     expect(promptArg).toContain('📝 Relevant memories:')
     expect(promptArg).toContain('Scout saw tracks near the eastern ridge.')
-    expect(promptArg).toContain('2026-01-15')
+    expect(promptArg).toMatch(/\[(?:\d+[smhd] ago|yesterday)\]/)
     expect(vectorizeQuery).toHaveBeenCalled()
+  })
+
+  it('re-ranks auto-recall memories by recency-weighted score', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-02-13T12:00:00.000Z'))
+    try {
+      const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+      const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+      const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+      const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+      const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+      const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+      const { state, storage } = createState('agent-auto-recall-recency-rank')
+      const { env } = createEnv({
+        PI_AGENT_FACTORY: agentFactory,
+        PI_AGENT_MODEL: { provider: 'test' },
+        AI: { run: aiRun },
+        VECTORIZE: { query: vectorizeQuery, upsert: vectorizeUpsert },
+      })
+
+      const { AgentDO } = await import('./agent')
+      const agent = new AgentDO(state as never, env as never)
+      await agent.fetch(new Request('https://example/identity'))
+
+      const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+      const remember = tools.find((t) => t.name === 'remember')
+      expect(remember).toBeTruthy()
+
+      const oldStored = await remember!.execute('tc-auto-recency-old', {
+        record: {
+          $type: 'agent.memory.note',
+          summary: 'Old high score memory',
+          text: 'Historical lead from long ago.',
+          createdAt: '2026-02-12T00:00:00.000Z',
+        },
+      })
+
+      const recentStored = await remember!.execute('tc-auto-recency-new', {
+        record: {
+          $type: 'agent.memory.note',
+          summary: 'Recent lower score memory',
+          text: 'Fresh intel from this morning.',
+          createdAt: '2026-02-13T09:30:00.000Z',
+        },
+      })
+
+      vectorizeQuery.mockResolvedValueOnce({
+        matches: [
+          {
+            id: oldStored.details.id,
+            score: 0.9,
+            metadata: { did: 'did:cf:agent-auto-recall-recency-rank', collection: 'agent.memory.note' },
+          },
+          {
+            id: recentStored.details.id,
+            score: 0.8,
+            metadata: { did: 'did:cf:agent-auto-recall-recency-rank', collection: 'agent.memory.note' },
+          },
+        ],
+      })
+
+      await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+      await storage.put('pendingEvents', [{ ts: Date.now(), type: 'recency-rank-query' }])
+      await agent.alarm()
+
+      const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+      const recentIndex = promptArg.indexOf('Recent lower score memory')
+      const oldIndex = promptArg.indexOf('Old high score memory')
+      expect(recentIndex).toBeGreaterThanOrEqual(0)
+      expect(oldIndex).toBeGreaterThanOrEqual(0)
+      expect(recentIndex).toBeLessThan(oldIndex)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders relative age labels in auto-recall memory bullets', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-02-13T12:00:00.000Z'))
+    try {
+      const embedding = Array.from({ length: 1024 }, (_, i) => i / 1024)
+      const aiRun = vi.fn().mockResolvedValue({ data: [embedding] })
+      const vectorizeQuery = vi.fn().mockResolvedValue({ matches: [] })
+      const vectorizeUpsert = vi.fn().mockResolvedValue(undefined)
+      const promptFn = vi.fn().mockResolvedValue({ content: 'ack', toolCalls: [] })
+      const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+      const { state, storage } = createState('agent-auto-recall-age-labels')
+      const { env } = createEnv({
+        PI_AGENT_FACTORY: agentFactory,
+        PI_AGENT_MODEL: { provider: 'test' },
+        AI: { run: aiRun },
+        VECTORIZE: { query: vectorizeQuery, upsert: vectorizeUpsert },
+      })
+
+      const { AgentDO } = await import('./agent')
+      const agent = new AgentDO(state as never, env as never)
+      await agent.fetch(new Request('https://example/identity'))
+
+      const tools = (agent as any).tools as Array<{ name: string; execute: (...args: any[]) => Promise<any> }>
+      const remember = tools.find((t) => t.name === 'remember')
+      expect(remember).toBeTruthy()
+
+      const hoursAgoStored = await remember!.execute('tc-auto-age-2h', {
+        record: {
+          $type: 'agent.memory.note',
+          summary: 'Two hour note',
+          text: 'Filed two hours ago.',
+          createdAt: '2026-02-13T10:00:00.000Z',
+        },
+      })
+
+      const yesterdayStored = await remember!.execute('tc-auto-age-yesterday', {
+        record: {
+          $type: 'agent.memory.note',
+          summary: 'Yesterday note',
+          text: 'Filed yesterday.',
+          createdAt: '2026-02-12T06:00:00.000Z',
+        },
+      })
+
+      vectorizeQuery.mockResolvedValueOnce({
+        matches: [
+          {
+            id: hoursAgoStored.details.id,
+            score: 0.91,
+            metadata: { did: 'did:cf:agent-auto-recall-age-labels', collection: 'agent.memory.note' },
+          },
+          {
+            id: yesterdayStored.details.id,
+            score: 0.89,
+            metadata: { did: 'did:cf:agent-auto-recall-age-labels', collection: 'agent.memory.note' },
+          },
+        ],
+      })
+
+      await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+      await storage.put('pendingEvents', [{ ts: Date.now(), type: 'age-label-query' }])
+      await agent.alarm()
+
+      const promptArg = String(promptFn.mock.calls[0]?.[0] ?? '')
+      expect(promptArg).toContain('[2h ago]')
+      expect(promptArg).toContain('[yesterday]')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('omits the relevant memories section when no memories exist', async () => {

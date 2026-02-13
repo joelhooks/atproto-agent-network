@@ -503,6 +503,20 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: Generalizing `recallMemories()` with `RecallMemoriesOptions` (memory + did + shared prefixes) in `apps/network/src/agent.ts` let both `recall` and `environment_recall` share Vectorize + fallback behavior without branching logic drift.\nGotcha: `environment_remember` cross-agent sharing is best-effort and depends on `env.AGENTS` identity fetches (`/identity`) for recipient encryption keys; without that binding, records are still written under `did:env:*` but only directly decryptable by the writer unless shared metadata exists.\nFiles Context: `apps/network/src/agent.ts` is the implementation source for shared env memory tools/config/prompt behavior. `apps/network/src/agent-do.test.ts` contains the new RED→GREEN regression coverage for namespace storage, semantic recall, [shared] prompt labeling, and environment isolation."
+    },
+    {
+      "id": "story-mllcqxai",
+      "title": "Memory dedup on store — skip or merge when >0.9 similarity exists",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` can share a single `detectMemoryDedup()` path across private and environment memory by parameterizing `{memory, namespaceDid}` and optional shared retrieval. This keeps threshold behavior and Vectorize query shape (`topK: 1`, `filter.did`) consistent between `remember` and `environment_remember`.\nGotcha: Merge in the 0.7-0.9 band depends on retrieving and updating the matched record. If the Vectorize match is not retrievable/updatable (stale index entry or non-updatable shared record), the code intentionally falls back to normal store; dedup skip still only applies to score > 0.9.\nFiles Context: `apps/network/src/agent.ts` contains all dedup logic: thresholds at `:235`, helper `detectMemoryDedup()` at `:3405`, dedup event logging at `:3482`, remember integration at `:3553`, and environment_remember integration at `:3674`. `apps/network/src/agent-do.test.ts` has the new acceptance-style unit tests at `:915`, `:985`, and `:1042`."
     }
   ],
   "failures": [

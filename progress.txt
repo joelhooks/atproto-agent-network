@@ -1066,3 +1066,39 @@ Cross-agent shared recall depends on `environment_remember` being able to resolv
 Completed: Memory dedup on store — skip or merge when >0.9 similarity exists
 Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
 Summary: Implemented memory dedup on store in `apps/network/src/agent.ts` for both `remember` and `environment_remember` using Vectorize semantic similarity (top-1). Behavior now is: score `> 0.9` skips store and returns existing ID, score `0.7-0.9` attempts merge via `EncryptedMemory.update`, and score `< 0.7` stores normally; all dedup actions emit `agent.memory.dedup` observability events. Added RED/GREEN unit tests in `apps/network/src/agent-do.test.ts` for duplicate skip, novel store, and dedup event logging.
+
+---
+[2026-02-13T21:07:27.591Z]
+Completed: Memory recency weighting — boost recent memories in auto-recall results
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, prd.json, progress.txt
+Summary: Implemented recency-weighted auto-recall and relative age labels.
+
+Changes made:
+- `apps/network/src/agent.ts:223` added time-window constants for recency math.
+- `apps/network/src/agent.ts:2042` added `parseMemoryCreatedAt()` to safely parse memory `createdAt`.
+- `apps/network/src/agent.ts:2051` added `getAutoRecallRecencyBonus()` with required bonuses: `<1h = 0.3`, `<6h = 0.2`, `<24h = 0.1`, older `0.0`.
+- `apps/network/src/agent.ts:2062` added `applyAutoRecallRecencyWeight()` to compute `score * (1 + recency_bonus)` and re-sort by weighted score.
+- `apps/network/src/agent.ts:2090` added `formatMemoryAgeLabel()` to render labels like `[2h ago]` and `[yesterday]`.
+- `apps/network/src/agent.ts:2106` updated memory bullet rendering to inject age labels.
+- `apps/network/src/agent.ts:2118` updated auto-recall section assembly to use recency-ranked results.
+- `apps/network/src/agent-do.test.ts:3735` added unit test verifying recent lower-score memory ranks above older higher-score memory.
+- `apps/network/src/agent-do.test.ts:3809` added unit test verifying age labels render in injected prompt text.
+- `apps/network/src/agent-do.test.ts:3680` updated existing expectation from raw timestamp to relative-age label format.
+
+Prior failure pattern detected: `test_failure`, `verification_rejected`, and `unknown` (`check-types` script issue). Mitigation: wrote failing tests first (RED), changed required target file (`apps/network/src/agent.ts`) explicitly, kept scope limited to this story, and ran the exact required validation command.
+
+Validation run:
+- `cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20`
+- Result: `23 passed | 2 skipped` test files, `361 passed | 6 skipped` tests.
+
+Required post-work commands completed:
+- `swarm memory store ...` stored as `mem-42b1233c97e88c5d`
+- `openclaw system event --mode now --text "Ralph: completed Memory recency weighting — boost recent memories in auto-recall results"`
+
+## Learnings
+### Technical Discovery
+`buildRelevantMemoriesSection()` in `apps/network/src/agent.ts` is the correct single integration point for recency-aware auto-recall ordering, because both private and shared recall candidates are already unified there before prompt injection.
+### Gotcha for Next Iteration
+If a memory lacks a numeric vector score (fallback recall path), keep stable order behavior; recency weighting should boost scored semantic matches, not unintentionally reshuffle non-scored fallback items.
+### Files Context
+`apps/network/src/agent.ts` now owns both recency weighting (`applyAutoRecallRecencyWeight`) and human-readable age labels (`formatMemoryAgeLabel`) for auto-recall prompt injection. `apps/network/src/agent-do.test.ts` contains the acceptance-style coverage for ranking and label formatting under the AgentDO alarm loop.

@@ -1190,7 +1190,7 @@
       "title": "Memory recency weighting — boost recent memories in auto-recall results",
       "description": "Weight auto-recall results by recency so recent memories are preferred over stale ones.\n\n**Implementation:**\n1. When auto-recall runs in buildThinkPrompt, after getting Vectorize results:\n   a. Parse the `createdAt` timestamp from each memory record\n   b. Apply a recency multiplier: score * (1 + recency_bonus)\n   c. Recency bonus: 0.3 for <1h old, 0.2 for <6h, 0.1 for <24h, 0.0 for older\n2. Re-sort results by weighted score\n3. Add the age indicator to the injected memory text (e.g., \"[2h ago]\", \"[yesterday]\")\n\n**Key files:**\n- `apps/network/src/agent.ts` — auto-recall logic in buildThinkPrompt\n\n**Tests:**\n- Unit test: recent memory with lower base score ranks above old memory with higher base score\n- Unit test: age labels render correctly\n\n**Acceptance criteria:**\n- Auto-recall results are weighted by recency\n- Age labels shown in injected memory text\n- Old memories still surface if highly relevant (recency is a boost, not a filter)",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx vitest run --reporter=verbose 2>&1 | tail -20",
       "targetFiles": [
         "apps/network/src/agent.ts"
@@ -1199,8 +1199,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 103,
-    "lastIteration": "2026-02-13T21:02:31.290Z"
+    "totalIterations": 104,
+    "lastIteration": "2026-02-13T21:07:27.588Z"
   },
   "totalStories": 11
 }

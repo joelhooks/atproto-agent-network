@@ -220,6 +220,10 @@ const DEFAULT_MAX_BROADCAST_AGE = 3
 const AUTO_RECALL_LIMIT = 5
 const AUTO_RECALL_SHARED_LIMIT = 3
 const AUTO_RECALL_MAX_TOKENS = 500
+const ONE_HOUR_MS = 60 * 60 * 1000
+const SIX_HOURS_MS = 6 * ONE_HOUR_MS
+const ONE_DAY_MS = 24 * ONE_HOUR_MS
+const TWO_DAYS_MS = 2 * ONE_DAY_MS
 
 const GOALS_ARCHIVE_STORAGE_KEY = 'goalsArchive'
 
@@ -2035,16 +2039,80 @@ export class AgentDO extends DurableObject {
     return queryParts.filter(Boolean).join('\n')
   }
 
-  private buildMemoryBulletLine(memory: RecallResult): string {
+  private parseMemoryCreatedAt(record: EncryptedMemoryRecord): string | null {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return null
+    const createdAt = (record as Record<string, unknown>).createdAt
+    if (typeof createdAt !== 'string') return null
+    const normalized = createdAt.trim()
+    if (!normalized || !Number.isFinite(Date.parse(normalized))) return null
+    return normalized
+  }
+
+  private getAutoRecallRecencyBonus(createdAt: string | null, observedAt: number): number {
+    if (!createdAt) return 0
+    const createdAtMs = Date.parse(createdAt)
+    if (!Number.isFinite(createdAtMs)) return 0
+    const ageMs = Math.max(0, observedAt - createdAtMs)
+    if (ageMs < ONE_HOUR_MS) return 0.3
+    if (ageMs < SIX_HOURS_MS) return 0.2
+    if (ageMs < ONE_DAY_MS) return 0.1
+    return 0
+  }
+
+  private applyAutoRecallRecencyWeight(results: RecallResult[], observedAt: number): RecallResult[] {
+    return results
+      .map((result, index) => {
+        const baseScore = typeof result.score === 'number' && Number.isFinite(result.score) ? result.score : null
+        const createdAt = this.parseMemoryCreatedAt(result.record)
+        const recencyBonus = baseScore === null ? 0 : this.getAutoRecallRecencyBonus(createdAt, observedAt)
+        const weightedScore = baseScore === null ? Number.NEGATIVE_INFINITY : baseScore * (1 + recencyBonus)
+        return {
+          result,
+          index,
+          baseScore,
+          weightedScore,
+        }
+      })
+      .sort((a, b) => {
+        const aHasScore = a.baseScore !== null
+        const bHasScore = b.baseScore !== null
+        if (aHasScore && bHasScore) {
+          if (a.weightedScore !== b.weightedScore) return b.weightedScore - a.weightedScore
+          if (a.baseScore !== b.baseScore) return (b.baseScore ?? 0) - (a.baseScore ?? 0)
+          return a.index - b.index
+        }
+        if (aHasScore !== bHasScore) return aHasScore ? -1 : 1
+        return a.index - b.index
+      })
+      .map((entry) => entry.result)
+  }
+
+  private formatMemoryAgeLabel(createdAt: string | null, observedAt: number): string {
+    if (!createdAt) return 'unknown time'
+    const createdAtMs = Date.parse(createdAt)
+    if (!Number.isFinite(createdAtMs)) return 'unknown time'
+    const deltaMs = Math.max(0, observedAt - createdAtMs)
+    const seconds = Math.max(1, Math.floor(deltaMs / 1000))
+    if (seconds < 60) return `${seconds}s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    if (deltaMs < TWO_DAYS_MS) return 'yesterday'
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
+  }
+
+  private buildMemoryBulletLine(memory: RecallResult, observedAt: number): string {
     const rec = memory.record as Record<string, unknown>
-    const createdAtRaw = typeof rec.createdAt === 'string' ? rec.createdAt.trim() : ''
-    const createdAt = createdAtRaw && Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : 'unknown time'
+    const createdAt = this.parseMemoryCreatedAt(memory.record)
+    const ageLabel = this.formatMemoryAgeLabel(createdAt, observedAt)
     const summary = typeof rec.summary === 'string' ? rec.summary : ''
     const text = typeof rec.text === 'string' ? rec.text : ''
     const payload = [summary, text].filter((part) => part.trim().length > 0).join(' ')
     const normalizedPayload = (payload || JSON.stringify(memory.record)).replace(/\s+/g, ' ').trim()
     const sharedLabel = memory.shared ? '[shared] ' : ''
-    return `- ${sharedLabel}[${createdAt}] ${normalizedPayload}`
+    return `- ${sharedLabel}[${ageLabel}] ${normalizedPayload}`
   }
 
   private async buildRelevantMemoriesSection(observations: Observations, gameContext: string): Promise<string[]> {
@@ -2054,13 +2122,14 @@ export class AgentDO extends DurableObject {
     const sharedResults = await this.recallEnvironmentMemories(query, activeEnvironmentIds, AUTO_RECALL_SHARED_LIMIT)
     const combinedResults = [...results.slice(0, AUTO_RECALL_LIMIT), ...sharedResults]
     if (combinedResults.length === 0) return []
+    const rankedResults = this.applyAutoRecallRecencyWeight(combinedResults, observations.observedAt)
 
     const sectionLines = ['📝 Relevant memories:']
     // Reserve a tiny buffer for join/newline overhead so the section stays within ~500 tokens.
     const maxChars = AUTO_RECALL_MAX_TOKENS * 4 - 8
 
-    for (const memory of combinedResults) {
-      const rawLine = this.buildMemoryBulletLine(memory)
+    for (const memory of rankedResults) {
+      const rawLine = this.buildMemoryBulletLine(memory, observations.observedAt)
       const currentText = sectionLines.join('\n')
       const availableChars = maxChars - currentText.length - 1
       if (availableChars <= 0) break
