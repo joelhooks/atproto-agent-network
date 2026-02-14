@@ -966,7 +966,7 @@ export default {
                 return Response.json({ error: `Unknown environment type: ${type}` }, { status: 404 })
               }
 
-              const hostAgent = players[0] ?? 'unknown'
+              const hostAgent = 'grimlock'
               const hostDidRow = await env.DB.prepare('SELECT did FROM agents WHERE name = ?')
                 .bind(hostAgent)
                 .first<{ did: string }>()
