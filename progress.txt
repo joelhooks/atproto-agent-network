@@ -1439,3 +1439,17 @@ Implemented ADR-0002 Phase 5 extraction:
 Required post-steps completed:
 - `swarm memory store ...` (stored `mem-5b3e31f1a3a30b8b`)
 - `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 5: Extract context builder and auto-play strategy"`
+
+---
+[2026-02-14T04:04:41.432Z]
+Completed: ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/auto-play.test.ts, apps/network/src/environments/rpg/auto-play.ts, apps/network/src/environments/rpg/context-builder.test.ts, apps/network/src/environments/rpg/context-builder.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: `test_failure`. Mitigation used: tight RED→GREEN loop with a focused shell test first, then full validation.
+
+Implemented Phase 6 orchestration wiring by converting `apps/network/src/environments/rpg.ts:1` into a thin export shell (12 lines) and moving the runtime orchestrator into `apps/network/src/environments/rpg/environment.ts`. Reactive event wiring was extracted into `apps/network/src/environments/rpg/events/game-events.ts:1`, and `environment.ts` now imports/uses that module (`apps/network/src/environments/rpg/environment.ts:91`, `apps/network/src/environments/rpg/environment.ts:926`).
+
+Added a regression test enforcing the thin-shell contract in `apps/network/src/environments/rpg-shell.test.ts:1` (line-count <= 500 and delegation to `./rpg/environment`).
+
+Required follow-up commands completed:
+- `swarm memory store ...` → stored `mem-b1485b3c21319a6e`
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith"`

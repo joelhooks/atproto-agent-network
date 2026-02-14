@@ -1264,7 +1264,8 @@
       "title": "ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith",
       "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nWire up the orchestrator: rpg.ts should now be a thin shell that imports from all extracted modules. Verify all imports work, all tests pass, and rpg.ts is under 500 lines.\n\nIf rpg.ts is already thin enough from prior phases, just clean up any remaining dead code and ensure the barrel exports are correct.\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 129,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "passes": true
     },
     {
       "id": "story-mllorwe9",
@@ -1301,8 +1302,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 115,
-    "lastIteration": "2026-02-14T03:59:31.567Z"
+    "totalIterations": 116,
+    "lastIteration": "2026-02-14T04:04:41.428Z"
   },
   "totalStories": 11
 }
