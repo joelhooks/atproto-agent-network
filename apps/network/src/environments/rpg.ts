@@ -10,9 +10,6 @@ import {
   type Enemy,
   type CampaignPartyMemberSeed,
   cloneEnemiesForCombat,
-  advanceHubTownIdleTurns,
-  createHubTownState,
-  DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS,
   createCharacter,
   createDice,
   createGame,
@@ -81,23 +78,28 @@ import {
   calculateEncounterXp as calculateEncounterXpSystem,
 } from './rpg/systems/xp-system'
 import {
-  buyHubTownItem as buyHubTownItemSystem,
   ensureCharacterLootState as ensureCharacterLootStateSystem,
   makeShopHealingPotion as makeShopHealingPotionSystem,
   maybeAwardEnemyDrop as maybeAwardEnemyDropSystem,
   normalizePartyLootState as normalizePartyLootStateSystem,
   resolveTreasureLoot as resolveTreasureLootSystem,
-  sellHubTownItem as sellHubTownItemSystem,
 } from './rpg/systems/loot-system'
 import {
   resolveCombatAttack,
   runEnemyFreeAttackRound as runEnemyFreeAttackRoundSystem,
 } from './rpg/systems/combat-resolver'
 import {
+  buyFromHubTownMarket as buyFromHubTownMarketSystem,
   buildHubTownNarration as buildHubTownNarrationSystem,
   countHubTownIdleTurn as countHubTownIdleTurnSystem,
   ensureHubTownState as ensureHubTownStateSystem,
+  HUB_TOWN_LOCATIONS as HUB_TOWN_LOCATIONS_SYSTEM,
+  HUB_TOWN_LOCATION_LABEL as HUB_TOWN_LOCATION_LABEL_SYSTEM,
   resetHubTownIdle as resetHubTownIdleSystem,
+  sellToHubTownMarket as sellToHubTownMarketSystem,
+  tickHubTownDowntime as tickHubTownDowntimeSystem,
+  transitionCampaignCompletionToHubTown as transitionCampaignCompletionToHubTownSystem,
+  visitHubTownLocation as visitHubTownLocationSystem,
 } from './rpg/systems/hub-town'
 
 import type { PersistentCharacter } from '@atproto-agent/core'
@@ -828,30 +830,8 @@ function makeShopHealingPotion(dice: ReturnType<typeof createDice>) {
   return makeShopHealingPotionSystem(dice)
 }
 
-function buyHubTownItem(actor: Character, itemId: string) {
-  return buyHubTownItemSystem(actor, itemId)
-}
-
-function sellHubTownItem(actor: Character, itemId: string) {
-  return sellHubTownItemSystem(actor, itemId)
-}
-
-const HUB_TOWN_LOCATIONS: readonly HubTownLocation[] = ['tavern', 'market', 'temple', 'guild_hall']
-
-const HUB_TOWN_LOCATION_LABEL: Record<HubTownLocation, string> = {
-  tavern: 'Hearthfire Tavern',
-  market: 'Lantern Market',
-  temple: 'Temple of Dawn',
-  guild_hall: "Adventurers' Guild Hall",
-}
-
-function normalizeHubTownLocation(value: unknown): HubTownLocation | null {
-  const location = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (location === 'tavern' || location === 'market' || location === 'temple' || location === 'guild_hall') {
-    return location
-  }
-  return null
-}
+const HUB_TOWN_LOCATIONS: readonly HubTownLocation[] = HUB_TOWN_LOCATIONS_SYSTEM
+const HUB_TOWN_LOCATION_LABEL: Record<HubTownLocation, string> = HUB_TOWN_LOCATION_LABEL_SYSTEM
 
 function ensureHubTownState(game: RpgGameState): HubTownState {
   return ensureHubTownStateSystem(game)
@@ -870,26 +850,23 @@ function buildHubTownNarration(game: RpgGameState, input: { location: HubTownLoc
 }
 
 function transitionCampaignCompletionToHubTown(game: RpgGameState, beforePhase: RpgGameState['phase']): { completed: boolean; enteredHubTown: boolean } {
-  if (beforePhase !== 'playing' || game.phase !== 'finished') return { completed: false, enteredHubTown: false }
+  return transitionCampaignCompletionToHubTownSystem(game, beforePhase)
+}
 
-  const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
-  if (!campaignId) return { completed: true, enteredHubTown: false }
+function visitHubTownLocation(game: RpgGameState, input: { agentName: string; location: unknown }) {
+  return visitHubTownLocationSystem(game, input)
+}
 
-  const hub = ensureHubTownState(game)
-  hub.location = 'tavern'
-  hub.idleTurns = 0
-  hub.autoEmbarkAfter = Math.max(1, hub.autoEmbarkAfter || DEFAULT_HUB_TOWN_AUTO_EMBARK_TURNS)
+function buyFromHubTownMarket(game: RpgGameState, input: { agentName: string; itemId: unknown }) {
+  return buyFromHubTownMarketSystem(game, input)
+}
 
-  game.phase = 'hub_town'
-  game.mode = 'finished'
-  game.combat = undefined
+function sellToHubTownMarket(game: RpgGameState, input: { agentName: string; itemId: unknown }) {
+  return sellToHubTownMarketSystem(game, input)
+}
 
-  const initiative = computeInitiativeOrder(game.party ?? [])
-  const living = initiative.find((member) => isLiving(member))
-  if (living) game.currentPlayer = characterId(living)
-
-  game.log.push({ at: Date.now(), who: 'GM', what: 'hub_town: the party returns to town between adventures.' })
-  return { completed: true, enteredHubTown: true }
+function tickHubTownDowntime(game: RpgGameState) {
+  return tickHubTownDowntimeSystem(game)
 }
 
 function livingPartyIds(game: RpgGameState): string[] {
@@ -1927,22 +1904,8 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         if (command === 'visit_location') {
-          if (game.phase !== 'hub_town') {
-            return { ok: false, error: 'visit_location is only available in hub_town.' }
-          }
-          if (game.currentPlayer !== ctx.agentName.trim()) {
-            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
-          }
-
-          const location = normalizeHubTownLocation(params.location)
-          if (!location) {
-            return { ok: false, error: `location required: ${HUB_TOWN_LOCATIONS.join(', ')}` }
-          }
-
-          const hub = ensureHubTownState(game)
-          hub.location = location
-          resetHubTownIdle(game)
-          advanceTurn(game)
+          const visit = visitHubTownLocation(game, { agentName: ctx.agentName, location: params.location })
+          if (!visit.ok) return { ok: false, error: visit.error }
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -1952,34 +1915,17 @@ export const rpgEnvironment: AgentEnvironment = {
           return {
             content: toTextContent(
               `${buildHubTownNarration(game, {
-                location,
-                cue: `You make your way to the ${HUB_TOWN_LOCATION_LABEL[location]}.`,
+                location: visit.location,
+                cue: `You make your way to the ${HUB_TOWN_LOCATION_LABEL[visit.location]}.`,
               })}\n\nParty: ${summarizeParty(game)}`
             ),
-            details: { gameId, location },
+            details: { gameId, location: visit.location },
           }
         }
 
         if (command === 'buy_item') {
-          if (game.phase !== 'hub_town') return { ok: false, error: 'buy_item is only available in hub_town.' }
-          if (game.currentPlayer !== ctx.agentName.trim()) {
-            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
-          }
-
-          const hub = ensureHubTownState(game)
-          if (hub.location !== 'market') {
-            return { ok: false, error: 'You must be at the market to buy items. Use visit_location("market").' }
-          }
-
-          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
-          if (!actor) throw new Error('Create your character before buying items')
-          ensureCharacterLootState(actor)
-
-          const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
-          const purchase = buyHubTownItem(actor, itemId)
+          const purchase = buyFromHubTownMarket(game, { agentName: ctx.agentName, itemId: params.itemId })
           if (!purchase.ok) return { ok: false, error: purchase.error }
-          resetHubTownIdle(game)
-          advanceTurn(game)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -1988,32 +1934,15 @@ export const rpgEnvironment: AgentEnvironment = {
 
           return {
             content: toTextContent(
-              `Bought ${purchase.listing.id} (${purchase.listing.item.name}) for ${purchase.listing.cost} gold. (${actor.gold} gold remaining)`
+              `Bought ${purchase.itemId} (${purchase.itemName}) for ${purchase.cost} gold. (${purchase.gold} gold remaining)`
             ),
-            details: { gameId, itemId, gold: actor.gold },
+            details: { gameId, itemId: purchase.itemId, gold: purchase.gold },
           }
         }
 
         if (command === 'sell_item') {
-          if (game.phase !== 'hub_town') return { ok: false, error: 'sell_item is only available in hub_town.' }
-          if (game.currentPlayer !== ctx.agentName.trim()) {
-            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
-          }
-
-          const hub = ensureHubTownState(game)
-          if (hub.location !== 'market') {
-            return { ok: false, error: 'You must be at the market to sell items. Use visit_location("market").' }
-          }
-
-          const actor = game.party.find((p) => isCharacter(p, ctx.agentName.trim() || 'unknown'))
-          if (!actor) throw new Error('Create your character before selling items')
-          ensureCharacterLootState(actor)
-
-          const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
-          const sale = sellHubTownItem(actor, itemId)
+          const sale = sellToHubTownMarket(game, { agentName: ctx.agentName, itemId: params.itemId })
           if (!sale.ok) return { ok: false, error: sale.error }
-          resetHubTownIdle(game)
-          advanceTurn(game)
 
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -2021,8 +1950,8 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return {
-            content: toTextContent(`Sold ${sale.itemId} (${sale.item.name}) for ${sale.value} gold. (${actor.gold} gold total)`),
-            details: { gameId, itemId: sale.itemId, gold: actor.gold, value: sale.value },
+            content: toTextContent(`Sold ${sale.itemId} (${sale.itemName}) for ${sale.value} gold. (${sale.gold} gold total)`),
+            details: { gameId, itemId: sale.itemId, gold: sale.gold, value: sale.value },
           }
         }
 
@@ -3753,18 +3682,16 @@ export const rpgEnvironment: AgentEnvironment = {
       }
 
       if (state.phase === 'hub_town') {
-        const hub = ensureHubTownState(state)
-        if (hub.idleTurns >= hub.autoEmbarkAfter) {
+        const tick = tickHubTownDowntime(state)
+        if (tick.alreadyReady) {
           return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
         }
 
-        const next = advanceHubTownIdleTurns(hub)
-        ;(state as Record<string, unknown>).hubTown = next.state as unknown as Record<string, unknown>
         await ctx.db
           .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
           .bind(JSON.stringify(state), state.phase, (state as any).winner ?? null, row.id)
           .run()
-        if (next.shouldEmbark) {
+        if (tick.shouldEmbark) {
           return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
         }
         return []

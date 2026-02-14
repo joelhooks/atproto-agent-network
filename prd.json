@@ -1276,14 +1276,14 @@
       "title": "ADR-0002 Phase 2c: Extract hub-town system from rpg.ts",
       "description": "Extract hub-town into `apps/network/src/environments/rpg/systems/hub-town.ts`.\n\n**Hub town** (`hub-town.ts`): Extract shop locations, buy/sell handlers, embark logic, idle tracking, downtime phase management.\n\nImport from Phase 1 interfaces. Re-export to keep rpg.ts imports working. Do NOT touch turn/combat/loot/XP (already extracted).\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 123,
-      "passes": false,
+      "passes": true,
       "validationCommand": "bun run check-types && bun run test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 108,
-    "lastIteration": "2026-02-14T02:30:58.227Z"
+    "totalIterations": 109,
+    "lastIteration": "2026-02-14T02:39:35.064Z"
   },
   "totalStories": 11
 }

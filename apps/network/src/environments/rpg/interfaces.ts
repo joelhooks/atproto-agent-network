@@ -6,6 +6,8 @@ import type {
   Character,
   Dice,
   Enemy,
+  HubTownLocation,
+  HubTownState,
   RpgGameState,
   StoryArc,
   WorldState,
@@ -136,6 +138,38 @@ export interface XpSystem {
   awardKill(game: RpgGameState, who: string, enemy: Enemy): void
   awardRoomClear(game: RpgGameState): void
   addLogged(game: RpgGameState, who: string, amount: number, reason: string): void
+}
+
+export type HubTownVisitResult =
+  | { ok: true; location: HubTownLocation }
+  | { ok: false; error: string }
+
+export type HubTownTradeResult =
+  | { ok: true; itemId: string; gold: number }
+  | { ok: false; error: string }
+
+export type HubTownTransitionResult = {
+  completed: boolean
+  enteredHubTown: boolean
+}
+
+export type HubTownDowntimeResult = {
+  hub: HubTownState
+  shouldEmbark: boolean
+  alreadyReady: boolean
+}
+
+export interface HubTownSystem {
+  normalizeLocation(value: unknown): HubTownLocation | null
+  ensureState(game: RpgGameState): HubTownState
+  resetIdle(game: RpgGameState): void
+  countIdleTurn(game: RpgGameState): number
+  buildNarration(game: RpgGameState, input: { location: HubTownLocation; cue: string }): string
+  visit(game: RpgGameState, input: { agentName: string; location: unknown }): HubTownVisitResult
+  buy(game: RpgGameState, input: { agentName: string; itemId: unknown }): HubTownTradeResult
+  sell(game: RpgGameState, input: { agentName: string; itemId: unknown }): HubTownTradeResult
+  transitionCampaignCompletion(game: RpgGameState, beforePhase: RpgGameState['phase']): HubTownTransitionResult
+  tickDowntime(game: RpgGameState): HubTownDowntimeResult
 }
 
 export interface ContextBuilder {
