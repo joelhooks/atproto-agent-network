@@ -1544,6 +1544,20 @@ export class AgentDO extends DurableObject {
           const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
           const msg = JSON.stringify(event)
           for (const ws of sockets) { try { ws.send(msg) } catch {} }
+          // Forward environment events to relay firehose
+          try {
+            const evtType = String(event.event_type ?? 'env.unknown')
+            await this.emitToRelay({
+              id: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              agent_did: did,
+              agent_name: agentName,
+              session_id: await this.getOrCreateSessionId(),
+              event_type: evtType,
+              collection: evtType.startsWith('env.') || evtType.startsWith('game.') ? evtType : `env.${evtType}`,
+              created_at: new Date().toISOString(),
+              context: event,
+            } as any)
+          } catch { /* best-effort */ }
         },
         loadCharacter: async () => (await ctxStorage.get('rpg:character')) ?? null,
         saveCharacter: async (character: unknown) => { await ctxStorage.put('rpg:character', character) },
@@ -2533,6 +2547,20 @@ export class AgentDO extends DurableObject {
 	            const sockets = (this.ctx as unknown as { getWebSockets?: () => WebSocket[] }).getWebSockets?.() ?? []
 	            const msg = JSON.stringify(event)
 	            for (const ws of sockets) { try { ws.send(msg) } catch {} }
+	            // Forward environment events to relay firehose
+	            try {
+	              const evtType = String(event.event_type ?? 'env.unknown')
+	              await this.emitToRelay({
+	                id: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	                agent_did: did,
+	                agent_name: agentName,
+	                session_id: await this.getOrCreateSessionId(),
+	                event_type: evtType,
+	                collection: evtType.startsWith('env.') || evtType.startsWith('game.') ? evtType : `env.${evtType}`,
+	                created_at: new Date().toISOString(),
+	                context: event,
+	              } as any)
+	            } catch { /* best-effort */ }
 	          },
 	          loadCharacter: async () => (await autoPlayStorage.get('rpg:character')) ?? null,
 	          saveCharacter: async (character: unknown) => { await autoPlayStorage.put('rpg:character', character) },

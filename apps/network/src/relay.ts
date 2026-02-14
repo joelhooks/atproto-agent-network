@@ -37,7 +37,7 @@ interface AgentRegistration {
 export class RelayDO extends DurableObject {
   private readonly relayEnv: RelayEnv
   // Tokenless feed allowlist. Keep this tight until "member auth" exists.
-  private static readonly PUBLIC_COLLECTIONS = ['loop.*', 'agent.think_aloud', 'agent.comms.message', 'agent.comms.broadcast', 'game.*']
+  private static readonly PUBLIC_COLLECTIONS = ['loop.*', 'agent.think_aloud', 'agent.comms.message', 'agent.comms.broadcast', 'game.*', 'env.*']
 
   private static isWebSocketHandshake(request: Request): boolean {
     // RFC 8441 "Extended CONNECT" for WebSockets over HTTP/2 uses method CONNECT

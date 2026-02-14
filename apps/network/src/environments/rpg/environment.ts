@@ -1036,7 +1036,10 @@ export const rpgEnvironment: AgentEnvironment = {
             gameId,
             ctx,
           })
-          if (socialResult) return socialResult
+          if (socialResult) {
+            try { await ctx.broadcast({ event_type: 'env.rpg.setup', gameId, agent: ctx.agentName, command, phase: game.phase, setupPhase: (game as any).setupPhase?.currentStep ?? null }) } catch {}
+            return socialResult
+          }
         }
 
         // While setup is active, block normal gameplay commands to prevent skipping backstories.
@@ -1089,6 +1092,7 @@ export const rpgEnvironment: AgentEnvironment = {
             before: beforeCommandState,
             after: { phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer },
           })
+          try { await ctx.broadcast({ event_type: 'env.rpg.action', gameId, agent: agentName, command, phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer, roomIndex: game.roomIndex, round: game.round }) } catch {}
           return explorationResult
         }
 
@@ -1112,6 +1116,7 @@ export const rpgEnvironment: AgentEnvironment = {
             before: beforeCommandState,
             after: { phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer },
           })
+          try { await ctx.broadcast({ event_type: 'env.rpg.action', gameId, agent: agentName, command, phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer, roomIndex: game.roomIndex, round: game.round }) } catch {}
           return combatResult
         }
 
