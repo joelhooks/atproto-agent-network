@@ -1159,3 +1159,30 @@ Codex: Deploy attempt hit missing Cloudflare token in non-interactive mode. I’
 Completed: ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)
 Files: apps/network/src/environments/rpg/interfaces.ts, apps/network/src/environments/rpg/repositories/__tests__/in-memory.test.ts, apps/network/src/environments/rpg/repositories/__tests__/in-memory.ts, apps/network/src/environments/rpg/repositories/campaign.d1.test.ts, apps/network/src/environments/rpg/repositories/campaign.d1.ts, apps/network/src/environments/rpg/repositories/character.do-storage.test.ts, apps/network/src/environments/rpg/repositories/character.do-storage.ts, apps/network/src/environments/rpg/repositories/game-state.d1.test.ts, apps/network/src/environments/rpg/repositories/game-state.d1.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts
 Summary: Prior failure pattern detected: timeout/analysis_paralysis. Mitigation: I executed a strict, minimal loop (targeted test check -> full validation) without further broad exploration. ADR-0002 Phase 2 extraction is in place: `apps/network/src/environments/rpg.ts` now delegates turn/combat/loot/xp/hub-town logic to pure system modules, and each system has independent unit tests under `apps/network/src/environments/rpg/systems/`. I ran the required validation command (`pnpm typecheck && pnpm test`) successfully. I also ran required post-work reporting: `swarm memory store ...` and `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)"`.
+
+---
+[2026-02-14T02:22:51.112Z]
+Completed: ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/systems/combat-resolver.test.ts, apps/network/src/environments/rpg/systems/combat-resolver.ts, apps/network/src/environments/rpg/systems/hub-town.test.ts, apps/network/src/environments/rpg/systems/hub-town.ts, apps/network/src/environments/rpg/systems/loot-system.test.ts, apps/network/src/environments/rpg/systems/loot-system.ts, apps/network/src/environments/rpg/systems/turn-manager.test.ts, apps/network/src/environments/rpg/systems/turn-manager.ts, apps/network/src/environments/rpg/systems/xp-system.test.ts, apps/network/src/environments/rpg/systems/xp-system.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: analysis_paralysis. Mitigation used: minimal discovery, immediate RED test creation, then incremental extraction with compatibility shims.
+
+Implemented ADR-0002 Phase 2a by extracting turn and combat systems into new modules and keeping `rpg.ts` import compatibility via re-exports.
+
+Changes made:
+- Added new turn module: `apps/network/src/environments/rpg/systems/turn-system.ts`
+- Added new combat module: `apps/network/src/environments/rpg/systems/combat-system.ts`
+- Kept old imports stable by converting shims:
+  - `apps/network/src/environments/rpg/systems/turn-manager.ts` -> re-export from `turn-system`
+  - `apps/network/src/environments/rpg/systems/combat-resolver.ts` -> re-export from `combat-system`
+- Added RED/GREEN tests for new modules:
+  - `apps/network/src/environments/rpg/systems/turn-system.test.ts`
+  - `apps/network/src/environments/rpg/systems/combat-system.test.ts`
+
+TDD proof:
+- RED: new tests failed with module-not-found for `./turn-system` and `./combat-system`.
+- GREEN: after extraction, system tests passed.
+
+Required post-work project commands run:
+- `swarm memory find "ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts"`
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts"`

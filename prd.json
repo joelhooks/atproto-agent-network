@@ -1229,8 +1229,8 @@
     },
     {
       "id": "story-adr2-phase2",
-      "title": "ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)",
-      "description": "**ADR-0002 Phase 2** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract pure game systems behind interfaces:\n\n1. `rpg/systems/turn-manager.ts` — advanceTurn, normalizeTurnState, computeInitiativeOrder, recomputeTurnOrder\n2. `rpg/systems/xp-system.ts` — addXpEarned, addLoggedXp, awardRoomClearXp, etc.\n3. `rpg/systems/loot-system.ts` — resolveTreasureLoot, maybeAwardEnemyDrop\n4. `rpg/systems/combat-resolver.ts` — runEnemyFreeAttackRound, attack resolution\n5. `rpg/systems/hub-town.ts` — hub town state management\n\nThese are pure functions (no I/O). Extract from rpg.ts and rpg-engine.ts helpers.\nAdd unit tests for each system independently.\n\nSuccess: All tests pass. Each system independently testable.",
+      "title": "ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts",
+      "description": "Extract ONLY turn management and combat into `apps/network/src/environments/rpg/systems/`. \n\n**Turn system** (`turn-system.ts`): Extract turn order logic, initiative calculation, skip-dead-players, advance turn — all functions that manage whose turn it is.\n\n**Combat system** (`combat-system.ts`): Extract combat resolution, damage calculation, BRP opposed rolls, crits/fumbles, enemy AI tactics, death handling.\n\nBoth should import from the interfaces/repositories created in Phase 1. Keep rpg.ts imports working — re-export from new modules if needed. Do NOT touch hub-town, loot, or XP systems yet.\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 121,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
       "passes": true
@@ -1239,35 +1239,51 @@
       "id": "story-adr2-phase3",
       "title": "ADR-0002 Phase 3: Extract campaign logic (normalizers, objectives, serialization)",
       "description": "**ADR-0002 Phase 3** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract campaign domain logic:\n\n1. `rpg/campaign/normalizers.ts` — all normalize* functions (~200 lines)\n2. `rpg/campaign/campaign-logic.ts` — pickCampaignObjective, resolveStoryArcsForAdventureOutcome, buildCampaignDungeonThread, disposition tracking\n3. `rpg/campaign/serialization.ts` — serializeWorldState, rowToCampaignState\n\nThese are already largely standalone functions. Extract and add tests.\n\nSuccess: All tests pass. Campaign logic independently testable.",
-      "priority": 122,
+      "priority": 124,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
       "id": "story-adr2-phase4",
       "title": "ADR-0002 Phase 4: Extract commands into CommandHandler implementations",
       "description": "**ADR-0002 Phase 4** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nConvert the ~1800-line switch statement into individual CommandHandler implementations:\n\n1. Create `rpg/commands/index.ts` with CommandRegistry (Map<string, CommandHandler>)\n2. Extract in order: simple (status, get_reputation, send_message) → hub town → setup → combat → lifecycle\n3. Each command implements the CommandHandler interface\n4. Commands mutate game state but do NOT save — orchestrator saves after command returns\n5. Add unit test per command using in-memory repositories\n\n**MEDIUM RISK** — largest change surface. Extract simple commands first, validate, then proceed.\n\nSuccess: All tests pass. Each command independently testable. No duplicate save calls.",
-      "priority": 123,
+      "priority": 125,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
       "id": "story-adr2-phase5",
       "title": "ADR-0002 Phase 5: Extract context builder and auto-play strategy",
       "description": "**ADR-0002 Phase 5** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract the context and auto-play modules:\n\n1. `rpg/context/context-builder.ts` — the 350-line buildContext() implementing ContextBuilder interface\n2. `rpg/context/auto-play.ts` — the 250-line getAutoPlayActions() implementing AutoPlayStrategy interface\n3. Inject CharacterRepository into context builder (currently loads persistent character directly)\n\n**LOW-MEDIUM RISK** — context builder is read-only but touches persistent characters, campaigns, feed messages, and class skills. Breakage = wrong prompt, not data corruption.\n\nSuccess: All tests pass. Context builder testable with in-memory repos.",
-      "priority": 124,
+      "priority": 126,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
       "id": "story-adr2-phase6",
       "title": "ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith",
       "description": "**ADR-0002 Phase 6** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nFinal assembly:\n\n1. `rpg/environment.ts` — thin AgentEnvironment orchestrator (~200 lines) with command registry dispatch\n2. `rpg/events/game-events.ts` — GameEventEmitter implementation (broadcast + campaign updates)\n3. `rpg/index.ts` — re-export rpgEnvironment\n4. Update all imports throughout the codebase to use new module paths\n5. DELETE the original `rpg.ts` monolith\n6. Verify no circular dependencies (arrows point DOWN in dependency graph)\n\nSuccess: All tests pass. rpg.ts is gone. rpg-engine.ts unchanged (zero diff). Live agents continue playing. GameEventEmitter wired up and ready for Phase 7.",
-      "priority": 125,
+      "priority": 128,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+    },
+    {
+      "id": "story-mllorwe9",
+      "title": "ADR-0002 Phase 2b: Extract loot + XP systems from rpg.ts",
+      "description": "Extract loot table generation and XP/leveling into `apps/network/src/environments/rpg/systems/`.\n\n**Loot system** (`loot-system.ts`): Extract tiered treasure generation, item stat effects, shop inventory, buy/sell logic.\n\n**XP system** (`xp-system.ts`): Extract XP rewards, milestone bonuses, level-up stat growth, encounter XP calculation.\n\nImport from Phase 1 interfaces. Re-export from new modules to keep rpg.ts imports working. Do NOT touch hub-town or turn/combat (already extracted).\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 122,
+      "passes": false,
+      "validationCommand": "bun run check-types && bun run test"
+    },
+    {
+      "id": "story-mllorx16",
+      "title": "ADR-0002 Phase 2c: Extract hub-town system from rpg.ts",
+      "description": "Extract hub-town into `apps/network/src/environments/rpg/systems/hub-town.ts`.\n\n**Hub town** (`hub-town.ts`): Extract shop locations, buy/sell handlers, embark logic, idle tracking, downtime phase management.\n\nImport from Phase 1 interfaces. Re-export to keep rpg.ts imports working. Do NOT touch turn/combat/loot/XP (already extracted).\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 123,
+      "passes": false,
+      "validationCommand": "bun run check-types && bun run test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
     "totalIterations": 107,
-    "lastIteration": "2026-02-14T02:19:14.363Z"
+    "lastIteration": "2026-02-14T02:22:51.109Z"
   },
   "totalStories": 11
 }
