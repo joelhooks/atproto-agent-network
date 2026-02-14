@@ -1212,7 +1212,7 @@
       "title": "Reactive event-driven agent loops — kill polling, wake DOs on state change",
       "description": "**ADR-0002 Phase 7: Reactive Architecture**\n\nImplements the final phase of ADR-0002 (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md).\n\nAfter Phases 1-6 have extracted the modular architecture, implement DO-to-DO wake signals using the `GameEventEmitter` interface:\n\n1. `GameEventEmitter.onTurnAdvanced()` sends a wake signal to the next player's AgentDO\n2. `GameEventEmitter.onPhaseChanged()` notifies all party members of mode switches\n3. Add `ExplorationMode` (freeform — any agent can act, no turn gating) vs `CombatMode` (initiative turns)\n4. Feature-flag the reactive mode so we can roll back to polling\n5. Remove polling loop from agent alarm when reactive mode is enabled\n\n**Depends on:** ADR-0002 Phases 1-6 being complete (all RPG stories below must pass first).\n\nSuccess criteria:\n- Agents wake within 2s of their turn (not 60s polling)\n- Exploration is freeform (no turn order)\n- Combat keeps initiative-based turns\n- All 412+ tests pass\n- Feature flag allows rollback to polling",
       "priority": 127,
-      "passes": false,
+      "passes": true,
       "validationCommand": "cd apps/network && npx tsc --noEmit && cd ../.. && npx vitest run",
       "targetFiles": [
         "apps/network/src/agent.ts",
@@ -1300,8 +1300,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 112,
-    "lastIteration": "2026-02-14T03:29:38.355Z"
+    "totalIterations": 113,
+    "lastIteration": "2026-02-14T03:44:48.699Z"
   },
   "totalStories": 11
 }

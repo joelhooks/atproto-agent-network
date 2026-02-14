@@ -233,9 +233,14 @@ const MAX_AGENT_EXTENSIONS = 10
 const MAX_EXTENSION_BYTES = 50 * 1024
 const EXTENSION_METRICS_PREFIX = 'extensionMetrics:'
 
-type AgentConfigWithTeamComms = AgentConfig & { teamCommsLimit?: number; maxBroadcastAge?: number }
+type AgentConfigWithTeamComms = AgentConfig & {
+  teamCommsLimit?: number
+  maxBroadcastAge?: number
+  reactiveMode?: boolean
+}
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
+const DEFAULT_REACTIVE_MODE = false
 const MEMORY_DEDUP_MERGE_THRESHOLD = 0.7
 const MEMORY_DEDUP_SKIP_THRESHOLD = 0.9
 type WorkersAiModelName = Parameters<Ai['run']>[0]
@@ -607,6 +612,11 @@ export class AgentDO extends DurableObject {
               () => this.handleInbox(request),
               { route: 'AgentDO.inbox', request }
             )
+          case 'wake':
+            return withErrorHandling(
+              () => this.handleWake(request),
+              { route: 'AgentDO.wake', request }
+            )
           case 'config':
             return withErrorHandling(
               () => this.handleConfig(request),
@@ -706,6 +716,7 @@ export class AgentDO extends DurableObject {
         typeof input.maxBroadcastAge === 'number' && Number.isFinite(input.maxBroadcastAge)
           ? this.normalizeMaxBroadcastAge(input.maxBroadcastAge)
           : base.maxBroadcastAge,
+      reactiveMode: this.normalizeReactiveMode(input.reactiveMode),
       goals: Array.isArray(input.goals) ? (input.goals.filter((g) => g && typeof g === 'object') as AgentConfig['goals']) : base.goals,
       enabledTools: Array.isArray(input.enabledTools)
         ? input.enabledTools.filter((tool): tool is string => typeof tool === 'string')
@@ -973,6 +984,7 @@ export class AgentDO extends DurableObject {
     // Check for passive mode — external brain drives think/act
     const loopMode = (storedConfig as any)?.loopMode ?? 'autonomous'
     const isPassive = loopMode === 'passive'
+    const reactiveModeEnabled = this.isReactiveModeEnabled(storedConfig)
 
     if (mode === 'housekeeping') {
       try {
@@ -1251,33 +1263,63 @@ export class AgentDO extends DurableObject {
         await this.ctx.storage.put('consecutiveErrors', 0)
       }
 
-      const scheduledAt = Date.now()
-      const nextAlarmAt = scheduledAt + nextInterval
-      await this.ctx.storage.setAlarm(nextAlarmAt)
-      logger.info('agent.alarm.schedule', {
-        span_id: createSpanId(),
-        context: {
-          nextAlarmAt,
-          intervalMs: nextInterval,
-          backoff: hadError,
-          category: selectedCategory,
-          streak: selectedCategory ? streak : 0,
-        },
-      })
-      try {
-        await this.broadcastLoopEvent({
-          event_type: 'loop.sleep',
-          trace_id: traceId,
+      if (reactiveModeEnabled && !hadError) {
+        await this.ctx.storage.deleteAlarm()
+        logger.info('agent.alarm.wait_signal', {
           span_id: createSpanId(),
           context: {
-            intervalMs: nextInterval,
-            nextAlarmAt: Date.now() + nextInterval,
-            backoff: hadError,
-            errorCategory: hadError ? selectAlarmErrorCategory(cycleErrors) : null,
+            reactiveMode: true,
+            reason: 'waiting_for_signal',
           },
         })
-      } catch {
-        // ignore
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.sleep',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            context: {
+              reactiveMode: true,
+              waitingForSignal: true,
+              intervalMs: null,
+              nextAlarmAt: null,
+              backoff: false,
+              errorCategory: null,
+            },
+          })
+        } catch {
+          // ignore
+        }
+      } else {
+        const scheduledAt = Date.now()
+        const nextAlarmAt = scheduledAt + nextInterval
+        await this.ctx.storage.setAlarm(nextAlarmAt)
+        logger.info('agent.alarm.schedule', {
+          span_id: createSpanId(),
+          context: {
+            nextAlarmAt,
+            intervalMs: nextInterval,
+            backoff: hadError,
+            category: selectedCategory,
+            streak: selectedCategory ? streak : 0,
+            reactiveMode: reactiveModeEnabled,
+          },
+        })
+        try {
+          await this.broadcastLoopEvent({
+            event_type: 'loop.sleep',
+            trace_id: traceId,
+            span_id: createSpanId(),
+            context: {
+              intervalMs: nextInterval,
+              nextAlarmAt: Date.now() + nextInterval,
+              backoff: hadError,
+              errorCategory: hadError ? selectAlarmErrorCategory(cycleErrors) : null,
+              reactiveMode: reactiveModeEnabled,
+            },
+          })
+        } catch {
+          // ignore
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -2764,6 +2806,7 @@ export class AgentDO extends DurableObject {
       maxCompletedGoals: DEFAULT_MAX_COMPLETED_GOALS,
       teamCommsLimit: DEFAULT_TEAM_COMMS_LIMIT,
       maxBroadcastAge: DEFAULT_MAX_BROADCAST_AGE,
+      reactiveMode: DEFAULT_REACTIVE_MODE,
       goals: [],
       enabledTools: [
         'remember',
@@ -2801,6 +2844,15 @@ export class AgentDO extends DurableObject {
   private normalizeMaxBroadcastAge(value: unknown): number {
     const raw = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_MAX_BROADCAST_AGE
     return Math.max(1, Math.floor(raw))
+  }
+
+  private normalizeReactiveMode(value: unknown): boolean {
+    return typeof value === 'boolean' ? value : DEFAULT_REACTIVE_MODE
+  }
+
+  private isReactiveModeEnabled(config: AgentConfig | null = this.config): boolean {
+    const cfg = config as AgentConfigWithTeamComms | null
+    return this.normalizeReactiveMode(cfg?.reactiveMode)
   }
 
   private getTeamCommsLimit(config: AgentConfig | null = this.config): number {
@@ -2901,6 +2953,7 @@ export class AgentDO extends DurableObject {
       ...config,
       maxCompletedGoals: maxCompleted,
       maxBroadcastAge: this.normalizeMaxBroadcastAge(cfg.maxBroadcastAge),
+      reactiveMode: this.normalizeReactiveMode(cfg.reactiveMode),
       goals: nextGoals,
     }
     await this.ctx.storage.put('config', next)
@@ -3001,6 +3054,9 @@ export class AgentDO extends DurableObject {
     }
     if (typeof patch.maxBroadcastAge === 'number' && Number.isFinite(patch.maxBroadcastAge)) {
       ;(next as AgentConfigWithTeamComms).maxBroadcastAge = this.normalizeMaxBroadcastAge(patch.maxBroadcastAge)
+    }
+    if (typeof patch.reactiveMode === 'boolean') {
+      ;(next as AgentConfigWithTeamComms).reactiveMode = this.normalizeReactiveMode(patch.reactiveMode)
     }
     if (Array.isArray(patch.goals)) {
       next.goals = patch.goals.filter((goal) => goal && typeof goal === 'object') as AgentConfig['goals']
@@ -4886,8 +4942,40 @@ export class AgentDO extends DurableObject {
       (() => {
         const agentName = this.config?.name ?? ''
         const storage = this.ctx.storage
+        const normalizedSelf = agentName.trim().toLowerCase()
         const rpgCtx = {
           agentName, agentDid: did, db: env.DB, broadcast: broadcastLoopEvent,
+          reactiveMode: this.isReactiveModeEnabled(this.config),
+          wakeAgent: async (targetAgentName: string, detail?: Record<string, unknown>) => {
+            const target = String(targetAgentName ?? '').trim()
+            if (!target) return
+
+            if (target.toLowerCase() === normalizedSelf) {
+              await this.scheduleInterruptWake({
+                reason: 'rpg_self_wake',
+                leadMs: 1_000,
+                thresholdMs: 2_000,
+              }).catch(() => undefined)
+              return
+            }
+
+            const agents = env.AGENTS
+            if (!agents) return
+
+            try {
+              const agentId = agents.idFromName(target)
+              const agentStub = agents.get(agentId)
+              await agentStub.fetch(
+                new Request(`https://agent/agents/${encodeURIComponent(target)}/wake`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(detail ?? {}),
+                })
+              )
+            } catch {
+              // Best-effort wake signal for reactive loops.
+            }
+          },
           loadCharacter: async () => (await storage.get('rpg:character')) ?? null,
           saveCharacter: async (character: unknown) => { await storage.put('rpg:character', character) },
         }
@@ -5383,6 +5471,61 @@ export class AgentDO extends DurableObject {
 
     return safeLimit ? merged.slice(0, safeLimit) : merged
   }
+
+  private async scheduleInterruptWake(input: {
+    leadMs?: number
+    thresholdMs?: number
+    reason: string
+  }): Promise<boolean> {
+    const running = await this.ctx.storage.get<boolean>('loopRunning')
+    if (!running) return false
+
+    const leadMs = typeof input.leadMs === 'number' && Number.isFinite(input.leadMs) ? Math.max(100, input.leadMs) : 1_000
+    const thresholdMs =
+      typeof input.thresholdMs === 'number' && Number.isFinite(input.thresholdMs)
+        ? Math.max(0, input.thresholdMs)
+        : 10_000
+
+    const currentAlarm = await this.ctx.storage.getAlarm()
+    if (currentAlarm && currentAlarm - Date.now() <= thresholdMs) {
+      return false
+    }
+
+    await this.ctx.storage.setAlarm(Date.now() + leadMs)
+    console.log('AgentDO interrupt wake scheduled', { did: this.did, reason: input.reason, leadMs })
+    return true
+  }
+
+  private async handleWake(request: Request): Promise<Response> {
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    const config = await this.loadOrCreateConfig()
+    if (!this.isReactiveModeEnabled(config)) {
+      return Response.json({ ok: true, scheduled: false, reason: 'reactive_mode_disabled' })
+    }
+
+    const payload = await request.json().catch(() => null)
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const pendingRaw = await this.ctx.storage.get<unknown>('pendingEvents')
+      const pending = Array.isArray(pendingRaw) ? pendingRaw.filter((event) => event && typeof event === 'object') : []
+      pending.push({
+        ts: Date.now(),
+        type: 'environment.wake',
+        ...(payload as Record<string, unknown>),
+      })
+      await this.ctx.storage.put('pendingEvents', pending.slice(-200))
+    }
+
+    const scheduled = await this.scheduleInterruptWake({
+      reason: 'wake_endpoint',
+      leadMs: 1_000,
+      thresholdMs: 2_000,
+    }).catch(() => false)
+
+    return Response.json({ ok: true, scheduled })
+  }
   
   private async handleInbox(request: Request): Promise<Response> {
     if (!this.memory) {
@@ -5460,20 +5603,16 @@ export class AgentDO extends DurableObject {
         }).catch(() => {}) // fire and forget
       }
 
-      // Interrupt-driven: wake up immediately to process incoming message
-      // instead of waiting for the next scheduled alarm tick.
-      const running = await this.ctx.storage.get<boolean>('loopRunning')
-      if (running) {
-        try {
-          const currentAlarm = await this.ctx.storage.getAlarm()
-          // Only reschedule if next alarm is >10s away (avoid thrashing)
-          if (!currentAlarm || currentAlarm - Date.now() > 10_000) {
-            await this.ctx.storage.setAlarm(Date.now() + 1_000) // Wake in 1 second
-            console.log('AgentDO inbox interrupt — immediate alarm scheduled', { did: this.did })
-          }
-        } catch {
-          // Non-fatal — worst case, message waits for next scheduled alarm
-        }
+      // Feature-flagged reactive loop behavior: in polling mode, keep the existing schedule.
+      const reactiveModeEnabled = this.isReactiveModeEnabled(
+        this.config ?? ((await this.ctx.storage.get<AgentConfig>('config')) ?? null)
+      )
+      if (reactiveModeEnabled) {
+        await this.scheduleInterruptWake({
+          reason: 'inbox_message',
+          leadMs: 1_000,
+          thresholdMs: 10_000,
+        }).catch(() => undefined)
       }
 
       return Response.json({ id })

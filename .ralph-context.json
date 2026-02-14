@@ -605,6 +605,28 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: The extraction requested by ADR-0002 Phase 4a is already implemented in tracked HEAD: `rpg.ts` calls `executeExplorationCommand` and `executeCombatCommand`, and the command logic resides in `apps/network/src/environments/rpg/commands/{exploration-commands,combat-commands}.ts`.\nGotcha: Because this workspace carries prior attempt artifacts, reading stale snippets can mislead implementation. Verify with `git hash-object` vs `git rev-parse HEAD:<path>` before large rewrites, then add/adjust tests instead of redoing code that is already in HEAD.\nFiles Context: `apps/network/src/environments/rpg.ts` (runtime command dispatch), `apps/network/src/environments/rpg/commands/combat-commands.ts` and `apps/network/src/environments/rpg/commands/exploration-commands.ts` (extracted command handlers), and new `apps/network/src/environments/rpg/commands/*.test.ts` files (story-focused regression coverage)."
+    },
+    {
+      "id": "story-mllqd1h9",
+      "title": "ADR-0002 Phase 4b: Extract lifecycle + social commands from rpg.ts",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg/commands/combat-commands.test.ts",
+        "apps/network/src/environments/rpg/commands/exploration-commands.test.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg.ts"
+      ],
+      "learnings": "Technical Discovery: The safest extraction pattern for this codebase is to keep `rpg.ts` setup-command coercion in place and delegate only command execution branches to module handlers; this preserves phase-machine-driven coercion behavior while still removing large inline command blocks.\nGotcha: `bun run test` at repo root runs the full monorepo suite, even when you intend to focus on a few files. Use `bun x vitest run <paths>` for quick RED/GREEN loops, then run full required validation at the end.\nFiles Context: `apps/network/src/environments/rpg.ts` is now the orchestrator that delegates lifecycle/social/combat/exploration command families. `apps/network/src/environments/rpg/commands/lifecycle-commands.ts` owns pre-load and loaded-state lifecycle logic (join/new/status/reputation/create). `apps/network/src/environments/rpg/commands/social-commands.ts` owns setup-phase social flow and feed messaging. The new tests in the same commands folder lock module dispatch and key guard behavior."
+    },
+    {
+      "id": "story-mlljj5r9",
+      "title": "Reactive event-driven agent loops — kill polling, wake DOs on state change",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[analysis_paralysis] RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |network| src/schema.test.ts (6 tests) 1046ms\n   ✓ schema.sql > defines an environments table with the expected columns  590ms\n   ✓ schema.sql > defines a work_items table with the expected columns  450ms\nstdout | src/agent-do.test.ts >"
     }
   ],
   "failures": [
@@ -780,6 +802,20 @@
         "bun -e"
       ],
       "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlljj5r9",
+      "storyTitle": "Reactive event-driven agent loops — kill polling, wake DOs on state change",
+      "category": "analysis_paralysis",
+      "error": "RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |network| src/schema.test.ts (6 tests) 1046ms\n   ✓ schema.sql > defines an environments table with the expected columns  590ms\n   ✓ schema.sql > defines a work_items table with the expected columns  450ms\nstdout | src/agent-do.test.ts > AgentDO > stores full prompt + loop transcript + timing for the agentic tool loop and exposes them via /debug\nTool loop step { step: \u001b[33m1\u001b[39m, toolCalls: [ \u001b[32m'think_aloud'\u001b[39m ], elapsed: \u001b[33",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "ls -R",
+        "swarm memory"
+      ],
+      "iterationNumber": 3
     }
   ]
 }

@@ -1345,3 +1345,45 @@ Validation:
 Required post-steps executed:
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` (stored `mem-bc93d87e46878329`)
 - `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4b: Extract lifecycle + social commands from rpg.ts"` (ok)
+
+---
+[2026-02-14T03:40:24.897Z]
+Failed: Reactive event-driven agent loops — kill polling, wake DOs on state change [analysis_paralysis]
+Validation: RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network
+
+ ✓ |network| src/schema.test.ts (6 tests) 1046ms
+   ✓ schema.sql > defines an environments table with the expected columns  590ms
+   ✓ schema.sql > defines a work_items table with the expected columns  450ms
+stdout | src/agent-do.test.ts >
+Codex: Validation passed. I’m now sending the required post-step notifications (hivemind memory + openclaw system event) with properly escaped command arguments.
+
+---
+[2026-02-14T03:44:48.703Z]
+Completed: Reactive event-driven agent loops — kill polling, wake DOs on state change
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/commands/lifecycle-commands.test.ts, apps/network/src/environments/rpg/commands/lifecycle-commands.ts, apps/network/src/environments/rpg/commands/social-commands.test.ts, apps/network/src/environments/rpg/commands/social-commands.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/environments/rpg.test.ts
+Summary: Implemented this story with a strict RED→GREEN loop and touched the required runtime files.
+
+Changes made:
+- Added RED test for exploration freeform with `reactiveMode: false` in `apps/network/src/environments/rpg.test.ts:2792`.
+- Added RED test for polling rollback on inbox events in `apps/network/src/agent-do.test.ts:1995`.
+- Updated `apps/network/src/environments/rpg.ts:1417` so exploration freeform turn override is now mode-based (`playing` + `exploring` + party member + freeform command), not gated by `reactiveMode`.
+- Updated `apps/network/src/agent.ts:5606` so `/inbox` only schedules interrupt wake when `isReactiveModeEnabled(...)` is true; polling mode keeps existing alarm cadence.
+
+Validation run:
+- `cd apps/network && npx tsc --noEmit && cd ../.. && npx vitest run` ✅
+- Result: 53 passed test files, 2 skipped; 490 passed tests, 6 skipped.
+
+Post-steps run:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` ✅
+- `openclaw system event --mode now --text "Ralph: completed Reactive event-driven agent loops — kill polling, wake DOs on state change"` ✅
+
+## Learnings
+### Technical Discovery
+`rpg.ts` had exploration freeform behavior coupled to the reactive wake flag. Decoupling those concerns (gameplay mode semantics vs wake transport) fixed turn-gating behavior while preserving feature-flagged wake signals.
+### Gotcha for Next Iteration
+If polling rollback is expected, all interrupt wake paths must be reviewed, not only `/agents/:name/wake`. `/inbox` had its own wake scheduling path and needed explicit reactive gating.
+### Files Context
+- `apps/network/src/environments/rpg.ts`: command execution flow, exploration/combat turn behavior, reactive signal emission.
+- `apps/network/src/agent.ts`: Durable Object alarm scheduling and interrupt wake behavior for inbox/wake endpoints.
+- `apps/network/src/environments/rpg.test.ts`: RPG mode semantics coverage (freeform vs turn-gated).
+- `apps/network/src/agent-do.test.ts`: alarm/wake/polling behavior coverage for AgentDO.

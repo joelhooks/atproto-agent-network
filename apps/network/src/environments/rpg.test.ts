@@ -2745,6 +2745,221 @@ describe('rpgEnvironment', () => {
     const updated = JSON.parse(row.state)
     expect(updated.hubTown.idleTurns).toBe(5)
   })
+
+  it('allows freeform exploration actions when mode is exploring (no turn gate)', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'snarl',
+      agentDid: 'did:cf:snarl',
+      db: db as any,
+      broadcast,
+      reactiveMode: true,
+      wakeAgent: vi.fn(),
+    }
+
+    const gameId = 'rpg_test_exploration_freeform'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [
+        { type: 'rest', description: 'safe room' },
+        { type: 'rest', description: 'next room' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'slag'
+    game.roomIndex = 0
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-freeform-explore', { command: 'explore', gameId })
+    expect((result as any)?.ok).not.toBe(false)
+
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    expect(updated.mode).toBe('exploring')
+    expect(updated.roomIndex).toBeGreaterThan(0)
+  })
+
+  it('allows freeform exploration actions when mode is exploring even with reactive mode disabled', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'snarl',
+      agentDid: 'did:cf:snarl',
+      db: db as any,
+      broadcast,
+      reactiveMode: false,
+      wakeAgent: vi.fn(),
+    }
+
+    const gameId = 'rpg_test_exploration_freeform_flag_off'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [
+        { type: 'rest', description: 'safe room' },
+        { type: 'rest', description: 'next room' },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'slag'
+    game.roomIndex = 0
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-freeform-explore-flag-off', { command: 'explore', gameId })
+    expect((result as any)?.ok).not.toBe(false)
+
+    const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
+    const updated = JSON.parse(row.state)
+    expect(updated.mode).toBe('exploring')
+    expect(updated.roomIndex).toBeGreaterThan(0)
+  })
+
+  it('keeps initiative turn gating in combat mode', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const ctx = {
+      agentName: 'snarl',
+      agentDid: 'did:cf:snarl',
+      db: db as any,
+      broadcast,
+      reactiveMode: true,
+      wakeAgent: vi.fn(),
+    }
+
+    const gameId = 'rpg_test_combat_turn_gated'
+    const game = createGame({
+      id: gameId,
+      players: ['slag', 'snarl'],
+      dungeon: [{ type: 'combat', description: 'ambush', enemies: [{ name: 'Goblin', hp: 6, DEX: 20, attack: 20, dodge: 20 }] }],
+    })
+    game.phase = 'playing'
+    game.mode = 'combat'
+    game.currentPlayer = 'slag'
+    game.combat = {
+      enemies: [{ name: 'Goblin', hp: 6, maxHp: 6, DEX: 20, attack: 20, dodge: 20, morale: 8, tactics: { kind: 'goblin' } }],
+    }
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'slag', JSON.stringify(game), game.phase, JSON.stringify(['slag', 'snarl']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-combat-turn-gated', { command: 'attack', gameId })
+    expect((result as any)?.ok).toBe(false)
+    expect(String((result as any)?.error ?? '')).toContain('Not your turn')
+  })
+
+  it('reactive mode wakes next player on turn advance and notifies all party members on mode switch', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const wakeAgent = vi.fn().mockResolvedValue(undefined)
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      reactiveMode: true,
+      wakeAgent,
+    }
+
+    const gameId = 'rpg_test_reactive_wake_signals'
+    const game = createGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'rest', description: 'camp' },
+        { type: 'combat', description: 'ambush', enemies: [{ name: 'Goblin', hp: 5, DEX: 20, attack: 20, dodge: 20 }] },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    game.roomIndex = 0
+    const alice = findCharacter(game, 'alice')
+    const bob = findCharacter(game, 'bob')
+    if (alice && bob) {
+      alice.stats.DEX = 90
+      bob.stats.DEX = 10
+      game.turnOrder = [alice, bob]
+    }
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    const result = await tool.execute('toolcall-reactive-explore', { command: 'explore', gameId })
+    expect((result as any)?.ok).not.toBe(false)
+
+    const wakeTargets = wakeAgent.mock.calls.map((call: unknown[]) => String(call[0]))
+    expect(wakeTargets).toContain('alice')
+    expect(wakeTargets).toContain('bob')
+    expect(wakeTargets.filter((target) => target === 'bob').length).toBeGreaterThan(0)
+  })
+
+  it('reactive wake signals are disabled when reactiveMode feature flag is false', async () => {
+    const db = new D1MockDatabase()
+    const broadcast = vi.fn()
+    const wakeAgent = vi.fn().mockResolvedValue(undefined)
+    const ctx = {
+      agentName: 'alice',
+      agentDid: 'did:cf:alice',
+      db: db as any,
+      broadcast,
+      reactiveMode: false,
+      wakeAgent,
+    }
+
+    const gameId = 'rpg_test_reactive_wake_signals_flag_off'
+    const game = createGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'rest', description: 'camp' },
+        { type: 'combat', description: 'ambush', enemies: [{ name: 'Goblin', hp: 5, DEX: 20, attack: 20, dodge: 20 }] },
+      ],
+    })
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    game.roomIndex = 0
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const tool = rpgEnvironment.getTool(ctx as any)
+    await tool.execute('toolcall-reactive-flag-off', { command: 'explore', gameId })
+
+    expect(wakeAgent).not.toHaveBeenCalled()
+  })
 })
 
 describe('compactAdventureLog', () => {

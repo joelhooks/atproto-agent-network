@@ -94,7 +94,7 @@ import type { PersistentCharacter } from '@atproto-agent/core'
 
 import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
 import type { PhaseMachine } from './phase-machine'
-import type { CampaignPatch, CreateCampaignOptions } from './rpg/interfaces'
+import type { CampaignPatch, CreateCampaignOptions, GameEventEmitter, GamePhase } from './rpg/interfaces'
 import { createRpgSetupPhaseMachine, serializePhaseMachine, deserializePhaseMachine } from './phase-machine'
 import {
   DM_SKILL,
@@ -159,6 +159,110 @@ function generateJoinName(klass: RpgClass, partyIndex: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+type ReactiveRpgContext = EnvironmentContext & {
+  reactiveMode?: boolean
+  wakeAgent?: (agentName: string, detail?: Record<string, unknown>) => Promise<void> | void
+}
+
+type ReactiveStateSnapshot = {
+  phase: RpgGameState['phase']
+  mode: RpgGameState['mode']
+  currentPlayer: string
+}
+
+const FREEFORM_EXPLORATION_COMMANDS = new Set([
+  'explore',
+  'attack',
+  'negotiate',
+  'flee',
+  'sneak',
+  'intimidate',
+  'resurrect',
+  'cast_spell',
+  'use_skill',
+  'use_item',
+  'rest',
+])
+
+function isReactiveModeEnabled(ctx: EnvironmentContext): boolean {
+  return Boolean((ctx as ReactiveRpgContext).reactiveMode)
+}
+
+function listPartyAgentNames(game: RpgGameState): string[] {
+  const members = Array.isArray(game.party) ? game.party : []
+  const names = new Set<string>()
+  for (const member of members) {
+    const raw = String(member?.agent ?? member?.name ?? '').trim()
+    if (raw) names.add(raw)
+  }
+  return Array.from(names)
+}
+
+function createReactiveGameEventEmitter(ctx: EnvironmentContext, game: RpgGameState): GameEventEmitter {
+  const reactiveCtx = ctx as ReactiveRpgContext
+  const wakeAgent = reactiveCtx.wakeAgent
+  const reactiveEnabled = isReactiveModeEnabled(ctx)
+
+  const wake = async (agentName: string, detail: Record<string, unknown>): Promise<void> => {
+    if (!reactiveEnabled || typeof wakeAgent !== 'function') return
+    const target = String(agentName ?? '').trim()
+    if (!target) return
+    try {
+      await wakeAgent(target, detail)
+    } catch {
+      // best-effort
+    }
+  }
+
+  const wakeParty = async (detail: Record<string, unknown>): Promise<void> => {
+    if (!reactiveEnabled || typeof wakeAgent !== 'function') return
+    const partyAgents = listPartyAgentNames(game)
+    for (const agentName of partyAgents) {
+      await wake(agentName, detail)
+    }
+  }
+
+  return {
+    onEnvironmentCompleted: async (environmentCtx: EnvironmentContext, gameId: string, state: RpgGameState) =>
+      emitEnvironmentCompleted(environmentCtx, { gameId, game: state }),
+    onTurnAdvanced: async (gameId: string, nextPlayer: string) => {
+      await wake(nextPlayer, { event: 'rpg.turn_advanced', gameId, nextPlayer, at: Date.now() })
+    },
+    onCombatStarted: async (gameId: string) => {
+      await wakeParty({ event: 'rpg.combat_started', gameId, at: Date.now() })
+    },
+    onPhaseChanged: async (gameId: string, from: GamePhase, to: GamePhase) => {
+      await wakeParty({ event: 'rpg.phase_changed', gameId, from, to, at: Date.now() })
+    },
+  }
+}
+
+async function emitReactiveSignals(
+  eventEmitter: GameEventEmitter,
+  input: {
+    gameId: string
+    before: ReactiveStateSnapshot
+    after: ReactiveStateSnapshot
+  }
+): Promise<void> {
+  const { gameId, before, after } = input
+
+  if (after.currentPlayer && after.currentPlayer !== before.currentPlayer) {
+    await eventEmitter.onTurnAdvanced(gameId, after.currentPlayer)
+  }
+
+  if (before.phase !== after.phase) {
+    await eventEmitter.onPhaseChanged(gameId, before.phase, after.phase)
+  }
+
+  if (before.mode !== after.mode) {
+    await eventEmitter.onPhaseChanged(gameId, before.mode as unknown as GamePhase, after.mode as unknown as GamePhase)
+    if (after.mode === 'combat') {
+      await eventEmitter.onCombatStarted(gameId)
+    }
+  }
 }
 
 async function ensureCampaignSchema(db: D1Database): Promise<void> {
@@ -1070,6 +1174,7 @@ export const rpgEnvironment: AgentEnvironment = {
         game.feedMessages ??= []
         game.round ??= 1
         normalizePartyLootState(game)
+        const gameEventEmitter = createReactiveGameEventEmitter(ctx, game)
 
         const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
         const setupActive = Boolean(setupPhase && !setupPhase.complete)
@@ -1308,6 +1413,23 @@ export const rpgEnvironment: AgentEnvironment = {
         }
 
         const agentName = ctx.agentName.trim()
+        const isPartyMember = Array.isArray(game.party) && game.party.some((member) => member && isCharacter(member, agentName))
+        if (
+          game.phase === 'playing' &&
+          game.mode === 'exploring' &&
+          isPartyMember &&
+          FREEFORM_EXPLORATION_COMMANDS.has(command)
+        ) {
+          // Exploration mode is freeform: any party member can act without turn gating.
+          game.currentPlayer = agentName
+        }
+
+        const beforeCommandState: ReactiveStateSnapshot = {
+          phase: game.phase,
+          mode: game.mode,
+          currentPlayer: game.currentPlayer,
+        }
+
         const saveGame = async (): Promise<void> => {
           await db
             .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
@@ -1329,7 +1451,14 @@ export const rpgEnvironment: AgentEnvironment = {
             applyEncounterDispositionToCampaign: async (input) => applyEncounterDispositionToCampaign(ctx, input),
           },
         })
-        if (explorationResult) return explorationResult
+        if (explorationResult) {
+          await emitReactiveSignals(gameEventEmitter, {
+            gameId,
+            before: beforeCommandState,
+            after: { phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer },
+          })
+          return explorationResult
+        }
 
         const combatResult = await executeCombatCommand({
           command,
@@ -1345,7 +1474,14 @@ export const rpgEnvironment: AgentEnvironment = {
             applyEncounterDispositionToCampaign: async (input) => applyEncounterDispositionToCampaign(ctx, input),
           },
         })
-        if (combatResult) return combatResult
+        if (combatResult) {
+          await emitReactiveSignals(gameEventEmitter, {
+            gameId,
+            before: beforeCommandState,
+            after: { phase: game.phase, mode: game.mode, currentPlayer: game.currentPlayer },
+          })
+          return combatResult
+        }
 
         throw new Error(`Unknown rpg command: ${command}`)
       },
@@ -1372,8 +1508,10 @@ export const rpgEnvironment: AgentEnvironment = {
       const game = JSON.parse(row.state) as RpgGameState
       const room = game.dungeon[game.roomIndex]
       const agentName = ctx.agentName.trim()
-      const isMyTurn = game.currentPlayer === agentName
       const partyMember = game.party?.find((p: any) => p && isCharacter(p, agentName))
+      const freeformExploration =
+        isReactiveModeEnabled(ctx) && game.phase === 'playing' && game.mode === 'exploring' && Boolean(partyMember)
+      const isMyTurn = game.currentPlayer === agentName || freeformExploration
       const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
 
       if (setupPhase && !setupPhase.complete) {
@@ -1587,6 +1725,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
       if (isMyTurn) {
         lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
+        if (freeformExploration) lines.push('Exploration mode is freeform: any party member can act right now.')
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
         lines.push(...campaignLines)
@@ -1621,7 +1760,11 @@ export const rpgEnvironment: AgentEnvironment = {
         }
         lines.push(`DO NOT create a new environment.`)
       } else {
-        lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
+        if (freeformExploration) {
+          lines.push(`🎮🎮🎮 RPG adventure ${row.id} is in freeform exploration mode.`)
+        } else {
+          lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
+        }
         if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
         lines.push(...persistentLines)
         lines.push(...campaignLines)
@@ -1629,8 +1772,12 @@ export const rpgEnvironment: AgentEnvironment = {
         if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
         if (blockedRecruitment) lines.push(blockedRecruitment)
         lines.push(...roleSkillLines)
-        lines.push('Wait for your turn.')
-        lines.push('Use environment_broadcast to coordinate with teammates while waiting.')
+        if (freeformExploration) {
+          lines.push(`Use the rpg tool to act now: rpg({"command":"explore","gameId":"${row.id}"})`)
+        } else {
+          lines.push('Wait for your turn.')
+          lines.push('Use environment_broadcast to coordinate with teammates while waiting.')
+        }
         lines.push(`DO NOT create a new environment.`)
       }
 
@@ -1702,12 +1849,26 @@ export const rpgEnvironment: AgentEnvironment = {
   },
 
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
-    const row = await findActiveGameWhereItsMyTurn(ctx)
     const agentName = ctx.agentName.trim()
+    const myTurnRow = await findActiveGameWhereItsMyTurn(ctx)
+    const activeRow = myTurnRow ?? (await findActiveGameForAgent(ctx))
+
+    let row = myTurnRow
+    if (!row && activeRow && isReactiveModeEnabled(ctx)) {
+      try {
+        const state = JSON.parse(activeRow.state) as RpgGameState
+        const isPartyMember = Array.isArray(state.party) && state.party.some((member) => member && isCharacter(member, agentName))
+        if (state.phase === 'playing' && state.mode === 'exploring' && isPartyMember) {
+          row = activeRow
+        }
+      } catch {
+        // Ignore malformed state and fall back to default behavior.
+      }
+    }
 
     // Grimlock: if there's an active game with 0 dungeon rooms, craft_dungeon first
     if (agentName === 'grimlock') {
-      const active = row ?? (await findActiveGameForAgent(ctx))
+      const active = row ?? activeRow
       if (active) {
         try {
           const state = JSON.parse(active.state) as RpgGameState

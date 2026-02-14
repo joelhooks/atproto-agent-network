@@ -1992,6 +1992,55 @@ describe('AgentDO', () => {
     })
   })
 
+  it('keeps polling schedule on /inbox POST when reactive mode is disabled', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-07T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-inbox-polling')
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] }) })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const patch = await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'alice', enabledTools: [], reactiveMode: false, loopIntervalMs: 120_000 }),
+      })
+    )
+    expect(patch.status).toBe(200)
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+    const alarmBefore = await storage.getAlarm()
+    expect(typeof alarmBefore).toBe('number')
+    expect((alarmBefore ?? 0) - t0.getTime()).toBe(120_000)
+
+    const message = {
+      $type: 'agent.comms.message',
+      sender: 'did:cf:sender',
+      recipient: 'did:cf:agent-inbox-polling',
+      content: { kind: 'text', text: 'hello polling loop' },
+      createdAt: new Date().toISOString(),
+    }
+
+    const postResponse = await agent.fetch(new Request('https://example/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    }))
+    expect(postResponse.status).toBe(200)
+    expect(await storage.getAlarm()).toBe(alarmBefore)
+
+    vi.useRealTimers()
+  })
+
   it('rejects /inbox messages that target a different recipient DID', async () => {
     const { state } = createState('agent-inbox-mismatch')
     const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn() })
@@ -3039,6 +3088,73 @@ describe('AgentDO', () => {
 
     await agent.alarm()
     expect(await storage.getAlarm()).toBe(t0.getTime() + 15_000)
+
+    vi.useRealTimers()
+  })
+
+  it('reactive mode disables polling reschedule after a healthy alarm cycle', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-05T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-reactive-no-poll')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'alice', enabledTools: [], reactiveMode: true, loopIntervalMs: 120_000 }),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+
+    expect(await storage.getAlarm()).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('POST /agents/:name/wake schedules an immediate alarm in reactive mode', async () => {
+    vi.useFakeTimers()
+    const t0 = new Date('2026-01-06T00:00:00.000Z')
+    vi.setSystemTime(t0)
+
+    const { state, storage } = createState('agent-reactive-wake')
+    const prompt = vi.fn().mockResolvedValue({ text: 'ok', toolCalls: [] })
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'alice', enabledTools: [], reactiveMode: true }),
+      })
+    )
+
+    await agent.fetch(new Request('https://example/loop/start', { method: 'POST' }))
+    await agent.alarm()
+    expect(await storage.getAlarm()).toBeNull()
+
+    const wakeRes = await agent.fetch(new Request('https://example/agents/alice/wake', { method: 'POST' }))
+    expect(wakeRes.status).toBe(200)
+
+    const alarmAt = await storage.getAlarm()
+    expect(typeof alarmAt).toBe('number')
+    expect((alarmAt ?? 0) - t0.getTime()).toBeLessThanOrEqual(2_000)
 
     vi.useRealTimers()
   })
