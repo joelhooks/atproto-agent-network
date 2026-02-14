@@ -128,6 +128,8 @@ import {
 } from './rpg/campaign/campaign-logic'
 import { executeCombatCommand } from './rpg/commands/combat-commands'
 import { executeExplorationCommand } from './rpg/commands/exploration-commands'
+import { executeLifecycleCommand } from './rpg/commands/lifecycle-commands'
+import { executeSocialCommand } from './rpg/commands/social-commands'
 export {
   applyDispositionForEncounterOutcome,
   buildCampaignDungeonThread,
@@ -1023,230 +1025,17 @@ export const rpgEnvironment: AgentEnvironment = {
         const db = ctx.db
         const dice = createDice()
 
-        if (command === 'join_game') {
-          const gameId = typeof params.gameId === 'string' ? params.gameId.trim() : ''
-          if (!gameId) throw new Error('gameId required for join_game')
-
-          const klass = typeof params.klass === 'string' ? (params.klass as RpgClass) : null
-          if (!klass || !['Warrior', 'Scout', 'Mage', 'Healer'].includes(klass)) {
-            throw new Error('klass required: Warrior | Scout | Mage | Healer')
-          }
-
-          const row = await db
-            .prepare("SELECT state FROM environments WHERE id = ? AND type = 'rpg'")
-            .bind(gameId)
-            .first<{ state: string }>()
-
-          if (!row) throw new Error(`Adventure ${gameId} not found`)
-
-          const game = JSON.parse(row.state) as RpgGameState
-          if (game.phase !== 'playing' && game.phase !== 'setup') {
-            return { ok: false, error: `Adventure ${gameId} is not joinable (phase: ${game.phase})` }
-          }
-
-          if (!Array.isArray(game.party) || game.party.length >= 3) {
-            return { ok: false, error: `Adventure ${gameId} party is full` }
-          }
-
-          const agentName = ctx.agentName.trim() || 'unknown'
-          if (game.party.some((p) => isCharacter(p, agentName))) {
-            return { ok: false, error: `Already in active adventure ${gameId}.` }
-          }
-
-          const fantasyName = generateJoinName(klass, game.party.length)
-
-          // Try to load persistent character
-          let joined: Character
-          let rerollNotice = ''
-          if (ctx.loadCharacter) {
-            const persistent = await ctx.loadCharacter() as PersistentCharacter | null
-            if (persistent && persistent.klass) {
-              if (persistent.dead === true) {
-                joined = createCharacter({ name: fantasyName, klass, agent: agentName })
-                rerollNotice = `Your previous character ${persistent.name} fell in battle. A new hero rises.\n`
-                if (ctx.saveCharacter) {
-                  const rerolled = buildRerolledPersistentCharacter(persistent, joined)
-                  await ctx.saveCharacter(rerolled)
-                }
-              } else {
-                joined = persistentToGameCharacter(persistent, agentName)
-              }
-            } else {
-              joined = createCharacter({ name: fantasyName, klass, agent: agentName })
-            }
-          } else {
-            joined = createCharacter({ name: fantasyName, klass, agent: agentName })
-          }
-          game.party.push(joined)
-          recomputeTurnOrder(game)
-
-          const players = game.party.map((p) => p.agent ?? p.name)
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, players = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, JSON.stringify(players), gameId)
-            .run()
-
-          await ctx.broadcast({
-            event_type: 'environment.joined',
-            context: { environment: 'rpg', gameId, agent: agentName, klass },
-          })
-
-          return {
-            content: toTextContent(`${rerollNotice}Joined adventure: ${gameId} as ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
-            details: { gameId, joined },
-          }
-        }
-
-        if (command === 'new_game') {
-          const agentName = ctx.agentName.trim()
-
-          // Only Grimlock can create new RPG environments.
-          if (agentName !== 'grimlock') {
-            const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
-            const lines: string[] = [
-              'Only Grimlock can create new dungeons. Use join_game to join an existing adventure.',
-            ]
-            if (joinable.length > 0) {
-              lines.push('')
-              lines.push('Available adventures to join:')
-              for (const candidate of joinable) {
-                const recommended = pickJoinClass(candidate.game)
-                lines.push(
-                  `- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Join with {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`
-                )
-              }
-            }
-            return { ok: false, error: lines.join('\n') }
-          }
-
-          // Grimlock is DM — check for ANY active RPG game (grimlock isn't in players list)
-          const existing = await db
-            .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') LIMIT 1")
-            .first<{ id: string }>()
-            .catch(() => null)
-
-          if (existing?.id) {
-            return {
-              ok: false,
-              error:
-                `Already in active adventure ${existing.id}. ` +
-                `Use {"command":"status","gameId":"${existing.id}"} to check state.`,
-            }
-          }
-
-          const KNOWN_AGENTS = ['slag', 'snarl', 'swoop']
-          const players = Array.isArray(params.players)
-            ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
-            : []
-          // Grimlock is the DM, never a player — strip from player list and ensure we have real players
-          // Also strip any non-agent names (model sometimes passes fantasy character names)
-          const filteredPlayers = players
-            .map((p) => p.toLowerCase().trim())
-            .filter((p) => p !== 'grimlock' && KNOWN_AGENTS.includes(p))
-          // Always use the full player roster — partial lists lead to lopsided parties
-          const finalPlayers = KNOWN_AGENTS
-          if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
-          const requestedCampaignId = typeof params.campaignId === 'string'
-            ? params.campaignId.trim()
-            : typeof params.campaign_id === 'string'
-              ? params.campaign_id.trim()
-              : ''
-          const campaignState = requestedCampaignId ? await getCampaign(db, requestedCampaignId) : null
-          const campaignThread = campaignState ? buildCampaignDungeonThread(campaignState) : null
-          if (requestedCampaignId && !campaignState) {
-            return { ok: false, error: `Campaign ${requestedCampaignId} not found.` }
-          }
-
-          // Prefer joining an open adventure when a solo new_game is requested.
-          if (finalPlayers.length <= 1) {
-            const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
-            if (joinable.length > 0) {
-              const lines: string[] = []
-              lines.push('Open adventures are looking for party members:')
-              for (const candidate of joinable) {
-                const recommended = pickJoinClass(candidate.game)
-                lines.push(
-                  `- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Join with {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`
-                )
-              }
-              return { ok: false, error: lines.join('\n') }
-            }
-          }
-
-          const gameId = `rpg_${generateTid()}`
-          const game = createGame({
-            id: gameId,
-            players: finalPlayers,
-            ...(campaignThread ? { campaignState: campaignThread.themedCampaignState } : {}),
-          })
-          if (campaignThread?.objective) {
-            ;(game as Record<string, unknown>).campaignObjective = {
-              ...campaignThread.objective,
-              selectedAt: Date.now(),
-            }
-          }
-          if (campaignThread && campaignThread.campaignLog.length > 0) {
-            game.campaignLog = campaignThread.campaignLog
-          }
-          if (campaignThread?.objective && game.campaignContext) {
-            const objectiveText = `${campaignThread.objective.arcName}: ${campaignThread.objective.plotPoint}`
-            game.campaignContext.activeArcs = [objectiveText, ...(game.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText)].slice(0, 3)
-          }
-
-          // Backstory setup phase: DM interviews each player before the adventure begins
-          game.phase = 'setup'
-          const setupMachine = createRpgSetupPhaseMachine(finalPlayers, 2, 'grimlock')
-          game.setupPhase = {
-            currentPlayerIndex: 0,
-            exchangeCount: 0,
-            maxExchanges: 2,
-            dialogues: {},
-            complete: false,
-          }
-          ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
-
-          // Ensure type column exists (migration from catan-only schema)
-          await db.prepare("ALTER TABLE environments ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => {/* already exists */})
-
-          await db
-            .prepare(
-              "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-            )
-            .bind(gameId, 'rpg', ctx.agentName.trim() || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(finalPlayers))
-            .run()
-
-          if (campaignState) {
-            const adventureNumber = await linkAdventureToCampaign(db, gameId, campaignState.id)
-            game.campaignAdventureNumber = adventureNumber
-          }
-
-          await ctx.broadcast({
-            event_type: 'environment.created',
-            context: {
-              environment: 'rpg',
-              gameId,
-              host: ctx.agentName.trim() || 'unknown',
-              players: finalPlayers,
-              ...(campaignState ? { campaignId: campaignState.id } : {}),
+        if (command === 'join_game' || command === 'new_game') {
+          const lifecycleResult = await executeLifecycleCommand({
+            command,
+            params,
+            ctx,
+            deps: {
+              getCampaign,
+              linkAdventureToCampaign,
             },
           })
-
-          return {
-            content: toTextContent(
-              `Adventure created: ${gameId}\nPlayers: ${finalPlayers.join(', ')}${
-                campaignState ? `\nCampaign: ${campaignState.name} (#${game.campaignAdventureNumber})` : ''
-              }\n\n` +
-                `Room 1/${game.dungeon.length}: ${describeRoom(game, 0)}`
-            ),
-            details: {
-              gameId,
-              type: 'rpg',
-              players: finalPlayers,
-              phase: game.phase,
-              ...(campaignState ? { campaignId: campaignState.id, adventureNumber: game.campaignAdventureNumber } : {}),
-            },
-          }
+          if (lifecycleResult) return lifecycleResult
         }
 
         // Resolve gameId (explicit or active)
@@ -1302,116 +1091,20 @@ export const rpgEnvironment: AgentEnvironment = {
           }
         }
 
-        if (command === 'status') {
-          if (game.phase === 'hub_town') {
-            const hub = ensureHubTownState(game)
-            const idleTurns = countHubTownIdleTurn(game)
-            const text =
-              `${buildHubTownNarration(game, { location: hub.location, cue: 'The party regroups, trades rumors, and plans the next push.' })}\n\n` +
-              `Current player: ${game.currentPlayer}\n` +
-              `Party: ${summarizeParty(game)}\n` +
-              `Idle turns: ${idleTurns}/${hub.autoEmbarkAfter}\n` +
-              `Hub actions: visit_location, buy_item, sell_item, rest, embark`
-
-            await db
-              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-              .run()
-
-            return {
-              content: toTextContent(text),
-              details: {
-                gameId,
-                phase: game.phase,
-                location: hub.location,
-                idleTurns,
-                autoEmbarkAfter: hub.autoEmbarkAfter,
-              },
-            }
-          }
-
-          const room = game.dungeon[game.roomIndex]
-          const description = describeRoom(game, game.roomIndex)
-          let statusText =
-              `Adventure: ${gameId}\n` +
-              `Mode: ${game.mode} | Phase: ${game.phase}\n` +
-              `Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}\n` +
-              `${description}\n\n` +
-              `Current player: ${game.currentPlayer}\n` +
-              `Party: ${summarizeParty(game)}`
-
-          // During setup, append a forceful instruction for the next action
-          if (setupActive) {
-            const pmData = (game as any).phaseMachine
-            if (pmData) {
-              const pm = deserializePhaseMachine(pmData)
-              const currentPhase = pm.getCurrentPhase()
-              if (currentPhase) {
-                const targetMatch = currentPhase.name.match(/setup_(?:narrate|respond)_(\w+)_/)
-                const target = targetMatch ? targetMatch[1] : 'unknown'
-                statusText += `\n\n⚠️ SETUP PHASE ACTIVE — Phase: ${currentPhase.name}\n` +
-                  `Active agent: ${currentPhase.activeAgent}\n` +
-                  `YOUR NEXT ACTION: Call rpg tool with ${JSON.stringify({ command: currentPhase.transitionOn, ...(currentPhase.transitionOn === 'setup_narrate' ? { target, message: '<your backstory question>' } : { message: '<your response>' }), gameId })}\n` +
-                  `DO NOT use explore, attack, or any other command. ONLY ${currentPhase.transitionOn} is accepted.`
-              }
-            }
-          }
-
-          return {
-            content: toTextContent(statusText),
-            details: {
-              gameId,
-              mode: game.mode,
-              phase: game.phase,
-              roomIndex: game.roomIndex,
-              currentPlayer: game.currentPlayer,
+        if (command === 'status' || command === 'get_reputation' || command === 'create_character') {
+          const lifecycleResult = await executeLifecycleCommand({
+            command,
+            params,
+            game,
+            gameId,
+            setupActive,
+            ctx,
+            deps: {
+              getCampaign,
+              linkAdventureToCampaign,
             },
-          }
-        }
-
-        if (command === 'get_reputation') {
-          const factionFilter = typeof params.factionId === 'string' ? params.factionId.trim().toLowerCase() : ''
-          const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
-
-          let lines: string[] = []
-          if (campaignId) {
-            try {
-              const campaign = await getCampaign(db, campaignId)
-              if (campaign) {
-                const factions = (campaign.worldState?.factions ?? [])
-                  .filter((faction) => {
-                    if (!factionFilter) return true
-                    return faction.id.toLowerCase() === factionFilter || faction.name.toLowerCase().includes(factionFilter)
-                  })
-                  .slice(0, 8)
-                lines = factions.map((faction) =>
-                  formatFactionStandingLine({ name: faction.name, disposition: faction.disposition })
-                )
-              }
-            } catch {
-              // Ignore DB lookup errors in tests/mocks and fall back to cached context.
-            }
-          }
-
-          if (lines.length === 0) {
-            const cached = Array.isArray(game.campaignContext?.factions) ? game.campaignContext!.factions : []
-            lines = cached
-              .filter((line) => !factionFilter || line.toLowerCase().includes(factionFilter))
-              .slice(0, 8)
-          }
-
-          if (lines.length === 0) {
-            return {
-              content: toTextContent('No faction reputation data is available for this adventure yet.'),
-              details: { gameId, campaignId: campaignId || null },
-            }
-          }
-
-          const title = campaignId ? `Faction reputation (${campaignId})` : 'Faction reputation'
-          return {
-            content: toTextContent(`${title}\n${lines.join('\n')}`),
-            details: { gameId, campaignId: campaignId || null, count: lines.length },
-          }
+          })
+          if (lifecycleResult) return lifecycleResult
         }
 
         if (command === 'visit_location') {
@@ -1598,232 +1291,20 @@ export const rpgEnvironment: AgentEnvironment = {
           }
         }
 
-        // Setup-phase commands
-        if (command === 'setup_narrate' || command === 'setup_respond' || command === 'setup_finalize') {
-          if (!setupPhase) {
-            return { ok: false, error: 'No setup phase is active for this adventure.' }
-          }
-          const sp = setupPhase // narrowed non-undefined binding
-
-          const agentName = ctx.agentName.trim()
-          const party = Array.isArray(game.party) ? game.party : []
-          const currentIdx = Math.max(0, Math.min(party.length - 1, Math.floor(sp.currentPlayerIndex ?? 0)))
-          const current = party[currentIdx]
-          const currentAgent = current ? (current.agent ?? current.name) : ''
-
-          function ensureDialoguesKey(key: string): string[] {
-            sp.dialogues ??= {}
-            const k = String(key || '').trim() || 'unknown'
-            const list = sp.dialogues[k] ?? []
-            sp.dialogues[k] = list
-            return list
-          }
-
-          if (command === 'setup_narrate') {
-            if (agentName !== 'grimlock') return { ok: false, error: 'Only Grimlock can use setup_narrate.' }
-            if (sp.complete) return { ok: false, error: 'Setup is already complete. Use setup_finalize.' }
-
-            const message = typeof params.message === 'string' ? params.message.trim() : ''
-            if (!message) return { ok: false, error: 'message required for setup_narrate' }
-
-            const targetRaw = typeof params.target === 'string' ? params.target.trim() : ''
-            const target = targetRaw || currentAgent
-            if (!target) return { ok: false, error: 'No target player found for setup_narrate.' }
-
-            // Optional: allow DM to re-target the interview.
-            if (targetRaw) {
-              const idx = party.findIndex((p: any) => (p?.agent ?? p?.name) === target)
-              if (idx >= 0) {
-                sp.currentPlayerIndex = idx
-                sp.exchangeCount = 0
-              }
-            }
-
-            ensureDialoguesKey(target).push(message)
-            game.currentPlayer = target
-
-            // Advance phase machine
-            const pmData = (game as any).phaseMachine
-            if (pmData) {
-              const pm = deserializePhaseMachine(pmData)
-              pm.advance({ command: 'setup_narrate', target })
-              ;(game as any).phaseMachine = serializePhaseMachine(pm)
-            }
-
-            await db
-              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-              .run()
-
-            return { content: toTextContent(`DM: ${message}`), details: { gameId, target } }
-          }
-
-          if (command === 'setup_respond') {
-            if (sp.complete) return { ok: false, error: 'Setup is already complete. Wait for setup_finalize.' }
-            if (agentName !== currentAgent) {
-              return { ok: false, error: `Not your setup turn. Current player: ${currentAgent || 'unknown'}` }
-            }
-
-            const message = typeof params.message === 'string' ? params.message.trim() : ''
-            if (!message) return { ok: false, error: 'message required for setup_respond' }
-
-            ensureDialoguesKey(agentName).push(message)
-
-            sp.exchangeCount = Math.max(0, Math.floor(sp.exchangeCount ?? 0)) + 1
-
-            // Hand turn back to DM, and advance to the next player when maxExchanges reached.
-            if (sp.exchangeCount >= Math.max(1, Math.floor(sp.maxExchanges ?? 2))) {
-              sp.currentPlayerIndex = currentIdx + 1
-              sp.exchangeCount = 0
-
-              if (sp.currentPlayerIndex >= party.length) {
-                sp.complete = true
-              }
-            }
-
-            game.currentPlayer = 'grimlock'
-
-            // Advance phase machine
-            const pmData = (game as any).phaseMachine
-            if (pmData) {
-              const pm = deserializePhaseMachine(pmData)
-              pm.advance({ command: 'setup_respond', agent: agentName })
-              ;(game as any).phaseMachine = serializePhaseMachine(pm)
-            }
-
-            await db
-              .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-              .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-              .run()
-
-            return { content: toTextContent(`You: ${message}`), details: { gameId } }
-          }
-
-          // setup_finalize
-          if (agentName !== 'grimlock') return { ok: false, error: 'Only Grimlock can use setup_finalize.' }
-
-          const backstories = isRecord(params.backstories) ? (params.backstories as Record<string, unknown>) : null
-          if (!backstories) return { ok: false, error: 'backstories required for setup_finalize' }
-
-          for (const member of party) {
-            const id = String((member as any)?.agent ?? (member as any)?.name ?? '').trim()
-            if (!id) continue
-            const raw = backstories[id]
-            const text = typeof raw === 'string' ? raw.trim() : ''
-            if (text) (member as any).backstory = text
-          }
-
-          sp.complete = true
-          delete (game as any).setupPhase
-          delete (game as any).phaseMachine
-
-          // Start adventure at room 0 with correct mode/combat and first player turn.
-          game.roomIndex = 0
-          const room0 = game.dungeon?.[0]
-          if (room0 && (room0.type === 'combat' || room0.type === 'boss')) {
-            game.mode = 'combat'
-            game.combat = { enemies: (room0 as any).enemies?.map((e: any) => ({ ...e })) ?? [] }
-          } else {
-            game.mode = 'exploring'
-            game.combat = undefined
-          }
-          recomputeTurnOrder(game)
-          game.currentPlayer = characterId(game.turnOrder[0]) ?? characterId(game.party[0]) ?? 'unknown'
-          game.phase = 'playing'
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return { content: toTextContent('Setup complete. The adventure begins!'), details: { gameId, phase: 'playing' } }
-        }
-
-        if (command === 'send_message') {
-          const sender = ctx.agentName.trim() || 'unknown'
-          const toRaw = typeof params.to === 'string' ? params.to.trim() : ''
-          const to = toRaw.startsWith('@') ? toRaw.toLowerCase() : ''
-          const rawType = typeof params.type === 'string' ? params.type.trim() : ''
-          const msgRaw = typeof params.message === 'string' ? params.message.trim() : ''
-          const message = capChars(msgRaw, 500)
-
-          const type: FeedMessageType | null = rawType === 'ic' || rawType === 'ooc' ? (rawType as FeedMessageType) : null
-          if (!to) return { ok: false, error: 'to required for send_message (use @agent, @party, or @dm)' }
-          if (!type) return { ok: false, error: "type required for send_message ('ic' | 'ooc')" }
-          if (!message) return { ok: false, error: 'message required for send_message' }
-
-          const allowed = new Set<string>(['@party', '@dm'])
-          for (const member of Array.isArray(game.party) ? game.party : []) {
-            const handle = `@${characterId(member).toLowerCase()}`
-            if (handle.length > 1) allowed.add(handle)
-          }
-          if (!allowed.has(to)) {
-            const options = [...allowed].filter((h) => h !== '@party' && h !== '@dm').sort()
-            return {
-              ok: false,
-              error: `Invalid recipient: ${to}. Use @party, @dm, or one of: ${options.join(', ')}`,
-            }
-          }
-
-          game.messageRateLimit ??= { round: game.round ?? 1, counts: {} }
-          if (game.messageRateLimit.round !== (game.round ?? 1)) {
-            game.messageRateLimit = { round: game.round ?? 1, counts: {} }
-          }
-          const used = game.messageRateLimit.counts[sender] ?? 0
-          if (used >= 2) {
-            return { ok: false, error: `Rate limit: max 2 messages per agent per round (round ${game.round ?? 1}).` }
-          }
-
-          game.messageRateLimit.counts[sender] = used + 1
-          const entry: FeedMessage = { sender, to, message, type, timestamp: Date.now() }
-          game.feedMessages ??= []
-          game.feedMessages.push(entry)
-          if (game.feedMessages.length > 20) {
-            game.feedMessages.splice(0, game.feedMessages.length - 20)
-          }
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return {
-            content: toTextContent(`Sent ${type.toUpperCase()} message to ${to}: ${message}`),
-            details: { gameId, message: entry },
-          }
+        if (command === 'setup_narrate' || command === 'setup_respond' || command === 'setup_finalize' || command === 'send_message') {
+          const socialResult = await executeSocialCommand({
+            command,
+            params,
+            game,
+            gameId,
+            ctx,
+          })
+          if (socialResult) return socialResult
         }
 
         // While setup is active, block normal gameplay commands to prevent skipping backstories.
         if (setupActive) {
           return { ok: false, error: 'Setup phase in progress. Use setup_narrate / setup_respond / setup_finalize.' }
-        }
-
-        if (command === 'create_character') {
-          const klass = typeof params.klass === 'string' ? (params.klass as RpgClass) : null
-          if (!klass || !['Warrior', 'Scout', 'Mage', 'Healer'].includes(klass)) {
-            throw new Error('klass required: Warrior | Scout | Mage | Healer')
-          }
-
-          const agentName = ctx.agentName.trim() || 'unknown'
-          const existing = game.party.find((p) => isCharacter(p, agentName))
-          const fantasyName = existing?.name ?? generateJoinName(klass, game.party.length)
-          const updated = createCharacter({ name: fantasyName, klass, agent: agentName })
-          if (existing) {
-            Object.assign(existing, updated)
-          } else {
-            game.party.push(updated)
-          }
-          recomputeTurnOrder(game)
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return {
-            content: toTextContent(`Character ready: ${fantasyName} (${agentName}) the ${klass}\nParty: ${summarizeParty(game)}`),
-            details: { gameId, character: updated },
-          }
         }
 
         const agentName = ctx.agentName.trim()

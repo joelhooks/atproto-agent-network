@@ -591,26 +591,20 @@
     },
     {
       "id": "story-adr2-phase4",
-      "title": "ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module",
+      "title": "ADR-0002 Phase 4a: Extract combat + exploration commands from rpg.ts",
       "status": "completed",
       "filesModified": [
         ".ralph-context.json",
         ".ralph-iterations.jsonl",
-        "apps/network/src/environments/rpg.ts",
-        "apps/network/src/environments/rpg/campaign/campaign-logic.test.ts",
-        "apps/network/src/environments/rpg/campaign/campaign-logic.ts",
-        "apps/network/src/environments/rpg/campaign/normalizers.test.ts",
-        "apps/network/src/environments/rpg/campaign/normalizers.ts",
-        "apps/network/src/environments/rpg/campaign/serialization.test.ts",
-        "apps/network/src/environments/rpg/campaign/serialization.ts",
-        "prd.json",
-        "progress.txt",
         ".ralph/research/story-mliotb9y.md",
+        "apps/network/src/environments/rpg.ts",
         "apps/network/src/environments/rpg/commands/attack.ts",
         "apps/network/src/environments/rpg/commands/combat-commands.ts",
-        "apps/network/src/environments/rpg/commands/exploration-commands.ts"
+        "apps/network/src/environments/rpg/commands/exploration-commands.ts",
+        "prd.json",
+        "progress.txt"
       ],
-      "learnings": "Technical Discovery: `handleAttack` must use caller-provided RNG (`params.dice`) rather than creating a fresh dice instance, otherwise extracted command behavior can drift from the original in-command flow that shared the same dice object.\nGotcha: The worktree already contains unrelated staged/modified Ralph tracking files and extra command files; avoid broad git operations and keep edits narrowly targeted to requested story files.\nFiles Context: `apps/network/src/environments/rpg/commands/attack.ts` now holds standalone attack mutation/message logic. `apps/network/src/environments/rpg.ts` retains orchestration responsibilities (turn guard, campaign disposition side effect, DB save, completion emit) and calls `handleAttack` from the attack command branch."
+      "learnings": "Technical Discovery: The extraction requested by ADR-0002 Phase 4a is already implemented in tracked HEAD: `rpg.ts` calls `executeExplorationCommand` and `executeCombatCommand`, and the command logic resides in `apps/network/src/environments/rpg/commands/{exploration-commands,combat-commands}.ts`.\nGotcha: Because this workspace carries prior attempt artifacts, reading stale snippets can mislead implementation. Verify with `git hash-object` vs `git rev-parse HEAD:<path>` before large rewrites, then add/adjust tests instead of redoing code that is already in HEAD.\nFiles Context: `apps/network/src/environments/rpg.ts` (runtime command dispatch), `apps/network/src/environments/rpg/commands/combat-commands.ts` and `apps/network/src/environments/rpg/commands/exploration-commands.ts` (extracted command handlers), and new `apps/network/src/environments/rpg/commands/*.test.ts` files (story-focused regression coverage)."
     }
   ],
   "failures": [
