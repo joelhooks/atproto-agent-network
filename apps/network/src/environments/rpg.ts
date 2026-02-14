@@ -128,6 +128,7 @@ import {
 } from './rpg/campaign/campaign-logic'
 import { executeCombatCommand } from './rpg/commands/combat-commands'
 import { executeExplorationCommand } from './rpg/commands/exploration-commands'
+import { executeHubTownCommand } from './rpg/commands/hub-town-commands'
 import { executeLifecycleCommand } from './rpg/commands/lifecycle-commands'
 import { executeSocialCommand } from './rpg/commands/social-commands'
 export {
@@ -1212,145 +1213,26 @@ export const rpgEnvironment: AgentEnvironment = {
           if (lifecycleResult) return lifecycleResult
         }
 
-        if (command === 'visit_location') {
-          const visit = visitHubTownLocation(game, { agentName: ctx.agentName, location: params.location })
-          if (!visit.ok) return { ok: false, error: visit.error }
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return {
-            content: toTextContent(
-              `${buildHubTownNarration(game, {
-                location: visit.location,
-                cue: `You make your way to the ${HUB_TOWN_LOCATION_LABEL[visit.location]}.`,
-              })}\n\nParty: ${summarizeParty(game)}`
-            ),
-            details: { gameId, location: visit.location },
-          }
-        }
-
-        if (command === 'buy_item') {
-          const purchase = buyFromHubTownMarket(game, { agentName: ctx.agentName, itemId: params.itemId })
-          if (!purchase.ok) return { ok: false, error: purchase.error }
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return {
-            content: toTextContent(
-              `Bought ${purchase.itemId} (${purchase.itemName}) for ${purchase.cost} gold. (${purchase.gold} gold remaining)`
-            ),
-            details: { gameId, itemId: purchase.itemId, gold: purchase.gold },
-          }
-        }
-
-        if (command === 'sell_item') {
-          const sale = sellToHubTownMarket(game, { agentName: ctx.agentName, itemId: params.itemId })
-          if (!sale.ok) return { ok: false, error: sale.error }
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(game), game.phase, (game as any).winner ?? null, gameId)
-            .run()
-
-          return {
-            content: toTextContent(`Sold ${sale.itemId} (${sale.itemName}) for ${sale.value} gold. (${sale.gold} gold total)`),
-            details: { gameId, itemId: sale.itemId, gold: sale.gold, value: sale.value },
-          }
-        }
-
-        if (command === 'embark') {
-          if (game.phase !== 'hub_town') return { ok: false, error: 'embark is only available in hub_town.' }
-          if (game.currentPlayer !== ctx.agentName.trim()) {
-            return { ok: false, error: `Not your turn. Current player: ${game.currentPlayer}` }
-          }
-
-          const campaignId = typeof game.campaignId === 'string' ? game.campaignId.trim() : ''
-          let campaignState: CampaignState | null = null
-          if (campaignId) {
-            try {
-              campaignState = await getCampaign(db, campaignId)
-            } catch {
-              campaignState = null
-            }
-          }
-
-          const fallbackAdventureCount = parseCampaignAdventureCount(game.campaignAdventureNumber, 1)
-          const fallbackCampaignState: CampaignState | null = campaignId
-            ? {
-                id: campaignId,
-                name: game.campaignContext?.name ?? 'Campaign',
-                premise: game.campaignContext?.premise ?? '',
-                worldState: { factions: [], locations: [], events: [] },
-                storyArcs: [],
-                adventureCount: fallbackAdventureCount,
-              }
-            : null
-
-          const sourceCampaign = campaignState ?? fallbackCampaignState
-          const campaignThread = sourceCampaign ? buildCampaignDungeonThread(sourceCampaign) : null
-          const next = createGame({
-            id: gameId,
-            players: game.party,
-            ...(campaignThread ? { campaignState: campaignThread.themedCampaignState } : {}),
-          })
-
-          if (campaignThread?.objective) {
-            ;(next as Record<string, unknown>).campaignObjective = {
-              ...campaignThread.objective,
-            }
-          }
-          if (campaignThread && campaignThread.campaignLog.length > 0) {
-            next.campaignLog = campaignThread.campaignLog
-          }
-          if (campaignThread?.objective && next.campaignContext) {
-            const objectiveText = `${campaignThread.objective.arcName}: ${campaignThread.objective.plotPoint}`
-            next.campaignContext.activeArcs = [objectiveText, ...(next.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText)].slice(0, 3)
-          }
-
-          if (campaignState) {
-            const adventureNumber = Math.max(
-              Math.floor(campaignState.adventureCount) + 1,
-              Number.isFinite(next.campaignAdventureNumber) ? Math.floor(next.campaignAdventureNumber as number) : 1
-            )
-            next.campaignAdventureNumber = adventureNumber
-            try {
-              await updateCampaign(db, campaignState.id, { adventureCount: adventureNumber })
-            } catch {
-              // best effort
-            }
-          }
-
-          await db
-            .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(JSON.stringify(next), next.phase, (next as any).winner ?? null, gameId)
-            .run()
-
-          // Track adventure in campaign linkage table
-          if (campaignId) {
-            try {
-              await linkAdventureToCampaign(db, gameId, campaignId)
-            } catch {
-              // best effort — don't break embark
-            }
-          }
-
-          return {
-            content: toTextContent(`You leave town and embark on the next adventure.\n\nParty: ${summarizeParty(next)}`),
-            details: {
-              gameId,
-              phase: next.phase,
-              roomIndex: next.roomIndex,
-              campaignId: next.campaignId ?? null,
-              adventureNumber: next.campaignAdventureNumber ?? null,
+        const hubTownResult = await executeHubTownCommand({
+          command,
+          game,
+          gameId,
+          params,
+          agentName: ctx.agentName,
+          deps: {
+            saveGame: async (nextGame) => {
+              await db
+                .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(JSON.stringify(nextGame), nextGame.phase, (nextGame as any).winner ?? null, gameId)
+                .run()
             },
-          }
-        }
+            summarizeParty,
+            getCampaign: async (id) => getCampaign(db, id),
+            updateCampaign: async (id, patch) => updateCampaign(db, id, patch),
+            linkAdventureToCampaign: async (envId, campaignId) => linkAdventureToCampaign(db, envId, campaignId),
+          },
+        })
+        if (hubTownResult) return hubTownResult
 
         if (game.phase === 'hub_town' && command !== 'rest') {
           return {

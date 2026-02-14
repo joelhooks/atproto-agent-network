@@ -1387,3 +1387,37 @@ If polling rollback is expected, all interrupt wake paths must be reviewed, not 
 - `apps/network/src/agent.ts`: Durable Object alarm scheduling and interrupt wake behavior for inbox/wake endpoints.
 - `apps/network/src/environments/rpg.test.ts`: RPG mode semantics coverage (freeform vs turn-gated).
 - `apps/network/src/agent-do.test.ts`: alarm/wake/polling behavior coverage for AgentDO.
+
+---
+[2026-02-14T03:50:05.312Z]
+Completed: ADR-0002 Phase 4c: Extract hub-town commands from rpg.ts
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/environments/rpg.test.ts, apps/network/src/environments/rpg.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: `test_failure` + `timeout`. Mitigation: strict RED→GREEN with a focused new unit test first, targeted vitest run, then full required validation.
+
+Implemented ADR-0002 Phase 4c extraction:
+- Added new hub-town command module with extracted handlers:
+  - `visit_location`, `buy_item`, `sell_item`, `embark`
+  - dispatcher `executeHubTownCommand`
+  - file: `apps/network/src/environments/rpg/commands/hub-town-commands.ts:1`
+- Replaced the four inline hub-town `if` blocks in `rpg.ts` with a single module call and dependency wiring for persistence/campaign ops:
+  - file: `apps/network/src/environments/rpg.ts:1216`
+- Added command barrel re-export file:
+  - file: `apps/network/src/environments/rpg/commands/index.ts:1`
+- Added RED/GREEN unit tests for the new module:
+  - file: `apps/network/src/environments/rpg/commands/hub-town-commands.test.ts:1`
+
+Validation run (required):
+- `bun run check-types && bun run test` ✅
+- Result: 54 passed test files, 2 skipped; 493 passed tests, 6 skipped.
+
+Mandatory post-steps completed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` ✅
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4c: Extract hub-town commands from rpg.ts"` ✅
+
+## Learnings
+### Technical Discovery
+`embark` extraction needs a `saveGame(game)` dependency that accepts either the current mutated game or a fresh `next` game object, because `embark` rebuilds state via `createGame(...)` and persists that new object.
+### Gotcha for Next Iteration
+When using `swarm memory store`, avoid unescaped backticks in shell strings; they trigger command substitution and can corrupt the stored text payload.
+### Files Context
+`apps/network/src/environments/rpg.ts` now delegates hub-town command execution; `apps/network/src/environments/rpg/commands/hub-town-commands.ts` holds hub-town command logic; `apps/network/src/environments/rpg/commands/index.ts` is the command export surface; `apps/network/src/environments/rpg/commands/hub-town-commands.test.ts` guards dispatcher and phase-gating behavior.

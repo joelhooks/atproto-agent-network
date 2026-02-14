@@ -624,9 +624,22 @@
     {
       "id": "story-mlljj5r9",
       "title": "Reactive event-driven agent loops — kill polling, wake DOs on state change",
-      "status": "failed",
-      "filesModified": [],
-      "learnings": "[analysis_paralysis] RUN  v3.2.4 /home/joel/Code/joelhooks/atproto-agent-network\n\n ✓ |network| src/schema.test.ts (6 tests) 1046ms\n   ✓ schema.sql > defines an environments table with the expected columns  590ms\n   ✓ schema.sql > defines a work_items table with the expected columns  450ms\nstdout | src/agent-do.test.ts >"
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/rpg/commands/lifecycle-commands.test.ts",
+        "apps/network/src/environments/rpg/commands/lifecycle-commands.ts",
+        "apps/network/src/environments/rpg/commands/social-commands.test.ts",
+        "apps/network/src/environments/rpg/commands/social-commands.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/rpg.test.ts"
+      ],
+      "learnings": "Technical Discovery: Reactive wake signaling and exploration turn semantics should be separated: wake behavior is feature-flagged transport (`reactiveMode`), while exploration freeform is a gameplay rule based on RPG mode and party membership.\nGotcha: Feature-flag rollback to polling can silently fail if any non-obvious interrupt path still calls `scheduleInterruptWake` (e.g., inbox). Validate alarm timestamps in tests when `reactiveMode` is false.\nFiles Context: `apps/network/src/environments/rpg.ts` controls command gating and reactive emitter hooks; `apps/network/src/agent.ts` controls DO wake/polling scheduling; paired tests in `apps/network/src/environments/rpg.test.ts` and `apps/network/src/agent-do.test.ts` enforce both gameplay mode behavior and alarm rollback semantics."
     }
   ],
   "failures": [

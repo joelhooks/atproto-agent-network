@@ -1294,14 +1294,14 @@
       "title": "ADR-0002 Phase 4c: Extract hub-town commands from rpg.ts",
       "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nExtract hub-town commands from rpg.ts execute() into `apps/network/src/environments/rpg/commands/hub-town-commands.ts`.\n\nExtract: visit_location, buy_item, sell_item, embark\n\nEach function takes command input and game state, executes the logic, returns result. In rpg.ts, replace extracted if-blocks with calls to new functions.\n\nAlso create `apps/network/src/environments/rpg/commands/index.ts` that re-exports all command modules.\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 127,
-      "passes": false,
+      "passes": true,
       "validationCommand": "bun run check-types && bun run test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 113,
-    "lastIteration": "2026-02-14T03:44:48.699Z"
+    "totalIterations": 114,
+    "lastIteration": "2026-02-14T03:50:05.309Z"
   },
   "totalStories": 11
 }
