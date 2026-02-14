@@ -1246,3 +1246,48 @@ Post-work required commands run:
 Completed: ADR-0002 Phase 3: Extract campaign logic (normalizers, objectives, serialization)
 Files: apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/interfaces.ts, apps/network/src/environments/rpg/systems/hub-town.test.ts, apps/network/src/environments/rpg/systems/hub-town.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl
 Summary: Extracted ADR-0002 Phase 3 campaign domain logic out of `apps/network/src/environments/rpg.ts` into dedicated modules, added focused tests first (RED), then implemented extraction (GREEN), and rewired `rpg.ts` to import/re-export the new campaign logic. Removed in-file normalizers/objective/thread/serialization implementations so campaign logic is independently testable.
+
+---
+[2026-02-14T03:11:29.422Z]
+Failed: ADR-0002 Phase 4: Extract commands into CommandHandler implementations [analysis_paralysis]
+Validation: • turbo 2.8.3
+stderr | src/index.test.ts > network worker environments API > POST /environments creates a new instance and /games stays an alias
+Route deprecated: GET /games -> /environments
+
+stderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match th
+Codex: I extended `commands/index.ts` to include combat and lifecycle handlers (attack/negotiate/flee/sneak/intimidate/explore/rest/use_skill/use_item/resurrect/cast_spell), then updated tests to use real serialized phase machine state and corrected embark expectations. Next step is running tests and wiring `rpg.ts` dispatch.
+
+---
+[2026-02-14T03:12:22.811Z]
+Failed: ADR-0002 Phase 4a: Extract combat + exploration commands from rpg.ts [analysis_paralysis]
+Validation: • turbo 2.8.3
+stderr | src/index.test.ts > network worker environments API > POST /environments creates a new instance and /games stays an alias
+Route deprecated: GET /games -> /environments
+
+stderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match th
+Codex: I fixed setup phase-machine coercion compatibility in `commands/index.ts` and adjusted `embark` to enter `playing` phase for registry behavior. I’m rerunning `index.test.ts` now to verify those specific regressions are resolved before re-running full validation.
+
+---
+[2026-02-14T03:18:22.461Z]
+Completed: ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/campaign/campaign-logic.test.ts, apps/network/src/environments/rpg/campaign/campaign-logic.ts, apps/network/src/environments/rpg/campaign/normalizers.test.ts, apps/network/src/environments/rpg/campaign/normalizers.ts, apps/network/src/environments/rpg/campaign/serialization.test.ts, apps/network/src/environments/rpg/campaign/serialization.ts, prd.json, progress.txt, .ralph/research/story-mliotb9y.md
+Summary: Prior failure pattern detected: `test_failure`. Mitigation used: a surgical extraction of only the `attack` command logic, preserving existing DB persistence/completion behavior in `rpg.ts`.
+
+Implemented:
+- Added `apps/network/src/environments/rpg/commands/attack.ts:1` with `handleAttack(game, agentName, params)` that contains the extracted attack flow (combat + out-of-combat), using helpers from RPG system modules.
+- Updated `apps/network/src/environments/rpg.ts:129` to import `handleAttack`.
+- Replaced the inlined `attack` block in `apps/network/src/environments/rpg.ts:1943` with a call to `handleAttack(...)`, while keeping existing persistence/completion emission and campaign disposition update logic in `rpg.ts`.
+
+Required post-steps executed:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module"`
+
+---
+[2026-02-14T03:19:32.763Z]
+Completed: ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/campaign/campaign-logic.test.ts, apps/network/src/environments/rpg/campaign/campaign-logic.ts, apps/network/src/environments/rpg/campaign/normalizers.test.ts, apps/network/src/environments/rpg/campaign/normalizers.ts, apps/network/src/environments/rpg/campaign/serialization.test.ts, apps/network/src/environments/rpg/campaign/serialization.ts, prd.json, progress.txt, .ralph/research/story-mliotb9y.md, apps/network/src/environments/rpg/commands/attack.ts, apps/network/src/environments/rpg/commands/combat-commands.ts, apps/network/src/environments/rpg/commands/exploration-commands.ts
+Summary: Prior failure pattern detected: test_failure. Mitigation: I kept the change strictly scoped to the attack extraction and validated with the full required command.
+
+Implemented Phase 4a extraction by keeping `handleAttack` in `apps/network/src/environments/rpg/commands/attack.ts` and wiring the `attack` branch in `apps/network/src/environments/rpg.ts:1944` to call it (`handleAttack(game, attackerName, { ...params, dice })`) before existing save/emit flow. I also ensured the extracted handler consumes injected `dice` from params to preserve pre-extraction behavior parity.
+
+Validation run: `pnpm typecheck && pnpm test` passed (49 test files passed, 2 skipped; 474 tests passed, 6 skipped). I also ran the required reporting commands: `swarm memory store ...` and `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module"`.

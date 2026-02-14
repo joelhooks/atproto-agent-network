@@ -588,6 +588,26 @@
         "apps/network/src/environments/rpg/systems/hub-town.ts"
       ],
       "learnings": "Technical Discovery: Hub-town buy/sell extraction required dedicated success-result unions in `apps/network/src/environments/rpg/systems/hub-town.ts`; if success is typed too generically (shared with interface adapter output), downstream command formatting in `apps/network/src/environments/rpg.ts` loses access to `itemName/cost/value` and fails typecheck.\nGotcha: Run the mandated validation from repo root, not `apps/network`: root has `check-types`, app package does not. Also keep adapter-return types (`HubTownTradeResult`) separate from richer command-level return shapes to prevent union narrowing regressions.\nFiles Context: `apps/network/src/environments/rpg/interfaces.ts` defines new hub-town contracts; `apps/network/src/environments/rpg/systems/hub-town.ts` now centralizes downtime and market handlers; `apps/network/src/environments/rpg.ts` delegates hub-town command/autoplay branches to that system; `apps/network/src/environments/rpg/systems/hub-town.test.ts` covers the extracted market/transition/downtime logic."
+    },
+    {
+      "id": "story-adr2-phase4",
+      "title": "ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/rpg/campaign/campaign-logic.test.ts",
+        "apps/network/src/environments/rpg/campaign/campaign-logic.ts",
+        "apps/network/src/environments/rpg/campaign/normalizers.test.ts",
+        "apps/network/src/environments/rpg/campaign/normalizers.ts",
+        "apps/network/src/environments/rpg/campaign/serialization.test.ts",
+        "apps/network/src/environments/rpg/campaign/serialization.ts",
+        "prd.json",
+        "progress.txt",
+        ".ralph/research/story-mliotb9y.md"
+      ],
+      "learnings": "Technical Discovery: `attack` extraction works cleanly when `handleAttack` owns only combat/turn/message mutation, and `rpg.ts` retains `beforePhase`-based hub-town transition, D1 update, and completion emission side effects.\nGotcha: Campaign disposition-on-kill was previously in the attack inline block. After extraction, preserve it in `rpg.ts` by snapshotting the pre-attack living enemy and checking HP transition after `handleAttack`.\nFiles Context: `apps/network/src/environments/rpg/commands/attack.ts` now holds standalone attack command logic; `apps/network/src/environments/rpg.ts` still orchestrates environment persistence, completion events, and command-level async side effects around `handleAttack`."
     }
   ],
   "failures": [
@@ -737,6 +757,32 @@
         "ls -a"
       ],
       "iterationNumber": 2
+    },
+    {
+      "storyId": "story-adr2-phase4",
+      "storyTitle": "ADR-0002 Phase 4: Extract commands into CommandHandler implementations",
+      "category": "analysis_paralysis",
+      "error": "• turbo 2.8.3\nstderr | src/index.test.ts > network worker environments API > POST /environments creates a new instance and /games stays an alias\nRoute deprecated: GET /games -> /environments\n\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\nstderr | src/index.test.ts > network wor",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n"
+      ],
+      "iterationNumber": 7
+    },
+    {
+      "storyId": "story-adr2-phase4",
+      "storyTitle": "ADR-0002 Phase 4a: Extract combat + exploration commands from rpg.ts",
+      "category": "analysis_paralysis",
+      "error": "• turbo 2.8.3\nstderr | src/index.test.ts > network worker environments API > POST /environments creates a new instance and /games stays an alias\nRoute deprecated: GET /games -> /environments\n\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\nstderr | src/index.test.ts > network wor",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "sed -n",
+        "nl -ba",
+        "bun -e"
+      ],
+      "iterationNumber": 1
     }
   ]
 }

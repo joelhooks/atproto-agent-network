@@ -1245,23 +1245,24 @@
     },
     {
       "id": "story-adr2-phase4",
-      "title": "ADR-0002 Phase 4: Extract commands into CommandHandler implementations",
-      "description": "**ADR-0002 Phase 4** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nConvert the ~1800-line switch statement into individual CommandHandler implementations:\n\n1. Create `rpg/commands/index.ts` with CommandRegistry (Map<string, CommandHandler>)\n2. Extract in order: simple (status, get_reputation, send_message) → hub town → setup → combat → lifecycle\n3. Each command implements the CommandHandler interface\n4. Commands mutate game state but do NOT save — orchestrator saves after command returns\n5. Add unit test per command using in-memory repositories\n\n**MEDIUM RISK** — largest change surface. Extract simple commands first, validate, then proceed.\n\nSuccess: All tests pass. Each command independently testable. No duplicate save calls.",
+      "title": "ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module",
+      "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` — it has the full architecture plan, interface definitions, and module structure.**\n\nExtract ONLY the `attack` command handler from rpg.ts into a new file.\n\n1. Create `apps/network/src/environments/rpg/commands/attack.ts`\n2. Copy the attack command logic (rpg.ts lines ~1944-2049) into a function: `export function handleAttack(game: RpgGameState, agentName: string, params: any): { message: string; game: RpgGameState }`\n3. Import needed types from `../../games/rpg-engine` and helpers from the systems modules\n4. In rpg.ts, replace the attack if-block with: `const result = handleAttack(game, agentName, params); return result;` (adjust to match existing return pattern)\n5. Do NOT create tests, registries, or index files. Just extract the one command.\n\nThis is a proof-of-concept extraction. Keep it minimal.\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 125,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "passes": true
     },
     {
       "id": "story-adr2-phase5",
       "title": "ADR-0002 Phase 5: Extract context builder and auto-play strategy",
-      "description": "**ADR-0002 Phase 5** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract the context and auto-play modules:\n\n1. `rpg/context/context-builder.ts` — the 350-line buildContext() implementing ContextBuilder interface\n2. `rpg/context/auto-play.ts` — the 250-line getAutoPlayActions() implementing AutoPlayStrategy interface\n3. Inject CharacterRepository into context builder (currently loads persistent character directly)\n\n**LOW-MEDIUM RISK** — context builder is read-only but touches persistent characters, campaigns, feed messages, and class skills. Breakage = wrong prompt, not data corruption.\n\nSuccess: All tests pass. Context builder testable with in-memory repos.",
-      "priority": 126,
+      "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nExtract the context builder (~350 lines) and auto-play strategy (~250 lines) from rpg.ts into dedicated modules.\n\n1. `apps/network/src/environments/rpg/context-builder.ts` — Extract `buildContext()` and all its helper functions\n2. `apps/network/src/environments/rpg/auto-play.ts` — Extract `getAutoPlayActions()` and supporting logic\n\nIn rpg.ts, replace with imports from the new modules.\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 128,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
       "id": "story-adr2-phase6",
       "title": "ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith",
-      "description": "**ADR-0002 Phase 6** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nFinal assembly:\n\n1. `rpg/environment.ts` — thin AgentEnvironment orchestrator (~200 lines) with command registry dispatch\n2. `rpg/events/game-events.ts` — GameEventEmitter implementation (broadcast + campaign updates)\n3. `rpg/index.ts` — re-export rpgEnvironment\n4. Update all imports throughout the codebase to use new module paths\n5. DELETE the original `rpg.ts` monolith\n6. Verify no circular dependencies (arrows point DOWN in dependency graph)\n\nSuccess: All tests pass. rpg.ts is gone. rpg-engine.ts unchanged (zero diff). Live agents continue playing. GameEventEmitter wired up and ready for Phase 7.",
-      "priority": 128,
+      "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nWire up the orchestrator: rpg.ts should now be a thin shell that imports from all extracted modules. Verify all imports work, all tests pass, and rpg.ts is under 500 lines.\n\nIf rpg.ts is already thin enough from prior phases, just clean up any remaining dead code and ensure the barrel exports are correct.\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 129,
       "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
     },
     {
@@ -1279,12 +1280,28 @@
       "priority": 123,
       "passes": true,
       "validationCommand": "bun run check-types && bun run test"
+    },
+    {
+      "id": "story-mllqd1h9",
+      "title": "ADR-0002 Phase 4b: Extract lifecycle + social commands from rpg.ts",
+      "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nExtract lifecycle and social commands from rpg.ts execute() into separate handler files in `apps/network/src/environments/rpg/commands/`.\n\nCreate these files:\n1. `lifecycle-commands.ts` — Extract: join_game, new_game, create_character, status, get_reputation\n2. `social-commands.ts` — Extract: send_message, setup_narrate, setup_respond, setup_finalize\n\nEach file exports functions that take command input and game state, execute the logic, and return results. Keep signatures simple — parsed game state in, mutations out.\n\nIn rpg.ts, replace the extracted if-blocks with calls to the new functions. Do NOT create a CommandHandler interface or registry — just extract raw logic into importable functions.\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 126,
+      "passes": false,
+      "validationCommand": "bun run check-types && bun run test"
+    },
+    {
+      "id": "story-mllqd207",
+      "title": "ADR-0002 Phase 4c: Extract hub-town commands from rpg.ts",
+      "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nExtract hub-town commands from rpg.ts execute() into `apps/network/src/environments/rpg/commands/hub-town-commands.ts`.\n\nExtract: visit_location, buy_item, sell_item, embark\n\nEach function takes command input and game state, executes the logic, returns result. In rpg.ts, replace extracted if-blocks with calls to new functions.\n\nAlso create `apps/network/src/environments/rpg/commands/index.ts` that re-exports all command modules.\n\n**Validation:** `bun run check-types && bun run test`",
+      "priority": 127,
+      "passes": false,
+      "validationCommand": "bun run check-types && bun run test"
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 110,
-    "lastIteration": "2026-02-14T02:47:34.556Z"
+    "totalIterations": 111,
+    "lastIteration": "2026-02-14T03:19:32.760Z"
   },
   "totalStories": 11
 }
