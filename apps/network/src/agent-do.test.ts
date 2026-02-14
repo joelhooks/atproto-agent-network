@@ -2075,7 +2075,7 @@ describe('AgentDO', () => {
       name: 'alice',
       model: 'moonshotai/kimi-k2.5',
       fastModel: 'google/gemini-2.0-flash-001',
-      loopIntervalMs: 60000,
+      loopIntervalMs: 10000,
       goals: [],
     })
     expect(config1.enabledTools).toEqual(expect.arrayContaining(['remember']))
@@ -2142,7 +2142,7 @@ describe('AgentDO', () => {
       specialty: 'test',
       model: 'openrouter/test-model',
       fastModel: 'openrouter/test-model',
-      loopIntervalMs: 60_000,
+      loopIntervalMs: 10_000,
       goals: [],
       enabledTools: ['remember'],
     })
