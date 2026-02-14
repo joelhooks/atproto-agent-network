@@ -1256,7 +1256,8 @@
       "title": "ADR-0002 Phase 5: Extract context builder and auto-play strategy",
       "description": "**FIRST: Read `docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md` for architecture context.**\n\nExtract the context builder (~350 lines) and auto-play strategy (~250 lines) from rpg.ts into dedicated modules.\n\n1. `apps/network/src/environments/rpg/context-builder.ts` — Extract `buildContext()` and all its helper functions\n2. `apps/network/src/environments/rpg/auto-play.ts` — Extract `getAutoPlayActions()` and supporting logic\n\nIn rpg.ts, replace with imports from the new modules.\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 128,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "passes": true
     },
     {
       "id": "story-adr2-phase6",
@@ -1300,8 +1301,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 114,
-    "lastIteration": "2026-02-14T03:50:05.309Z"
+    "totalIterations": 115,
+    "lastIteration": "2026-02-14T03:59:31.567Z"
   },
   "totalStories": 11
 }

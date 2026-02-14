@@ -11,8 +11,6 @@ import {
   createDice,
   createGame,
   describeRoom,
-  enemyIsNegotiable,
-  enemyMoraleState,
   explore,
   findIntimidatableEnemies,
   gameCharacterToPersistent,
@@ -22,7 +20,6 @@ import {
   livingParty,
   markCharacterDeath,
   type Skills,
-  nextEncounterRoomIndex,
   partyWipe,
   partyAverageLevel,
   persistentToGameCharacter,
@@ -30,8 +27,6 @@ import {
   resolveSkillCheck,
   soloMultiplier,
   type RpgClass,
-  type FeedMessage,
-  type FeedMessageType,
   type HubTownLocation,
   type HubTownState,
   type CampaignState,
@@ -44,10 +39,8 @@ import {
   XP_PER_ROOM_CLEAR,
   XP_PER_TRAP_DISARM,
   XP_PER_TREASURE_FIND,
-  XP_TABLE,
   resolveSpell,
   resolveAbility,
-  buildAbilityMenu,
   SPELLS,
   ABILITIES,
 } from '../games/rpg-engine'
@@ -85,7 +78,6 @@ import {
   HUB_TOWN_LOCATION_LABEL as HUB_TOWN_LOCATION_LABEL_SYSTEM,
   resetHubTownIdle as resetHubTownIdleSystem,
   sellToHubTownMarket as sellToHubTownMarketSystem,
-  tickHubTownDowntime as tickHubTownDowntimeSystem,
   transitionCampaignCompletionToHubTown as transitionCampaignCompletionToHubTownSystem,
   visitHubTownLocation as visitHubTownLocationSystem,
 } from './rpg/systems/hub-town'
@@ -96,19 +88,6 @@ import type { AgentEnvironment, EnvironmentContext, ToolCall } from './types'
 import type { PhaseMachine } from './phase-machine'
 import type { CampaignPatch, CreateCampaignOptions, GameEventEmitter, GamePhase } from './rpg/interfaces'
 import { createRpgSetupPhaseMachine, serializePhaseMachine, deserializePhaseMachine } from './phase-machine'
-import {
-  DM_SKILL,
-  DM_SKILL_BRIEF,
-  WARRIOR_SKILL,
-  SCOUT_SKILL,
-  MAGE_SKILL,
-  HEALER_SKILL,
-  PARTY_TACTICS,
-  WARRIOR_SKILL_BRIEF,
-  SCOUT_SKILL_BRIEF,
-  MAGE_SKILL_BRIEF,
-  HEALER_SKILL_BRIEF,
-} from './rpg-skills'
 import {
   buildDefaultStoryArcs,
   buildDefaultWorldState,
@@ -131,6 +110,13 @@ import { executeExplorationCommand } from './rpg/commands/exploration-commands'
 import { executeHubTownCommand } from './rpg/commands/hub-town-commands'
 import { executeLifecycleCommand } from './rpg/commands/lifecycle-commands'
 import { executeSocialCommand } from './rpg/commands/social-commands'
+import {
+  buildContext as buildRpgContext,
+  findActiveGameForAgent,
+  findActiveGameWhereItsMyTurn,
+  summarizeParty,
+} from './rpg/context-builder'
+import { getAutoPlayActions as getRpgAutoPlayActions } from './rpg/auto-play'
 export {
   applyDispositionForEncounterOutcome,
   buildCampaignDungeonThread,
@@ -486,10 +472,6 @@ function sellToHubTownMarket(game: RpgGameState, input: { agentName: string; ite
   return sellToHubTownMarketSystem(game, input)
 }
 
-function tickHubTownDowntime(game: RpgGameState) {
-  return tickHubTownDowntimeSystem(game)
-}
-
 function livingPartyIds(game: RpgGameState): string[] {
   const party = Array.isArray(game.party) ? game.party : []
   return party.filter((p) => (p?.hp ?? 0) > 0).map((p) => characterId(p))
@@ -513,10 +495,6 @@ function awardBarrierClearMilestoneXp(
 function clampSkill(value: number): number {
   if (!Number.isFinite(value)) return 1
   return Math.max(1, Math.min(100, Math.floor(value)))
-}
-
-function listLivingEnemies(game: RpgGameState): Enemy[] {
-  return (game.combat?.enemies ?? []).filter((enemy) => (enemy?.hp ?? 0) > 0)
 }
 
 function deathLocale(game: RpgGameState): string {
@@ -572,45 +550,6 @@ function runEnemyFreeAttackRound(game: RpgGameState, dice: ReturnType<typeof cre
 
 function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {}
-}
-
-type EnvironmentRow = { id: string; state: string; type?: string | null }
-
-function dayPrefixFromTimestamp(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const s = value.trim()
-  if (s.length < 10) return null
-  return s.slice(0, 10)
-}
-
-function getMaxEnvironmentsPerDay(ctx: EnvironmentContext): number {
-  const raw = (ctx as any)?.maxEnvironmentsPerDay ?? (ctx as any)?.maxGamesPerDay
-  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
-  if (Number.isFinite(n) && n > 0) return Math.floor(n)
-  return 50
-}
-
-async function anyPlayingRpgEnvironmentsExist(ctx: EnvironmentContext): Promise<boolean> {
-  try {
-    const row = await ctx.db
-      .prepare("SELECT id FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') LIMIT 1")
-      .first<{ id: string }>()
-    return Boolean(row?.id)
-  } catch {
-    return false
-  }
-}
-
-async function countFinishedRpgEnvironmentsToday(ctx: EnvironmentContext): Promise<number> {
-  const today = new Date().toISOString().slice(0, 10)
-  try {
-    const { results } = await ctx.db
-      .prepare("SELECT id, updated_at FROM environments WHERE type = 'rpg' AND phase = 'finished'")
-      .all<{ id: string; updated_at: string }>()
-    return (results ?? []).filter((r) => dayPrefixFromTimestamp(r?.updated_at) === today).length
-  } catch {
-    return 0
-  }
 }
 
 async function emitEnvironmentCompleted(ctx: EnvironmentContext, input: { gameId: string; game: RpgGameState }): Promise<void> {
@@ -897,113 +836,6 @@ function awardRpgAchievements(
 
   if (Number.isFinite(pc.gamesPlayed) && pc.gamesPlayed >= 5) {
     addAchievement(pc, 'Veteran Adventurer')
-  }
-}
-
-async function findActiveGameForAgent(ctx: EnvironmentContext): Promise<EnvironmentRow | null> {
-  const agentName = ctx.agentName.trim()
-  if (!agentName) return null
-
-  try {
-    // Check as player first
-    const asPlayer = await ctx.db
-      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND players LIKE ? LIMIT 1")
-      .bind(`%${agentName}%`)
-      .first<EnvironmentRow>()
-    if (asPlayer) return asPlayer
-
-    // Check as host/DM
-    const asHost = await ctx.db
-      .prepare("SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND host_agent = ? LIMIT 1")
-      .bind(agentName)
-      .first<EnvironmentRow>()
-    return asHost ?? null
-  } catch {
-    return null
-  }
-}
-
-async function findActiveGameWhereItsMyTurn(ctx: EnvironmentContext): Promise<EnvironmentRow | null> {
-  const agentName = ctx.agentName.trim()
-  if (!agentName) return null
-
-  try {
-    const row = await ctx.db
-      .prepare(
-        "SELECT id, state, type FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup', 'hub_town') AND json_extract(state, '$.currentPlayer') = ?"
-      )
-      .bind(agentName)
-      .first<EnvironmentRow>()
-    return row ?? null
-  } catch {
-    return null
-  }
-}
-
-function summarizeParty(game: RpgGameState): string {
-  return game.party
-    .map((p) => {
-      const agentTag = p.agent ? ` [${p.agent}]` : ''
-      return `${p.name}(${p.klass})${agentTag} HP ${p.hp}/${p.maxHp} MP ${p.mp}/${p.maxMp}`
-    })
-    .join(' | ')
-}
-
-function pickJoinClass(game: RpgGameState): RpgClass {
-  const counts = new Map<RpgClass, number>([
-    ['Warrior', 0],
-    ['Scout', 0],
-    ['Mage', 0],
-    ['Healer', 0],
-  ])
-  for (const member of game.party) {
-    counts.set(member.klass, (counts.get(member.klass) ?? 0) + 1)
-  }
-
-  let best: RpgClass = 'Warrior'
-  let bestCount = Number.POSITIVE_INFINITY
-  for (const klass of ['Warrior', 'Scout', 'Mage', 'Healer'] as const) {
-    const count = counts.get(klass) ?? 0
-    if (count < bestCount) {
-      best = klass
-      bestCount = count
-    }
-  }
-  return best
-}
-
-async function findJoinableEnvironmentsForAgent(
-  ctx: EnvironmentContext,
-  input: { limit?: number }
-): Promise<Array<{ id: string; game: RpgGameState }>> {
-  const agentName = ctx.agentName.trim()
-  if (!agentName) return []
-
-  try {
-    const { results } = await ctx.db
-      .prepare("SELECT id, state FROM environments WHERE type = 'rpg' AND phase IN ('playing', 'setup') ORDER BY updated_at DESC")
-      .all<EnvironmentRow>()
-
-    const joinable: Array<{ id: string; game: RpgGameState }> = []
-    const limit = Math.max(1, Math.min(20, Math.floor(input.limit ?? 5)))
-
-    for (const row of results) {
-      if (!row?.id || typeof row.state !== 'string') continue
-      try {
-        const game = JSON.parse(row.state) as RpgGameState
-        if (!game || game.type !== 'rpg') continue
-        if (Array.isArray(game.party) && game.party.some((p) => p && isCharacter(p, agentName))) continue
-        if (!Array.isArray(game.party) || game.party.length >= 3) continue
-        joinable.push({ id: row.id, game })
-        if (joinable.length >= limit) break
-      } catch {
-        // ignore corrupt state rows
-      }
-    }
-
-    return joinable
-  } catch {
-    return []
   }
 }
 
@@ -1371,302 +1203,7 @@ export const rpgEnvironment: AgentEnvironment = {
   },
 
   async buildContext(ctx: EnvironmentContext): Promise<string[]> {
-    const row = (await findActiveGameWhereItsMyTurn(ctx)) ?? (await findActiveGameForAgent(ctx))
-    if (!row) {
-      const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5 })
-      if (joinable.length === 0) return []
-
-      const lines: string[] = []
-      lines.push('🏰 Joinable Dungeon Crawls:')
-      for (const candidate of joinable) {
-        const recommended = pickJoinClass(candidate.game)
-        lines.push(`- ${candidate.id}: Party: ${summarizeParty(candidate.game)} | Current: ${candidate.game.currentPlayer}`)
-        lines.push(`  Join: {"command":"join_game","gameId":"${candidate.id}","klass":"${recommended}"}`)
-      }
-      return lines.filter(Boolean)
-    }
-
-    try {
-      const game = JSON.parse(row.state) as RpgGameState
-      const room = game.dungeon[game.roomIndex]
-      const agentName = ctx.agentName.trim()
-      const partyMember = game.party?.find((p: any) => p && isCharacter(p, agentName))
-      const freeformExploration =
-        isReactiveModeEnabled(ctx) && game.phase === 'playing' && game.mode === 'exploring' && Boolean(partyMember)
-      const isMyTurn = game.currentPlayer === agentName || freeformExploration
-      const setupPhase = (game as any).setupPhase as RpgGameState['setupPhase'] | undefined
-
-      if (setupPhase && !setupPhase.complete) {
-        // Use phase machine for context if available
-        const pmData = (game as any).phaseMachine
-        if (pmData) {
-          const pm = deserializePhaseMachine(pmData)
-          const phase = pm.getCurrentPhase()
-          if (phase && pm.isActiveAgent(agentName)) {
-            return [
-              `🎮🎮🎮 ${phase.prompt}`,
-              ``,
-              `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
-            ]
-          }
-          if (phase && !pm.isActiveAgent(agentName)) {
-            return [
-              `Waiting for ${phase.activeAgent} to act in phase: ${phase.name}.`,
-              'Use environment_broadcast to coordinate with teammates while you wait.',
-            ]
-          }
-        }
-
-        // Fallback for environments without phase machine (backward compat)
-        const party = Array.isArray(game.party) ? game.party : []
-        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
-        const current = party[idx]
-        const currentAgent = current ? (current.agent ?? current.name) : ''
-
-        if (agentName.toLowerCase() === 'grimlock') {
-          return [
-            `🎮🎮🎮 SETUP PHASE — YOUR ONLY ACTION:`,
-            `Call the "rpg" tool with these EXACT parameters:`,
-            `  { "command": "setup_narrate", "target": "${currentAgent}", "message": "<your question about their backstory>" }`,
-            ``,
-            `You are interviewing ${currentAgent} about their character. Ask about their origin, motivation, or appearance.`,
-            `After all players have responded, call: { "command": "setup_finalize", "backstories": { "<agent>": "<backstory>" } }`,
-            ``,
-            `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
-          ]
-        }
-
-        if (agentName === currentAgent) {
-          return [
-            `🎮🎮🎮 SETUP PHASE — YOUR ONLY ACTION:`,
-            `Call the "rpg" tool with these EXACT parameters:`,
-            `  { "command": "setup_respond", "message": "<your backstory response>" }`,
-            ``,
-            `The DM is asking about your character's backstory. Respond in character.`,
-            ``,
-            `⚠️ The ONLY tool available to you right now is "rpg". No other tools exist during setup.`,
-          ]
-        }
-
-        return [
-          `Waiting for ${currentAgent || 'the current player'} to finish backstory with DM.`,
-          'Use environment_broadcast to coordinate with teammates while you wait.',
-        ]
-      }
-
-      if (game.phase === 'hub_town') {
-        const hub = ensureHubTownState(game)
-        const lines: string[] = []
-        lines.push(buildHubTownNarration(game, { location: hub.location, cue: 'Downtime in town gives the party room to recover and prepare.' }))
-        lines.push(`Location: ${hub.location}`)
-        lines.push(`Idle turns: ${hub.idleTurns}/${hub.autoEmbarkAfter}`)
-        lines.push(`Party: ${summarizeParty(game)}`)
-        if (isMyTurn) {
-          lines.push('Use one of: visit_location, buy_item, sell_item, rest, embark, status')
-        } else {
-          lines.push(`Waiting for ${game.currentPlayer} to act in hub town.`)
-        }
-        return lines.filter(Boolean)
-      }
-
-      // Barrier detection: if room requires a class nobody has, prompt recruitment
-      const blockedRecruitment = (() => {
-        if (!room || typeof room !== 'object') return ''
-        const r = room as { type?: unknown; requiredClass?: unknown }
-        if (r.type !== 'barrier') return ''
-        const requiredClass = typeof r.requiredClass === 'string' ? r.requiredClass : ''
-        if (!requiredClass) return ''
-        const party = Array.isArray(game.party) ? game.party : []
-        const hasClass = party.some((p: any) => p?.klass === requiredClass)
-        if (hasClass) return ''
-        return `URGENT: Recruit ${requiredClass} via message tool`
-      })()
-
-      // Inject persistent character backstory/history (after character intro, before tactical skills)
-      const persistentLines: string[] = []
-      if (ctx.loadCharacter) {
-        try {
-          const pc = (await ctx.loadCharacter()) as PersistentCharacter | null
-          if (pc && pc.klass) {
-            const lvl = Number.isFinite(pc.level) ? Math.max(1, Math.floor(pc.level)) : 1
-            const xp = Number.isFinite(pc.xp) ? Math.max(0, Math.floor(pc.xp)) : 0
-            const next = XP_TABLE[Math.min(XP_TABLE.length - 1, lvl)] ?? XP_TABLE[XP_TABLE.length - 1]!
-            persistentLines.push(`Level ${lvl} ${pc.klass} (${xp}/${next} XP to next level)`)
-            if (pc.backstory) persistentLines.push(`Your backstory: ${pc.backstory}`)
-            if (Array.isArray(pc.achievements) && pc.achievements.length > 0) {
-              persistentLines.push(`🏆 Your achievements: ${pc.achievements.join(', ')}`)
-            }
-            if (Array.isArray(pc.adventureLog) && pc.adventureLog.length > 0) {
-              persistentLines.push('📜 CAMPAIGN HISTORY:')
-              persistentLines.push('Your previous adventures:')
-              for (const entry of pc.adventureLog.slice(-3)) {
-                persistentLines.push(`- ${entry}`)
-              }
-            }
-            if (pc.gamesPlayed > 0) {
-              persistentLines.push(`Veteran of ${pc.gamesPlayed} adventures (Level ${pc.level}, ${pc.deaths} deaths)`)
-            }
-          }
-        } catch {
-          /* non-fatal */
-        }
-      }
-
-      const isGrimlockAgent = ctx.agentName.trim().toLowerCase() === 'grimlock'
-      const campaignLines: string[] = []
-      const campaignContext = game.campaignContext
-      if (campaignContext) {
-        campaignLines.push(`Campaign: ${campaignContext.name}`)
-        if (campaignContext.premise) campaignLines.push(`Premise: ${campaignContext.premise}`)
-        if (campaignContext.activeArcs.length > 0) campaignLines.push(`Active arcs: ${campaignContext.activeArcs.join(', ')}`)
-        if (campaignContext.factions.length > 0) {
-          campaignLines.push('Faction standing:')
-          for (const factionLine of campaignContext.factions.slice(0, 4)) {
-            campaignLines.push(`- ${factionLine}`)
-          }
-        }
-        if (campaignContext.npcs.length > 0) campaignLines.push(`Recurring NPCs: ${campaignContext.npcs.join(', ')}`)
-      }
-      if (isGrimlockAgent) {
-        const recaps = Array.isArray(game.campaignLog)
-          ? game.campaignLog
-            .filter((line): line is string => typeof line === 'string' && line.startsWith('Previously on: '))
-            .map((line) => line.slice('Previously on: '.length).trim())
-            .filter(Boolean)
-            .slice(-3)
-          : []
-        if (recaps.length > 0) {
-          campaignLines.push('Previously on...')
-          for (const recap of recaps) {
-            campaignLines.push(`- ${recap}`)
-          }
-        }
-      }
-
-      // Inject role-based skills
-      const roleSkillLines: string[] = []
-      if (isGrimlockAgent) {
-        const skill = isMyTurn ? DM_SKILL : DM_SKILL_BRIEF
-        roleSkillLines.push(skill)
-      } else {
-        const klass = partyMember?.klass?.toLowerCase() ?? ''
-        const skillMap: Record<string, { full: string; brief: string }> = {
-          warrior: { full: WARRIOR_SKILL, brief: WARRIOR_SKILL_BRIEF },
-          scout: { full: SCOUT_SKILL, brief: SCOUT_SKILL_BRIEF },
-          mage: { full: MAGE_SKILL, brief: MAGE_SKILL_BRIEF },
-          healer: { full: HEALER_SKILL, brief: HEALER_SKILL_BRIEF },
-        }
-        const classSkill = skillMap[klass]
-        if (isMyTurn) {
-          roleSkillLines.push(classSkill?.full ?? 'Play your class to its strengths.')
-          roleSkillLines.push(PARTY_TACTICS)
-        } else {
-          roleSkillLines.push(classSkill?.brief ?? 'Wait for your turn. Coordinate with the party via environment_broadcast.')
-        }
-      }
-
-      const lines: string[] = []
-      const feedLines: string[] = []
-      const feed = Array.isArray(game.feedMessages) ? game.feedMessages : []
-      if (feed.length > 0) {
-        const mention = `@${agentName.toLowerCase()}`
-        const isDm = agentName.toLowerCase() === 'grimlock'
-        const relevant = feed.filter((m: any) => {
-          const to = typeof m?.to === 'string' ? m.to.toLowerCase() : ''
-          const text = typeof m?.message === 'string' ? m.message.toLowerCase() : ''
-          if (to === '@party') return true
-          if (to === mention) return true
-          if (to === '@dm' && isDm) return true
-          return Boolean(mention && text.includes(mention))
-        })
-        const recent = relevant.slice(-10)
-        if (recent.length > 0) {
-          feedLines.push('Recent messages (no response required):')
-          for (const m of recent) {
-            const to = typeof m?.to === 'string' ? m.to : ''
-            const msg = typeof m?.message === 'string' ? m.message : ''
-            const sender = typeof m?.sender === 'string' ? m.sender : 'unknown'
-            const kind = m?.type === 'ic' || m?.type === 'ooc' ? (m.type as FeedMessageType) : 'ooc'
-
-            if (kind === 'ic') {
-              const senderChar = Array.isArray(game.party) ? game.party.find((p: any) => p && isCharacter(p, sender)) : undefined
-              const senderName = senderChar?.name ?? sender
-              const targetHandle = to.toLowerCase()
-              const targetAgent = targetHandle.startsWith('@') ? targetHandle.slice(1) : targetHandle
-              const targetChar = Array.isArray(game.party)
-                ? game.party.find((p: any) => p && isCharacter(p, targetAgent))
-                : undefined
-              const targetName = targetHandle === '@party' ? 'the party' : targetHandle === '@dm' ? 'the DM' : targetChar?.name ?? to
-              feedLines.push(`- IC ${senderName} -> ${targetName} (${to}): ${msg}`)
-            } else {
-              feedLines.push(`- OOC ${sender} -> ${to}: ${msg}`)
-            }
-          }
-        }
-      }
-
-      if (isMyTurn) {
-        lines.push(`🎮🎮🎮 IT IS YOUR TURN in RPG adventure ${row.id}!`)
-        if (freeformExploration) lines.push('Exploration mode is freeform: any party member can act right now.')
-        if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
-        lines.push(...persistentLines)
-        lines.push(...campaignLines)
-        lines.push(...feedLines)
-        if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
-        if (blockedRecruitment) lines.push(blockedRecruitment)
-        lines.push(...roleSkillLines)
-        lines.push('')
-        if (game.mode === 'combat') {
-          const livingEnemies = listLivingEnemies(game)
-          const enemies = livingEnemies
-            .map((enemy) => {
-              const negotiable = enemyIsNegotiable(enemy) ? 'yes' : 'no'
-              const morale = enemyMoraleState(enemy)
-              return `${enemy.name} (HP:${enemy.hp}/${enemy.maxHp}, negotiable:${negotiable}, morale:${morale})`
-            })
-            .join(', ') || 'unknown'
-          const negotiableNow = livingEnemies.filter((enemy) => enemyIsNegotiable(enemy)).map((enemy) => enemy.name)
-          lines.push(`⚔️ COMBAT! Enemies: ${enemies}`)
-          lines.push(`Negotiable now: ${negotiableNow.length > 0 ? negotiableNow.join(', ') : 'none'}`)
-          if (isBossEncounterRoom(game)) lines.push('Boss encounter: flee is unavailable.')
-          lines.push('')
-          if (partyMember) lines.push(buildAbilityMenu(partyMember))
-          lines.push('')
-          lines.push(`ACTIONS: attack, cast_spell <spell>, use_skill <ability>, use_item <item>, negotiate, flee, intimidate, resurrect`)
-          lines.push(`Example: rpg({"command":"cast_spell","spell":"fireball","gameId":"${row.id}"})`)
-        } else {
-          lines.push(`Use the rpg tool to act: rpg({"command":"explore","gameId":"${row.id}"})`)
-          if (nextEncounterRoomIndex(game) != null) {
-            lines.push(`Optional: rpg({"command":"sneak","gameId":"${row.id}"}) to bypass the next encounter.`)
-          }
-        }
-        lines.push(`DO NOT create a new environment.`)
-      } else {
-        if (freeformExploration) {
-          lines.push(`🎮🎮🎮 RPG adventure ${row.id} is in freeform exploration mode.`)
-        } else {
-          lines.push(`🎲 Active RPG adventure: ${row.id} — waiting for ${game.currentPlayer}.`)
-        }
-        if (partyMember) lines.push(`You are ${partyMember.name} the ${partyMember.klass} (HP: ${partyMember.hp}/${partyMember.maxHp})`)
-        lines.push(...persistentLines)
-        lines.push(...campaignLines)
-        lines.push(...feedLines)
-        if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
-        if (blockedRecruitment) lines.push(blockedRecruitment)
-        lines.push(...roleSkillLines)
-        if (freeformExploration) {
-          lines.push(`Use the rpg tool to act now: rpg({"command":"explore","gameId":"${row.id}"})`)
-        } else {
-          lines.push('Wait for your turn.')
-          lines.push('Use environment_broadcast to coordinate with teammates while waiting.')
-        }
-        lines.push(`DO NOT create a new environment.`)
-      }
-
-      return lines.filter(Boolean)
-    } catch {
-      return []
-    }
+    return buildRpgContext(ctx, { isCharacter, isReactiveModeEnabled })
   },
 
   isActionTaken(toolCalls: ToolCall[]): boolean {
@@ -1731,160 +1268,6 @@ export const rpgEnvironment: AgentEnvironment = {
   },
 
   async getAutoPlayActions(ctx: EnvironmentContext): Promise<ToolCall[]> {
-    const agentName = ctx.agentName.trim()
-    const myTurnRow = await findActiveGameWhereItsMyTurn(ctx)
-    const activeRow = myTurnRow ?? (await findActiveGameForAgent(ctx))
-
-    let row = myTurnRow
-    if (!row && activeRow && isReactiveModeEnabled(ctx)) {
-      try {
-        const state = JSON.parse(activeRow.state) as RpgGameState
-        const isPartyMember = Array.isArray(state.party) && state.party.some((member) => member && isCharacter(member, agentName))
-        if (state.phase === 'playing' && state.mode === 'exploring' && isPartyMember) {
-          row = activeRow
-        }
-      } catch {
-        // Ignore malformed state and fall back to default behavior.
-      }
-    }
-
-    // Grimlock: if there's an active game with 0 dungeon rooms, craft_dungeon first
-    if (agentName === 'grimlock') {
-      const active = row ?? activeRow
-      if (active) {
-        try {
-          const state = JSON.parse(active.state) as RpgGameState
-          if (Array.isArray(state.dungeon) && state.dungeon.length === 0) {
-            return [{ name: 'gm', arguments: { command: 'craft_dungeon', gameId: active.id } }]
-          }
-        } catch {
-          // Ignore malformed state
-        }
-        if (!row) return []
-      }
-    }
-
-    if (!row) {
-      // Grimlock: when there are no playing environments, auto-create a fresh dungeon.
-      if (agentName === 'grimlock') {
-        const anyPlaying = await anyPlayingRpgEnvironmentsExist(ctx)
-        if (anyPlaying) return []
-
-        const maxEnvironmentsPerDay = getMaxEnvironmentsPerDay(ctx)
-        const finishedToday = await countFinishedRpgEnvironmentsToday(ctx)
-        if (finishedToday >= maxEnvironmentsPerDay) return []
-
-        // Prefer campaign continuation over standalone dungeons
-        try {
-          const campaignRow = await ctx.db
-            .prepare('SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 1')
-            .first<{ id: string }>()
-          if (campaignRow?.id) {
-            return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'], campaignId: campaignRow.id } }]
-          }
-        } catch {
-          // No campaigns table or no campaigns — fall through to standalone
-        }
-        return [{ name: 'rpg', arguments: { command: 'new_game', players: ['slag', 'snarl', 'swoop'] } }]
-      }
-
-      const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 1 })
-      if (joinable.length === 0) return []
-
-      const candidate = joinable[0]!
-      const klass = pickJoinClass(candidate.game)
-      return [{ name: 'rpg', arguments: { command: 'join_game', gameId: candidate.id, klass } }]
-    }
-
-    try {
-      const state = JSON.parse(row.state) as RpgGameState
-      const setupPhase = (state as any).setupPhase as RpgGameState['setupPhase'] | undefined
-      if (setupPhase && !setupPhase.complete) {
-        const party = Array.isArray(state.party) ? state.party : []
-        const idx = Math.max(0, Math.min(party.length - 1, Math.floor(setupPhase.currentPlayerIndex ?? 0)))
-        const current = party[idx]
-        const currentAgent = current ? (current.agent ?? current.name) : ''
-
-        // DM turn: handle setup_narrate or setup_finalize
-        if (ctx.agentName.trim() === 'grimlock') {
-          const dialogues = (setupPhase.dialogues ?? {}) as Record<string, string[]>
-
-          // Check if phase machine says it's time to finalize
-          const pmData = (state as any).phaseMachine
-          if (pmData) {
-            const pm = deserializePhaseMachine(pmData)
-            const currentPhase = pm.getCurrentPhase()
-            if (currentPhase?.transitionOn === 'setup_finalize') {
-              // Auto-build backstories from dialogues
-              const backstories: Record<string, string> = {}
-              for (const [agent, msgs] of Object.entries(dialogues)) {
-                backstories[agent] = msgs.filter((_, i) => i % 2 === 1).join(' ') || 'A mysterious adventurer.'
-              }
-              return [{
-                name: 'rpg',
-                arguments: { command: 'setup_finalize', gameId: row.id, backstories },
-              }]
-            }
-          }
-
-          const existing = Array.isArray(dialogues[currentAgent]) ? dialogues[currentAgent] : []
-          if (existing.length === 0) {
-            return [
-              {
-                name: 'rpg',
-                arguments: {
-                  command: 'setup_narrate',
-                  gameId: row.id,
-                  target: currentAgent,
-                  message: 'Tell me about your character. Where did you come from, and what do you look like?',
-                },
-              },
-            ]
-          }
-          return []
-        }
-
-        // Player turn: respond creatively based on class.
-        if (ctx.agentName.trim() === currentAgent) {
-          const klass = String((current as any)?.klass ?? '').toLowerCase()
-          const byClass: Record<string, string> = {
-            warrior: 'I learned steel in a forgotten border war. I carry a scar I refuse to explain.',
-            scout: 'I grew up running rooftops and forest trails, always one step ahead of the law.',
-            mage: 'I was apprenticed to a cruel tutor; my spells are precise, and my temper is not.',
-            healer: 'I watched illness take my village, so I swore never to be powerless again.',
-          }
-          const message = byClass[klass] ?? 'I have a past I do not share easily, but it brought me here.'
-          return [{ name: 'rpg', arguments: { command: 'setup_respond', gameId: row.id, message } }]
-        }
-
-        return []
-      }
-
-      if (state.phase === 'hub_town') {
-        const tick = tickHubTownDowntime(state)
-        if (tick.alreadyReady) {
-          return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
-        }
-
-        await ctx.db
-          .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
-          .bind(JSON.stringify(state), state.phase, (state as any).winner ?? null, row.id)
-          .run()
-        if (tick.shouldEmbark) {
-          return [{ name: 'rpg', arguments: { command: 'embark', gameId: row.id } }]
-        }
-        return []
-      }
-
-      if (state.mode === 'combat') {
-        return [{ name: 'rpg', arguments: { command: 'attack', gameId: row.id } }]
-      }
-      if (state.mode === 'exploring') {
-        return [{ name: 'rpg', arguments: { command: 'explore', gameId: row.id } }]
-      }
-      return []
-    } catch {
-      return []
-    }
+    return getRpgAutoPlayActions(ctx, { isCharacter, isReactiveModeEnabled })
   },
 }

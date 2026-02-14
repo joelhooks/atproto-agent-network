@@ -1421,3 +1421,21 @@ Mandatory post-steps completed:
 When using `swarm memory store`, avoid unescaped backticks in shell strings; they trigger command substitution and can corrupt the stored text payload.
 ### Files Context
 `apps/network/src/environments/rpg.ts` now delegates hub-town command execution; `apps/network/src/environments/rpg/commands/hub-town-commands.ts` holds hub-town command logic; `apps/network/src/environments/rpg/commands/index.ts` is the command export surface; `apps/network/src/environments/rpg/commands/hub-town-commands.test.ts` guards dispatcher and phase-gating behavior.
+
+---
+[2026-02-14T03:59:31.571Z]
+Completed: ADR-0002 Phase 5: Extract context builder and auto-play strategy
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/commands/hub-town-commands.test.ts, apps/network/src/environments/rpg/commands/hub-town-commands.ts, apps/network/src/environments/rpg/commands/index.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: timeout/test_failure. Mitigation: I used a tight TDD loop (new failing module tests first, focused vitest run, then full validation).
+
+Implemented ADR-0002 Phase 5 extraction:
+- Added `buildContext` + helpers in `apps/network/src/environments/rpg/context-builder.ts:32` and `apps/network/src/environments/rpg/context-builder.ts:154`.
+- Added `getAutoPlayActions` + supporting logic in `apps/network/src/environments/rpg/auto-play.ts:13` and `apps/network/src/environments/rpg/auto-play.ts:56`.
+- Updated `rpg.ts` to import and delegate to the new modules at `apps/network/src/environments/rpg.ts:113`, `apps/network/src/environments/rpg.ts:1205`, and `apps/network/src/environments/rpg.ts:1270`.
+- Added RED/GREEN tests for both extracted modules:
+  - `apps/network/src/environments/rpg/context-builder.test.ts:1`
+  - `apps/network/src/environments/rpg/auto-play.test.ts:1`
+
+Required post-steps completed:
+- `swarm memory store ...` (stored `mem-5b3e31f1a3a30b8b`)
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 5: Extract context builder and auto-play strategy"`

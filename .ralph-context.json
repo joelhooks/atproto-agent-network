@@ -640,6 +640,22 @@
         "apps/network/src/environments/rpg.test.ts"
       ],
       "learnings": "Technical Discovery: Reactive wake signaling and exploration turn semantics should be separated: wake behavior is feature-flagged transport (`reactiveMode`), while exploration freeform is a gameplay rule based on RPG mode and party membership.\nGotcha: Feature-flag rollback to polling can silently fail if any non-obvious interrupt path still calls `scheduleInterruptWake` (e.g., inbox). Validate alarm timestamps in tests when `reactiveMode` is false.\nFiles Context: `apps/network/src/environments/rpg.ts` controls command gating and reactive emitter hooks; `apps/network/src/agent.ts` controls DO wake/polling scheduling; paired tests in `apps/network/src/environments/rpg.test.ts` and `apps/network/src/agent-do.test.ts` enforce both gameplay mode behavior and alarm rollback semantics."
+    },
+    {
+      "id": "story-mllqd207",
+      "title": "ADR-0002 Phase 4c: Extract hub-town commands from rpg.ts",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/agent.ts",
+        "apps/network/src/environments/rpg.test.ts",
+        "apps/network/src/environments/rpg.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `embark` in `apps/network/src/environments/rpg/commands/hub-town-commands.ts` must persist a newly created `next` game state, so the extracted handler needs a `saveGame(game)` dependency that accepts arbitrary `RpgGameState`, not a closure tied only to the original object.\nGotcha: Shell backticks inside `swarm memory store \"...\"` caused zsh command substitution (`command not found` noise). Use single-quoted payloads for reliable memory writes.\nFiles Context: `apps/network/src/environments/rpg.ts` now routes hub-town commands through `executeHubTownCommand` at the execute-path dispatch point; `apps/network/src/environments/rpg/commands/hub-town-commands.ts` contains the extracted `visit_location`, `buy_item`, `sell_item`, `embark` logic; `apps/network/src/environments/rpg/commands/index.ts` re-exports command modules; `apps/network/src/environments/rpg/commands/hub-town-commands.test.ts` provides RED/GREEN coverage for dispatcher and phase guard behavior."
     }
   ],
   "failures": [
