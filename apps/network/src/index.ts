@@ -998,6 +998,11 @@ export default {
                 console.error('Environment create execute error:', err)
                 return Response.json({ error: 'Environment create failed', detail: String(err) }, { status: 502 })
               }
+              // Handle CommandFailure { ok: false, error: string }
+              const asFailure = toolResult as { ok?: boolean; error?: string } | undefined
+              if (asFailure?.ok === false && asFailure?.error) {
+                return Response.json({ error: asFailure.error }, { status: 409 })
+              }
               const details = (toolResult as any)?.details as Record<string, unknown> | undefined
               const id = typeof details?.gameId === 'string' ? details.gameId : null
               if (!id) {
