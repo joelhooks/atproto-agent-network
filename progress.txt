@@ -1120,3 +1120,25 @@ Added RED/GREEN tests in `apps/network/src/agent-do.test.ts`:
 - `apps/network/src/agent-do.test.ts:4105` partial shared decryption failure skips bad shared memory and still returns good shared memory.
 - `apps/network/src/agent-do.test.ts:4171` `buildRelevantMemoriesSection` failure does not break think prompt.
 - `apps/network/src/agent-do.test.ts:4201` fallback `memory.list()` failure is caught and returns graceful empty results.
+
+---
+[2026-02-14T02:05:21.566Z]
+Completed: ADR-0002 Phase 1: Extract interfaces + repositories from rpg.ts
+Files: apps/network/src/agent-do.test.ts
+Summary: Prior failure pattern detected: `test_failure`, `unknown`, `verification_rejected`. Mitigation: strict RED→GREEN repository TDD, exact story-target files only, and full required validation.
+
+Implemented ADR-0002 Phase 1 repository scaffolding alongside the existing monolith (no `rpg.ts` behavior change):
+- Added full contract surface in `apps/network/src/environments/rpg/interfaces.ts`.
+- Added D1 game-state repository in `apps/network/src/environments/rpg/repositories/game-state.d1.ts`.
+- Added D1 campaign repository in `apps/network/src/environments/rpg/repositories/campaign.d1.ts`.
+- Added DO character repository in `apps/network/src/environments/rpg/repositories/character.do-storage.ts`.
+- Added in-memory test implementations in `apps/network/src/environments/rpg/repositories/__tests__/in-memory.ts`.
+- Added repository unit tests:
+  - `apps/network/src/environments/rpg/repositories/game-state.d1.test.ts`
+  - `apps/network/src/environments/rpg/repositories/campaign.d1.test.ts`
+  - `apps/network/src/environments/rpg/repositories/character.do-storage.test.ts`
+  - `apps/network/src/environments/rpg/repositories/__tests__/in-memory.test.ts`
+
+Also completed required post-work reporting:
+- Stored hivemind learning via `swarm memory store`.
+- Sent completion event via `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 1: Extract interfaces + repositories from rpg.ts"`.
