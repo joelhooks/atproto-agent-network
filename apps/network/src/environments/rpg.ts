@@ -17,23 +17,17 @@ import {
   createDice,
   createGame,
   describeRoom,
-  encounterXpValue,
   enemyIsNegotiable,
   enemyMoraleState,
   explore,
-  formatLootSummary,
   findIntimidatableEnemies,
   gameCharacterToPersistent,
-  generateLoot,
   generateFantasyName,
   getDispositionTier,
   gmInterveneIfStuck,
   isBossEncounterRoom,
   livingParty,
   markCharacterDeath,
-  applyLootToCharacter,
-  type LootItem,
-  type LootTier,
   type Skills,
   nextEncounterRoomIndex,
   partyWipe,
@@ -58,8 +52,6 @@ import {
   type RpgGameState,
   previously_on,
   XP_PER_ADVENTURE_COMPLETE,
-  XP_PER_BARRIER_BRUTE_FORCE,
-  XP_PER_BARRIER_CLEAR,
   XP_PER_BOSS_KILL,
   XP_PER_ENEMY_KILL,
   XP_PER_PUZZLE,
@@ -82,12 +74,20 @@ import {
 import {
   addLoggedXp as addLoggedXpSystem,
   addXpEarned as addXpEarnedSystem,
+  awardBarrierClearMilestoneXp as awardBarrierClearMilestoneXpSystem,
   awardAdventureCompleteXp as awardAdventureCompleteXpSystem,
+  awardKillXp as awardKillXpSystem,
   awardRoomClearXp as awardRoomClearXpSystem,
+  calculateEncounterXp as calculateEncounterXpSystem,
 } from './rpg/systems/xp-system'
 import {
+  buyHubTownItem as buyHubTownItemSystem,
+  ensureCharacterLootState as ensureCharacterLootStateSystem,
+  makeShopHealingPotion as makeShopHealingPotionSystem,
   maybeAwardEnemyDrop as maybeAwardEnemyDropSystem,
+  normalizePartyLootState as normalizePartyLootStateSystem,
   resolveTreasureLoot as resolveTreasureLootSystem,
+  sellHubTownItem as sellHubTownItemSystem,
 } from './rpg/systems/loot-system'
 import {
   resolveCombatAttack,
@@ -786,31 +786,20 @@ function addLoggedXp(game: RpgGameState, who: string, amount: number, reason: st
   addLoggedXpSystem(game, who, amount, reason)
 }
 
-function clampGold(value: unknown): number {
-  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
-  if (!Number.isFinite(n)) return 0
-  return Math.max(0, Math.floor(n))
+function awardKillXp(game: RpgGameState, who: string, enemy: Enemy): void {
+  awardKillXpSystem(game, who, enemy)
+}
+
+function calculateEncounterXp(enemies: Enemy[]): number {
+  return calculateEncounterXpSystem(enemies)
 }
 
 function ensureCharacterLootState(character: Character | undefined | null): void {
-  if (!character) return
-  ;(character as any).inventory = Array.isArray((character as any).inventory) ? (character as any).inventory : []
-  ;(character as any).gold = clampGold((character as any).gold)
+  ensureCharacterLootStateSystem(character)
 }
 
 function normalizePartyLootState(game: RpgGameState): void {
-  for (const member of Array.isArray(game.party) ? game.party : []) {
-    ensureCharacterLootState(member)
-  }
-}
-
-function roomLootTier(game: RpgGameState, roomIndex: number, roomType?: string): LootTier {
-  if (roomType === 'boss') return 'boss'
-  const total = Math.max(1, Array.isArray(game.dungeon) ? game.dungeon.length : 1)
-  const progress = (Math.max(0, roomIndex) + 1) / total
-  if (progress <= 0.4) return 'early'
-  if (progress <= 0.8) return 'mid'
-  return 'boss'
+  normalizePartyLootStateSystem(game)
 }
 
 function findActingCharacter(game: RpgGameState, agentName: string): Character | undefined {
@@ -835,22 +824,16 @@ function maybeAwardEnemyDrop(
   return maybeAwardEnemyDropSystem(game, actor, enemy, dice)
 }
 
-function makeShopHealingPotion(dice: ReturnType<typeof createDice>): LootItem {
-  return {
-    name: 'Camp Healing Potion',
-    rarity: 'common',
-    slot: 'consumable',
-    effects: [],
-    consumable: { type: 'heal', amount: dice.d(6) + dice.d(6) + 3 },
-    description: 'A reliable tonic mixed from field herbs and bright salts.',
-  }
+function makeShopHealingPotion(dice: ReturnType<typeof createDice>) {
+  return makeShopHealingPotionSystem(dice)
 }
 
-type HubTownShopItem = {
-  id: string
-  cost: number
-  sellValue: number
-  item: LootItem
+function buyHubTownItem(actor: Character, itemId: string) {
+  return buyHubTownItemSystem(actor, itemId)
+}
+
+function sellHubTownItem(actor: Character, itemId: string) {
+  return sellHubTownItemSystem(actor, itemId)
 }
 
 const HUB_TOWN_LOCATIONS: readonly HubTownLocation[] = ['tavern', 'market', 'temple', 'guild_hall']
@@ -860,45 +843,6 @@ const HUB_TOWN_LOCATION_LABEL: Record<HubTownLocation, string> = {
   market: 'Lantern Market',
   temple: 'Temple of Dawn',
   guild_hall: "Adventurers' Guild Hall",
-}
-
-const HUB_TOWN_SHOP: Record<string, HubTownShopItem> = {
-  iron_sword: {
-    id: 'iron_sword',
-    cost: 45,
-    sellValue: 22,
-    item: {
-      name: 'Iron Sword',
-      rarity: 'uncommon',
-      slot: 'weapon',
-      effects: [{ stat: 'attack', bonus: 3 }],
-      description: 'A balanced, dependable blade favored by caravan guards.',
-    },
-  },
-  chain_jerkin: {
-    id: 'chain_jerkin',
-    cost: 40,
-    sellValue: 20,
-    item: {
-      name: 'Chain Jerkin',
-      rarity: 'uncommon',
-      slot: 'armor',
-      effects: [{ stat: 'dodge', bonus: 3 }],
-      description: 'Interlocked rings that soften glancing blows.',
-    },
-  },
-  runed_charm: {
-    id: 'runed_charm',
-    cost: 55,
-    sellValue: 27,
-    item: {
-      name: 'Runed Charm',
-      rarity: 'rare',
-      slot: 'trinket',
-      effects: [{ stat: 'cast_spell', bonus: 4 }],
-      description: 'A sigil-inscribed charm that steadies spellcraft.',
-    },
-  },
 }
 
 function normalizeHubTownLocation(value: unknown): HubTownLocation | null {
@@ -919,67 +863,6 @@ function resetHubTownIdle(game: RpgGameState): void {
 
 function countHubTownIdleTurn(game: RpgGameState): number {
   return countHubTownIdleTurnSystem(game)
-}
-
-function hubTownItemIdFromName(name: string): string {
-  return String(name ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-}
-
-function hubTownItemIdFromInventory(item: LootItem): string {
-  const explicit = typeof (item as any).hubItemId === 'string' ? (item as any).hubItemId.trim() : ''
-  if (explicit) return explicit
-  return hubTownItemIdFromName(item.name)
-}
-
-function copyHubTownShopItem(entry: HubTownShopItem): LootItem {
-  const item: LootItem = {
-    ...entry.item,
-    effects: (entry.item.effects ?? []).map((effect) => ({ ...effect })),
-  }
-  ;(item as any).hubItemId = entry.id
-  return item
-}
-
-function removeLootEffectsFromCharacter(character: Character, item: LootItem): void {
-  const effects = Array.isArray(item.effects) ? item.effects : []
-  for (const effect of effects) {
-    const stat = String(effect.stat ?? '').trim().toLowerCase()
-    const bonus = Number.isFinite(effect.bonus) ? Math.floor(effect.bonus) : 0
-    if (bonus === 0) continue
-    if (stat === 'attack') {
-      character.skills.attack = clampSkill(character.skills.attack - bonus)
-      continue
-    }
-    if (stat === 'dodge') {
-      character.skills.dodge = clampSkill(character.skills.dodge - bonus)
-      continue
-    }
-    if (stat === 'cast_spell') {
-      character.skills.cast_spell = clampSkill(character.skills.cast_spell - bonus)
-      continue
-    }
-    if (stat === 'use_skill') {
-      character.skills.use_skill = clampSkill(character.skills.use_skill - bonus)
-      continue
-    }
-    if (stat === 'armor') {
-      const baseArmor = Number.isFinite(character.armor) ? Math.floor(character.armor as number) : 0
-      character.armor = Math.max(0, baseArmor - bonus)
-    }
-  }
-}
-
-function fallbackSellValueForItem(item: LootItem): number {
-  const byRarity: Record<string, number> = { common: 8, uncommon: 16, rare: 28, legendary: 50 }
-  const rarity = String(item.rarity ?? '').toLowerCase()
-  const baseline = byRarity[rarity] ?? 10
-  const explicit = Number.isFinite(item.gold) ? Math.floor(item.gold as number) : 0
-  if (explicit > 0) return Math.max(1, Math.floor(explicit * 0.5))
-  return baseline
 }
 
 function buildHubTownNarration(game: RpgGameState, input: { location: HubTownLocation; cue: string }): string {
@@ -1026,41 +909,7 @@ function awardBarrierClearMilestoneXp(
   game: RpgGameState,
   input: { logSlice: Array<{ who?: string; what?: string }>; fallbackActorId: string }
 ): void {
-  const { logSlice, fallbackActorId } = input
-  const line = (entry: { who?: string; what?: string } | undefined): string => String(entry?.what ?? '')
-
-  const bruteForce = logSlice.find((entry) => line(entry).includes('barrier: brute_force'))
-  if (bruteForce) {
-    const rawWho = String(bruteForce.who ?? '').trim()
-    const member = game.party.find((p) => p && isCharacter(p, rawWho))
-    const id = member ? characterId(member) : rawWho
-    if (id) addLoggedXp(game, id, XP_PER_BARRIER_BRUTE_FORCE, 'barrier brute_force')
-    return
-  }
-
-  const classResolve = logSlice.find((entry) => line(entry).startsWith('barrier: resolved by '))
-  if (classResolve) {
-    const klass = line(classResolve).replace('barrier: resolved by ', '').trim()
-    const member =
-      game.party.find((p) => p && p.hp > 0 && p.klass === klass) ??
-      game.party.find((p) => p && p.klass === klass)
-    const id = member ? characterId(member) : fallbackActorId
-    if (id) addLoggedXp(game, id, XP_PER_BARRIER_CLEAR, 'barrier clear')
-    return
-  }
-
-  const directResolve = logSlice.some((entry) => {
-    const what = line(entry)
-    return (
-      what.includes('barrier: skill_check success') ||
-      what.includes('barrier: mp_sacrifice') ||
-      what.includes('barrier: auto_crumble') ||
-      what.includes('barrier: bypassed')
-    )
-  })
-  if (directResolve && fallbackActorId) {
-    addLoggedXp(game, fallbackActorId, XP_PER_BARRIER_CLEAR, 'barrier clear')
-  }
+  awardBarrierClearMilestoneXpSystem(game, input)
 }
 
 function clampSkill(value: number): number {
@@ -2127,16 +1976,8 @@ export const rpgEnvironment: AgentEnvironment = {
           ensureCharacterLootState(actor)
 
           const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
-          const listing = HUB_TOWN_SHOP[itemId]
-          if (!listing) {
-            return { ok: false, error: `Unknown itemId. Available: ${Object.keys(HUB_TOWN_SHOP).join(', ')}` }
-          }
-          if (actor.gold < listing.cost) {
-            return { ok: false, error: `Not enough gold (need ${listing.cost}, have ${actor.gold}).` }
-          }
-
-          actor.gold -= listing.cost
-          applyLootToCharacter(actor, { items: [copyHubTownShopItem(listing)], gold: 0 })
+          const purchase = buyHubTownItem(actor, itemId)
+          if (!purchase.ok) return { ok: false, error: purchase.error }
           resetHubTownIdle(game)
           advanceTurn(game)
 
@@ -2146,7 +1987,9 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return {
-            content: toTextContent(`Bought ${itemId} (${listing.item.name}) for ${listing.cost} gold. (${actor.gold} gold remaining)`),
+            content: toTextContent(
+              `Bought ${purchase.listing.id} (${purchase.listing.item.name}) for ${purchase.listing.cost} gold. (${actor.gold} gold remaining)`
+            ),
             details: { gameId, itemId, gold: actor.gold },
           }
         }
@@ -2167,23 +2010,8 @@ export const rpgEnvironment: AgentEnvironment = {
           ensureCharacterLootState(actor)
 
           const itemId = typeof params.itemId === 'string' ? params.itemId.trim().toLowerCase() : ''
-          if (!itemId) return { ok: false, error: 'itemId required for sell_item.' }
-
-          const idx = actor.inventory.findIndex((item) => {
-            if (!item) return false
-            const invId = hubTownItemIdFromInventory(item)
-            return invId === itemId || hubTownItemIdFromName(item.name) === itemId
-          })
-          if (idx < 0) {
-            return { ok: false, error: `No inventory item matches itemId "${itemId}".` }
-          }
-
-          const [item] = actor.inventory.splice(idx, 1)
-          if (!item) return { ok: false, error: `No inventory item matches itemId "${itemId}".` }
-
-          removeLootEffectsFromCharacter(actor, item)
-          const value = HUB_TOWN_SHOP[itemId]?.sellValue ?? fallbackSellValueForItem(item)
-          actor.gold += value
+          const sale = sellHubTownItem(actor, itemId)
+          if (!sale.ok) return { ok: false, error: sale.error }
           resetHubTownIdle(game)
           advanceTurn(game)
 
@@ -2193,8 +2021,8 @@ export const rpgEnvironment: AgentEnvironment = {
             .run()
 
           return {
-            content: toTextContent(`Sold ${itemId} (${item.name}) for ${value} gold. (${actor.gold} gold total)`),
-            details: { gameId, itemId, gold: actor.gold, value },
+            content: toTextContent(`Sold ${sale.itemId} (${sale.item.name}) for ${sale.value} gold. (${actor.gold} gold total)`),
+            details: { gameId, itemId: sale.itemId, gold: actor.gold, value: sale.value },
           }
         }
 
@@ -2703,8 +2531,7 @@ export const rpgEnvironment: AgentEnvironment = {
 
               // XP rewards are accumulated into game state and applied to persistent characters at game end.
               if (attackResult.killed) {
-                addXpEarned(game, attackerName, XP_PER_ENEMY_KILL)
-                game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
+                awardKillXp(game, attackerName, enemy)
 
                 await applyEncounterDispositionToCampaign(ctx, {
                   game,
@@ -2712,11 +2539,6 @@ export const rpgEnvironment: AgentEnvironment = {
                   resolution: 'kill',
                   reason: `${attackerName} killed a ${enemy.name} during an encounter.`,
                 })
-
-                if (enemy.tactics?.kind === 'boss') {
-                  addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
-                  game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
-                }
 
                 const dropLine = maybeAwardEnemyDrop(game, attacker, enemy, dice)
                 if (dropLine) {
@@ -2815,7 +2637,7 @@ export const rpgEnvironment: AgentEnvironment = {
           const lines: string[] = []
 
           if (success) {
-            const encounterXp = encounterXpValue(enemies)
+            const encounterXp = calculateEncounterXp(enemies)
             const partialXp = Math.max(0, Math.floor(encounterXp * 0.75))
             for (const id of livingPartyIds(game)) addXpEarned(game, id, partialXp)
 
@@ -3217,12 +3039,7 @@ export const rpgEnvironment: AgentEnvironment = {
           // XP for kills via abilities
           for (const enemy of livingEnemies) {
             if ((hpBeforeByEnemy.get(enemy) ?? 0) > 0 && enemy.hp <= 0) {
-              addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
-              game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
-              if (enemy.tactics?.kind === 'boss') {
-                addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
-                game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
-              }
+              awardKillXp(game, ctx.agentName.trim() || 'unknown', enemy)
               maybeAwardEnemyDrop(game, actor, enemy, dice)
             }
           }
@@ -3427,12 +3244,7 @@ export const rpgEnvironment: AgentEnvironment = {
             // XP for kills via spells
             for (const enemy of livingEnemies) {
               if ((hpBeforeByEnemy.get(enemy) ?? 0) > 0 && enemy.hp <= 0) {
-                addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_ENEMY_KILL)
-                game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
-                if (enemy.tactics?.kind === 'boss') {
-                  addXpEarned(game, ctx.agentName.trim() || 'unknown', XP_PER_BOSS_KILL)
-                  game.log.push({ at: Date.now(), who: ctx.agentName.trim(), what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
-                }
+                awardKillXp(game, ctx.agentName.trim() || 'unknown', enemy)
                 maybeAwardEnemyDrop(game, actor, enemy, dice)
               }
             }

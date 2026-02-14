@@ -1186,3 +1186,30 @@ Required post-work project commands run:
 - `swarm memory find "ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts"`
 - `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
 - `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 2a: Extract turn management + combat system from rpg.ts"`
+
+---
+[2026-02-14T02:30:58.237Z]
+Completed: ADR-0002 Phase 2b: Extract loot + XP systems from rpg.ts
+Files: apps/network/src/environments/rpg/systems/combat-resolver.ts, apps/network/src/environments/rpg/systems/combat-system.test.ts, apps/network/src/environments/rpg/systems/combat-system.ts, apps/network/src/environments/rpg/systems/turn-manager.ts, apps/network/src/environments/rpg/systems/turn-system.test.ts, apps/network/src/environments/rpg/systems/turn-system.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/systems/loot-system.test.ts, apps/network/src/environments/rpg/systems/loot-system.ts, apps/network/src/environments/rpg/systems/xp-system.test.ts, apps/network/src/environments/rpg/systems/xp-system.ts
+Summary: Prior failure pattern detected: timeout/test_failure/unknown. Mitigation: minimal discovery, RED tests first, targeted `vitest` during iteration, then a single full `bun run check-types && bun run test` pass at the end.
+
+Implemented ADR-0002 Phase 2b extraction for loot + XP systems:
+- Expanded `apps/network/src/environments/rpg/systems/loot-system.ts` to own shop inventory + buy/sell logic, item effect removal, loot-state normalization, and shop potion generation; added `lootSystem` interface adapter.
+- Expanded `apps/network/src/environments/rpg/systems/xp-system.ts` to own kill XP, encounter XP calculation, barrier milestone XP, and `xpSystem` interface adapter.
+- Updated `apps/network/src/environments/rpg.ts` to call extracted system helpers instead of local duplicated loot/shop/xp implementations.
+- Added RED/GREEN tests in `apps/network/src/environments/rpg/systems/loot-system.test.ts` and `apps/network/src/environments/rpg/systems/xp-system.test.ts` for the newly extracted behavior.
+
+Validation run:
+- `bun run check-types && bun run test` passed.
+
+Post-work required commands run:
+- `swarm memory store ...` (stored: `mem-2a8ed66bba426212`)
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 2b: Extract loot + XP systems from rpg.ts"`
+
+## Learnings
+### Technical Discovery
+`apps/network/src/environments/rpg/systems/xp-system.ts` can safely centralize both additive XP (`addXpEarned`) and narrative XP audit entries (`awardKillXp`, `awardBarrierClearMilestoneXp`) without changing RPG outcomes, as long as call sites in `apps/network/src/environments/rpg.ts` are swapped from duplicated inline logging to system helpers.
+### Gotcha for Next Iteration
+Root `bun run test` ignores file arguments because it shells to `vitest run --passWithNoTests`; use direct `pnpm vitest run <files>` for fast RED/GREEN loops, then run full Bun validation once to avoid timeout-pattern regressions.
+### Files Context
+`apps/network/src/environments/rpg/systems/loot-system.ts` now contains hub-town market item catalog and buy/sell state mutation logic; `apps/network/src/environments/rpg/systems/xp-system.ts` now contains encounter/kill/milestone XP policies; `apps/network/src/environments/rpg.ts` is reduced to wrappers/orchestration calling those systems; tests for this extraction live in `apps/network/src/environments/rpg/systems/loot-system.test.ts` and `apps/network/src/environments/rpg/systems/xp-system.test.ts`.

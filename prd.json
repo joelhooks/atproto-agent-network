@@ -1268,7 +1268,7 @@
       "title": "ADR-0002 Phase 2b: Extract loot + XP systems from rpg.ts",
       "description": "Extract loot table generation and XP/leveling into `apps/network/src/environments/rpg/systems/`.\n\n**Loot system** (`loot-system.ts`): Extract tiered treasure generation, item stat effects, shop inventory, buy/sell logic.\n\n**XP system** (`xp-system.ts`): Extract XP rewards, milestone bonuses, level-up stat growth, encounter XP calculation.\n\nImport from Phase 1 interfaces. Re-export from new modules to keep rpg.ts imports working. Do NOT touch hub-town or turn/combat (already extracted).\n\n**Validation:** `bun run check-types && bun run test`",
       "priority": 122,
-      "passes": false,
+      "passes": true,
       "validationCommand": "bun run check-types && bun run test"
     },
     {
@@ -1282,8 +1282,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 107,
-    "lastIteration": "2026-02-14T02:22:51.109Z"
+    "totalIterations": 108,
+    "lastIteration": "2026-02-14T02:30:58.227Z"
   },
   "totalStories": 11
 }

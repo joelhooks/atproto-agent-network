@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { createCharacter, createGame, createTestDice, type Enemy, type RpgGameState } from '../../../games/rpg-engine'
-import { maybeAwardEnemyDrop, resolveTreasureLoot } from './loot-system'
+import {
+  buyHubTownItem,
+  listHubTownShopItemIds,
+  maybeAwardEnemyDrop,
+  resolveTreasureLoot,
+  sellHubTownItem,
+} from './loot-system'
 
 function makeTreasureGame(): RpgGameState {
   const alice = createCharacter({ name: 'Alice', agent: 'alice', klass: 'Warrior' })
@@ -65,5 +71,38 @@ describe('loot-system', () => {
 
     expect(line).toContain('Lich King dropped')
     expect(game.log.some((entry) => entry.what.includes('loot drop: Lich King dropped'))).toBe(true)
+  })
+
+  it('buyHubTownItem buys a market listing, applies effects, and tags the item id', () => {
+    const actor = createCharacter({ name: 'Buyer', agent: 'buyer', klass: 'Warrior' })
+    actor.gold = 100
+    actor.inventory = []
+
+    const result = buyHubTownItem(actor, 'iron_sword')
+
+    expect(result.ok).toBe(true)
+    expect(actor.gold).toBe(55)
+    expect(actor.skills.attack).toBeGreaterThan(30)
+    expect(actor.inventory.some((item) => (item as any).hubItemId === 'iron_sword')).toBe(true)
+  })
+
+  it('sellHubTownItem removes equipment effects and returns listed sell value', () => {
+    const actor = createCharacter({ name: 'Seller', agent: 'seller', klass: 'Warrior' })
+    actor.gold = 40
+    actor.inventory = []
+    const buy = buyHubTownItem(actor, 'chain_jerkin')
+    expect(buy.ok).toBe(true)
+    const dodgeAfterBuy = actor.skills.dodge
+
+    const sold = sellHubTownItem(actor, 'chain_jerkin')
+
+    expect(sold.ok).toBe(true)
+    expect(actor.skills.dodge).toBeLessThan(dodgeAfterBuy)
+    expect(actor.gold).toBe(20)
+    expect(actor.inventory.length).toBe(0)
+  })
+
+  it('listHubTownShopItemIds is stable and lower-cased for command validation', () => {
+    expect(listHubTownShopItemIds()).toEqual(['chain_jerkin', 'iron_sword', 'runed_charm'])
   })
 })

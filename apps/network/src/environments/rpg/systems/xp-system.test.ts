@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import { XP_PER_ROOM_CLEAR, createCharacter, createGame, type RpgGameState } from '../../../games/rpg-engine'
-import { addLoggedXp, addXpEarned, awardRoomClearXp } from './xp-system'
+import {
+  XP_PER_BARRIER_BRUTE_FORCE,
+  XP_PER_BARRIER_CLEAR,
+  XP_PER_BOSS_KILL,
+  XP_PER_ENEMY_KILL,
+  XP_PER_ROOM_CLEAR,
+  createCharacter,
+  createGame,
+  type Enemy,
+  type RpgGameState,
+} from '../../../games/rpg-engine'
+import {
+  addLoggedXp,
+  addXpEarned,
+  awardBarrierClearMilestoneXp,
+  awardKillXp,
+  awardRoomClearXp,
+  calculateEncounterXp,
+} from './xp-system'
 
 function makeGame(): RpgGameState {
   const alice = createCharacter({ name: 'Alice', agent: 'alice', klass: 'Warrior' })
@@ -50,5 +67,49 @@ describe('xp-system', () => {
 
     expect(game.xpEarned?.alice).toBe(XP_PER_ROOM_CLEAR)
     expect(game.xpEarned?.bob).toBeUndefined()
+  })
+
+  it('awardKillXp grants base + boss bonus and appends kill log entries', () => {
+    const game = makeGame()
+    const boss: Enemy = {
+      name: 'Hydra',
+      hp: 0,
+      maxHp: 40,
+      DEX: 30,
+      attack: 40,
+      dodge: 20,
+      tactics: { kind: 'boss' },
+    }
+
+    awardKillXp(game, 'alice', boss, { now: () => 10, random: () => 0.5 })
+
+    expect(game.xpEarned?.alice).toBe(XP_PER_ENEMY_KILL + XP_PER_BOSS_KILL)
+    expect(game.log.some((entry) => entry.what.includes(`gained ${XP_PER_ENEMY_KILL} XP (kill: Hydra)`))).toBe(true)
+    expect(game.log.some((entry) => entry.what.includes(`gained ${XP_PER_BOSS_KILL} XP (boss kill)`))).toBe(true)
+  })
+
+  it('calculateEncounterXp matches encounter composition', () => {
+    const enemies: Enemy[] = [
+      { name: 'Goblin', hp: 10, maxHp: 10, DEX: 20, attack: 20, dodge: 20, tactics: { kind: 'goblin' } },
+      { name: 'Wyrm', hp: 30, maxHp: 30, DEX: 25, attack: 35, dodge: 25, tactics: { kind: 'boss' } },
+    ]
+
+    expect(calculateEncounterXp(enemies)).toBe(XP_PER_ENEMY_KILL * 2 + XP_PER_BOSS_KILL)
+  })
+
+  it('awardBarrierClearMilestoneXp routes rewards by log cues', () => {
+    const game = makeGame()
+
+    awardBarrierClearMilestoneXp(game, {
+      logSlice: [{ who: 'alice', what: 'barrier: brute_force' }],
+      fallbackActorId: 'bob',
+    })
+    expect(game.xpEarned?.alice).toBe(XP_PER_BARRIER_BRUTE_FORCE)
+
+    awardBarrierClearMilestoneXp(game, {
+      logSlice: [{ who: 'GM', what: 'barrier: resolved by Scout' }],
+      fallbackActorId: 'alice',
+    })
+    expect(game.xpEarned?.bob).toBe(XP_PER_BARRIER_CLEAR)
   })
 })
