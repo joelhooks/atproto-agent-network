@@ -1232,7 +1232,8 @@
       "title": "ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)",
       "description": "**ADR-0002 Phase 2** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract pure game systems behind interfaces:\n\n1. `rpg/systems/turn-manager.ts` — advanceTurn, normalizeTurnState, computeInitiativeOrder, recomputeTurnOrder\n2. `rpg/systems/xp-system.ts` — addXpEarned, addLoggedXp, awardRoomClearXp, etc.\n3. `rpg/systems/loot-system.ts` — resolveTreasureLoot, maybeAwardEnemyDrop\n4. `rpg/systems/combat-resolver.ts` — runEnemyFreeAttackRound, attack resolution\n5. `rpg/systems/hub-town.ts` — hub town state management\n\nThese are pure functions (no I/O). Extract from rpg.ts and rpg-engine.ts helpers.\nAdd unit tests for each system independently.\n\nSuccess: All tests pass. Each system independently testable.",
       "priority": 121,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "passes": true
     },
     {
       "id": "story-adr2-phase3",
@@ -1265,8 +1266,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 106,
-    "lastIteration": "2026-02-14T02:05:21.563Z"
+    "totalIterations": 107,
+    "lastIteration": "2026-02-14T02:19:14.363Z"
   },
   "totalStories": 11
 }

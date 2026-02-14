@@ -73,6 +73,32 @@ import {
   SPELLS,
   ABILITIES,
 } from '../games/rpg-engine'
+import {
+  advanceTurn as advanceTurnSystem,
+  computeInitiativeOrder as computeInitiativeOrderSystem,
+  normalizeTurnState as normalizeTurnStateSystem,
+  recomputeTurnOrder as recomputeTurnOrderSystem,
+} from './rpg/systems/turn-manager'
+import {
+  addLoggedXp as addLoggedXpSystem,
+  addXpEarned as addXpEarnedSystem,
+  awardAdventureCompleteXp as awardAdventureCompleteXpSystem,
+  awardRoomClearXp as awardRoomClearXpSystem,
+} from './rpg/systems/xp-system'
+import {
+  maybeAwardEnemyDrop as maybeAwardEnemyDropSystem,
+  resolveTreasureLoot as resolveTreasureLootSystem,
+} from './rpg/systems/loot-system'
+import {
+  resolveCombatAttack,
+  runEnemyFreeAttackRound as runEnemyFreeAttackRoundSystem,
+} from './rpg/systems/combat-resolver'
+import {
+  buildHubTownNarration as buildHubTownNarrationSystem,
+  countHubTownIdleTurn as countHubTownIdleTurnSystem,
+  ensureHubTownState as ensureHubTownStateSystem,
+  resetHubTownIdle as resetHubTownIdleSystem,
+} from './rpg/systems/hub-town'
 
 import type { PersistentCharacter } from '@atproto-agent/core'
 
@@ -753,55 +779,11 @@ export function resolveStoryArcsForAdventureOutcome(input: {
 }
 
 function addXpEarned(game: RpgGameState, who: string, amount: number): void {
-  const agent = String(who ?? '').trim()
-  const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
-  if (!agent || amt <= 0) return
-  game.xpEarned ??= {}
-  game.xpEarned[agent] = (game.xpEarned[agent] ?? 0) + amt
-
-  const member = Array.isArray(game.party) ? game.party.find((p) => p && isCharacter(p, agent)) : undefined
-  if (!member) return
-
-  member.xp = (Number.isFinite(member.xp) ? (member.xp as number) : 0) + amt
-  member.level = Number.isFinite(member.level) ? Math.max(1, Math.floor(member.level as number)) : 1
-
-  while (member.level < XP_TABLE.length && (member.xp ?? 0) >= (XP_TABLE[member.level] ?? Infinity)) {
-    member.level += 1
-    const hpGain = 5 + member.level
-    const mpGain = 3 + member.level
-    member.maxHp = (Number.isFinite(member.maxHp) ? member.maxHp : 0) + hpGain
-    member.maxMp = (Number.isFinite(member.maxMp) ? member.maxMp : 0) + mpGain
-
-    const skills: Skills = member.skills && typeof member.skills === 'object' ? member.skills : { attack: 30, dodge: 25, cast_spell: 25, use_skill: 25 }
-    const keys = Object.keys(skills).sort()
-    let boostedSkill = ''
-    if (keys.length > 0) {
-      const idx = Math.min(keys.length - 1, Math.floor(Math.random() * keys.length))
-      const key = keys[idx]!
-      const current = Number((skills as Record<string, unknown>)[key])
-      ;(skills as Record<string, unknown>)[key] = (Number.isFinite(current) ? current : 0) + 5
-      boostedSkill = key
-    }
-    member.skills = skills
-    game.log ??= []
-    game.log.push({
-      at: Date.now(),
-      who: agent,
-      what: `LEVEL UP: ${member.name} reaches Level ${member.level}! (+${hpGain} HP, +${mpGain} MP)${boostedSkill ? ` (+5 ${boostedSkill})` : ''}`,
-    })
-  }
+  addXpEarnedSystem(game, who, amount)
 }
 
 function addLoggedXp(game: RpgGameState, who: string, amount: number, reason: string): void {
-  const identity = String(who ?? '').trim()
-  const amt = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
-  if (!identity || amt <= 0) return
-  addXpEarned(game, identity, amt)
-  game.log.push({
-    at: Date.now(),
-    who: identity,
-    what: `gained ${amt} XP (${reason})`,
-  })
+  addLoggedXpSystem(game, who, amount, reason)
 }
 
 function clampGold(value: unknown): number {
@@ -841,23 +823,7 @@ function findActingCharacter(game: RpgGameState, agentName: string): Character |
 }
 
 function resolveTreasureLoot(game: RpgGameState, actor: Character, dice: ReturnType<typeof createDice>): string {
-  ensureCharacterLootState(actor)
-  const tier = roomLootTier(game, game.roomIndex, game.dungeon[game.roomIndex]?.type)
-  const loot = generateLoot({ tier, source: 'treasure', dice, seedIndex: game.roomIndex })
-  applyLootToCharacter(actor, loot)
-  const treasureXp = Math.max(0, loot.items.length) * XP_PER_TREASURE_FIND
-  if (treasureXp > 0) addLoggedXp(game, characterId(actor), treasureXp, 'treasure')
-
-  const beat = loot.items[0]?.name ?? `${loot.gold} gold pieces`
-  if (beat) recordNarrativeBeat(game, { kind: 'treasure', text: beat, roomIndex: game.roomIndex })
-
-  const summary = formatLootSummary(loot)
-  game.log.push({
-    at: Date.now(),
-    who: characterId(actor),
-    what: `Found: ${summary}`,
-  })
-  return `Found: ${summary}`
+  return resolveTreasureLootSystem(game, actor, dice)
 }
 
 function maybeAwardEnemyDrop(
@@ -866,22 +832,7 @@ function maybeAwardEnemyDrop(
   enemy: Enemy,
   dice: ReturnType<typeof createDice>,
 ): string | null {
-  ensureCharacterLootState(actor)
-  const isBossEnemy = enemy?.tactics?.kind === 'boss' || isBossEncounterRoom(game)
-  const roll = dice.d100()
-  if (!isBossEnemy && roll > 20) return null
-
-  const tier: LootTier = isBossEnemy ? 'boss' : roomLootTier(game, game.roomIndex, game.dungeon[game.roomIndex]?.type)
-  const loot = generateLoot({ tier, source: 'combat', dice, ...(isBossEnemy ? { seedIndex: game.roomIndex } : {}) })
-  applyLootToCharacter(actor, loot)
-  const summary = formatLootSummary(loot)
-  const line = `${enemy.name} dropped ${summary}`
-  game.log.push({
-    at: Date.now(),
-    who: characterId(actor),
-    what: `loot drop: ${line}`,
-  })
-  return line
+  return maybeAwardEnemyDropSystem(game, actor, enemy, dice)
 }
 
 function makeShopHealingPotion(dice: ReturnType<typeof createDice>): LootItem {
@@ -959,27 +910,15 @@ function normalizeHubTownLocation(value: unknown): HubTownLocation | null {
 }
 
 function ensureHubTownState(game: RpgGameState): HubTownState {
-  const existing = (game as Record<string, unknown>).hubTown
-  const source = isRecord(existing) ? existing : {}
-  const normalized = createHubTownState({
-    location: normalizeHubTownLocation(source.location) ?? undefined,
-    idleTurns: Number.isFinite(source.idleTurns) ? Number(source.idleTurns) : undefined,
-    autoEmbarkAfter: Number.isFinite(source.autoEmbarkAfter) ? Number(source.autoEmbarkAfter) : undefined,
-  })
-  ;(game as Record<string, unknown>).hubTown = normalized as unknown as Record<string, unknown>
-  return normalized
+  return ensureHubTownStateSystem(game)
 }
 
 function resetHubTownIdle(game: RpgGameState): void {
-  if (game.phase !== 'hub_town') return
-  const hub = ensureHubTownState(game)
-  hub.idleTurns = 0
+  resetHubTownIdleSystem(game)
 }
 
 function countHubTownIdleTurn(game: RpgGameState): number {
-  const next = advanceHubTownIdleTurns(ensureHubTownState(game))
-  ;(game as Record<string, unknown>).hubTown = next.state as unknown as Record<string, unknown>
-  return next.state.idleTurns
+  return countHubTownIdleTurnSystem(game)
 }
 
 function hubTownItemIdFromName(name: string): string {
@@ -1044,21 +983,7 @@ function fallbackSellValueForItem(item: LootItem): number {
 }
 
 function buildHubTownNarration(game: RpgGameState, input: { location: HubTownLocation; cue: string }): string {
-  const lines: string[] = []
-  lines.push(`Hub Town - ${HUB_TOWN_LOCATION_LABEL[input.location]}`)
-  lines.push(`GM: ${input.cue}`)
-
-  const campaign = game.campaignContext
-  if (campaign) {
-    lines.push(`Campaign: ${campaign.name}`)
-    if (campaign.premise) lines.push(`Premise: ${campaign.premise}`)
-    if (campaign.activeArcs.length > 0) lines.push(`Active arc: ${campaign.activeArcs[0]}`)
-  }
-
-  const recap = Array.isArray(game.campaignLog) ? game.campaignLog.filter(Boolean).slice(-1)[0] : ''
-  if (recap) lines.push(`Latest rumor: ${recap}`)
-
-  return lines.join('\n')
+  return buildHubTownNarrationSystem(game, input)
 }
 
 function transitionCampaignCompletionToHubTown(game: RpgGameState, beforePhase: RpgGameState['phase']): { completed: boolean; enteredHubTown: boolean } {
@@ -1090,11 +1015,11 @@ function livingPartyIds(game: RpgGameState): string[] {
 }
 
 function awardRoomClearXp(game: RpgGameState): void {
-  for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ROOM_CLEAR)
+  awardRoomClearXpSystem(game)
 }
 
 function awardAdventureCompleteXp(game: RpgGameState): void {
-  for (const id of livingPartyIds(game)) addXpEarned(game, id, XP_PER_ADVENTURE_COMPLETE)
+  awardAdventureCompleteXpSystem(game)
 }
 
 function awardBarrierClearMilestoneXp(
@@ -1195,32 +1120,7 @@ function buildRerolledPersistentCharacter(
 }
 
 function runEnemyFreeAttackRound(game: RpgGameState, dice: ReturnType<typeof createDice>): string[] {
-  const lines: string[] = []
-  const livingEnemies = listLivingEnemies(game)
-  for (const foe of livingEnemies) {
-    if (game.phase !== 'playing') break
-    const targets = livingParty(game.party)
-    if (targets.length === 0) break
-    const target = targets[dice.d(targets.length) - 1]!
-
-    const attackSkill = clampSkill(Number(foe.attack))
-    const counterAtk = resolveSkillCheck({ skill: attackSkill, dice })
-    const counterDod = resolveSkillCheck({ skill: target.skills.dodge, dice })
-    const atkMarg = counterAtk.success ? attackSkill - counterAtk.roll : -Infinity
-    const dodMarg = counterDod.success ? target.skills.dodge - counterDod.roll : -Infinity
-    const counterHit = counterAtk.success && (!counterDod.success || atkMarg > dodMarg)
-
-    if (counterHit) {
-      const dmg = Math.max(1, dice.d(6))
-      target.hp = Math.max(0, target.hp - dmg)
-      lines.push(`${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`)
-      partyWipe(game)
-      markCharacterDeath(game, target, deathCauseFromAttacker(game, foe.name))
-    } else {
-      lines.push(`${foe.name} swings at ${target.name} but misses.`)
-    }
-  }
-  return lines
+  return runEnemyFreeAttackRoundSystem(game, dice)
 }
 
 function normalizeToolCallArguments(args: unknown): Record<string, unknown> {
@@ -1668,11 +1568,7 @@ function isLiving(character: Character | null | undefined): boolean {
 }
 
 function computeInitiativeOrder(party: Character[]): Character[] {
-  return [...party].sort((a, b) => {
-    const dex = b.stats.DEX - a.stats.DEX
-    if (dex !== 0) return dex
-    return a.name.localeCompare(b.name)
-  })
+  return computeInitiativeOrderSystem(party)
 }
 
 function logSkipDeadTurn(game: RpgGameState, name: string): void {
@@ -1683,110 +1579,15 @@ function logSkipDeadTurn(game: RpgGameState, name: string): void {
 }
 
 function normalizeTurnState(game: RpgGameState): boolean {
-  const before = {
-    phase: game.phase,
-    mode: game.mode,
-    currentPlayer: game.currentPlayer,
-    turnOrderNames: Array.isArray(game.turnOrder) ? game.turnOrder.map((p) => p.name) : [],
-  }
-
-  game.party ??= []
-  game.log ??= []
-
-  const initiative = computeInitiativeOrder(game.party)
-  const living = initiative.filter(isLiving)
-
-  // Remove dead players from the active rotation, but keep them in the party state.
-  game.turnOrder = living
-
-  // If everyone is dead, end the game (TPK).
-  if (living.length === 0) {
-    partyWipe(game)
-    game.phase = 'finished'
-    game.mode = 'finished'
-    game.combat = undefined
-    game.currentPlayer = 'none'
-  } else {
-    const idx = initiative.findIndex((p) => isCharacter(p, game.currentPlayer))
-    const current = idx >= 0 ? initiative[idx] : undefined
-    if (!isLiving(current)) {
-      if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
-
-      if (idx < 0) {
-        game.currentPlayer = characterId(living[0])
-      } else {
-        const start = idx
-        for (let offset = 1; offset <= initiative.length; offset += 1) {
-          const candidate = initiative[(start + offset) % initiative.length]
-          if (!candidate) continue
-          if (isLiving(candidate)) {
-            game.currentPlayer = characterId(candidate)
-            break
-          }
-          logSkipDeadTurn(game, candidate.name)
-        }
-      }
-    }
-  }
-
-  const after = {
-    phase: game.phase,
-    mode: game.mode,
-    currentPlayer: game.currentPlayer,
-    turnOrderNames: game.turnOrder.map((p) => p.name),
-  }
-
-  return (
-    before.phase !== after.phase ||
-    before.mode !== after.mode ||
-    before.currentPlayer !== after.currentPlayer ||
-    JSON.stringify(before.turnOrderNames) !== JSON.stringify(after.turnOrderNames)
-  )
+  return normalizeTurnStateSystem(game)
 }
 
 function advanceTurn(game: RpgGameState): void {
-  game.party ??= []
-  game.log ??= []
-  game.round ??= 1
-
-  const initiative = computeInitiativeOrder(game.party)
-  const living = initiative.filter(isLiving)
-  game.turnOrder = living
-
-  if (living.length === 0) {
-    partyWipe(game)
-    game.phase = 'finished'
-    game.mode = 'finished'
-    game.combat = undefined
-    game.currentPlayer = 'none'
-    return
-  }
-
-  const idx = initiative.findIndex((p) => isCharacter(p, game.currentPlayer))
-  const current = idx >= 0 ? initiative[idx] : undefined
-  if (current && (current.hp ?? 0) <= 0) logSkipDeadTurn(game, current.name)
-
-  const start = idx >= 0 ? idx : -1
-  for (let offset = 1; offset <= initiative.length; offset += 1) {
-    const nextIdx = (start + offset) % initiative.length
-    const candidate = initiative[nextIdx]
-    if (!candidate) continue
-    if (isLiving(candidate)) {
-      // If we wrapped around to an earlier index, that's a new round.
-      if (idx >= 0 && nextIdx <= idx) {
-        game.round = (game.round ?? 1) + 1
-      }
-      game.currentPlayer = characterId(candidate)
-      return
-    }
-    logSkipDeadTurn(game, candidate.name)
-  }
-
-  game.currentPlayer = characterId(living[0])
+  advanceTurnSystem(game)
 }
 
 function recomputeTurnOrder(game: RpgGameState): void {
-  normalizeTurnState(game)
+  recomputeTurnOrderSystem(game)
 }
 
 export const rpgEnvironment: AgentEnvironment = {
@@ -2891,75 +2692,39 @@ export const rpgEnvironment: AgentEnvironment = {
               const attacker = game.party.find((p) => isCharacter(p, attackerName))
               if (!attacker) throw new Error('Create your character before attacking')
 
-              const atk = resolveSkillCheck({ skill: attacker.skills.attack, dice })
-              const dod = resolveSkillCheck({ skill: enemy.dodge, dice })
-              const atkMargin = atk.success ? attacker.skills.attack - atk.roll : -Infinity
-              const dodMargin = dod.success ? enemy.dodge - dod.roll : -Infinity
-              const hit = atk.success && (!dod.success || atkMargin > dodMargin)
+              const attackResult = resolveCombatAttack({
+                game,
+                attacker,
+                attackerId: attackerName,
+                enemy,
+                dice,
+              })
+              const lines: string[] = [attackResult.text]
 
-              let text = ''
-              if (hit) {
-                const hpBefore = enemy.hp
-                const dmg = dice.d(6) + Math.floor(attacker.stats.STR / 25)
-                enemy.hp = Math.max(0, enemy.hp - dmg)
-                attacker.skills.attack = atk.nextSkill
-                text = `You strike the ${enemy.name} for ${dmg}. (${enemy.hp} HP left)`
-                game.log.push({ at: Date.now(), who: attackerName, what: `attack: hit ${enemy.name} for ${dmg} (${enemy.hp} HP left)` })
+              // XP rewards are accumulated into game state and applied to persistent characters at game end.
+              if (attackResult.killed) {
+                addXpEarned(game, attackerName, XP_PER_ENEMY_KILL)
+                game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
 
-                // XP rewards are accumulated into game state and applied to persistent characters at game end.
-                if (hpBefore > 0 && enemy.hp === 0) {
-                  addXpEarned(game, attackerName, XP_PER_ENEMY_KILL)
-                  game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_ENEMY_KILL} XP (kill: ${enemy.name})` })
+                await applyEncounterDispositionToCampaign(ctx, {
+                  game,
+                  enemies: [enemy],
+                  resolution: 'kill',
+                  reason: `${attackerName} killed a ${enemy.name} during an encounter.`,
+                })
 
-                  await applyEncounterDispositionToCampaign(ctx, {
-                    game,
-                    enemies: [enemy],
-                    resolution: 'kill',
-                    reason: `${attackerName} killed a ${enemy.name} during an encounter.`,
-                  })
-
-                  if (enemy.tactics?.kind === 'boss') {
-                    addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
-                    game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
-                  }
-
-                  const dropLine = maybeAwardEnemyDrop(game, attacker, enemy, dice)
-                  if (dropLine) {
-                    text += `\nLoot: ${dropLine}`
-                  }
+                if (enemy.tactics?.kind === 'boss') {
+                  addXpEarned(game, attackerName, XP_PER_BOSS_KILL)
+                  game.log.push({ at: Date.now(), who: attackerName, what: `gained ${XP_PER_BOSS_KILL} XP (boss kill)` })
                 }
-              } else {
-                text = `The ${enemy.name} avoids your attack.`
-                game.log.push({ at: Date.now(), who: attackerName, what: `attack: missed ${enemy.name}` })
-              }
 
-              // ALL living enemies counter-attack (action economy!)
-              // From "The Monsters Know": monsters that can attack, will attack.
-              const livingEnemies = (game.combat?.enemies ?? []).filter(e => e.hp > 0)
-              for (const foe of livingEnemies) {
-                if (game.phase !== 'playing') break
-                // Each enemy targets a random party member
-                const targets = livingParty(game.party)
-                if (targets.length === 0) break
-                const target = targets[dice.d(targets.length) - 1]!
-
-                const counterAtk = resolveSkillCheck({ skill: foe.attack, dice })
-                const counterDod = resolveSkillCheck({ skill: target.skills.dodge, dice })
-                const atkMarg = counterAtk.success ? foe.attack - counterAtk.roll : -Infinity
-                const dodMarg = counterDod.success ? target.skills.dodge - counterDod.roll : -Infinity
-                const counterHit = counterAtk.success && (!counterDod.success || atkMarg > dodMarg)
-
-                if (counterHit) {
-                  const raw = dice.d(6)
-                  const dmg = Math.max(1, raw) // minimum 1 damage on hit
-                  target.hp = Math.max(0, target.hp - dmg)
-                  text += `\n${foe.name} strikes ${target.name} for ${dmg}! (HP ${target.hp}/${target.maxHp})`
-                  partyWipe(game)
-                  markCharacterDeath(game, target, deathCauseFromAttacker(game, foe.name))
-                } else {
-                  text += `\n${foe.name} swings at ${target.name} but misses.`
+                const dropLine = maybeAwardEnemyDrop(game, attacker, enemy, dice)
+                if (dropLine) {
+                  lines.push(`Loot: ${dropLine}`)
                 }
               }
+              lines.push(...runEnemyFreeAttackRound(game, dice))
+              let text = lines.filter(Boolean).join('\n')
 
               if (game.phase === 'playing' && game.combat?.enemies?.every((e) => e.hp <= 0)) {
                 game.mode = 'exploring'

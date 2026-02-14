@@ -545,6 +545,13 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: In `recallMemories()`, a single decrypt throw inside the Vectorize match loop must be caught at per-record granularity; an outer block-level catch can drop remaining valid matches and force brittle fallback behavior.\nGotcha: `agent` log identity may be a DID (`did:cf:*`) rather than raw state ID; tests should assert via `stringContaining(...)` for stability.\nFiles Context: `apps/network/src/agent.ts` now contains all resilience guards for auto-recall retrieval and prompt injection. `apps/network/src/agent-do.test.ts` contains regression coverage for unreadable memory handling and think-prompt graceful degradation near lines 4032-4237."
+    },
+    {
+      "id": "story-adr2-phase2",
+      "title": "ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)",
+      "status": "failed",
+      "filesModified": [],
+      "learnings": "[analysis_paralysis] > atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts "
     }
   ],
   "failures": [
@@ -676,6 +683,22 @@
         "git diff",
         "git show",
         "nl -ba"
+      ],
+      "iterationNumber": 2
+    },
+    {
+      "storyId": "story-adr2-phase2",
+      "storyTitle": "ADR-0002 Phase 2: Extract game systems (turn, combat, loot, xp, hub-town)",
+      "category": "analysis_paralysis",
+      "error": "> atproto-agent-network@ typecheck /home/joel/Code/joelhooks/atproto-agent-network\n> turbo typecheck\n\n@atproto-agent/core:build: \n@atproto-agent/core:build: > @atproto-agent/core@0.0.1 build /home/joel/Code/joelhooks/atproto-agent-network/packages/core\n@atproto-agent/core:build: > tsup src/index.ts --format esm --dts\n@atproto-agent/core:build: \n@atproto-agent/core:build: CLI Building entry: src/index.ts\n@atproto-agent/core:build: CLI Using tsconfig: tsconfig.json\n@atproto-agent/core:build: CLI t",
+      "toolNames": [
+        "ls apps/network/src/environments",
+        "ls apps/network/src/games",
+        "/usr/bin/zsh -lc",
+        "nl -ba",
+        "rg -n",
+        "git diff",
+        "ls -a"
       ],
       "iterationNumber": 2
     }
