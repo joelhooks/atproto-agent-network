@@ -605,9 +605,12 @@
         "apps/network/src/environments/rpg/campaign/serialization.ts",
         "prd.json",
         "progress.txt",
-        ".ralph/research/story-mliotb9y.md"
+        ".ralph/research/story-mliotb9y.md",
+        "apps/network/src/environments/rpg/commands/attack.ts",
+        "apps/network/src/environments/rpg/commands/combat-commands.ts",
+        "apps/network/src/environments/rpg/commands/exploration-commands.ts"
       ],
-      "learnings": "Technical Discovery: `attack` extraction works cleanly when `handleAttack` owns only combat/turn/message mutation, and `rpg.ts` retains `beforePhase`-based hub-town transition, D1 update, and completion emission side effects.\nGotcha: Campaign disposition-on-kill was previously in the attack inline block. After extraction, preserve it in `rpg.ts` by snapshotting the pre-attack living enemy and checking HP transition after `handleAttack`.\nFiles Context: `apps/network/src/environments/rpg/commands/attack.ts` now holds standalone attack command logic; `apps/network/src/environments/rpg.ts` still orchestrates environment persistence, completion events, and command-level async side effects around `handleAttack`."
+      "learnings": "Technical Discovery: `handleAttack` must use caller-provided RNG (`params.dice`) rather than creating a fresh dice instance, otherwise extracted command behavior can drift from the original in-command flow that shared the same dice object.\nGotcha: The worktree already contains unrelated staged/modified Ralph tracking files and extra command files; avoid broad git operations and keep edits narrowly targeted to requested story files.\nFiles Context: `apps/network/src/environments/rpg/commands/attack.ts` now holds standalone attack mutation/message logic. `apps/network/src/environments/rpg.ts` retains orchestration responsibilities (turn guard, campaign disposition side effect, DB save, completion emit) and calls `handleAttack` from the attack command branch."
     }
   ],
   "failures": [

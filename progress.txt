@@ -1291,3 +1291,30 @@ Summary: Prior failure pattern detected: test_failure. Mitigation: I kept the ch
 Implemented Phase 4a extraction by keeping `handleAttack` in `apps/network/src/environments/rpg/commands/attack.ts` and wiring the `attack` branch in `apps/network/src/environments/rpg.ts:1944` to call it (`handleAttack(game, attackerName, { ...params, dice })`) before existing save/emit flow. I also ensured the extracted handler consumes injected `dice` from params to preserve pre-extraction behavior parity.
 
 Validation run: `pnpm typecheck && pnpm test` passed (49 test files passed, 2 skipped; 474 tests passed, 6 skipped). I also ran the required reporting commands: `swarm memory store ...` and `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4a: Extract attack command from rpg.ts into standalone module"`.
+
+---
+[2026-02-14T03:21:53.191Z]
+Completed: ADR-0002 Phase 4a: Extract combat + exploration commands from rpg.ts
+Files: .ralph-context.json, .ralph-iterations.jsonl, .ralph/research/story-mliotb9y.md, apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/commands/attack.ts, apps/network/src/environments/rpg/commands/combat-commands.ts, apps/network/src/environments/rpg/commands/exploration-commands.ts, prd.json, progress.txt
+Summary: Prior failure pattern detected: `test_failure`/`analysis_paralysis`. Mitigation used: immediate RED test creation, then focused verification without broad re-exploration.
+
+I validated and confirmed the extraction target is already present in HEAD: `apps/network/src/environments/rpg.ts` dispatches to `executeExplorationCommand` and `executeCombatCommand`, and command logic lives in `apps/network/src/environments/rpg/commands/combat-commands.ts` and `apps/network/src/environments/rpg/commands/exploration-commands.ts`.
+
+I added focused tests for this story to lock that structure and prevent regression back to inlined command branches:
+- `apps/network/src/environments/rpg/commands/combat-commands.test.ts`
+- `apps/network/src/environments/rpg/commands/exploration-commands.test.ts`
+
+Validation run and passed:
+- `pnpm typecheck && pnpm test`
+
+Also completed required post-work reporting:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"`
+- `openclaw system event --mode now --text "Ralph: completed ADR-0002 Phase 4a: Extract combat + exploration commands from rpg.ts"`
+
+## Learnings
+### Technical Discovery
+`rpg.ts` command extraction for Phase 4a is already wired in current HEAD: command dispatch occurs through `executeExplorationCommand`/`executeCombatCommand`, with extracted logic in `apps/network/src/environments/rpg/commands/`.
+### Gotcha for Next Iteration
+This repo can appear like extraction is pending because old inline snippets show up in prior logs/research; always verify actual HEAD hashes before refactoring to avoid no-op rewrites and churn.
+### Files Context
+`apps/network/src/environments/rpg.ts` is the dispatch point; `apps/network/src/environments/rpg/commands/combat-commands.ts` and `apps/network/src/environments/rpg/commands/exploration-commands.ts` contain extracted command logic; the new `*.test.ts` files in that same folder guard dispatch behavior and turn-gating fast-fail paths.
