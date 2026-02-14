@@ -991,10 +991,17 @@ export default {
                 )
               }
 
-              const toolResult = await tool.execute('http', { command: 'new_game', players })
+              let toolResult: unknown
+              try {
+                toolResult = await tool.execute('http', { command: 'new_game', players })
+              } catch (err) {
+                console.error('Environment create execute error:', err)
+                return Response.json({ error: 'Environment create failed', detail: String(err) }, { status: 502 })
+              }
               const details = (toolResult as any)?.details as Record<string, unknown> | undefined
               const id = typeof details?.gameId === 'string' ? details.gameId : null
               if (!id) {
+                console.error('Environment create: no gameId in result', JSON.stringify(toolResult).slice(0, 500))
                 return Response.json({ error: 'Environment create failed' }, { status: 502 })
               }
 

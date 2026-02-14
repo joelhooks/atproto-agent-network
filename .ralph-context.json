@@ -656,6 +656,23 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `embark` in `apps/network/src/environments/rpg/commands/hub-town-commands.ts` must persist a newly created `next` game state, so the extracted handler needs a `saveGame(game)` dependency that accepts arbitrary `RpgGameState`, not a closure tied only to the original object.\nGotcha: Shell backticks inside `swarm memory store \"...\"` caused zsh command substitution (`command not found` noise). Use single-quoted payloads for reliable memory writes.\nFiles Context: `apps/network/src/environments/rpg.ts` now routes hub-town commands through `executeHubTownCommand` at the execute-path dispatch point; `apps/network/src/environments/rpg/commands/hub-town-commands.ts` contains the extracted `visit_location`, `buy_item`, `sell_item`, `embark` logic; `apps/network/src/environments/rpg/commands/index.ts` re-exports command modules; `apps/network/src/environments/rpg/commands/hub-town-commands.test.ts` provides RED/GREEN coverage for dispatcher and phase guard behavior."
+    },
+    {
+      "id": "story-adr2-phase6",
+      "title": "ADR-0002 Phase 6: Wire up orchestrator, events, delete rpg.ts monolith",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/rpg/auto-play.test.ts",
+        "apps/network/src/environments/rpg/auto-play.ts",
+        "apps/network/src/environments/rpg/context-builder.test.ts",
+        "apps/network/src/environments/rpg/context-builder.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `rpg.ts` can be reduced to a stable export facade without breaking consumers, as long as all externally used symbols (`rpgEnvironment`, campaign CRUD, campaign-logic exports, `compactAdventureLog`) are re-exported from the new orchestrator module; extraction of reactive wake behavior into `rpg/events/game-events.ts` keeps `GameEventEmitter` transitions reusable and testable.\nGotcha: When moving `rpg.ts` into `rpg/environment.ts`, relative paths to root-level packages shift by one directory (e.g., `generateTid` import must become `../../../../../packages/core/src/identity`), otherwise Vitest fails module resolution before tests execute.\nFiles Context: `apps/network/src/environments/rpg.ts` is now the entry shell; `apps/network/src/environments/rpg/environment.ts` is the orchestrator implementation; `apps/network/src/environments/rpg/events/game-events.ts` owns reactive emitter/signal wiring; `apps/network/src/environments/rpg-shell.test.ts` enforces the architectural constraint so `rpg.ts` does not regress into a monolith."
     }
   ],
   "failures": [
