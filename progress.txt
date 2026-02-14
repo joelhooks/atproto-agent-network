@@ -1240,3 +1240,9 @@ Post-work required commands run:
 `check-types` exists at repo root, not `apps/network`; run story validation from `/home/joel/Code/joelhooks/atproto-agent-network` with `bun run check-types && bun run test` or it fails with “Script not found check-types”.
 ### Files Context
 `apps/network/src/environments/rpg/systems/hub-town.ts` now owns hub-town flow primitives (locations, visit/buy/sell, transition, downtime tick); `apps/network/src/environments/rpg.ts` is reduced to orchestration wrappers and command wiring; `apps/network/src/environments/rpg/interfaces.ts` contains the Phase-1-style `HubTownSystem` contract; `apps/network/src/environments/rpg/systems/hub-town.test.ts` locks extracted behavior with focused system tests.
+
+---
+[2026-02-14T02:47:34.558Z]
+Completed: ADR-0002 Phase 3: Extract campaign logic (normalizers, objectives, serialization)
+Files: apps/network/src/environments/rpg.ts, apps/network/src/environments/rpg/interfaces.ts, apps/network/src/environments/rpg/systems/hub-town.test.ts, apps/network/src/environments/rpg/systems/hub-town.ts, prd.json, progress.txt, .ralph-context.json, .ralph-iterations.jsonl
+Summary: Extracted ADR-0002 Phase 3 campaign domain logic out of `apps/network/src/environments/rpg.ts` into dedicated modules, added focused tests first (RED), then implemented extraction (GREEN), and rewired `rpg.ts` to import/re-export the new campaign logic. Removed in-file normalizers/objective/thread/serialization implementations so campaign logic is independently testable.

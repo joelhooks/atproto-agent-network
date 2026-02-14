@@ -568,6 +568,26 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `apps/network/src/environments/rpg/systems/turn-system.ts` can directly satisfy Phase 1 contracts by importing `TurnManager` from `apps/network/src/environments/rpg/interfaces.ts` and exporting a `turnSystem` adapter while preserving existing function exports (`advanceTurn`, `normalizeTurnState`, etc.). Similarly, `apps/network/src/environments/rpg/systems/combat-system.ts` can import interface types (`AttackResult`, `CombatResolver`) without altering runtime behavior.\nGotcha: Keep compatibility shims in place (`apps/network/src/environments/rpg/systems/turn-manager.ts`, `apps/network/src/environments/rpg/systems/combat-resolver.ts`) until all call sites are migrated. Removing those now will break `apps/network/src/environments/rpg.ts` imports and cause regressions outside this story scope.\nFiles Context: `apps/network/src/environments/rpg/systems/turn-system.ts:30` contains initiative ordering and turn advancement logic. `apps/network/src/environments/rpg/systems/combat-system.ts:38` contains BRP opposed attack resolution, damage, and enemy free-attack death handling. `apps/network/src/environments/rpg/systems/turn-system.test.ts:26` and `apps/network/src/environments/rpg/systems/combat-system.test.ts:33` lock new module behavior. `apps/network/src/environments/rpg/systems/turn-manager.ts:1` and `apps/network/src/environments/rpg/systems/combat-resolver.ts:1` are deliberate re-export bridges for `rpg.ts` stability."
+    },
+    {
+      "id": "story-mllorx16",
+      "title": "ADR-0002 Phase 2c: Extract hub-town system from rpg.ts",
+      "status": "completed",
+      "filesModified": [
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/environments/rpg.ts",
+        "apps/network/src/environments/rpg/systems/loot-system.test.ts",
+        "apps/network/src/environments/rpg/systems/loot-system.ts",
+        "apps/network/src/environments/rpg/systems/xp-system.test.ts",
+        "apps/network/src/environments/rpg/systems/xp-system.ts",
+        "prd.json",
+        "progress.txt",
+        "apps/network/src/environments/rpg/interfaces.ts",
+        "apps/network/src/environments/rpg/systems/hub-town.test.ts",
+        "apps/network/src/environments/rpg/systems/hub-town.ts"
+      ],
+      "learnings": "Technical Discovery: Hub-town buy/sell extraction required dedicated success-result unions in `apps/network/src/environments/rpg/systems/hub-town.ts`; if success is typed too generically (shared with interface adapter output), downstream command formatting in `apps/network/src/environments/rpg.ts` loses access to `itemName/cost/value` and fails typecheck.\nGotcha: Run the mandated validation from repo root, not `apps/network`: root has `check-types`, app package does not. Also keep adapter-return types (`HubTownTradeResult`) separate from richer command-level return shapes to prevent union narrowing regressions.\nFiles Context: `apps/network/src/environments/rpg/interfaces.ts` defines new hub-town contracts; `apps/network/src/environments/rpg/systems/hub-town.ts` now centralizes downtime and market handlers; `apps/network/src/environments/rpg.ts` delegates hub-town command/autoplay branches to that system; `apps/network/src/environments/rpg/systems/hub-town.test.ts` covers the extracted market/transition/downtime logic."
     }
   ],
   "failures": [

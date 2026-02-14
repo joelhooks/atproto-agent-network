@@ -1240,7 +1240,8 @@
       "title": "ADR-0002 Phase 3: Extract campaign logic (normalizers, objectives, serialization)",
       "description": "**ADR-0002 Phase 3** (docs/decisions/0002-refactor-rpg-monolith-into-interface-driven-modules.md)\n\nExtract campaign domain logic:\n\n1. `rpg/campaign/normalizers.ts` — all normalize* functions (~200 lines)\n2. `rpg/campaign/campaign-logic.ts` — pickCampaignObjective, resolveStoryArcsForAdventureOutcome, buildCampaignDungeonThread, disposition tracking\n3. `rpg/campaign/serialization.ts` — serializeWorldState, rowToCampaignState\n\nThese are already largely standalone functions. Extract and add tests.\n\nSuccess: All tests pass. Campaign logic independently testable.",
       "priority": 124,
-      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test"
+      "validationCommand": "cd /home/joel/Code/joelhooks/atproto-agent-network && pnpm typecheck && pnpm test",
+      "passes": true
     },
     {
       "id": "story-adr2-phase4",
@@ -1282,8 +1283,8 @@
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 109,
-    "lastIteration": "2026-02-14T02:39:35.064Z"
+    "totalIterations": 110,
+    "lastIteration": "2026-02-14T02:47:34.556Z"
   },
   "totalStories": 11
 }
