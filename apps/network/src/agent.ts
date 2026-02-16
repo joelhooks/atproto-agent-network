@@ -339,6 +339,65 @@ export class AgentDO extends DurableObject {
     this.did = createDid(ctx.id.toString())
   }
 
+  /**
+   * Safe storage put that never exceeds the DO 128KB per-value limit.
+   * For debug/o11y keys: truncates aggressively rather than crashing the alarm chain.
+   * For critical keys: logs a warning but still stores a truncated version.
+   */
+  private async safePut(key: string, value: unknown): Promise<void> {
+    const MAX_BYTES = 125_000 // 125KB — leave headroom below 128KB limit
+    try {
+      const serialized = JSON.stringify(value)
+      if (serialized.length <= MAX_BYTES) {
+        await this.ctx.storage.put(key, value)
+        return
+      }
+      // Truncate strategy depends on value type
+      if (typeof value === 'string') {
+        await this.ctx.storage.put(key, value.slice(0, MAX_BYTES - 50) + '\n... [truncated to fit DO limit]')
+      } else if (Array.isArray(value)) {
+        // Keep first and last items, drop middle
+        const trimmed = value.length > 4
+          ? [value[0], { _truncated: true, droppedItems: value.length - 2 }, value[value.length - 1]]
+          : value.map(item => {
+              const s = JSON.stringify(item)
+              if (s.length > MAX_BYTES / 4) {
+                return typeof item === 'string'
+                  ? item.slice(0, MAX_BYTES / 4) + '...[truncated]'
+                  : { _truncated: true, originalSize: s.length }
+              }
+              return item
+            })
+        await this.ctx.storage.put(key, trimmed)
+      } else {
+        // Object — store size metadata instead
+        await this.ctx.storage.put(key, {
+          _truncated: true,
+          originalSize: serialized.length,
+          key,
+          ts: Date.now(),
+        })
+      }
+      console.log(JSON.stringify({
+        event_type: 'storage.truncated',
+        level: 'warn',
+        key,
+        originalSize: serialized.length,
+        maxBytes: MAX_BYTES,
+      }))
+    } catch (err) {
+      // Last resort: if even truncated value fails, store minimal metadata
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('131072') || msg.includes('larger than')) {
+        try {
+          await this.ctx.storage.put(key, { _error: 'value_too_large', ts: Date.now() })
+        } catch { /* truly give up */ }
+      } else {
+        throw err // re-throw non-size errors
+      }
+    }
+  }
+
   private async getOrCreateSessionId(): Promise<string> {
     if (this.sessionId) return this.sessionId
     const stored = await this.ctx.storage.get<string>('sessionId')
@@ -889,7 +948,7 @@ export class AgentDO extends DurableObject {
     const trimmedOutcomes = Math.max(0, outcomes.length - kept.length)
 
     if (trimmedOutcomes > 0) {
-      await this.ctx.storage.put('actionOutcomes', kept)
+      await this.safePut('actionOutcomes', kept)
     }
 
     console.log(
@@ -962,7 +1021,7 @@ export class AgentDO extends DurableObject {
     // we skip the normal observe→think→act→reflect cycle.
     await this.saveSession()
 
-    await this.ctx.storage.put('lastReflection', reflectionText)
+    await this.safePut('lastReflection', reflectionText)
   }
 
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
@@ -1079,7 +1138,7 @@ export class AgentDO extends DurableObject {
           span_id: createSpanId(),
         })
         observations = await this.observe()
-        await this.ctx.storage.put('lastObservations', observations)
+        await this.safePut('lastObservations', observations)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'observe' })
@@ -1306,7 +1365,7 @@ export class AgentDO extends DurableObject {
         await this.ctx.storage.put('consecutiveErrors', streak)
 
         const lastError = cycleErrors.at(-1)
-        await this.ctx.storage.put('debug:lastError', {
+        await this.safePut('debug:lastError', {
           ts: Date.now(),
           category,
           streak,
@@ -2510,47 +2569,20 @@ export class AgentDO extends DurableObject {
       ts: Date.now(),
     }
     console.log('AgentDO think raw result', debugInfo)
-    await this.ctx.storage.put('debug:lastThinkRaw', debugInfo)
+    await this.safePut('debug:lastThinkRaw', debugInfo)
 
     // O11y: store agentic loop transcript + prompt snapshot from factory
     const innerAgent = (this.agent as any)?.innerAgent
     const o11y = innerAgent?._o11y
     if (o11y?.lastTranscript) {
-      // Truncate transcript to stay under DO 128KB storage limit
-      let transcript = o11y.lastTranscript
-      if (typeof transcript === 'string' && transcript.length > 120_000) {
-        transcript = transcript.slice(0, 120_000) + '\n... [truncated]'
-      } else if (typeof transcript !== 'string') {
-        const serialized = JSON.stringify(transcript)
-        if (serialized.length > 120_000) {
-          transcript = serialized.slice(0, 120_000) + '... [truncated]'
-        }
-      }
-      await this.ctx.storage.put('debug:loopTranscript', transcript)
+      // safePut handles DO 128KB limit — just pass the raw value
+      await this.safePut('debug:loopTranscript', o11y.lastTranscript)
     }
     if (o11y?.lastPromptMessages) {
-      // Truncate prompt to ~100KB but always keep system + last 3 messages
+      // Keep system + last 3 messages for debuggability, safePut handles the rest
       const msgs = o11y.lastPromptMessages as Array<{ role: string; content?: string }>
-      // DO storage limit is 128KB per value — aggressively truncate to stay under
-      let toStore = msgs
-      const check = () => JSON.stringify(toStore).length
-      if (check() > 120_000 && toStore.length > 4) {
-        toStore = [toStore[0], ...toStore.slice(-3)]
-      }
-      // If still too large, truncate individual message content
-      if (check() > 120_000) {
-        toStore = toStore.map(m => ({
-          ...m,
-          content: typeof m.content === 'string' && m.content.length > 10_000
-            ? m.content.slice(0, 10_000) + '... [truncated]'
-            : m.content,
-        }))
-      }
-      // Final safety: if STILL over limit, just store metadata
-      if (check() > 125_000) {
-        toStore = [{ role: 'system', content: `[prompt too large: ${msgs.length} messages, ${JSON.stringify(msgs).length} bytes]` }]
-      }
-      await this.ctx.storage.put('debug:lastPrompt', toStore)
+      const toStore = msgs.length > 4 ? [msgs[0], ...msgs.slice(-3)] : msgs
+      await this.safePut('debug:lastPrompt', toStore)
     }
 
     const thought = this.normalizeThinkResult(result)
@@ -2699,7 +2731,7 @@ export class AgentDO extends DurableObject {
               ts: Date.now(),
             }
             console.log('Auto-play injection:', safetyDebug)
-	            await this.ctx.storage.put('debug:autoPlay', safetyDebug)
+	            await this.safePut('debug:autoPlay', safetyDebug)
 	            break
 	          }
 	        }
@@ -2735,7 +2767,7 @@ export class AgentDO extends DurableObject {
           steps.push({ name, ok: false, error: 'tool not available' })
           outcomes.push({ tool: name, success: false, timestamp: Date.now() })
           if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-          await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+          await this.safePut('actionOutcomes', outcomes.slice(-50))
           continue
         }
 
@@ -2757,7 +2789,7 @@ export class AgentDO extends DurableObject {
 	        steps.push({ name, ok: true, result: { _executed_in_factory: true }, durationMs: 0 })
 	        outcomes.push({ tool: name, success: true, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
@@ -2772,7 +2804,7 @@ export class AgentDO extends DurableObject {
         steps.push({ name, ok: false, error: name === 'gm' ? 'tool not available' : 'Tool not enabled' })
         outcomes.push({ tool: name, success: false, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
@@ -2781,7 +2813,7 @@ export class AgentDO extends DurableObject {
         steps.push({ name, ok: false, error: name === 'gm' ? 'tool not available' : 'Tool not found' })
         outcomes.push({ tool: name, success: false, timestamp: Date.now() })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
         continue
       }
 
@@ -2802,7 +2834,7 @@ export class AgentDO extends DurableObject {
           goalId: extractGoalId(name, call.arguments, result),
         })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (message.toLowerCase().includes('timed out')) {
@@ -2816,7 +2848,7 @@ export class AgentDO extends DurableObject {
           goalId: extractGoalId(name, call.arguments, null),
         })
         if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
-        await this.ctx.storage.put('actionOutcomes', outcomes.slice(-50))
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
       }
     }
 
@@ -2858,7 +2890,7 @@ export class AgentDO extends DurableObject {
       : []
     const recentOutcomes = outcomes.slice(-5)
 
-    await this.ctx.storage.put('lastReflection', {
+    await this.safePut('lastReflection', {
       at: Date.now(),
       did: this.did,
       recentActionOutcomes: recentOutcomes,
@@ -3461,7 +3493,7 @@ export class AgentDO extends DurableObject {
     let freshObservations: Observations | null = null
     try {
       freshObservations = await this.observe()
-      await this.ctx.storage.put('lastObservations', freshObservations)
+      await this.safePut('lastObservations', freshObservations)
     } catch {
       // Fall back to cached
     }
