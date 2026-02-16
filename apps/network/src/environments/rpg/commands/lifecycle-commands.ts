@@ -3,6 +3,7 @@ import type { PersistentCharacter } from '@atproto-agent/core'
 import { generateTid } from '../../../../../../packages/core/src/identity'
 
 import {
+  craftDungeonFromLibrary,
   createCharacter,
   createGame,
   describeRoom,
@@ -10,6 +11,8 @@ import {
   persistentToGameCharacter,
   type CampaignState,
   type Character,
+  type Enemy,
+  type Room,
   type RpgClass,
   type RpgGameState,
 } from '../../../games/rpg-engine'
@@ -349,7 +352,7 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       }
       ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
     } else {
-      // Skip setup — auto-generate backstories, go straight to playing
+      // Skip setup — auto-generate backstories + dungeon, go straight to playing
       game.phase = 'playing'
       for (const member of game.party ?? []) {
         if (member && typeof member === 'object' && 'name' in member && !(member as any).backstory) {
@@ -357,6 +360,31 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
         }
       }
       game.setupPhase = { currentPlayerIndex: 0, exchangeCount: 0, maxExchanges: 0, dialogues: {}, complete: true }
+
+      // Generate dungeon so agents can actually play
+      const generated = craftDungeonFromLibrary({
+        theme: {
+          name: game.theme?.name || 'Forgotten Depths',
+          backstory: game.theme?.backstory || 'A perilous delve shaped by grim omens.',
+        },
+        party: game.party,
+        libraryContext: (game as any).libraryContext ?? {},
+      })
+      game.dungeon = generated.rooms
+      game.roomIndex = 0
+      const initial = game.dungeon[0]
+      if (initial && (initial.type === 'combat' || initial.type === 'boss')) {
+        game.mode = 'combat'
+        game.combat = { enemies: ((initial as Room & { enemies: Enemy[] }).enemies ?? []).map((e: Enemy) => ({ ...e })) }
+      } else {
+        game.mode = 'exploring'
+        game.combat = undefined
+      }
+      recomputeTurnOrder(game)
+      const first = game.turnOrder[0] ?? game.party[0]
+      game.currentPlayer = first
+        ? (typeof first === 'string' ? first : (first as Character).agent ?? (first as Character).name)
+        : 'unknown'
     }
 
     await ctx.db.prepare("ALTER TABLE environments ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => undefined)
