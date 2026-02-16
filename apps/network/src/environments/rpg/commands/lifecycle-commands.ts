@@ -274,14 +274,16 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       }
     }
 
-    const knownAgents = ['slag', 'snarl', 'swoop']
     const players = Array.isArray(params.players)
       ? params.players.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       : []
-    const filteredPlayers = players
+    const parsedPlayers = players
       .map((player) => player.toLowerCase().trim())
-      .filter((player) => player !== 'grimlock' && knownAgents.includes(player))
-    const finalPlayers = knownAgents
+      .filter((player) => player !== 'grimlock')
+    // Use provided players or fall back to default party
+    const finalPlayers = parsedPlayers.length > 0
+      ? parsedPlayers
+      : ['slag', 'snarl', 'swoop', 'sludge', 'scout']
     if (finalPlayers.length < 1) throw new Error('Need at least 1 player')
 
     const requestedCampaignId = typeof params.campaignId === 'string'
