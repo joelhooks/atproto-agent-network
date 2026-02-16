@@ -458,8 +458,52 @@ export class AgentDO extends DurableObject {
         const url = new URL(request.url)
         const agentName = extractAgentNameFromPath(url.pathname)
 
+        // Nuclear wipe — runs BEFORE initialize to recover corrupted DOs
+        if (url.pathname.endsWith('/nuke-storage') && request.method === 'POST') {
+          await this.ctx.storage.deleteAll()
+          await this.ctx.storage.deleteAlarm()
+          this.initialized = false
+          this.initializing = null
+          return Response.json({ ok: true, message: `Storage wiped for ${agentName}. DO will reinitialize on next request.` })
+        }
+
+        // Init diagnostics — runs BEFORE initialize to debug crashes
+        if (url.pathname.endsWith('/init-test') && request.method === 'GET') {
+          const steps: string[] = []
+          try {
+            steps.push('reading identity...')
+            const stored = await this.ctx.storage.get('identity')
+            steps.push(stored ? 'identity found' : 'no identity')
+            steps.push('reading config...')
+            const config = await this.ctx.storage.get('config')
+            steps.push(config ? `config found: ${(config as any).name}` : 'no config')
+            steps.push('checking DB...')
+            const row = await this.agentEnv.DB.prepare("SELECT name FROM agents WHERE name = ?").bind(agentName).first()
+            steps.push(row ? `agent in D1: ${(row as any).name}` : 'agent NOT in D1')
+            return Response.json({ ok: true, steps })
+          } catch (e: any) {
+            steps.push(`ERROR: ${e.message}`)
+            return Response.json({ ok: false, steps, error: e.message })
+          }
+        }
+
         if (!this.initialized) {
-          await this.initialize(agentName)
+          // For debug route, add a timeout to catch hangs
+          if (url.pathname.endsWith('/debug')) {
+            const initResult = await Promise.race([
+              this.initialize(agentName).then(() => 'ok' as const),
+              new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 8000)),
+            ])
+            if (initResult === 'timeout') {
+              return Response.json({
+                error: 'initialize timed out after 8s',
+                agentName,
+                storageKeys: await this.ctx.storage.list().then(m => [...m.keys()].slice(0, 20)),
+              })
+            }
+          } else {
+            await this.initialize(agentName)
+          }
         }
 
         const parts = url.pathname.split('/').filter(Boolean)
@@ -528,6 +572,19 @@ export class AgentDO extends DurableObject {
               ok: true, 
               message: `Agent ${agentName} reset. Next alarm in 5s.`,
               alarmAt: new Date(alarmTime).toISOString(),
+            })
+          }
+
+          case 'nuke': {
+            // POST /agents/:name/nuke — Completely wipe all DO storage.
+            // Nuclear option for corrupted encrypted storage that can't be read.
+            if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            
+            await this.ctx.storage.deleteAll()
+            
+            return Response.json({ 
+              ok: true, 
+              message: `Agent ${agentName} storage wiped. DO will reinitialize on next request.`,
             })
           }
 
@@ -1792,8 +1849,9 @@ export class AgentDO extends DurableObject {
       .prepare(
         `SELECT id, phase, host_agent, players, state
          FROM environments
+         WHERE phase NOT IN ('finished', 'complete', 'completed', 'ended', 'archived', 'closed', 'cancelled', 'abandoned')
          ORDER BY updated_at DESC
-         LIMIT 50`
+         LIMIT 10`
       )
       .all<ActiveEnvironmentRow>()
 
