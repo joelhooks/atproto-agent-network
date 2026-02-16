@@ -928,7 +928,7 @@ export class AgentDO extends DurableObject {
     const prunedGoals = goals.length - nextGoals.length
     if (prunedGoals > 0) {
       const nextConfig: AgentConfig = { ...config, goals: nextGoals }
-      await this.ctx.storage.put('config', nextConfig)
+      await this.safePut('config', nextConfig)
       this.config = nextConfig
     }
 
@@ -1493,7 +1493,7 @@ export class AgentDO extends DurableObject {
         : normalizedPending.filter((evt) => evt.ts > sinceAlarmAt && evt.ts <= observedAt)
 
     // Drain pending events (they're a per-alarm-cycle queue).
-    await this.ctx.storage.put('pendingEvents', [])
+    await this.safePut('pendingEvents', [])
     await this.ctx.storage.put('lastAlarmAt', observedAt)
 
     const inbox: Array<ObservationInboxEntry> = []
@@ -2947,7 +2947,7 @@ export class AgentDO extends DurableObject {
           createdAt: this.identity.createdAt,
           rotatedAt: this.identity.rotatedAt,
         }
-        await this.ctx.storage.put('identity', persisted)
+        await this.safePut('identity', persisted)
       }
 
       this.memory = new EncryptedMemory(
@@ -3116,7 +3116,9 @@ export class AgentDO extends DurableObject {
         existingIds.add(goal.id)
         merged.push(goal)
       }
-      await this.ctx.storage.put(GOALS_ARCHIVE_STORAGE_KEY, merged)
+      // Cap archive to last 100 goals to prevent unbounded growth
+      const capped = merged.slice(-100)
+      await this.safePut(GOALS_ARCHIVE_STORAGE_KEY, capped)
     }
 
     // Always persist: callers expect passing config here updates stored config,
@@ -3129,7 +3131,7 @@ export class AgentDO extends DurableObject {
       reactiveMode: this.normalizeReactiveMode(cfg.reactiveMode),
       goals: nextGoals,
     }
-    await this.ctx.storage.put('config', next)
+    await this.safePut('config', next)
     return next
   }
 
@@ -3137,12 +3139,12 @@ export class AgentDO extends DurableObject {
     if (this.config) {
       if (agentName && this.config.name !== agentName) {
         this.config = { ...this.config, name: agentName }
-        await this.ctx.storage.put('config', this.config)
+        await this.safePut('config', this.config)
       }
       const policyAdjusted = await this.applyEnvironmentSharedToolPolicy(this.config)
       if (policyAdjusted !== this.config) {
         this.config = policyAdjusted
-        await this.ctx.storage.put('config', policyAdjusted)
+        await this.safePut('config', policyAdjusted)
       }
       return this.config
     }
@@ -3157,7 +3159,7 @@ export class AgentDO extends DurableObject {
           : normalized
       const migrated = await this.applyEnvironmentSharedToolPolicy(withGmMigration)
       if (migrated !== normalized) {
-        await this.ctx.storage.put('config', migrated)
+        await this.safePut('config', migrated)
       }
 
       this.config = migrated
@@ -3169,7 +3171,7 @@ export class AgentDO extends DurableObject {
             : renamedBase
         const renamed = await this.applyEnvironmentSharedToolPolicy(withRenamedGm)
         if (renamed !== renamedBase) {
-          await this.ctx.storage.put('config', renamed)
+          await this.safePut('config', renamed)
         }
         this.config = renamed
       }
@@ -3178,7 +3180,7 @@ export class AgentDO extends DurableObject {
 
     const created = await this.applyEnvironmentSharedToolPolicy(this.createDefaultConfig(agentName ?? this.did))
     this.config = created
-    await this.ctx.storage.put('config', created)
+    await this.safePut('config', created)
     return created
   }
 
@@ -3338,7 +3340,7 @@ export class AgentDO extends DurableObject {
   async writeSkill(skill: AgentSkill): Promise<AgentSkill> {
     const normalized = this.normalizeSkill(skill)
     const key = this.skillKey(normalized.envType, normalized.role)
-    await this.ctx.storage.put(key, normalized)
+    await this.safePut(key, normalized)
     return normalized
   }
 
@@ -3444,7 +3446,7 @@ export class AgentDO extends DurableObject {
         return Response.json({ error: 'Invalid JSON' }, { status: 400 })
       }
       const profile = { ...(body as Record<string, unknown>), updatedAt: Date.now() }
-      await this.ctx.storage.put('profile', profile)
+      await this.safePut('profile', profile)
       return Response.json({ ok: true, profile })
     }
     return new Response('Method not allowed', { status: 405 })
@@ -3465,7 +3467,7 @@ export class AgentDO extends DurableObject {
         return Response.json({ error: 'Invalid JSON' }, { status: 400 })
       }
       const character = body as Record<string, unknown>
-      await this.ctx.storage.put('rpg:character', character)
+      await this.safePut('rpg:character', character)
       return Response.json({ ok: true, character })
     }
     return new Response('Method not allowed', { status: 405 })
@@ -5688,7 +5690,25 @@ export class AgentDO extends DurableObject {
         type: 'environment.wake',
         ...(payload as Record<string, unknown>),
       })
-      await this.ctx.storage.put('pendingEvents', pending.slice(-200))
+      // Truncate individual event payloads exceeding 2KB to prevent oversized storage values
+      const MAX_EVENT_BYTES = 2048
+      const truncatedPending = pending.slice(-200).map((evt: Record<string, unknown>) => {
+        const serialized = JSON.stringify(evt)
+        if (serialized.length <= MAX_EVENT_BYTES) return evt
+        // Keep ts and type, truncate the rest
+        const { ts, type, ...rest } = evt
+        const truncatedRest: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(rest)) {
+          const vs = JSON.stringify(v)
+          if (vs && vs.length > 500) {
+            truncatedRest[k] = typeof v === 'string' ? v.slice(0, 500) + '...[truncated]' : '[truncated]'
+          } else {
+            truncatedRest[k] = v
+          }
+        }
+        return { ts, type, ...truncatedRest, _truncated: true }
+      })
+      await this.safePut('pendingEvents', truncatedPending)
     }
 
     const scheduled = await this.scheduleInterruptWake({
@@ -5975,7 +5995,7 @@ export class AgentDO extends DurableObject {
       }
     }
 
-    await this.ctx.storage.put('session', finalSession)
+    await this.safePut('session', finalSession)
     this.session = finalSession
   }
 
@@ -6035,7 +6055,7 @@ export class AgentDO extends DurableObject {
         lastUsed: now,
       }
 
-      await this.ctx.storage.put(key, next)
+      await this.safePut(key, next)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.warn('Failed to update extension metrics', { did: this.did, name: safeName, error: message })
