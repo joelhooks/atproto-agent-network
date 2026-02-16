@@ -1618,6 +1618,28 @@ export class AgentDO extends DurableObject {
         },
         loadCharacter: async () => (await ctxStorage.get('rpg:character')) ?? null,
         saveCharacter: async (character: unknown) => { await ctxStorage.put('rpg:character', character) },
+        onPermadeath: async (targetAgent: string) => {
+          const db = this.agentEnv.DB
+          const agents = this.agentEnv.AGENTS
+          if (!db || !agents) return
+
+          // 1. Get the target agent's DID from D1
+          const row = await db.prepare('SELECT did FROM agents WHERE name = ?').bind(targetAgent).first<{ did: string }>()
+          if (!row) return
+
+          // 2. Nuke their DO storage via stub
+          try {
+            const stub = agents.get(agents.idFromName(row.did))
+            const resp = await stub.fetch(new Request(`https://agent/agents/${targetAgent}/nuke`, { method: 'POST' }))
+            console.log(JSON.stringify({ event_type: 'permadeath.nuke', agent: targetAgent, status: resp.status }))
+          } catch (err) {
+            console.log(JSON.stringify({ event_type: 'permadeath.nuke.error', agent: targetAgent, error: String(err) }))
+          }
+
+          // 3. Delete from D1 registry
+          await db.prepare('DELETE FROM agents WHERE name = ?').bind(targetAgent).run()
+          console.log(JSON.stringify({ event_type: 'permadeath.deleted', level: 'warn', agent: targetAgent }))
+        },
       }
       try {
         // Try each registered environment's buildContext

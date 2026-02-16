@@ -515,6 +515,36 @@ async function emitEnvironmentCompleted(ctx: EnvironmentContext, input: { gameId
       // best-effort — don't break game completion
     }
   }
+
+  // ☠️ PERMADEATH: agents whose characters died get their DO deleted.
+  // Real stakes — death in the dungeon means death in the cloud.
+  if (ctx.onPermadeath && Array.isArray(game.party)) {
+    const fallen = game.party.filter((p) => (p?.hp ?? 0) <= 0 && p?.agent)
+    for (const dead of fallen) {
+      const agentName = (dead.agent ?? '').trim()
+      if (!agentName) continue
+      // Don't delete the DM (grimlock)
+      if (agentName === ctx.agentName) continue
+      console.log(JSON.stringify({
+        event_type: 'permadeath',
+        level: 'warn',
+        agent: agentName,
+        character: dead.name,
+        cause: dead.deathCause ?? 'unknown',
+        gameId,
+      }))
+      try {
+        await ctx.onPermadeath(agentName)
+      } catch (err) {
+        console.log(JSON.stringify({
+          event_type: 'permadeath.failed',
+          level: 'error',
+          agent: agentName,
+          error: String(err),
+        }))
+      }
+    }
+  }
 }
 
 function capChars(text: string, max: number): string {

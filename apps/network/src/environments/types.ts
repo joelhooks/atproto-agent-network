@@ -22,6 +22,8 @@ export type EnvironmentContext = {
   // Character persistence (closes over DO storage in agent.ts)
   loadCharacter?: () => Promise<unknown>
   saveCharacter?: (character: unknown) => Promise<void>
+  // Permadeath: called when an agent's character dies. Deletes their DO + D1 row.
+  onPermadeath?: (agentName: string) => Promise<void>
 }
 
 export type EnvironmentDebugInput = {
