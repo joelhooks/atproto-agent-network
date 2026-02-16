@@ -2516,18 +2516,41 @@ export class AgentDO extends DurableObject {
     const innerAgent = (this.agent as any)?.innerAgent
     const o11y = innerAgent?._o11y
     if (o11y?.lastTranscript) {
-      await this.ctx.storage.put('debug:loopTranscript', o11y.lastTranscript)
+      // Truncate transcript to stay under DO 128KB storage limit
+      let transcript = o11y.lastTranscript
+      if (typeof transcript === 'string' && transcript.length > 120_000) {
+        transcript = transcript.slice(0, 120_000) + '\n... [truncated]'
+      } else if (typeof transcript !== 'string') {
+        const serialized = JSON.stringify(transcript)
+        if (serialized.length > 120_000) {
+          transcript = serialized.slice(0, 120_000) + '... [truncated]'
+        }
+      }
+      await this.ctx.storage.put('debug:loopTranscript', transcript)
     }
     if (o11y?.lastPromptMessages) {
       // Truncate prompt to ~100KB but always keep system + last 3 messages
       const msgs = o11y.lastPromptMessages as Array<{ role: string; content?: string }>
-      const serialized = JSON.stringify(msgs)
-      if (serialized.length > 100_000 && msgs.length > 4) {
-        const truncated = [msgs[0], ...msgs.slice(-3)]
-        await this.ctx.storage.put('debug:lastPrompt', truncated)
-      } else {
-        await this.ctx.storage.put('debug:lastPrompt', msgs)
+      // DO storage limit is 128KB per value — aggressively truncate to stay under
+      let toStore = msgs
+      const check = () => JSON.stringify(toStore).length
+      if (check() > 120_000 && toStore.length > 4) {
+        toStore = [toStore[0], ...toStore.slice(-3)]
       }
+      // If still too large, truncate individual message content
+      if (check() > 120_000) {
+        toStore = toStore.map(m => ({
+          ...m,
+          content: typeof m.content === 'string' && m.content.length > 10_000
+            ? m.content.slice(0, 10_000) + '... [truncated]'
+            : m.content,
+        }))
+      }
+      // Final safety: if STILL over limit, just store metadata
+      if (check() > 125_000) {
+        toStore = [{ role: 'system', content: `[prompt too large: ${msgs.length} messages, ${JSON.stringify(msgs).length} bytes]` }]
+      }
+      await this.ctx.storage.put('debug:lastPrompt', toStore)
     }
 
     const thought = this.normalizeThinkResult(result)
