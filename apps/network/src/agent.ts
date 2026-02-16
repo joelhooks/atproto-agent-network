@@ -2837,15 +2837,25 @@ export class AgentDO extends DurableObject {
     this.initializing = (async () => {
       const stored = await this.ctx.storage.get<StoredAgentIdentityV1>('identity')
 
+      let identityRestored = false
       if (stored && stored.version === 1) {
-        this.identity = {
-          did: stored.did,
-          signingKey: await importCryptoKeyPairJwk(stored.signingKey),
-          encryptionKey: await importCryptoKeyPairJwk(stored.encryptionKey),
-          createdAt: stored.createdAt,
-          rotatedAt: stored.rotatedAt,
+        try {
+          this.identity = {
+            did: stored.did,
+            signingKey: await importCryptoKeyPairJwk(stored.signingKey),
+            encryptionKey: await importCryptoKeyPairJwk(stored.encryptionKey),
+            createdAt: stored.createdAt,
+            rotatedAt: stored.rotatedAt,
+          }
+          identityRestored = true
+        } catch {
+          // Stored identity is corrupted (e.g. AES-GCM decryption failure
+          // after DO storage migration). Wipe it and regenerate below.
+          console.warn(`[${this.did}] Corrupted identity in DO storage, regenerating keypair`)
+          await this.ctx.storage.delete('identity')
         }
-      } else {
+      }
+      if (!identityRestored) {
         this.identity = {
           did: this.did,
           signingKey: await generateEd25519Keypair(),
@@ -2866,7 +2876,7 @@ export class AgentDO extends DurableObject {
       this.memory = new EncryptedMemory(
         this.agentEnv.DB,
         this.agentEnv.BLOBS,
-        this.identity
+        this.identity!
       )
 
       const config = await this.loadOrCreateConfig(agentName)

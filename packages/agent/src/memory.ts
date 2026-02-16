@@ -189,7 +189,13 @@ export class EncryptedMemory {
 
     const entries: Array<EncryptedMemoryListEntry<T>> = []
     for (const row of visible) {
-      entries.push({ id: row.id, record: await this.decodeRow<T>(row) })
+      try {
+        entries.push({ id: row.id, record: await this.decodeRow<T>(row) })
+      } catch {
+        // Skip records that can't be decrypted (e.g. encrypted with a
+        // previous identity's keys after DO storage was wiped).
+        continue
+      }
     }
 
     return entries
@@ -204,7 +210,12 @@ export class EncryptedMemory {
     if (!row) return null
     if (row.deleted_at) return null
 
-    return this.decodeRow<T>(row)
+    try {
+      return await this.decodeRow<T>(row)
+    } catch {
+      // Record encrypted with a previous identity's keys — treat as missing.
+      return null
+    }
   }
 
   async update(id: string, record: EncryptedMemoryRecord): Promise<boolean> {
@@ -346,14 +357,18 @@ export class EncryptedMemory {
       return JSON.parse(decoded) as T
     }
 
-    const sharedDek = toUint8Array(shared.encrypted_dek, 'encrypted_dek')
-    const dek = await decryptDekWithPrivateKey(
-      sharedDek,
-      this.identity.encryptionKey.privateKey
-    )
-    const plaintext = await decryptWithDek(ciphertext, dek, nonce)
-    const decoded = new TextDecoder().decode(plaintext)
-    return JSON.parse(decoded) as T
+    try {
+      const sharedDek = toUint8Array(shared.encrypted_dek, 'encrypted_dek')
+      const dek = await decryptDekWithPrivateKey(
+        sharedDek,
+        this.identity.encryptionKey.privateKey
+      )
+      const plaintext = await decryptWithDek(ciphertext, dek, nonce)
+      const decoded = new TextDecoder().decode(plaintext)
+      return JSON.parse(decoded) as T
+    } catch {
+      return null
+    }
   }
 
   async listShared<T = EncryptedMemoryRecord>(
@@ -381,8 +396,13 @@ export class EncryptedMemory {
       if (recordRow.deleted_at) continue
       if (options.collection && recordRow.collection !== options.collection) continue
 
-      const record = await this.decodeSharedRow<T>(recordRow, share)
-      entries.push({ id: share.record_id, record })
+      try {
+        const record = await this.decodeSharedRow<T>(recordRow, share)
+        entries.push({ id: share.record_id, record })
+      } catch {
+        // Skip records that can't be decrypted (identity key mismatch).
+        continue
+      }
     }
 
     return entries
