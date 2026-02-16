@@ -428,10 +428,11 @@ describe('rpgEnvironment', () => {
     // Grimlock is DM, never a player — players should be the actual agents
     expect((result as any).details.players).toContain('slag')
     expect((result as any).details.players).not.toContain('grimlock')
-    expect((result as any).details.phase).toBe('setup')
+    // Default: skip setup, go straight to playing (setup requires params.setup=true)
+    expect((result as any).details.phase).toBe('playing')
   })
 
-  it('new_game starts in setup phase with backstory interview', async () => {
+  it('new_game starts in setup phase with backstory interview when setup=true', async () => {
     const db = new D1MockDatabase()
     const broadcast = vi.fn()
 
@@ -443,14 +444,14 @@ describe('rpgEnvironment', () => {
     }
 
     const tool = rpgEnvironment.getTool(ctx as any)
-    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['slag', 'snarl'] })
+    const result = await tool.execute('toolcall-new', { command: 'new_game', players: ['slag', 'snarl'], setup: true })
     const gameId = String((result as any)?.details?.gameId ?? '')
     expect(gameId).toContain('rpg_')
 
     const row = await db.prepare('SELECT state FROM environments WHERE id = ?').bind(gameId).first<any>()
     const updated = JSON.parse(row.state)
 
-    // Setup phase enabled — game starts in setup with backstory interview
+    // Setup phase enabled when explicitly requested
     expect(updated.setupPhase).toBeDefined()
     expect(updated.phase).toBe('setup')
   })

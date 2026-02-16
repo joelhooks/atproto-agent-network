@@ -333,16 +333,31 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       game.campaignContext.activeArcs = [objectiveText, ...(game.campaignContext.activeArcs ?? []).filter((arc) => arc !== objectiveText)].slice(0, 3)
     }
 
-    game.phase = 'setup'
-    const setupMachine = createRpgSetupPhaseMachine(finalPlayers, 2, 'grimlock')
-    game.setupPhase = {
-      currentPlayerIndex: 0,
-      exchangeCount: 0,
-      maxExchanges: 2,
-      dialogues: {},
-      complete: false,
+    // Skip setup phase entirely — backstory interviews require a DM agent (grimlock)
+    // to be looping, which isn't always available. Go straight to playing.
+    // Setup can be opted into via params.setup = true if a DM agent is running.
+    const wantSetup = params.setup === true || params.setup === 'true'
+    if (wantSetup) {
+      game.phase = 'setup'
+      const setupMachine = createRpgSetupPhaseMachine(finalPlayers, 2, 'grimlock')
+      game.setupPhase = {
+        currentPlayerIndex: 0,
+        exchangeCount: 0,
+        maxExchanges: 2,
+        dialogues: {},
+        complete: false,
+      }
+      ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
+    } else {
+      // Skip setup — auto-generate backstories, go straight to playing
+      game.phase = 'playing'
+      for (const member of game.party ?? []) {
+        if (member && typeof member === 'object' && 'name' in member && !(member as any).backstory) {
+          (member as any).backstory = `A battle-hardened adventurer who joined the party seeking glory and treasure.`
+        }
+      }
+      game.setupPhase = { currentPlayerIndex: 0, exchangeCount: 0, maxExchanges: 0, dialogues: {}, complete: true }
     }
-    ;(game as any).phaseMachine = serializePhaseMachine(setupMachine)
 
     await ctx.db.prepare("ALTER TABLE environments ADD COLUMN type TEXT DEFAULT 'catan'").run().catch(() => undefined)
 
