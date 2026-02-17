@@ -673,6 +673,84 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `rpg.ts` can be reduced to a stable export facade without breaking consumers, as long as all externally used symbols (`rpgEnvironment`, campaign CRUD, campaign-logic exports, `compactAdventureLog`) are re-exported from the new orchestrator module; extraction of reactive wake behavior into `rpg/events/game-events.ts` keeps `GameEventEmitter` transitions reusable and testable.\nGotcha: When moving `rpg.ts` into `rpg/environment.ts`, relative paths to root-level packages shift by one directory (e.g., `generateTid` import must become `../../../../../packages/core/src/identity`), otherwise Vitest fails module resolution before tests execute.\nFiles Context: `apps/network/src/environments/rpg.ts` is now the entry shell; `apps/network/src/environments/rpg/environment.ts` is the orchestrator implementation; `apps/network/src/environments/rpg/events/game-events.ts` owns reactive emitter/signal wiring; `apps/network/src/environments/rpg-shell.test.ts` enforces the architectural constraint so `rpg.ts` does not regress into a monolith."
+    },
+    {
+      "id": "story-mlq0mvje",
+      "title": "Fix permadeath — nuke DO but keep D1 registration",
+      "status": "failed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "[test_failure] $ tsc --noEmit\n\nsrc/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before rou"
+    },
+    {
+      "id": "story-mlq0mw3v",
+      "title": "Validate players on game creation — check D1 agents table",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `apps/network/src/agent.ts` is the right enforcement point for both creation paths because it owns the Catan `game` tool and the RPG delegation wrapper. A shared preflight check there can block invalid player sets before any environment row is inserted.\nGotcha: `packages/core/src/d1-mock.ts` does not support `WHERE name IN (?, ...)` parsing, so tests will fail unless you include a fallback query path (`WHERE name = ?`) for mock runtime while keeping the production IN query.\nFiles Context: `apps/network/src/agent.ts` contains both tool handlers and now the shared player-registration helpers. `apps/network/src/agent-do.test.ts` contains the direct tool-level regression tests for Catan and RPG new_game validation behavior."
+    },
+    {
+      "id": "story-mlq0mwnv",
+      "title": "Turn timeout — auto-skip absent players after N cycles",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/games/catan.test.ts",
+        "apps/network/src/games/catan.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: In this codebase, the safest RPG timeout enforcement point is the `rpg` tool boundary in `apps/network/src/agent.ts` (before `rpgEnvironment` delegation). That lets us mutate persisted D1 state once (advance turn + `lastActionAt`) and then let existing command handlers run against the updated turn state.\nGotcha: Do not rely on `state.phase === 'finished'` type narrowing after mutating calls in `catan.ts`; TypeScript can consider that branch impossible from earlier guards. Use a casted runtime phase check when evaluating post-mutation completion.\nFiles Context: `apps/network/src/games/catan.ts` now owns Catan timeout behavior (`lastActionAt`, timeout resolution, stale-player auto-skip). `apps/network/src/agent.ts` now pre-processes RPG commands with timeout skip (`maybeSkipTimedOutRpgTurn`) before delegating to `environments/rpg`. Coverage was added in `apps/network/src/games/catan.test.ts` and `apps/network/src/agent-do.test.ts`."
+    },
+    {
+      "id": "story-mlq0mx8k",
+      "title": "Route dangerous storage.put() calls through safePut()",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/games/catan.test.ts",
+        "apps/network/src/games/catan.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `safePut()` in `apps/network/src/agent.ts` is the correct guardrail boundary for any potentially growing object payloads created inside tool closures (like `update_profile`), not just top-level config writes. Calling `this.safePut` from inside `buildTools()` closures works correctly via lexical `this` binding.\nGotcha: `pruneAndArchiveCompletedGoals()` appends overflow goals to existing archive and then slices from the tail. If cap semantics change again, update both the slice value and tests that assert dropped oldest IDs (`old-0..old-4`) to avoid silent growth regressions.\nFiles Context: `apps/network/src/agent.ts` contains both risky persistence paths addressed in this story: archive capping around `pruneAndArchiveCompletedGoals` (~3135) and profile tool write path in `buildTools()` (~5422). `apps/network/src/agent-do.test.ts` now has regression tests at the new archive-cap test (~4711-4734) and safePut profile test (~5586-5605)."
+    },
+    {
+      "id": "story-mlq0n643",
+      "title": "Bridge WebSocket endpoint — dedicated filtered stream for external agents",
+      "status": "completed",
+      "filesModified": [
+        "apps/network/src/agent.ts",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "apps/network/src/agent-do.test.ts",
+        "apps/network/src/games/catan.test.ts",
+        "apps/network/src/games/catan.ts",
+        "apps/network/src/relay.test.ts",
+        "apps/network/src/relay.ts",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "Technical Discovery: `AgentDO.broadcastLoopEvent` always sets `agent_did` to the emitter, so targeted turn notifications must carry the next-player DID in event `context` and RelayDO must extract DIDs from context for subscription matching (`apps/network/src/agent.ts`, `apps/network/src/relay.ts`).\nGotcha: If `game.turn.notify` includes only `currentPlayer` (name) and not `currentPlayerDid`, `/relay/firehose` subscribers filtering by DID will miss events whenever another agent emits the turn change.\nFiles Context: `apps/network/src/games/catan.ts` now produces structured `turnNotification` metadata; `apps/network/src/agent.ts` is the emission point for `game.turn.notify` for both Catan and RPG; `apps/network/src/relay.ts` controls DID/collection matching for firehose fanout and must include context DID extraction for targeted streams."
     }
   ],
   "failures": [
@@ -860,6 +938,65 @@
         "rg -n",
         "ls -R",
         "swarm memory"
+      ],
+      "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlq0mvje",
+      "storyTitle": "Fix permadeath — nuke DO but keep D1 registration",
+      "category": "test_failure",
+      "error": "$ tsc --noEmit\n\nsrc/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [471.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies [1.00ms]\n(pass) network worker lexicon validation > rejects invalid lexico",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "nl -ba",
+        "swarm memory"
+      ],
+      "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlq0mvje",
+      "storyTitle": "Fix permadeath — nuke DO but keep D1 registration",
+      "category": "test_failure",
+      "error": "$ tsc --noEmit\n\nsrc/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [461.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies [1.00ms]\n(pass) network worker lexicon validation > rejects invalid lexico",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "nl -ba",
+        "rg -n",
+        "git diff",
+        "swarm memory"
+      ],
+      "iterationNumber": 2
+    },
+    {
+      "storyId": "story-mlq0mvje",
+      "storyTitle": "Fix permadeath — nuke DO but keep D1 registration",
+      "category": "test_failure",
+      "error": "$ tsc --noEmit\n\nsrc/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [492.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies\n(pass) network worker lexicon validation > rejects invalid lexicon records",
+      "toolNames": [
+        "sed -n",
+        "nl -ba",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "git diff",
+        "git show",
+        "swarm memory"
+      ],
+      "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlq0mvje",
+      "storyTitle": "Fix permadeath — nuke DO but keep D1 registration",
+      "category": "test_failure",
+      "error": "$ tsc --noEmit\n\nsrc/network.ws.live.test.ts:\n(skip) network live WS: loop lifecycle broadcast > broadcasts loop.observe/loop.think/loop.reflect with O11Y fields and tolerates disconnects\n\nsrc/index.test.ts:\n(pass) network worker lexicon validation > rejects requests without a bearer token before routing [504.00ms]\n(pass) network worker lexicon validation > rejects requests without a bearer token before parsing JSON bodies\n(pass) network worker lexicon validation > rejects invalid lexicon records",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "git diff",
+        "nl -ba",
+        "rg -n"
       ],
       "iterationNumber": 3
     }

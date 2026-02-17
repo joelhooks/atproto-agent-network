@@ -3727,6 +3727,81 @@ describe('AgentDO', () => {
     expect(after).toContain('env_tool')
   })
 
+  it('onPermadeath clears target rpg character + nukes target DO while keeping D1 registration', async () => {
+    vi.resetModules()
+
+    const { registerEnvironment } = await import('./environments/registry')
+    registerEnvironment({
+      type: 'permadeath-testenv',
+      label: 'Permadeath Test Environment',
+      getTool() {
+        return {
+          name: 'permadeath_tool',
+          label: 'Permadeath Tool',
+          description: 'test tool',
+          parameters: { type: 'object', properties: {} },
+          async execute() {
+            return { content: [{ type: 'text', text: 'ok' }] }
+          },
+        }
+      },
+      async buildContext(ctx) {
+        await ctx.onPermadeath?.('target-agent')
+        return ['PERMADEATH TEST CONTEXT']
+      },
+      isActionTaken() {
+        return false
+      },
+      getAutoPlayActions() {
+        return []
+      },
+    })
+
+    const nukeFetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    const agentsNamespace = {
+      idFromName: vi.fn().mockImplementation((did: string) => `stub:${did}`),
+      get: vi.fn().mockReturnValue({ fetch: nukeFetch }),
+    }
+
+    const { state, storage } = createState('agent-permadeath-caller')
+    const { env, db } = createEnv({
+      AGENTS: agentsNamespace,
+      PI_AGENT_FACTORY: vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok' }) }),
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    await (db as any)
+      .prepare('INSERT INTO agents (name, did, created_at) VALUES (?, ?, ?)')
+      .bind('target-agent', 'did:cf:target-agent', new Date().toISOString())
+      .run()
+    await storage.put('rpg:character', { name: 'Old Character' })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await (agent as any).buildThinkPrompt({
+      did: 'did:cf:agent-permadeath-caller',
+      observedAt: Date.now(),
+      sinceAlarmAt: null,
+      inbox: [],
+      teamComms: [],
+      events: [],
+    })
+
+    expect(nukeFetch).toHaveBeenCalledTimes(2)
+    const firstRequest = nukeFetch.mock.calls[0]?.[0] as Request
+    const secondRequest = nukeFetch.mock.calls[1]?.[0] as Request
+    expect(new URL(firstRequest.url).pathname).toBe('/agents/target-agent/character')
+    expect(firstRequest.method).toBe('DELETE')
+    expect(new URL(secondRequest.url).pathname).toBe('/agents/target-agent/nuke')
+    expect(secondRequest.method).toBe('POST')
+    expect(db.agents.get('target-agent')).toMatchObject({
+      name: 'target-agent',
+      did: 'did:cf:target-agent',
+    })
+    await expect(storage.get('rpg:character')).resolves.toEqual({ name: 'Old Character' })
+  })
+
   it('alarm() wires observe() and stores last observations in DO storage', async () => {
     const { state, storage } = createState('agent-alarm-observe-wire')
     const { env } = createEnv({
@@ -4610,6 +4685,55 @@ describe('AgentDO', () => {
     expect(String(promptArg)).not.toContain('archive me 3')
   })
 
+  it('caps goalsArchive to the last 50 entries when overflow keeps appending', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'No-op', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state, storage } = createState('agent-goal-archive-cap')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const now = Date.now()
+    const completed = (id: string, completedAt: number) => ({
+      id,
+      description: `goal ${id}`,
+      priority: 0,
+      status: 'completed' as const,
+      progress: 1,
+      createdAt: completedAt - 1_000,
+      completedAt,
+    })
+
+    const existingArchive = Array.from({ length: 45 }, (_, index) => completed(`old-${index}`, now - 100_000 - index))
+    await storage.put('goalsArchive', existingArchive)
+
+    const incomingCompleted = Array.from({ length: 10 }, (_, index) => completed(`new-${index}`, now - index))
+    const patchRes = await agent.fetch(
+      new Request('https://example/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maxCompletedGoals: 0,
+          goals: incomingCompleted,
+        }),
+      })
+    )
+    expect(patchRes.status).toBe(200)
+
+    const archived = (await storage.get<Array<{ id?: unknown }>>('goalsArchive')) ?? []
+    const archivedIds = archived
+      .map((goal) => goal?.id)
+      .filter((id): id is string => typeof id === 'string')
+
+    expect(archivedIds).toHaveLength(50)
+    expect(archivedIds).toEqual(expect.arrayContaining(['old-5', 'old-44', 'new-0', 'new-9']))
+    expect(archivedIds).not.toEqual(expect.arrayContaining(['old-0', 'old-1', 'old-2', 'old-3', 'old-4']))
+  })
+
   it('alarm() executes tool calls returned by think() via act() with a max of 10 steps', async () => {
     const now = new Date().toISOString()
     const note = (summary: string) => ({
@@ -4728,6 +4852,152 @@ describe('AgentDO', () => {
     // TODO: structured log event assertion (agent.goal.update) — pending structured logging implementation
   })
 
+  it('game new_game rejects unregistered players from the agents table', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'noop', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state } = createState('agent-game-player-validation')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    await db
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('alice', 'did:cf:alice')
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (params: unknown) => Promise<unknown> }>
+    const gameTool = tools.find((tool) => tool.name === 'game')
+    expect(gameTool).toBeTruthy()
+    expect(typeof gameTool?.execute).toBe('function')
+
+    const result = await gameTool!.execute!(
+      'tc_game_new_game',
+      {
+        command: 'new_game',
+        players: ['alice', 'grimlock', 'beta'],
+      }
+    ) as any
+
+    expect(result?.ok).toBe(false)
+    expect(String(result?.error ?? '')).toContain('Unregistered players')
+    expect(String(result?.error ?? '')).toContain('grimlock')
+    expect(String(result?.error ?? '')).toContain('beta')
+
+    const environments = await db.prepare('SELECT id FROM environments').all<{ id: string }>()
+    expect(environments.results).toHaveLength(0)
+  })
+
+  it('rpg new_game rejects unregistered players from the agents table', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'noop', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state } = createState('agent-rpg-player-validation')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    await db
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('grimlock', 'did:cf:grimlock')
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/grimlock/identity'))
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (params: unknown) => Promise<unknown> }>
+    const rpgTool = tools.find((tool) => tool.name === 'rpg')
+    expect(rpgTool).toBeTruthy()
+    expect(typeof rpgTool?.execute).toBe('function')
+
+    const result = await rpgTool!.execute!(
+      'tc_rpg_new_game',
+      {
+        command: 'new_game',
+        players: ['grimlock', 'alpha', 'beta'],
+      }
+    ) as any
+
+    expect(result?.ok).toBe(false)
+    expect(String(result?.error ?? '')).toContain('Unregistered players')
+    expect(String(result?.error ?? '')).toContain('alpha')
+    expect(String(result?.error ?? '')).toContain('beta')
+
+    const environments = await db
+      .prepare("SELECT id FROM environments WHERE type = 'rpg'")
+      .all<{ id: string }>()
+    expect(environments.results).toHaveLength(0)
+  })
+
+  it('rpg auto-skips a stale current player before processing another player action', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'noop', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const { state } = createState('agent-rpg-turn-timeout')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const gameId = 'rpg_turn_timeout_1'
+    const game = createRpgGame({
+      id: gameId,
+      players: ['alice', 'bob'],
+      dungeon: [
+        { type: 'rest', description: 'A campsite between fights.' },
+        { type: 'trap', description: 'A collapsing corridor.' },
+      ],
+    }) as any
+    game.phase = 'playing'
+    game.mode = 'exploring'
+    game.currentPlayer = 'alice'
+    game.round = 1
+    game.lastActionAt = Date.now() - 6 * 60 * 1000
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'rpg', 'grimlock', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(
+      new Request('https://example/agents/bob/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    )
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (toolCallId: string, params: unknown) => Promise<unknown> }>
+    const rpgTool = tools.find((tool) => tool.name === 'rpg')
+    expect(rpgTool).toBeTruthy()
+    expect(typeof rpgTool?.execute).toBe('function')
+
+    const result = await rpgTool!.execute!(
+      'tc_rpg_timeout_skip',
+      { command: 'explore', gameId }
+    ) as any
+    expect(String(result?.error ?? '')).not.toContain('Not your turn')
+
+    const afterRow = await db
+      .prepare('SELECT state FROM environments WHERE id = ?')
+      .bind(gameId)
+      .first<{ state: string }>()
+    const afterState = JSON.parse(afterRow!.state) as any
+
+    expect(afterState.round).toBe(2)
+    expect(afterState.lastActionAt).toBeGreaterThan(game.lastActionAt)
+    expect(Array.isArray(afterState.log)).toBe(true)
+    expect(afterState.log.some((entry: { what?: unknown }) => String(entry?.what ?? '').includes('timed out'))).toBe(true)
+  })
+
   it('game tool emits agent.game.action JSON logs even when the action errors', async () => {
     const promptFn = vi.fn().mockResolvedValue({
       content: 'Attempt game action.',
@@ -4758,6 +5028,81 @@ describe('AgentDO', () => {
     await agent.alarm()
 
     // TODO: structured log event assertion (agent.game.action) — pending structured logging implementation
+  })
+
+  it('game tool emits game.turn.notify to relay when the turn advances', async () => {
+    const promptFn = vi.fn().mockResolvedValue({ content: 'noop', toolCalls: [] })
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: promptFn })
+    const relayEvents: Array<Record<string, unknown>> = []
+    const relayFetch = vi.fn(async (req: Request) => {
+      if (new URL(req.url).pathname.endsWith('/relay/emit')) {
+        relayEvents.push((await req.json()) as Record<string, unknown>)
+      }
+      return Response.json({ ok: true })
+    })
+    const relayNamespace = {
+      idFromName: vi.fn().mockReturnValue('relay-main'),
+      get: vi.fn().mockReturnValue({ fetch: relayFetch }),
+    }
+    const { state } = createState('agent-game-turn-notify')
+    const { env, db } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+      RELAY: relayNamespace,
+    })
+
+    await db
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('alice', 'did:cf:alice')
+      .run()
+    await db
+      .prepare("INSERT INTO agents (name, did, created_at) VALUES (?, ?, datetime('now'))")
+      .bind('bob', 'did:cf:bob')
+      .run()
+
+    const gameId = 'catan_turn_notify_1'
+    const game = createCatanGame(gameId, ['alice', 'bob']) as any
+    game.phase = 'playing'
+    game.currentPlayer = 'alice'
+    game.turn = 7
+
+    await db
+      .prepare(
+        "INSERT INTO environments (id, type, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      )
+      .bind(gameId, 'catan', 'alice', JSON.stringify(game), game.phase, JSON.stringify(['alice', 'bob']))
+      .run()
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(
+      new Request('https://example/agents/alice/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    )
+
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (toolCallId: string, params: unknown) => Promise<unknown> }>
+    const gameTool = tools.find((tool) => tool.name === 'game')
+    expect(gameTool).toBeTruthy()
+
+    const result = await gameTool!.execute!(
+      'tc_game_turn_notify',
+      { command: 'action', gameId, gameAction: { type: 'end_turn' } }
+    ) as any
+    expect(result?.details?.ok).toBe(true)
+
+    const turnNotify = relayEvents.find((evt) => evt.event_type === 'game.turn.notify')
+    expect(turnNotify).toBeTruthy()
+    expect(turnNotify?.context).toMatchObject({
+      gameId,
+      gameType: 'catan',
+      currentPlayer: 'bob',
+      currentPlayerDid: 'did:cf:bob',
+      phase: 'playing',
+    })
+    expect(String((turnNotify?.context as any)?.availableActionsSummary ?? '')).toContain('roll_dice')
   })
 
   it('remaps misrouted game->rpg tool calls when active environment is rpg', async () => {
@@ -5299,6 +5644,48 @@ describe('AgentDO', () => {
       role: 'scout',
       version: '1.1.0',
     })
+  })
+
+  it('update_profile tool persists profile through safePut', async () => {
+    const agentFactory = vi.fn().mockResolvedValue({ prompt: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }) })
+    const { state, storage } = createState('agent-profile-safe-put')
+    const { env } = createEnv({
+      PI_AGENT_FACTORY: agentFactory,
+      PI_AGENT_MODEL: { provider: 'test' },
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    await agent.fetch(new Request('https://example/agents/alice/identity'))
+
+    const safePutSpy = vi.spyOn(agent as any, 'safePut')
+    const tools = (agent as any).tools as Array<{ name: string; execute?: (a: unknown, b?: unknown) => any }>
+    const updateProfile = tools.find((tool) => tool.name === 'update_profile')
+    expect(updateProfile).toBeTruthy()
+    expect(typeof updateProfile?.execute).toBe('function')
+
+    await updateProfile!.execute!({
+      status: 'playing RPG',
+      currentFocus: 'Clearing the dungeon',
+      mood: 'focused',
+    })
+
+    expect(safePutSpy).toHaveBeenCalledWith(
+      'profile',
+      expect.objectContaining({
+        status: 'playing RPG',
+        currentFocus: 'Clearing the dungeon',
+        mood: 'focused',
+      })
+    )
+
+    const storedProfile = await storage.get<Record<string, unknown>>('profile')
+    expect(storedProfile).toMatchObject({
+      status: 'playing RPG',
+      currentFocus: 'Clearing the dungeon',
+      mood: 'focused',
+    })
+    expect(typeof storedProfile?.updatedAt).toBe('number')
   })
 
   it('skill storage CRUD methods write/read/list/delete skill records by envType/role key', async () => {

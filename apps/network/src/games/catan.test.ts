@@ -114,6 +114,26 @@ describe('Agents of Catan', () => {
       expect(game.phase).toBe('playing')
       expect(game.currentPlayer).toBe('a')
     })
+
+    it('auto-skips a stale setup player when another player acts after timeout', () => {
+      const game = makeGame(['a', 'b', 'c']) as GameState & { lastActionAt?: number }
+      const now = Date.now()
+      game.lastActionAt = now - 6 * 60 * 1000
+
+      const vertexForB = findValidVertex(game)
+      const result = executeAction(
+        game,
+        'b',
+        { type: 'build_settlement', vertexId: vertexForB },
+        { now, turnTimeoutMs: 5 * 60 * 1000 }
+      )
+
+      expect(result.ok).toBe(true)
+      expect(result.events[0]).toContain('timed out')
+      expect(game.currentPlayer).toBe('b')
+      expect(game.board.vertices[vertexForB]?.owner).toBe('b')
+      expect(game.lastActionAt).toBe(now)
+    })
   })
 
   describe('playing phase', () => {
@@ -183,6 +203,24 @@ describe('Agents of Catan', () => {
       expect(end.ok).toBe(true)
       expect(game.currentPlayer).toBe('b')
       expect(game.lastDiceRoll).toBeNull()
+    })
+
+    it('returns turn notification metadata when currentPlayer changes', () => {
+      const game = setupGame()
+      expect(game.currentPlayer).toBe('a')
+
+      expect(executeAction(game, 'a', { type: 'roll_dice' }).ok).toBe(true)
+      const end = executeAction(game, 'a', { type: 'end_turn' }) as any
+
+      expect(end.ok).toBe(true)
+      expect(end.turnNotification).toMatchObject({
+        gameId: game.id,
+        gameType: 'catan',
+        currentPlayer: 'b',
+        phase: 'playing',
+      })
+      expect(end.turnNotification?.availableActionsSummary).toContain('roll_dice')
+      expect(end.turnNotification?.availableActionsSummary).toContain('end_turn')
     })
 
     it('supports bank trading at 3:1', () => {

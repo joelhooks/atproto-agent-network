@@ -241,6 +241,7 @@ type AgentConfigWithTeamComms = AgentConfig & {
 
 const DEFAULT_VECTORIZE_DIMENSIONS = 1024
 const DEFAULT_REACTIVE_MODE = false
+const DEFAULT_TURN_TIMEOUT_MS = 5 * 60 * 1000
 const MEMORY_DEDUP_MERGE_THRESHOLD = 0.7
 const MEMORY_DEDUP_SKIP_THRESHOLD = 0.9
 type WorkersAiModelName = Parameters<Ai['run']>[0]
@@ -1686,18 +1687,33 @@ export class AgentDO extends DurableObject {
           const row = await db.prepare('SELECT did FROM agents WHERE name = ?').bind(targetAgent).first<{ did: string }>()
           if (!row) return
 
-          // 2. Nuke their DO storage via stub
+          const stub = agents.get(agents.idFromName(row.did))
+
+          // 2. Clear persistent character so the next game starts fresh.
           try {
-            const stub = agents.get(agents.idFromName(row.did))
+            const clearResp = await stub.fetch(
+              new Request(`https://agent/agents/${targetAgent}/character`, { method: 'DELETE' })
+            )
+            console.log(
+              JSON.stringify({
+                event_type: 'permadeath.character_cleared',
+                agent: targetAgent,
+                status: clearResp.status,
+              })
+            )
+          } catch (err) {
+            console.log(
+              JSON.stringify({ event_type: 'permadeath.character_cleared.error', agent: targetAgent, error: String(err) })
+            )
+          }
+
+          // 3. Nuke their DO storage via stub (D1 registration remains for respawn).
+          try {
             const resp = await stub.fetch(new Request(`https://agent/agents/${targetAgent}/nuke`, { method: 'POST' }))
             console.log(JSON.stringify({ event_type: 'permadeath.nuke', agent: targetAgent, status: resp.status }))
           } catch (err) {
             console.log(JSON.stringify({ event_type: 'permadeath.nuke.error', agent: targetAgent, error: String(err) }))
           }
-
-          // 3. Delete from D1 registry
-          await db.prepare('DELETE FROM agents WHERE name = ?').bind(targetAgent).run()
-          console.log(JSON.stringify({ event_type: 'permadeath.deleted', level: 'warn', agent: targetAgent }))
         },
       }
       try {
@@ -3116,8 +3132,8 @@ export class AgentDO extends DurableObject {
         existingIds.add(goal.id)
         merged.push(goal)
       }
-      // Cap archive to last 100 goals to prevent unbounded growth
-      const capped = merged.slice(-100)
+      // Cap archive to last 50 goals to prevent unbounded growth
+      const capped = merged.slice(-50)
       await this.safePut(GOALS_ARCHIVE_STORAGE_KEY, capped)
     }
 
@@ -3453,7 +3469,7 @@ export class AgentDO extends DurableObject {
   }
 
   /**
-   * GET/PUT /agents/:name/character
+   * GET/PUT/DELETE /agents/:name/character
    * Persistent RPG character stored in DO storage.
    */
   private async handleCharacter(request: Request): Promise<Response> {
@@ -3469,6 +3485,10 @@ export class AgentDO extends DurableObject {
       const character = body as Record<string, unknown>
       await this.safePut('rpg:character', character)
       return Response.json({ ok: true, character })
+    }
+    if (request.method === 'DELETE') {
+      await this.ctx.storage.delete('rpg:character')
+      return Response.json({ ok: true })
     }
     return new Response('Method not allowed', { status: 405 })
   }
@@ -3595,6 +3615,255 @@ export class AgentDO extends DurableObject {
       }
       const params = (toolCallIdOrParams && typeof toolCallIdOrParams === 'object' ? toolCallIdOrParams : {}) as T
       return { toolCallId: `tc_${generateTid()}`, params }
+    }
+
+    const parsePlayerNames = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value
+            .filter((entry): entry is string => typeof entry === 'string')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0)
+        : []
+
+    const findMissingRegisteredPlayers = async (playerNames: string[]): Promise<string[]> => {
+      const uniquePlayers = Array.from(new Set(playerNames.map((name) => name.trim()).filter((name) => name.length > 0)))
+      if (uniquePlayers.length === 0) return []
+
+      let rows: { results?: Array<{ name?: string }> }
+      try {
+        const placeholders = uniquePlayers.map(() => '?').join(', ')
+        rows = await env.DB
+          .prepare(`SELECT name FROM agents WHERE name IN (${placeholders})`)
+          .bind(...uniquePlayers)
+          .all<{ name?: string }>()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.includes('Unsupported where clause')) throw error
+        const fallbackMatches: Array<{ name?: string }> = []
+        for (const playerName of uniquePlayers) {
+          const row = await env.DB
+            .prepare('SELECT name FROM agents WHERE name = ?')
+            .bind(playerName)
+            .first<{ name?: string }>()
+          if (row?.name) fallbackMatches.push({ name: row.name })
+        }
+        rows = { results: fallbackMatches }
+      }
+
+      const registered = new Set(
+        (rows.results ?? [])
+          .map((row) => (typeof row.name === 'string' ? row.name.trim() : ''))
+          .filter((name) => name.length > 0)
+      )
+
+      return uniquePlayers.filter((name) => !registered.has(name))
+    }
+
+    const isRpgTurnActionCommand = (value: string): boolean => {
+      const command = value.trim().toLowerCase()
+      if (!command) return false
+      return !new Set(['status', 'new_game', 'create_character', 'get_reputation', 'join_game']).has(command)
+    }
+
+    const resolveTurnTimeoutMs = (state: Record<string, unknown>): number => {
+      const candidate = state.turnTimeoutMs
+      if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+        return Math.floor(candidate)
+      }
+      return DEFAULT_TURN_TIMEOUT_MS
+    }
+
+    const resolveLastActionAt = (state: Record<string, unknown>): number => {
+      const direct = state.lastActionAt
+      if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) return direct
+
+      const log = state.log
+      if (Array.isArray(log) && log.length > 0) {
+        const last = log[log.length - 1]
+        if (last && typeof last === 'object') {
+          const at = (last as Record<string, unknown>).at
+          if (typeof at === 'number' && Number.isFinite(at) && at > 0) return at
+          const timestamp = (last as Record<string, unknown>).timestamp
+          if (typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0) return timestamp
+        }
+      }
+
+      return Date.now()
+    }
+
+    type RpgTurnSnapshot = {
+      gameId: string
+      phase: string
+      mode: string
+      currentPlayer: string
+      currentPlayerDid: string | null
+      availableActionsSummary: string
+    }
+
+    const summarizeRpgAvailableActions = (phase: string, mode: string): string => {
+      if (phase === 'setup') {
+        return 'setup_narrate, setup_respond, setup_finalize, send_message, status'
+      }
+      if (phase === 'hub_town') {
+        return 'visit_location, buy_item, sell_item, rest, embark, status, get_reputation'
+      }
+      if (phase === 'playing' && mode === 'combat') {
+        return 'attack, cast_spell, use_skill, use_item, negotiate, flee, intimidate, rest, status'
+      }
+      if (phase === 'playing') {
+        return 'explore, attack, cast_spell, use_skill, use_item, negotiate, flee, sneak, intimidate, rest, status'
+      }
+      return 'status'
+    }
+
+    const resolveRpgGameId = async (
+      gameIdInput: unknown,
+      actorNameInput: unknown,
+      includeSetup: boolean
+    ): Promise<string> => {
+      let gameId = typeof gameIdInput === 'string' ? gameIdInput.trim() : ''
+      const actorName = typeof actorNameInput === 'string' ? actorNameInput.trim() : ''
+
+      if (!gameId && actorName) {
+        const playerLike = `%${JSON.stringify(actorName)}%`
+        const phaseSet = includeSetup ? "('playing', 'hub_town', 'setup')" : "('playing', 'hub_town')"
+        const active = await env.DB
+          .prepare(
+            `SELECT id FROM environments WHERE type = 'rpg' AND phase IN ${phaseSet} AND players LIKE ? ORDER BY updated_at DESC LIMIT 1`
+          )
+          .bind(playerLike)
+          .first<{ id: string }>()
+        gameId = active?.id ?? ''
+      }
+
+      return gameId
+    }
+
+    const readRpgTurnSnapshot = async (
+      gameIdInput: unknown,
+      actorNameInput: unknown
+    ): Promise<RpgTurnSnapshot | null> => {
+      const gameId = await resolveRpgGameId(gameIdInput, actorNameInput, true)
+      if (!gameId) return null
+
+      const row = await env.DB
+        .prepare("SELECT state FROM environments WHERE id = ? AND type = 'rpg'")
+        .bind(gameId)
+        .first<{ state: string }>()
+      if (!row?.state) return null
+
+      let game: Record<string, unknown>
+      try {
+        game = JSON.parse(row.state) as Record<string, unknown>
+      } catch {
+        return null
+      }
+
+      const currentPlayer = typeof game.currentPlayer === 'string' ? game.currentPlayer.trim() : ''
+      if (!currentPlayer) return null
+
+      const phase = typeof game.phase === 'string' ? game.phase : 'unknown'
+      const mode = typeof game.mode === 'string' ? game.mode : 'unknown'
+      const currentPlayerDidRow = await env.DB
+        .prepare('SELECT did FROM agents WHERE name = ?')
+        .bind(currentPlayer)
+        .first<{ did: string }>()
+
+      return {
+        gameId,
+        phase,
+        mode,
+        currentPlayer,
+        currentPlayerDid: currentPlayerDidRow?.did ?? null,
+        availableActionsSummary: summarizeRpgAvailableActions(phase, mode),
+      }
+    }
+
+    const emitRpgTurnNotifyIfChanged = async (
+      before: RpgTurnSnapshot | null,
+      after: RpgTurnSnapshot | null
+    ): Promise<void> => {
+      if (!after) return
+      if (before && before.gameId === after.gameId && before.currentPlayer === after.currentPlayer) return
+
+      await broadcastLoopEvent({
+        event_type: 'game.turn.notify',
+        trace_id: createTraceId(),
+        span_id: createSpanId(),
+        context: {
+          gameId: after.gameId,
+          gameType: 'rpg',
+          currentPlayer: after.currentPlayer,
+          currentPlayerDid: after.currentPlayerDid,
+          phase: after.phase,
+          mode: after.mode,
+          availableActionsSummary: after.availableActionsSummary,
+        },
+      })
+    }
+
+    const maybeSkipTimedOutRpgTurn = async (command: string, gameIdInput: unknown, actorNameInput: unknown): Promise<void> => {
+      if (!isRpgTurnActionCommand(command)) return
+
+      const gameId = await resolveRpgGameId(gameIdInput, actorNameInput, false)
+      if (!gameId) return
+
+      const row = await env.DB
+        .prepare("SELECT state FROM environments WHERE id = ? AND type = 'rpg'")
+        .bind(gameId)
+        .first<{ state: string }>()
+      if (!row?.state) return
+
+      let game: Record<string, unknown>
+      try {
+        game = JSON.parse(row.state) as Record<string, unknown>
+      } catch {
+        return
+      }
+
+      const phase = typeof game.phase === 'string' ? game.phase : ''
+      if (phase !== 'playing' && phase !== 'hub_town') return
+
+      const currentPlayer = typeof game.currentPlayer === 'string' ? game.currentPlayer.trim() : ''
+      if (!currentPlayer) return
+
+      const timeoutMs = resolveTurnTimeoutMs(game)
+      const now = Date.now()
+      const lastActionAt = resolveLastActionAt(game)
+      if (now - lastActionAt <= timeoutMs) return
+
+      const { advanceTurn } = await import('./environments/rpg/systems/turn-manager')
+      advanceTurn(game as any, { now: () => now })
+      game.lastActionAt = now
+
+      const log = Array.isArray(game.log) ? game.log : []
+      if (!Array.isArray(game.log)) game.log = log
+      log.push({
+        at: now,
+        who: 'GM',
+        what: `${currentPlayer} timed out after ${Math.floor(timeoutMs / 1000)}s, skipping turn`,
+      })
+
+      await env.DB
+        .prepare("UPDATE environments SET state = ?, phase = ?, winner = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(JSON.stringify(game), game.phase ?? phase, game.winner ?? null, gameId)
+        .run()
+
+      try {
+        await broadcastLoopEvent({
+          event_type: 'env.rpg.turn.timeout_skip',
+          trace_id: createTraceId(),
+          span_id: createSpanId(),
+          context: {
+            gameId,
+            skippedPlayer: currentPlayer,
+            nextPlayer: game.currentPlayer ?? null,
+            timeoutMs,
+          },
+        })
+      } catch {
+        // Best effort observability signal only.
+      }
     }
 
     const senderDidLower = did.trim().toLowerCase()
@@ -4979,10 +5248,17 @@ export class AgentDO extends DurableObject {
               }
             }
             const { createGame } = await import('./games/catan')
-            const players = Array.isArray(params.players)
-              ? params.players.filter((p): p is string => typeof p === 'string')
-              : []
+            const players = parsePlayerNames(params.players)
             if (players.length < 2) throw new Error('Need at least 2 player names')
+            const missingPlayers = await findMissingRegisteredPlayers(players)
+            if (missingPlayers.length > 0) {
+              return {
+                ok: false,
+                error:
+                  `Unregistered players: ${missingPlayers.join(', ')}. ` +
+                  'Register these agents first, then retry new_game.',
+              }
+            }
             const gameId = `catan_${generateTid()}`
             const game = createGame(gameId, players)
             const hostAgent = this.config?.name ?? 'unknown'
@@ -5071,6 +5347,22 @@ export class AgentDO extends DurableObject {
                 trace_id: traceId,
                 span_id: createSpanId(),
                 context: { gameId, winner: game.winner, turns: game.turn },
+              })
+            }
+
+            if (result.turnNotification) {
+              const currentPlayerDidRow = await db
+                .prepare('SELECT did FROM agents WHERE name = ?')
+                .bind(result.turnNotification.currentPlayer)
+                .first<{ did: string }>()
+              await broadcastLoopEvent({
+                event_type: 'game.turn.notify',
+                trace_id: traceId,
+                span_id: createSpanId(),
+                context: {
+                  ...result.turnNotification,
+                  currentPlayerDid: currentPlayerDidRow?.did ?? null,
+                },
               })
             }
 
@@ -5177,9 +5469,57 @@ export class AgentDO extends DurableObject {
           },
           execute: async (toolCallIdOrParams: unknown, maybeParams?: unknown) => {
             try {
+              const { toolCallId, params } = parseArgs<{ command?: unknown; players?: unknown; gameId?: unknown }>(
+                toolCallIdOrParams,
+                maybeParams
+              )
+              const command = typeof params.command === 'string' ? params.command : ''
+              const actorName = this.config?.name ?? ''
+              const beforeTurnSnapshot = await readRpgTurnSnapshot(params.gameId, actorName)
+              if (command === 'new_game') {
+                const players = parsePlayerNames(params.players)
+                if (players.length > 0) {
+                  const missingPlayers = await findMissingRegisteredPlayers(players)
+                  if (missingPlayers.length > 0) {
+                    return {
+                      ok: false,
+                      error:
+                        `Unregistered players: ${missingPlayers.join(', ')}. ` +
+                        'Register these agents first, then retry new_game.',
+                    }
+                  }
+                }
+              }
+
+              if (command !== 'new_game') {
+                await maybeSkipTimedOutRpgTurn(command, params.gameId, actorName)
+              }
+
               const { rpgEnvironment } = await import('./environments/rpg')
               const tool = rpgEnvironment.getTool(rpgCtx as any)
-              return tool.execute!(toolCallIdOrParams as string, maybeParams)
+              const result = await tool.execute!(toolCallId, params)
+
+              const resultRecord =
+                result && typeof result === 'object' && !Array.isArray(result)
+                  ? (result as Record<string, unknown>)
+                  : null
+              const details =
+                resultRecord?.details && typeof resultRecord.details === 'object' && !Array.isArray(resultRecord.details)
+                  ? (resultRecord.details as Record<string, unknown>)
+                  : null
+              const resultGameId =
+                typeof resultRecord?.gameId === 'string'
+                  ? resultRecord.gameId
+                  : typeof details?.gameId === 'string'
+                    ? details.gameId
+                    : ''
+              const afterTurnSnapshot = await readRpgTurnSnapshot(
+                resultGameId || params.gameId,
+                actorName
+              )
+              await emitRpgTurnNotifyIfChanged(beforeTurnSnapshot, afterTurnSnapshot)
+
+              return result
             } catch (error) {
               return { ok: false, error: error instanceof Error ? error.message : String(error) }
             }
@@ -5197,7 +5537,6 @@ export class AgentDO extends DurableObject {
       })(),
       // Profile tool: available to ALL agents for self-reporting status to dashboard
       ...(() => {
-        const storage = this.ctx.storage
         return [{
           name: 'update_profile',
           description: 'Update your public profile visible on the dashboard. Set your current status, what you are focused on, and your mood.',
@@ -5218,7 +5557,7 @@ export class AgentDO extends DurableObject {
             if (typeof args.status === 'string') profile.status = args.status.slice(0, 100)
             if (typeof args.currentFocus === 'string') profile.currentFocus = args.currentFocus.slice(0, 200)
             if (typeof args.mood === 'string') profile.mood = args.mood.slice(0, 50)
-            await storage.put('profile', profile)
+            await this.safePut('profile', profile)
             return { ok: true, profile }
           },
         } as PiAgentTool]

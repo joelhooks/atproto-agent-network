@@ -239,6 +239,42 @@ describe('RelayDO', () => {
     expect((bob as any).send).not.toHaveBeenCalled()
   })
 
+  it('matches did filters against game.turn.notify currentPlayerDid context', async () => {
+    const { state } = createState()
+    const { RelayDO } = await import('./relay')
+    const relay = new RelayDO(state as never, { AGENTS: dummyAgents } as never)
+
+    const grimlockTurns = createSocket({ collections: ['game.*'], dids: ['did:cf:grimlock'] })
+    const bobTurns = createSocket({ collections: ['game.*'], dids: ['did:cf:bob'] })
+    state.getWebSockets = vi.fn().mockReturnValue([grimlockTurns, bobTurns] as WebSocket[])
+
+    const event = {
+      event_type: 'game.turn.notify',
+      collection: 'game.turn.notify',
+      agent_did: 'did:cf:alice',
+      timestamp: new Date().toISOString(),
+      context: {
+        gameId: 'game_turn_notify_1',
+        gameType: 'catan',
+        currentPlayer: 'grimlock',
+        currentPlayerDid: 'did:cf:grimlock',
+        phase: 'playing',
+      },
+    }
+
+    const response = await relay.fetch(
+      new Request('https://example.com/relay/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect((grimlockTurns as any).send).toHaveBeenCalledWith(JSON.stringify(event))
+    expect((bobTurns as any).send).not.toHaveBeenCalled()
+  })
+
   it('filters commit-style events by repo did and op collection paths', async () => {
     const { state } = createState()
     const { RelayDO } = await import('./relay')

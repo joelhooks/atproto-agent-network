@@ -441,6 +441,25 @@ export class RelayDO extends DurableObject {
     push(e.agent_did)
     push((e as { agentDid?: unknown }).agentDid)
 
+    const context =
+      e.context && typeof e.context === 'object' && !Array.isArray(e.context)
+        ? (e.context as Record<string, unknown>)
+        : null
+    if (context) {
+      // game.turn.notify and related events can target a different DID than the emitter.
+      push(context.currentPlayerDid)
+      push(context.nextPlayerDid)
+      push(context.targetDid)
+      push(context.recipientDid)
+      push(context.did)
+      push(context.agentDid)
+
+      const contextDids = context.dids
+      if (Array.isArray(contextDids)) {
+        for (const value of contextDids) push(value)
+      }
+    }
+
     return Array.from(new Set(dids))
   }
 

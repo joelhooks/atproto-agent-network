@@ -63,6 +63,10 @@ export interface GameState {
   log: GameLogEntry[]
   winner: string | null
   setupRound: number // 1 or 2 during setup
+  // Last successful action timestamp (ms since epoch), used for turn timeout checks.
+  lastActionAt: number
+  // Optional per-game turn timeout override.
+  turnTimeoutMs?: number
 }
 
 export interface GameLogEntry {
@@ -255,6 +259,7 @@ export function createGame(id: string, playerNames: string[]): GameState {
     log: [],
     winner: null,
     setupRound: 1,
+    lastActionAt: Date.now(),
   }
 }
 
@@ -303,10 +308,26 @@ export interface ActionResult {
   events: string[]
   gameOver?: boolean
   stalemate?: boolean
+  turnNotification?: TurnNotification
+}
+
+export interface TurnNotification {
+  gameId: string
+  gameType: 'catan'
+  currentPlayer: string
+  phase: GameState['phase']
+  availableActionsSummary: string
+}
+
+export interface ExecuteActionOptions {
+  now?: number
+  turnTimeoutMs?: number
+  skipTurnTimeoutCheck?: boolean
 }
 
 const SETTLEMENT_COST: Record<Resource, number> = { wood: 1, brick: 1, sheep: 1, wheat: 1, ore: 0 }
 const ROAD_COST: Record<Resource, number> = { wood: 1, brick: 1, sheep: 0, wheat: 0, ore: 0 }
+const DEFAULT_TURN_TIMEOUT_MS = 5 * 60 * 1000
 
 function hasResources(player: PlayerState, cost: Record<Resource, number>): boolean {
   return (Object.keys(cost) as Resource[]).every(r => player.resources[r] >= cost[r])
@@ -375,43 +396,155 @@ function canPlaceRoad(state: GameState, player: PlayerState, edgeId: number, isS
   return null // OK
 }
 
-export function executeAction(state: GameState, playerName: string, action: GameAction): ActionResult {
-  const player = state.players.find(p => p.name === playerName)
+function resolveTurnTimeoutMs(state: GameState, override?: number): number {
+  const candidate =
+    typeof override === 'number'
+      ? override
+      : typeof state.turnTimeoutMs === 'number'
+        ? state.turnTimeoutMs
+        : DEFAULT_TURN_TIMEOUT_MS
+  if (!Number.isFinite(candidate) || candidate <= 0) return DEFAULT_TURN_TIMEOUT_MS
+  return Math.floor(candidate)
+}
+
+function resolveLastActionAt(state: GameState, now: number): number {
+  const direct = (state as GameState & { lastActionAt?: unknown }).lastActionAt
+  if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) return direct
+
+  const lastLogAt = state.log[state.log.length - 1]?.timestamp
+  if (typeof lastLogAt === 'number' && Number.isFinite(lastLogAt) && lastLogAt > 0) return lastLogAt
+
+  return now
+}
+
+function summarizeAvailableActions(state: GameState): string {
+  if (state.phase === 'finished') return 'none (game over)'
+  if (state.phase === 'setup') {
+    return 'build_settlement, build_road (follow setup placement order)'
+  }
+
+  if (state.lastDiceRoll === null) {
+    return 'roll_dice, propose_trade, bank_trade, accept_trade, reject_trade, end_turn (roll_dice required before build_settlement/build_road)'
+  }
+
+  return 'build_settlement, build_road, propose_trade, bank_trade, accept_trade, reject_trade, end_turn'
+}
+
+function buildTurnNotification(state: GameState): TurnNotification | null {
+  const currentPlayer = typeof state.currentPlayer === 'string' ? state.currentPlayer.trim() : ''
+  if (!currentPlayer) return null
+  return {
+    gameId: state.id,
+    gameType: 'catan',
+    currentPlayer,
+    phase: state.phase,
+    availableActionsSummary: summarizeAvailableActions(state),
+  }
+}
+
+function maybeSkipTimedOutCurrentPlayer(state: GameState, now: number, timeoutMs: number): ActionResult | null {
+  if (state.phase === 'finished') return null
+
+  const current = state.currentPlayer
+  if (!current) return null
+
+  const lastActionAt = resolveLastActionAt(state, now)
+  if (now - lastActionAt <= timeoutMs) return null
+
+  if (state.phase === 'setup') {
+    addLog(state, 'GM', 'timeout_skip', `${current} timed out during setup and was skipped`)
+    advanceSetup(state)
+    return { ok: true, events: [`${current} timed out and was skipped during setup.`] }
+  }
+
+  addLog(state, 'GM', 'timeout_skip', `${current} timed out and was skipped`)
+  const skipped = executeAction(
+    state,
+    current,
+    { type: 'end_turn' },
+    { now, turnTimeoutMs: timeoutMs, skipTurnTimeoutCheck: true }
+  )
+  return {
+    ...skipped,
+    events: [`${current} timed out and was skipped.`, ...skipped.events],
+  }
+}
+
+export function executeAction(
+  state: GameState,
+  playerName: string,
+  action: GameAction,
+  options: ExecuteActionOptions = {}
+): ActionResult {
+  const now = options.now ?? Date.now()
+  const timeoutMs = resolveTurnTimeoutMs(state, options.turnTimeoutMs)
+  const initialCurrentPlayer = state.currentPlayer
+  const player = state.players.find((p) => p.name === playerName)
   if (!player) return { ok: false, error: 'Player not found', events: [] }
 
   if (state.phase === 'finished') return { ok: false, error: 'Game is over', events: [] }
   // Back-compat for persisted games created before staleTurns existed.
   if (typeof (state as any).staleTurns !== 'number') (state as any).staleTurns = 0
 
+  const timeoutEvents: string[] = []
+  const finalizeResult = (result: ActionResult): ActionResult => {
+    const merged =
+      timeoutEvents.length > 0
+        ? { ...result, events: [...timeoutEvents, ...result.events] }
+        : result
+    if (merged.ok) state.lastActionAt = now
+    if (!merged.ok) return merged
+    if (state.currentPlayer === initialCurrentPlayer) return merged
+
+    const turnNotification = buildTurnNotification(state)
+    if (!turnNotification) return merged
+    return { ...merged, turnNotification }
+  }
+
+  if (!options.skipTurnTimeoutCheck) {
+    const timeoutAdvance = maybeSkipTimedOutCurrentPlayer(state, now, timeoutMs)
+    if (timeoutAdvance) {
+      timeoutEvents.push(...timeoutAdvance.events)
+      if (timeoutAdvance.gameOver || (state as { phase: string }).phase === 'finished') {
+        return finalizeResult({
+          ok: true,
+          events: [],
+          gameOver: timeoutAdvance.gameOver,
+          stalemate: timeoutAdvance.stalemate,
+        })
+      }
+    }
+  }
+
   // ─── Setup Phase ───
   if (state.phase === 'setup') {
-    return executeSetupAction(state, player, action)
+    return finalizeResult(executeSetupAction(state, player, action))
   }
 
   // ─── Playing Phase ───
   if (state.currentPlayer !== playerName) {
     // Allow trade responses from non-current players
     if (action.type === 'accept_trade' || action.type === 'reject_trade') {
-      return executeTradeResponse(state, player, action)
+      return finalizeResult(executeTradeResponse(state, player, action))
     }
-    return { ok: false, error: 'Not your turn', events: [] }
+    return finalizeResult({ ok: false, error: 'Not your turn', events: [] })
   }
 
   switch (action.type) {
     case 'roll_dice': {
-      if (state.lastDiceRoll !== null) return { ok: false, error: 'Already rolled this turn', events: [] }
+      if (state.lastDiceRoll !== null) return finalizeResult({ ok: false, error: 'Already rolled this turn', events: [] })
       const roll = rollDice()
       state.lastDiceRoll = roll
       const resourceEvents = distributeResources(state, roll)
       const events = [`Rolled ${roll}`, ...resourceEvents]
       addLog(state, playerName, 'roll_dice', `Rolled ${roll}`)
-      return { ok: true, events }
+      return finalizeResult({ ok: true, events })
     }
 
     case 'build_settlement': {
-      if (state.lastDiceRoll === null) return { ok: false, error: 'Roll dice first', events: [] }
+      if (state.lastDiceRoll === null) return finalizeResult({ ok: false, error: 'Roll dice first', events: [] })
       const error = canPlaceSettlement(state, player, action.vertexId, false)
-      if (error) return { ok: false, error, events: [] }
+      if (error) return finalizeResult({ ok: false, error, events: [] })
       deductResources(player, SETTLEMENT_COST)
       state.board.vertices[action.vertexId].owner = playerName
       player.settlements.push(action.vertexId)
@@ -421,33 +554,37 @@ export function executeAction(state: GameState, playerName: string, action: Game
       if (player.victoryPoints >= 10) {
         state.phase = 'finished'
         state.winner = playerName
-        return { ok: true, events: [`Built settlement at vertex ${action.vertexId}`, `${playerName} wins with ${player.victoryPoints} VP!`], gameOver: true }
+        return finalizeResult({
+          ok: true,
+          events: [`Built settlement at vertex ${action.vertexId}`, `${playerName} wins with ${player.victoryPoints} VP!`],
+          gameOver: true,
+        })
       }
-      return { ok: true, events: [`Built settlement at vertex ${action.vertexId} (${player.victoryPoints} VP)`] }
+      return finalizeResult({ ok: true, events: [`Built settlement at vertex ${action.vertexId} (${player.victoryPoints} VP)`] })
     }
 
     case 'build_road': {
-      if (state.lastDiceRoll === null) return { ok: false, error: 'Roll dice first', events: [] }
+      if (state.lastDiceRoll === null) return finalizeResult({ ok: false, error: 'Roll dice first', events: [] })
       const error = canPlaceRoad(state, player, action.edgeId, false)
-      if (error) return { ok: false, error, events: [] }
+      if (error) return finalizeResult({ ok: false, error, events: [] })
       deductResources(player, ROAD_COST)
       state.board.edges[action.edgeId].owner = playerName
       player.roads.push(action.edgeId)
       state.staleTurns = 0
       addLog(state, playerName, 'build_road', `Built road on edge ${action.edgeId}`)
-      return { ok: true, events: [`Built road on edge ${action.edgeId}`] }
+      return finalizeResult({ ok: true, events: [`Built road on edge ${action.edgeId}`] })
     }
 
     case 'propose_trade': {
-      return executeProposeTrade(state, player, action)
+      return finalizeResult(executeProposeTrade(state, player, action))
     }
 
     case 'bank_trade': {
-      if (player.resources[action.offering] < 3) return { ok: false, error: 'Need 3 of a resource for bank trade', events: [] }
+      if (player.resources[action.offering] < 3) return finalizeResult({ ok: false, error: 'Need 3 of a resource for bank trade', events: [] })
       player.resources[action.offering] -= 3
       player.resources[action.requesting] += 1
       addLog(state, playerName, 'bank_trade', `Traded 3 ${action.offering} for 1 ${action.requesting}`)
-      return { ok: true, events: [`Traded 3 ${action.offering} → 1 ${action.requesting} with bank`] }
+      return finalizeResult({ ok: true, events: [`Traded 3 ${action.offering} → 1 ${action.requesting} with bank`] })
     }
 
     case 'end_turn': {
@@ -479,7 +616,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
           'game_over',
           `Stalemate: no settlement/road built for ${STALEMATE_THRESHOLD} turns. ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`
         )
-        return {
+        return finalizeResult({
           ok: true,
           events: [
             `Game over! Stalemate after ${STALEMATE_THRESHOLD} buildless turns.`,
@@ -487,7 +624,7 @@ export function executeAction(state: GameState, playerName: string, action: Game
           ],
           gameOver: true,
           stalemate: true,
-        }
+        })
       }
 
       // Turn cap: after 300 turns, highest VP wins
@@ -497,14 +634,14 @@ export function executeAction(state: GameState, playerName: string, action: Game
         state.phase = 'finished'
         state.winner = sorted[0].name
         addLog(state, sorted[0].name, 'game_over', `Turn cap reached (${MAX_TURNS}). ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`)
-        return { ok: true, events: [`Game over! Turn cap reached. ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`] }
+        return finalizeResult({ ok: true, events: [`Game over! Turn cap reached. ${sorted[0].name} wins with ${sorted[0].victoryPoints} VP!`] })
       }
 
-      return { ok: true, events: [`Turn ended. Now ${state.currentPlayer}'s turn (turn ${state.turn})`] }
+      return finalizeResult({ ok: true, events: [`Turn ended. Now ${state.currentPlayer}'s turn (turn ${state.turn})`] })
     }
 
     default:
-      return { ok: false, error: `Unknown action: ${(action as any).type}`, events: [] }
+      return finalizeResult({ ok: false, error: `Unknown action: ${(action as any).type}`, events: [] })
   }
 }
 

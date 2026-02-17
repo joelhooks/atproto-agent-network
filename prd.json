@@ -1298,12 +1298,70 @@
       "priority": 127,
       "passes": true,
       "validationCommand": "bun run check-types && bun run test"
+    },
+    {
+      "id": "story-mlq0mvje",
+      "title": "Fix permadeath — nuke DO but keep D1 registration",
+      "description": "In apps/network/src/agent.ts, find the onPermadeath callback (~line 1681). It currently: (1) nukes the target agent's DO storage, (2) deletes the agent from D1. Remove ONLY the D1 delete statement (the line with 'DELETE FROM agents WHERE name = ?'). Keep the DO nuke. That's it — one line removal.",
+      "priority": 130,
+      "passes": true,
+      "validationCommand": "cd apps/network && bun run typecheck && bun test",
+      "targetFiles": [
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlq0mw3v",
+      "title": "Validate players on game creation — check D1 agents table",
+      "description": "In the create_game Catan tool handler (agent.ts ~line 4981) and any RPG game creation paths, validate that all player names exist in the D1 agents table before creating the game. Query: SELECT name FROM agents WHERE name IN (...). Return clear error listing which players are not registered. This prevents games being created with non-existent players (grimlock, alpha, beta) that cause infinite stuck-in-setup.",
+      "priority": 131,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": [
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlq0mwnv",
+      "title": "Turn timeout — auto-skip absent players after N cycles",
+      "description": "Add a turn timeout mechanism for both Catan setup and RPG. Track lastActionAt timestamp per game in the environment state. When any agent takes an action and the currentPlayer hasn't acted in >5 minutes (configurable), auto-advance to the next player. For Catan setup: skip the absent player (they get no settlement). For RPG: skip their turn (already exists for dead players, extend to absent). This prevents games from hanging forever when a player's loop is down. Implementation: check timeout in executeAction before processing, or in a periodic cleanup. The simplest approach: when ANY player takes an action, check if currentPlayer is stale and advance if so.",
+      "priority": 132,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": [
+        "catan.ts",
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlq0mx8k",
+      "title": "Route dangerous storage.put() calls through safePut()",
+      "description": "There are 39 raw this.ctx.storage.put() calls in agent.ts that bypass safePut() (defined at line 347, 125KB limit with truncation). Route all dangerous puts through safePut() — specifically those storing objects/arrays that can grow unboundedly: goalsArchive (line 3119, only appends, never prunes — most dangerous), config (lines 931, 3132, 3140, 3145, 3160, 3172, 3181), pendingEvents (lines 1496, 5691), identity, profile, skills (line 3341), extension metrics (line 6038). Small/safe puts (booleans, counters like loopRunning, loopCount, consecutiveErrors) can stay raw. Also add a cap to goalsArchive — keep only the last 50 entries max, prune oldest on append.",
+      "priority": 133,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": [
+        "agent.ts"
+      ]
+    },
+    {
+      "id": "story-mlq0n643",
+      "title": "Bridge WebSocket endpoint — dedicated filtered stream for external agents",
+      "description": "The relay firehose already supports DID + collection filtering via subscribe messages. Ensure that an external agent (like grimlock running on a separate machine) can: (1) Connect to /relay/firehose with admin auth, (2) Subscribe with collections=[\"game.*\",\"env.*\",\"agent.comms.*\"] and dids=[\"<grimlock-did>\"] to receive only grimlock-relevant events, (3) Receive game turn notifications when currentPlayer matches the subscribed agent. Currently game turn events are broadcast but may not include enough info for an external agent to know it's their turn. Add an explicit event_type: \"game.turn.notify\" emitted when currentPlayer changes, containing: gameId, gameType, currentPlayer, phase, and a summary of available actions. This event should be emitted from executeAction in catan.ts and the RPG turn advancement logic whenever currentPlayer changes.",
+      "priority": 134,
+      "passes": true,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": [
+        "catan.ts",
+        "agent.ts",
+        "relay.ts"
+      ]
     }
   ],
   "metadata": {
     "createdAt": "2026-02-08T06:54:17.324Z",
-    "totalIterations": 116,
-    "lastIteration": "2026-02-14T04:04:41.428Z"
+    "totalIterations": 120,
+    "lastIteration": "2026-02-17T03:42:09.844Z"
   },
   "totalStories": 11
 }
