@@ -52,6 +52,7 @@ const AgentConfigCreateSchema = z
 const EnvironmentCreateSchema = z.object({
   type: z.string().trim().min(1, 'type is required'),
   players: z.array(z.string().trim().min(1)).min(2, 'at least 2 players are required'),
+  compact: z.union([z.boolean(), z.literal('true'), z.literal('false')]).optional(),
 })
 
 const CampaignCreateSchema = z.object({
