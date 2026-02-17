@@ -158,7 +158,10 @@ export async function buildContext(ctx: EnvironmentContext, deps: BuildContextDe
 
   if (!row) {
     const joinable = await findJoinableEnvironmentsForAgent(ctx, { limit: 5, isCharacter })
-    if (joinable.length === 0) return []
+    if (joinable.length === 0) return [
+      '⚠️ No active RPG adventure. Any previous game goals are OBSOLETE — abandon them.',
+      'Wait for Grimlock to create a new adventure.',
+    ]
 
     const lines: string[] = []
     lines.push('🏰 Joinable Dungeon Crawls:')
@@ -395,7 +398,7 @@ export async function buildContext(ctx: EnvironmentContext, deps: BuildContextDe
       lines.push(...persistentLines)
       lines.push(...campaignLines)
       lines.push(...feedLines)
-      if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
+      if (room) lines.push(`Current room: ${room.description ?? ''}`)
       if (blockedRecruitment) lines.push(blockedRecruitment)
       lines.push(...roleSkillLines)
       lines.push('')
@@ -406,7 +409,9 @@ export async function buildContext(ctx: EnvironmentContext, deps: BuildContextDe
             .map((enemy) => {
               const negotiable = enemyIsNegotiable(enemy) ? 'yes' : 'no'
               const morale = enemyMoraleState(enemy)
-              return `${enemy.name} (HP:${enemy.hp}/${enemy.maxHp}, negotiable:${negotiable}, morale:${morale})`
+              const hpPct = (enemy.maxHp ?? 1) > 0 ? enemy.hp / (enemy.maxHp ?? 1) : 0
+              const condition = hpPct >= 1 ? 'uninjured' : hpPct > 0.5 ? 'wounded' : hpPct > 0.25 ? 'badly wounded' : hpPct > 0 ? 'near death' : 'dead'
+              return `${enemy.name} (${condition}, negotiable:${negotiable}, morale:${morale})`
             })
             .join(', ') || 'unknown'
         const negotiableNow = livingEnemies.filter((enemy) => enemyIsNegotiable(enemy)).map((enemy) => enemy.name)
@@ -435,7 +440,7 @@ export async function buildContext(ctx: EnvironmentContext, deps: BuildContextDe
       lines.push(...persistentLines)
       lines.push(...campaignLines)
       lines.push(...feedLines)
-      if (room) lines.push(`Current room: ${room.description ?? ''} (type: ${room.type})`)
+      if (room) lines.push(`Current room: ${room.description ?? ''}`)
       if (blockedRecruitment) lines.push(blockedRecruitment)
       lines.push(...roleSkillLines)
       if (freeformExploration) {

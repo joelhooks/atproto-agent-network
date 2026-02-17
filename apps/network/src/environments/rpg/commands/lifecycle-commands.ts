@@ -488,7 +488,7 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
     let statusText =
       `Adventure: ${gameId}\n` +
       `Mode: ${game.mode} | Phase: ${game.phase}\n` +
-      `Room ${game.roomIndex + 1}/${game.dungeon.length}: ${room?.type ?? 'unknown'}\n` +
+      `Room ${game.roomIndex + 1}/${game.dungeon.length}\n` +
       `${description}\n\n` +
       `Current player: ${game.currentPlayer}\n` +
       `Party: ${summarizeParty(game)}`
