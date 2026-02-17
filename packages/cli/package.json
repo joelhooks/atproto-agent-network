@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "bin": {
+    "anet": "./dist/index.js",
     "zap": "./dist/index.js"
   },
   "scripts": {

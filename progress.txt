@@ -1873,3 +1873,131 @@ Skipped: D1 lease schema + LeaseManager for sandbox leasing (#129) — exceeded 
 ---
 [2026-02-17T05:06:28.060Z]
 Skipped: D1 lease schema + LeaseManager for sandbox leasing (#129) — exceeded 3 retries, needs human review
+
+---
+[2026-02-17T05:12:03.008Z]
+Completed: Sandbox factory with getSandbox() wrapper (#131)
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0004_sandbox_leases.sql, apps/network/src/sandbox/lease-manager.test.ts, apps/network/src/sandbox/lease-manager.ts, prd.json, progress.txt, apps/network/package.json, apps/network/src/index.ts, apps/network/wrangler.toml, pnpm-lock.yaml
+Summary: Implemented story #131 end-to-end with TDD: added a failing sandbox factory test first, implemented the sandbox factory + R2 remount helper, wired Cloudflare Sandbox exports/bindings, and updated Wrangler config/migration/vars. Installed `@cloudflare/sandbox` via pnpm workspace fallback (because `bun add` failed on `workspace:*` resolution in this repo). Ran required typecheck validation successfully and sent required hivemind + openclaw updates.
+
+---
+[2026-02-17T05:12:44.620Z]
+Completed: Sandbox factory with getSandbox() wrapper (#131)
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0004_sandbox_leases.sql, apps/network/src/sandbox/lease-manager.test.ts, apps/network/src/sandbox/lease-manager.ts, prd.json, progress.txt, apps/network/package.json, apps/network/src/index.ts, apps/network/src/sandbox/sandbox-factory.test.ts, apps/network/src/sandbox/sandbox-factory.ts, apps/network/wrangler.toml, pnpm-lock.yaml
+Summary: Prior failure pattern detected: verification_rejected. Mitigation: I verified only the story-131 target files and ran the requested validation before finishing.
+
+This story’s requested implementation is already present in the workspace and matches the acceptance criteria:
+- Sandbox factory + R2 remount helper in `apps/network/src/sandbox/sandbox-factory.ts:1`
+- Sandbox factory tests in `apps/network/src/sandbox/sandbox-factory.test.ts:1`
+- Sandbox class export in `apps/network/src/index.ts:1641`
+- Wrangler Sandbox binding/container/migration/transport var in `apps/network/wrangler.toml:13`
+- Dependency present in `apps/network/package.json:15`
+
+Validation run:
+- `cd apps/network && npx vitest run src/sandbox/sandbox-factory.test.ts` ✅ (2/2 tests passed)
+- `cd apps/network && npx tsc --noEmit` ✅
+
+Required post-work commands run:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` ✅ (`mem-9f4291d6e86afa58`)
+- `openclaw system event --mode now --text "Ralph: completed Sandbox factory with getSandbox() wrapper (#131)"` ✅
+
+---
+[2026-02-17T05:19:18.943Z]
+Completed: Unified Sandbox Dockerfile for all environment types (#133/#134/#136)
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0004_sandbox_leases.sql, apps/network/src/sandbox/lease-manager.test.ts, apps/network/src/sandbox/lease-manager.ts, prd.json, progress.txt, apps/network/package.json, apps/network/src/index.ts, apps/network/src/sandbox/sandbox-factory.test.ts, apps/network/src/sandbox/sandbox-factory.ts, apps/network/wrangler.toml, pnpm-lock.yaml
+Summary: Implemented the unified sandbox assets under `sandboxes/` only, with TDD first, and validated the required TypeScript check.
+
+Prior failure pattern detected: `verification_rejected` and `test_failure`. Mitigation: I constrained edits to story-target files in `sandboxes/`, wrote failing tests first, then implemented to green.
+
+What I added:
+- `sandboxes/Dockerfile:1` with Cloudflare sandbox base image, Python/Node tools, git config, and script/skill copies.
+- `sandboxes/scripts/take_turn_common.py:1` shared stdin->skill->OpenRouter->JSON action pipeline.
+- Entry scripts:
+  - `sandboxes/scripts/rpg/take_turn.py:1`
+  - `sandboxes/scripts/catan/take_turn.py:1`
+  - `sandboxes/scripts/coding/take_turn.py:1`
+- Skills:
+  - `sandboxes/skills/rpg-player.md:1`
+  - `sandboxes/skills/catan-player.md:1`
+- RED->GREEN tests:
+  - `sandboxes/tests/test_take_turn.py:1`
+
+Validation run:
+- `python3 -m unittest sandboxes/tests/test_take_turn.py` ✅
+- `docker build -t agent-sandbox sandboxes/` ✅
+- `echo '{"env_type":"rpg","game_state":{}}' | docker run --rm -i agent-sandbox python /workspace/scripts/rpg/take_turn.py` ✅ script executes; exits with `OPENROUTER_API_KEY is required` by design when key is not provided
+- `cd apps/network && npx tsc --noEmit` ✅
+
+Required post-work commands:
+- `swarm memory store ... --tags "ralph,learning,atproto-agent-network-pi-loop"` ✅ (`mem-8b6c8a91d31aae42`)
+- `openclaw system event --mode now --text "Ralph: completed Unified Sandbox Dockerfile for all environment types (#133/#134/#136)"` ✅
+
+## Learnings
+### Technical Discovery
+`cloudflare/sandbox:0.7.0-python` does not expose `pip` or `python` aliases consistently. `sandboxes/Dockerfile` needs `python3 -m pip` and a `python` symlink (`/usr/local/bin/python`) so the provided smoke command works as written.
+### Gotcha for Next Iteration
+`swarm memory store` can fail when embeddings backend is unavailable; also avoid shell backticks in memory text (they trigger command substitution in zsh). Use single-quoted payloads.
+### Files Context
+`sandboxes/Dockerfile` defines the unified image contract; `sandboxes/scripts/take_turn_common.py` is the shared turn-processing runtime; per-env wrappers in `sandboxes/scripts/*/take_turn.py` provide execution entrypoints; `sandboxes/skills/*.md` are prompts copied into `/workspace/skills`; `sandboxes/tests/test_take_turn.py` verifies end-to-end script behavior with a local OpenRouter stub.
+
+---
+[2026-02-17T05:29:33.865Z]
+Completed: DO→Sandbox integration in agent.ts (#135)
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0004_sandbox_leases.sql, apps/network/src/sandbox/lease-manager.test.ts, apps/network/src/sandbox/lease-manager.ts, prd.json, progress.txt, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/package.json, apps/network/src/index.ts, apps/network/src/sandbox/sandbox-factory.test.ts, apps/network/src/sandbox/sandbox-factory.ts, apps/network/wrangler.toml, pnpm-lock.yaml, sandboxes/Dockerfile, sandboxes/scripts/__pycache__/take_turn_common.cpython-312.pyc, sandboxes/scripts/catan/take_turn.py, sandboxes/scripts/coding/take_turn.py, sandboxes/scripts/rpg/take_turn.py, sandboxes/scripts/take_turn_common.py, sandboxes/skills/catan-player.md, sandboxes/skills/rpg-player.md, sandboxes/tests/__pycache__/test_take_turn.cpython-312.pyc, sandboxes/tests/test_take_turn.py
+Summary: Implemented DO→Sandbox lifecycle integration for story #135 in `apps/network/src/agent.ts` with TDD-backed coverage in `apps/network/src/agent-do.test.ts`.
+
+What changed:
+- Added sandbox ID persistence helpers in `apps/network/src/agent.ts:442` and `apps/network/src/agent.ts:446`.
+- Added lifecycle handlers in `apps/network/src/agent.ts`:
+  - `onEnvironmentJoin(...)` at `apps/network/src/agent.ts:551`
+  - `onTurnNotification(...)` at `apps/network/src/agent.ts:574`
+  - `onEnvironmentEnd(...)` at `apps/network/src/agent.ts:652`
+- Added turn execution error handling for failed exec + invalid JSON in `apps/network/src/agent.ts:611` and `apps/network/src/agent.ts:624`.
+- Added lease GC sweep (`runSandboxLeaseGcSweep`) in `apps/network/src/agent.ts:672` and wired it into alarm flow at `apps/network/src/agent.ts:1355` with 30-minute throttling.
+- Added supporting sandbox helpers (`writeSandboxBootstrapScripts`, `destroySandboxById`, env type resolution).
+
+Tests added/updated (RED→GREEN):
+- Added sandbox lifecycle tests in `apps/network/src/agent-do.test.ts:5808`, `apps/network/src/agent-do.test.ts:5852`, `apps/network/src/agent-do.test.ts:5912`, `apps/network/src/agent-do.test.ts:5953`, `apps/network/src/agent-do.test.ts:5978`.
+- Added `FakeStorage.delete()` for parity with DO storage API in `apps/network/src/agent-do.test.ts:91`.
+
+Required process commands completed:
+- `swarm memory store ...` stored memory `mem-a165d2c8fec67213`.
+- `openclaw system event --mode now --text "Ralph: completed DO→Sandbox integration in agent.ts (#135)"` sent successfully.
+
+Prior failure pattern detected: `verification_rejected` and `test_failure`. Mitigation: kept scope to target files, wrote failing tests first, and ran the exact required typecheck validation.
+
+---
+[2026-02-17T05:40:05.750Z]
+Completed: Cost tracking + monitoring for sandbox leases (#137)
+Files: .ralph-context.json, .ralph-iterations.jsonl, apps/network/migrations/0004_sandbox_leases.sql, apps/network/src/sandbox/lease-manager.test.ts, apps/network/src/sandbox/lease-manager.ts, prd.json, progress.txt, apps/network/schema.sql, apps/network/src/agent-do.test.ts, apps/network/src/agent.ts, apps/network/src/index.test.ts, apps/network/src/index.ts, packages/cli/package.json, packages/cli/src/index.ts, apps/network/package.json, apps/network/src/sandbox/sandbox-factory.test.ts, apps/network/src/sandbox/sandbox-factory.ts, apps/network/wrangler.toml, pnpm-lock.yaml, sandboxes/Dockerfile, sandboxes/scripts/__pycache__/take_turn_common.cpython-312.pyc, sandboxes/scripts/catan/take_turn.py, sandboxes/scripts/coding/take_turn.py, sandboxes/scripts/rpg/take_turn.py, sandboxes/scripts/take_turn_common.py, sandboxes/skills/catan-player.md, sandboxes/skills/rpg-player.md, sandboxes/tests/__pycache__/test_take_turn.cpython-312.pyc, sandboxes/tests/test_take_turn.py
+Summary: Implemented story #137 end-to-end in code with TDD-first additions for lease cost tracking, budget enforcement, admin sandbox endpoints, and `anet` sandbox commands.
+
+Prior failure pattern detected: `verification_rejected` and `test_failure`. Mitigation: I modified the required target files (`apps/network/src/sandbox/lease-manager.ts`, `apps/network/src/sandbox/lease-manager.test.ts`) first, added failing tests before implementation, and validated with the required typecheck command.
+
+What changed:
+- Added lease budget + cost domain logic in `apps/network/src/sandbox/lease-manager.ts:1`:
+  - `SandboxBudgetExceededError`
+  - budget config read/write (`getSandboxConfig`, `setSandboxConfig`)
+  - monthly budget enforcement inside `acquire(...)`
+  - lease audit listing (`listLeases`)
+  - cost aggregation (`getCostBreakdown`) using basic container pricing math.
+- Wired admin API routes in `apps/network/src/index.ts:1535`:
+  - `GET /admin/sandbox/costs`
+  - `GET /admin/sandbox/leases`
+  - `GET`/`PUT /admin/sandbox/config`
+- Updated join path to call typed acquire directly in `apps/network/src/agent.ts:558`.
+- Added schema + migration for sandbox admin config:
+  - `apps/network/schema.sql:66`
+  - `apps/network/migrations/0005_sandbox_admin_config.sql:1`
+- Added/updated tests:
+  - `apps/network/src/sandbox/lease-manager.test.ts:83`
+  - `apps/network/src/index.test.ts:1627`
+  - `apps/network/src/agent-do.test.ts:5852`
+  - `packages/cli/src/index.test.ts:1`
+- Implemented `anet sandbox` and `anet sandbox costs` CLI behavior:
+  - `packages/cli/src/index.ts:59`
+  - added `anet` bin entry in `packages/cli/package.json:5`.
+
+Required process actions completed:
+- Stored hivemind memory: `mem-3986ec65df386404`
+- Sent completion event: `openclaw system event --mode now --text "Ralph: completed Cost tracking + monitoring for sandbox leases (#137)"`

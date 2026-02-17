@@ -6,6 +6,7 @@
 
 import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
+import type { Sandbox as CloudflareSandbox } from '@cloudflare/sandbox'
 
 import { LexiconRecordSchema } from '../../../packages/core/src/lexicons'
 import { createDid, generateTid } from '../../../packages/core/src/identity'
@@ -19,6 +20,7 @@ import { DM_SKILL, HEALER_SKILL, MAGE_SKILL, PARTY_TACTICS, SCOUT_SKILL, WARRIOR
 import { createGame as createRpgGame } from './games/rpg-engine'
 import { withErrorHandling } from './http-errors'
 import { validateRequestJson } from './http-validation'
+import { LeaseManager } from './sandbox/lease-manager'
 
 const WORKER_STARTED_AT = Date.now()
 
@@ -57,9 +59,15 @@ const CampaignCreateSchema = z.object({
   premise: z.string().optional().default(''),
 })
 
+const SandboxAdminConfigSchema = z.object({
+  defaultMonthlyHours: z.number().positive().nullable().optional(),
+  agentBudgets: z.record(z.string(), z.number().positive()).optional(),
+})
+
 export interface Env {
   AGENTS: DurableObjectNamespace
   RELAY: DurableObjectNamespace
+  Sandbox: DurableObjectNamespace<CloudflareSandbox>
   DB: D1Database
   BLOBS: R2Bucket
   VECTORIZE: VectorizeIndex
@@ -1524,6 +1532,72 @@ export default {
                 return Response.json({ agents })
               }
 
+              if (normalizedPathname === '/admin/sandbox/costs') {
+                if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+                const leaseManager = new LeaseManager(env.DB)
+                const costs = await leaseManager.getCostBreakdown()
+                return Response.json(costs)
+              }
+
+              if (normalizedPathname === '/admin/sandbox/leases') {
+                if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+
+                const leaseManager = new LeaseManager(env.DB)
+                const leases = await leaseManager.listLeases()
+                const mapped = leases.map((lease) => ({
+                  id: lease.id,
+                  agentName: lease.agentName,
+                  environmentId: lease.environmentId,
+                  environmentType: inferEnvironmentTypeFromId(lease.environmentId),
+                  sandboxId: lease.sandboxId,
+                  status: lease.status,
+                  leasedAt: lease.leasedAt,
+                  expiresAt: lease.expiresAt,
+                  lastActivityAt: lease.lastActivityAt,
+                  uptimeMs: lease.uptimeMs,
+                  uptimeHours: Number((lease.uptimeMs / (60 * 60 * 1000)).toFixed(4)),
+                  expiryConditions: lease.expiryConditions,
+                }))
+
+                const counts = mapped.reduce(
+                  (acc, lease) => {
+                    if (lease.status === 'active') acc.active += 1
+                    if (lease.status === 'expired') acc.expired += 1
+                    if (lease.status === 'destroyed') acc.destroyed += 1
+                    return acc
+                  },
+                  { active: 0, expired: 0, destroyed: 0 }
+                )
+
+                return Response.json({
+                  leases: mapped,
+                  total: mapped.length,
+                  counts,
+                })
+              }
+
+              if (normalizedPathname === '/admin/sandbox/config') {
+                const leaseManager = new LeaseManager(env.DB)
+
+                if (request.method === 'GET') {
+                  const config = await leaseManager.getSandboxConfig()
+                  return Response.json({ config })
+                }
+
+                if (request.method === 'PUT') {
+                  const parsed = await validateRequestJson(request, SandboxAdminConfigSchema, {
+                    invalidBodyError: 'Invalid sandbox config',
+                  })
+                  if (!parsed.ok) return parsed.response
+
+                  const config = await leaseManager.setSandboxConfig(parsed.data)
+                  return Response.json({ ok: true, config })
+                }
+
+                return new Response('Method not allowed', { status: 405 })
+              }
+
               if (normalizedPathname === '/admin/seed-skills') {
                 if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
@@ -1636,3 +1710,4 @@ export default {
 // Durable Objects are defined in separate files
 export { AgentDO } from './agent'
 export { RelayDO } from './relay'
+export { Sandbox } from '@cloudflare/sandbox'

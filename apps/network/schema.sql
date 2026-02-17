@@ -63,3 +63,28 @@ CREATE TABLE IF NOT EXISTS observer_reports (
   text TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sandbox_leases (
+  id TEXT PRIMARY KEY,
+  agent_name TEXT NOT NULL,
+  environment_id TEXT NOT NULL,
+  sandbox_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','destroyed')),
+  leased_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  last_activity_at INTEGER NOT NULL,
+  expiry_conditions TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(agent_name, environment_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_leases_agent ON sandbox_leases(agent_name);
+CREATE INDEX IF NOT EXISTS idx_leases_env ON sandbox_leases(environment_id);
+CREATE INDEX IF NOT EXISTS idx_leases_status ON sandbox_leases(status);
+
+CREATE TABLE IF NOT EXISTS sandbox_admin_config (
+  id TEXT PRIMARY KEY,
+  default_budget_hours REAL,
+  agent_budgets_json TEXT,
+  updated_at INTEGER NOT NULL
+);

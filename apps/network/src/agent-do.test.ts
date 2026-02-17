@@ -88,6 +88,10 @@ class FakeStorage {
     this.store.set(key, structuredClone(value))
   }
 
+  async delete(key: string): Promise<boolean> {
+    return this.store.delete(key)
+  }
+
   async list(options: { prefix?: string } = {}): Promise<Map<string, unknown>> {
     const prefix = typeof options.prefix === 'string' ? options.prefix : ''
     const out = new Map<string, unknown>()
@@ -5799,5 +5803,242 @@ describe('AgentDO', () => {
     await expect(write.execute!({ name: 'too_big', code: 'a'.repeat(50 * 1024 + 1) })).rejects.toThrow(/max size/i)
 
     await expect(write.execute!({ name: 'nope', code: 'export function activate() { eval(\"1\") }' })).rejects.toThrow(/eval/i)
+  })
+
+  it('onEnvironmentJoin acquires a lease, mounts sandbox storage, writes bootstrap scripts, and persists sandbox id', async () => {
+    vi.resetModules()
+
+    const sandbox = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    }
+    const createSandboxSpy = vi.fn().mockReturnValue(sandbox)
+    const ensureMountSpy = vi.fn().mockResolvedValue(undefined)
+    vi.doMock('./sandbox/sandbox-factory', () => ({
+      createAgentSandbox: createSandboxSpy,
+      ensureR2Mount: ensureMountSpy,
+    }))
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    const acquireSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'acquire').mockResolvedValue(undefined)
+
+    const { state, storage } = createState('agent-sandbox-join')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await (agent as any).onEnvironmentJoin('grimlock', 'env_join_1', 'rpg')
+
+    expect(acquireSpy).toHaveBeenCalledWith(
+      'grimlock',
+      'env_join_1',
+      'agent-grimlock-rpg',
+      4 * 60 * 60 * 1000,
+      expect.any(Array)
+    )
+    expect(createSandboxSpy).toHaveBeenCalledWith(env, 'grimlock', 'rpg')
+    expect(ensureMountSpy).toHaveBeenCalledWith(sandbox, 'grimlock', env)
+    expect(sandbox.writeFile).toHaveBeenCalledWith(
+      '/workspace/scripts/rpg/agent-bootstrap.json',
+      expect.any(String)
+    )
+    expect(await storage.get('sandboxId')).toBe('agent-grimlock-rpg')
+  })
+
+  it('onEnvironmentJoin does not create a sandbox when acquire fails budget check', async () => {
+    vi.resetModules()
+
+    const createSandboxSpy = vi.fn()
+    const ensureMountSpy = vi.fn()
+    vi.doMock('./sandbox/sandbox-factory', () => ({
+      createAgentSandbox: createSandboxSpy,
+      ensureR2Mount: ensureMountSpy,
+    }))
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    const acquireSpy = vi
+      .spyOn(leaseModule.LeaseManager.prototype, 'acquire')
+      .mockRejectedValue(
+        new leaseModule.SandboxBudgetExceededError({
+          agentName: 'grimlock',
+          budgetHours: 1,
+          activeHours: 2,
+        })
+      )
+
+    const { state, storage } = createState('agent-sandbox-budget-exceeded')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    await expect((agent as any).onEnvironmentJoin('grimlock', 'env_join_1', 'rpg')).rejects.toBeInstanceOf(
+      leaseModule.SandboxBudgetExceededError
+    )
+    expect(acquireSpy).toHaveBeenCalledTimes(1)
+    expect(createSandboxSpy).not.toHaveBeenCalled()
+    expect(ensureMountSpy).not.toHaveBeenCalled()
+    expect(await storage.get('sandboxId')).toBeUndefined()
+  })
+
+  it('onTurnNotification executes sandbox turn scripts and gracefully skips failed turns', async () => {
+    vi.resetModules()
+
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+    const session = {
+      exec: vi.fn().mockResolvedValue({
+        success: false,
+        stdout: '',
+        stderr: 'boom: failed turn execution',
+      }),
+    }
+    const sandbox = {
+      createSession: vi.fn().mockResolvedValue(session),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.doMock('./sandbox/sandbox-factory', () => ({
+      createAgentSandbox: vi.fn().mockReturnValue(sandbox),
+      ensureR2Mount: vi.fn().mockResolvedValue(undefined),
+    }))
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    const renewSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'renew').mockResolvedValue(undefined)
+
+    const { state, storage } = createState('agent-sandbox-turn')
+    await storage.put('sandboxId', 'agent-grimlock-rpg')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const gameState = { envType: 'rpg', phase: 'playing', currentPlayer: 'grimlock' }
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const result = await (agent as any).onTurnNotification('grimlock', 'env_turn_1', gameState)
+
+    expect(sandbox.createSession).toHaveBeenCalledWith({
+      id: 'turn-1700000000000',
+      env: {
+        OPENROUTER_API_KEY: 'or-key',
+        ENV_TYPE: 'rpg',
+      },
+      cwd: '/workspace',
+    })
+    expect(session.exec).toHaveBeenCalledWith('python scripts/rpg/take_turn.py', {
+      stdin: JSON.stringify(gameState),
+      timeout: 60_000,
+    })
+    expect(sandbox.deleteSession).toHaveBeenCalledWith('turn-1700000000000')
+    expect(renewSpy).toHaveBeenCalledWith('grimlock', 'env_turn_1')
+    expect(result).toEqual({
+      action: 'skip_turn',
+      reason: 'boom: failed turn execution',
+    })
+
+    dateNowSpy.mockRestore()
+  })
+
+  it('onTurnNotification returns skip_turn when turn output is invalid JSON', async () => {
+    vi.resetModules()
+
+    const session = {
+      exec: vi.fn().mockResolvedValue({
+        success: true,
+        stdout: 'not-json',
+        stderr: '',
+      }),
+    }
+    const sandbox = {
+      createSession: vi.fn().mockResolvedValue(session),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.doMock('./sandbox/sandbox-factory', () => ({
+      createAgentSandbox: vi.fn().mockReturnValue(sandbox),
+      ensureR2Mount: vi.fn().mockResolvedValue(undefined),
+    }))
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    vi.spyOn(leaseModule.LeaseManager.prototype, 'renew').mockResolvedValue(undefined)
+
+    const { state, storage } = createState('agent-sandbox-turn-invalid-json')
+    await storage.put('sandboxId', 'agent-grimlock-rpg')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+
+    const result = await (agent as any).onTurnNotification('grimlock', 'env_turn_1', { envType: 'rpg' })
+
+    expect(result).toEqual({
+      action: 'skip_turn',
+      reason: 'invalid JSON',
+    })
+  })
+
+  it('onEnvironmentEnd destroys sandbox, releases lease, and clears sandbox id', async () => {
+    vi.resetModules()
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    const releaseSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'release').mockResolvedValue(undefined)
+
+    const { state, storage } = createState('agent-sandbox-end')
+    await storage.put('sandboxId', 'agent-grimlock-rpg')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    const destroySpy = vi.spyOn(agent as any, 'destroySandboxById').mockResolvedValue(undefined)
+
+    await (agent as any).onEnvironmentEnd('grimlock', 'env_end_1')
+
+    expect(destroySpy).toHaveBeenCalledWith('agent-grimlock-rpg')
+    expect(releaseSpy).toHaveBeenCalledWith('grimlock', 'env_end_1')
+    expect(await storage.get('sandboxId')).toBeUndefined()
+  })
+
+  it('sweeps expired sandbox leases and marks them destroyed', async () => {
+    vi.resetModules()
+
+    const leaseModule = await import('./sandbox/lease-manager')
+    const expired = [{ agent_name: 'grimlock', environment_id: 'env_gc_1', sandbox_id: 'sandbox-gc-1' }]
+    const expiredSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'getExpiredLeases').mockResolvedValue(expired as never)
+    const releaseSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'release').mockResolvedValue(undefined)
+
+    const { state, storage } = createState('agent-sandbox-gc')
+    const { env } = createEnv({
+      OPENROUTER_API_KEY: 'or-key',
+      CF_ACCOUNT_ID: 'cf-account-id',
+      Sandbox: {},
+    })
+
+    const { AgentDO } = await import('./agent')
+    const agent = new AgentDO(state as never, env as never)
+    const destroySpy = vi.spyOn(agent as any, 'destroySandboxById').mockResolvedValue(undefined)
+
+    await (agent as any).runSandboxLeaseGcSweep()
+
+    expect(expiredSpy).toHaveBeenCalledTimes(1)
+    expect(destroySpy).toHaveBeenCalledWith('sandbox-gc-1')
+    expect(releaseSpy).toHaveBeenCalledWith('grimlock', 'env_gc_1')
+    expect(typeof (await storage.get('lastSandboxLeaseGcAt'))).toBe('number')
   })
 })

@@ -40,6 +40,9 @@ importers:
       '@atproto-agent/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@cloudflare/sandbox':
+        specifier: ^0.7.4
+        version: 0.7.4
       '@mariozechner/pi-ai':
         specifier: 0.52.8
         version: 0.52.8(ws@8.18.0)(zod@4.3.6)
@@ -369,9 +372,26 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
+  '@cloudflare/containers@0.0.30':
+    resolution: {integrity: sha512-i148xBgmyn/pje82ZIyuTr/Ae0BT/YWwa1/GTJcw6DxEjUHAzZLaBCiX446U9OeuJ2rBh/L/9FIzxX5iYNt1AQ==}
+
   '@cloudflare/kv-asset-handler@0.4.2':
     resolution: {integrity: sha512-SIOD2DxrRRwQ+jgzlXCqoEFiKOFqaPjhnNTGKXSRLvp1HiOvapLaFG2kEr9dYQTYe8rKrd9uvDUzmAITeNyaHQ==}
     engines: {node: '>=18.0.0'}
+
+  '@cloudflare/sandbox@0.7.4':
+    resolution: {integrity: sha512-8DRGlATKH5chOVTEwcntuS9ZtYmjknuIoXRUnIXDwwEEhst4FFXf/DjNxeBr/4J4XH6aWJvOKcdsTlajrhlhHA==}
+    peerDependencies:
+      '@openai/agents': ^0.3.3
+      '@opencode-ai/sdk': ^1.1.40
+      '@xterm/xterm': '>=5.0.0'
+    peerDependenciesMeta:
+      '@openai/agents':
+        optional: true
+      '@opencode-ai/sdk':
+        optional: true
+      '@xterm/xterm':
+        optional: true
 
   '@cloudflare/unenv-preset@2.12.0':
     resolution: {integrity: sha512-NK4vN+2Z/GbfGS4BamtbbVk1rcu5RmqaYGiyHJQrA09AoxdZPHDF3W/EhgI0YSK8p3vRo/VNCtbSJFPON7FWMQ==}
@@ -3170,7 +3190,13 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
+  '@cloudflare/containers@0.0.30': {}
+
   '@cloudflare/kv-asset-handler@0.4.2': {}
+
+  '@cloudflare/sandbox@0.7.4':
+    dependencies:
+      '@cloudflare/containers': 0.0.30
 
   '@cloudflare/unenv-preset@2.12.0(unenv@2.0.0-rc.24)(workerd@1.20260205.0)':
     dependencies:

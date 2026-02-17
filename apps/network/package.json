@@ -12,6 +12,7 @@
   "dependencies": {
     "@atproto-agent/agent": "workspace:*",
     "@atproto-agent/core": "workspace:*",
+    "@cloudflare/sandbox": "^0.7.4",
     "@mariozechner/pi-ai": "0.52.8",
     "zod": "^4.3.6"
   },

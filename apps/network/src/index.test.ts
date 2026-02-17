@@ -1624,6 +1624,144 @@ describe('admin observability endpoints', () => {
   })
 })
 
+describe('admin sandbox endpoints', () => {
+  it('GET /admin/sandbox/costs returns per-agent cost breakdown', async () => {
+    const leaseModule = await import('./sandbox/lease-manager')
+    const costSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'getCostBreakdown').mockResolvedValue({
+      agents: [
+        { name: 'grimlock', activeHours: 12, estimatedCost: 0.324 },
+        { name: 'slag', activeHours: 4, estimatedCost: 0.108 },
+      ],
+      total: { hours: 16, cost: 0.432 },
+    })
+
+    const env = createHealthEnv({ DB: new D1MockDatabase() })
+    const { default: worker } = await import('./index')
+
+    const res = await worker.fetch(
+      new Request('https://example.com/admin/sandbox/costs', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({ name: 'grimlock', activeHours: 12, estimatedCost: 0.324 }),
+        expect.objectContaining({ name: 'slag', activeHours: 4, estimatedCost: 0.108 }),
+      ]),
+      total: { hours: 16, cost: 0.432 },
+    })
+    expect(costSpy).toHaveBeenCalledTimes(1)
+    costSpy.mockRestore()
+  })
+
+  it('GET /admin/sandbox/leases includes active and destroyed leases for audit', async () => {
+    const leaseModule = await import('./sandbox/lease-manager')
+    const listSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'listLeases').mockResolvedValue([
+      {
+        id: 'grimlock:rpg_1',
+        agentName: 'grimlock',
+        environmentId: 'rpg_1',
+        sandboxId: 'sandbox-rpg-1',
+        status: 'active',
+        leasedAt: 1_700_000_000_000,
+        expiresAt: 1_700_000_360_000,
+        lastActivityAt: 1_700_000_100_000,
+        uptimeMs: 600_000,
+      },
+      {
+        id: 'slag:catan_1',
+        agentName: 'slag',
+        environmentId: 'catan_1',
+        sandboxId: 'sandbox-catan-1',
+        status: 'destroyed',
+        leasedAt: 1_700_000_000_000,
+        expiresAt: 1_700_000_360_000,
+        lastActivityAt: 1_700_000_050_000,
+        uptimeMs: 50_000,
+      },
+    ] as any)
+
+    const env = createHealthEnv({ DB: new D1MockDatabase() })
+    const { default: worker } = await import('./index')
+
+    const res = await worker.fetch(
+      new Request('https://example.com/admin/sandbox/leases', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      leases: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'grimlock:rpg_1',
+          status: 'active',
+          environmentType: 'rpg',
+        }),
+        expect.objectContaining({
+          id: 'slag:catan_1',
+          status: 'destroyed',
+          environmentType: 'catan',
+        }),
+      ]),
+    })
+    expect(listSpy).toHaveBeenCalledTimes(1)
+    listSpy.mockRestore()
+  })
+
+  it('PUT /admin/sandbox/config updates budget config and GET returns it', async () => {
+    const leaseModule = await import('./sandbox/lease-manager')
+    const setSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'setSandboxConfig').mockResolvedValue({
+      defaultMonthlyHours: 40,
+      agentBudgets: { grimlock: 20 },
+    })
+    const getSpy = vi.spyOn(leaseModule.LeaseManager.prototype, 'getSandboxConfig').mockResolvedValue({
+      defaultMonthlyHours: 40,
+      agentBudgets: { grimlock: 20 },
+    })
+
+    const env = createHealthEnv({ DB: new D1MockDatabase() })
+    const { default: worker } = await import('./index')
+
+    const putRes = await worker.fetch(
+      new Request('https://example.com/admin/sandbox/config', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultMonthlyHours: 40, agentBudgets: { grimlock: 20 } }),
+      }),
+      env
+    )
+    expect(putRes.status).toBe(200)
+    await expect(putRes.json()).resolves.toMatchObject({
+      ok: true,
+      config: { defaultMonthlyHours: 40, agentBudgets: { grimlock: 20 } },
+    })
+
+    const getRes = await worker.fetch(
+      new Request('https://example.com/admin/sandbox/config', {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }),
+      env
+    )
+    expect(getRes.status).toBe(200)
+    await expect(getRes.json()).resolves.toMatchObject({
+      config: { defaultMonthlyHours: 40, agentBudgets: { grimlock: 20 } },
+    })
+
+    expect(setSpy).toHaveBeenCalledWith({
+      defaultMonthlyHours: 40,
+      agentBudgets: { grimlock: 20 },
+    })
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    setSpy.mockRestore()
+    getSpy.mockRestore()
+  })
+})
+
 describe('agent trace endpoint', () => {
   it('GET /agents/:name/trace returns observe→think→act→reflect chain with timing', async () => {
     const db = new D1MockDatabase()
