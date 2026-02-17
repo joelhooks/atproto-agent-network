@@ -801,6 +801,65 @@ export class AgentDO extends DurableObject {
         const url = new URL(request.url)
         const agentName = extractAgentNameFromPath(url.pathname)
 
+        // Inject a goal and/or memory into an agent without nuking
+        if (url.pathname.endsWith('/inject') && request.method === 'POST') {
+          await this.initialize(agentName)
+          const body = await request.json() as { goal?: string; memory?: string; clearGameGoals?: boolean }
+          const config = this.config ?? {} as AgentConfig
+          const goals = Array.isArray(config.goals) ? [...config.goals] : []
+
+          // Optionally clear all goals that reference game IDs (rpg_, catan_)
+          if (body.clearGameGoals) {
+            const before = goals.length
+            const filtered = goals.filter((g: any) => {
+              const desc = typeof g?.description === 'string' ? g.description : ''
+              return !(/rpg_|catan_|game.*id|adventure|dungeon/i.test(desc))
+            })
+            goals.length = 0
+            goals.push(...filtered)
+            const removed = before - goals.length
+            if (removed > 0) {
+              // Also add a note about cleared goals
+              goals.push({
+                id: `goal_inject_${Date.now()}`,
+                description: `[System] ${removed} obsolete game goals were cleared. Previous game was deleted.`,
+                status: 'completed',
+                createdAt: Date.now(),
+              } as any)
+            }
+          }
+
+          if (body.goal) {
+            goals.push({
+              id: `goal_inject_${Date.now()}`,
+              description: body.goal,
+              status: 'pending',
+              priority: 1,
+              createdAt: Date.now(),
+            } as any)
+          }
+
+          const nextConfig = { ...config, goals }
+          await this.ctx.storage.put('config', nextConfig)
+          this.config = nextConfig as AgentConfig
+
+          // Add memory if provided
+          if (body.memory) {
+            const memories = (await this.ctx.storage.get('memories') as any[]) ?? []
+            memories.push({
+              id: `mem_inject_${Date.now()}`,
+              content: body.memory,
+              source: 'system_inject',
+              createdAt: Date.now(),
+            })
+            // Keep last 100 memories
+            if (memories.length > 100) memories.splice(0, memories.length - 100)
+            await this.ctx.storage.put('memories', memories)
+          }
+
+          return Response.json({ ok: true, goalsCount: goals.length, injected: { goal: !!body.goal, memory: !!body.memory, clearedGameGoals: !!body.clearGameGoals } })
+        }
+
         // Nuclear wipe — runs BEFORE initialize to recover corrupted DOs
         if (url.pathname.endsWith('/nuke-storage') && request.method === 'POST') {
           await this.ctx.storage.deleteAll()
