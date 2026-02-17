@@ -14,7 +14,9 @@ Agents in the AT Protocol agent network run as Cloudflare Durable Objects — li
 
 The current failure mode is visible today: agents join a Catan game but produce 0 tool calls because the DO's burst execution can't run a full agent loop with skills, memory retrieval, and multi-step reasoning. The model returns empty responses because the execution context is too thin.
 
-Related: [ADR-0001](0001-adopt-architecture-decision-records.md), [Epic #59](https://github.com/joelhooks/atproto-agent-network/issues/59), [joelclaw system-bus](https://github.com/joelhooks/joelclaw) (Redis-backed story claims with TTL leases)
+**Key constraint**: Cloudflare Workers have no Redis. Lease state must live in D1 or Durable Object SQLite storage. The `@cloudflare/sandbox` SDK handles sleep/wake automatically — there is no manual `sleep()`/`wake()` API.
+
+Related: [ADR-0001](0001-adopt-architecture-decision-records.md), [Epic #59](https://github.com/joelhooks/atproto-agent-network/issues/59), [joelclaw system-bus](https://github.com/joelhooks/joelclaw) (TTL lease concept, adapted from Redis to D1)
 
 ## Decision Drivers
 
@@ -23,191 +25,501 @@ Related: [ADR-0001](0001-adopt-architecture-decision-records.md), [Epic #59](htt
 - **Warm latency**: Game turns should resolve in seconds, not 20s cold-start + hydration cycles.
 - **Lifecycle binding**: Sandbox lifetime should match environment lifetime — death in RPG = sandbox reclaimed, Catan game ends = sandboxes released.
 - **AT Protocol citizenship**: Each sandbox authenticates as its agent's DID, subscribes to relay firehose, posts actions — first-class protocol participant, not a sidecar hack.
-- **Executor abstraction**: The lease model should work across backends (CF Sandbox now, Modal/BYO-exec later) without rewriting environment logic.
+- **Real SDK alignment**: Build on the actual `@cloudflare/sandbox` API — `getSandbox()`, automatic sleep/wake via `sleepAfter`, sessions, R2 mount — not fantasy abstractions.
 
 ## Considered Options
 
 ### Option A: Ephemeral sandboxes — spin up per turn, kill after action
 
-Cold-start a container for each game turn. Load skills, hydrate memory, execute, post result, kill.
+Cold-start a container for each game turn. Load skills, hydrate memory, execute, post result, destroy.
 
 ### Option B: Always-on sandboxes — one container per agent, runs 24/7
 
-Each agent gets a persistent container that's always ready. Maximum responsiveness, maximum cost.
+Each agent gets a persistent container with `keepAlive: true`. Maximum responsiveness, maximum cost (~$35/mo each).
 
-### Option C: Leased sandboxes with idle sleep — bound to environment membership, warm with auto-sleep
+### Option C: Leased sandboxes with automatic idle sleep — bound to environment membership
 
-Agents are "leased" a sandbox when assigned to an environment. The sandbox stays warm (loaded skills, hydrated state) but sleeps after idle timeout. Wakes on turn notification (~2-3s). Lease expires when environment conditions are met (death, game end, task complete).
+Agents are "leased" a sandbox when assigned to an environment. The sandbox stays warm (loaded skills, hydrated state) but Cloudflare automatically sleeps it after `sleepAfter` idle timeout. Wakes automatically on next `exec`/`readFile`/etc call (~2-3s). Lease expires when environment conditions are met (death, game end, task complete), at which point we call `sandbox.destroy()`.
 
 ## Decision Outcome
 
-Chosen option: **Option C — Leased sandboxes with idle sleep**, because it balances cost ($5-6/mo per agent), latency (warm wake ~2-3s), and lifecycle management (environment-bound leases with condition-based expiry).
+Chosen option: **Option C — Leased sandboxes with automatic idle sleep**, because it balances cost ($5-6/mo per agent), latency (warm wake ~2-3s), and lifecycle management (environment-bound leases with condition-based expiry).
 
-### Lease Model
+### Sandbox Identity Model
 
-Stolen from [joelclaw's Redis-backed claim system](https://github.com/joelhooks/joelclaw/blob/main/packages/system-bus/src/inngest/functions/agent-loop/utils.ts):
-
-```
-lease = {
-  agentDid: "did:cf:...",
-  environmentId: "rpg_00abc...",
-  sandboxId: "sb-...",
-  leasedAt: timestamp,
-  ttl: duration,         // max lease, renewed on activity
-  sleepAfter: 300,       // seconds idle before sleep
-  expiryConditions: [    // environment-specific kill triggers
-    "agent.death",       // RPG: permadeath → reclaim
-    "game.finished",     // any game: completion → reclaim
-    "task.complete",     // coding: PR merged → reclaim
-  ]
-}
-```
-
-**Lease lifecycle:**
-1. **Acquire**: DO requests sandbox via Executor interface when agent joins environment
-2. **Hydrate**: Sandbox loads Pi agent harness, skills for environment type, character/task state from R2
-3. **Subscribe**: Sandbox connects to relay firehose filtered by environment collections + agent DID
-4. **Act**: On turn notification, sandbox wakes (if sleeping), runs full agent loop, posts action via AT Proto
-5. **Renew**: Activity extends TTL (like joelclaw's `renewLease`)
-6. **Sleep**: After `sleepAfter` idle seconds, container sleeps (preserves memory state)
-7. **Expire**: Condition met (death, game end) → persist final state to R2 → release sandbox
-
-### Pre-configured Environment Sandboxes
-
-Each environment type ships a sandbox template:
-
-**RPG Player Sandbox:**
-- Pi coding agent harness (bash, filesystem, tools)
-- `rpg-player` skill loaded
-- Character sheet + campaign memory (hydrated from R2)
-- Relay WebSocket client (subscribe to `game.turn.*`, `env.state.*`)
-- Agent DID credentials (from R2)
-
-**Catan Player Sandbox:**
-- Pi agent harness with game tools
-- `catan-player` skill (board analysis, trade evaluation)
-- Game state subscriber
-- Agent DID credentials
-
-**Coding Task Sandbox:**
-- Full Pi coding agent (bash, read/write/edit)
-- Project repo cloned from R2/git
-- Task-specific skills
-- Push flows through control-plane pusher (not direct credentials — per #101)
-
-### Executor Interface
-
-Thin abstraction over sandbox backends:
+Each sandbox is identified by a deterministic ID derived from agent + environment:
 
 ```typescript
-interface Executor {
-  spawn(config: SandboxConfig): Promise<SandboxHandle>
-  exec(handle: SandboxHandle, command: string): Promise<ExecResult>
-  stream(handle: SandboxHandle, command: string): AsyncIterable<string>
-  artifacts(handle: SandboxHandle, paths: string[]): Promise<Blob[]>
-  sleep(handle: SandboxHandle): Promise<void>
-  wake(handle: SandboxHandle): Promise<void>
-  kill(handle: SandboxHandle): Promise<void>
-}
+// Sandbox IDs are deterministic — same ID = same instance
+const sandboxId = `${agentDid}::${environmentId}`;
+// e.g., "did:cf:slag::rpg_00abc"
 
-interface SandboxConfig {
-  image: string           // base image (e.g., "pi-agent-rpg", "pi-agent-coder")
-  agentDid: string
-  environmentId: string
-  environmentType: string
-  skills: string[]        // skill slugs to load
-  stateBlob?: string      // R2 key for hydration
-  sleepAfterMs: number
-  maxLeaseMs: number
+const sandbox = getSandbox(env.Sandbox, sandboxId, {
+  sleepAfter: "5m",      // auto-sleep after 5min idle
+  keepAlive: false,       // allow auto-sleep (cost savings)
+  normalizeId: true,      // lowercase for preview URLs
+});
+```
+
+### Lease Model (D1-backed)
+
+Adapted from [joelclaw's Redis-backed claim system](https://github.com/joelhooks/joelclaw) — same TTL lease concept, but using D1 instead of Redis (no Redis in CF Workers):
+
+```sql
+-- D1 schema: apps/network/migrations/0004_sandbox_leases.sql
+CREATE TABLE sandbox_leases (
+  id TEXT PRIMARY KEY,                -- sandboxId
+  agent_did TEXT NOT NULL,
+  environment_id TEXT NOT NULL,
+  environment_type TEXT NOT NULL,     -- 'rpg' | 'catan' | 'coding'
+  leased_at INTEGER NOT NULL,        -- epoch ms
+  last_activity INTEGER NOT NULL,    -- epoch ms, updated on each exec
+  ttl_ms INTEGER NOT NULL,           -- max lease duration
+  sleep_after TEXT NOT NULL DEFAULT '5m',
+  expiry_conditions TEXT NOT NULL,   -- JSON array: ["agent.death", "game.finished"]
+  status TEXT NOT NULL DEFAULT 'active', -- active | sleeping | expired | destroyed
+  UNIQUE(agent_did, environment_id)
+);
+
+CREATE INDEX idx_leases_env ON sandbox_leases(environment_id);
+CREATE INDEX idx_leases_status ON sandbox_leases(status);
+```
+
+```typescript
+// apps/network/src/sandbox/lease-manager.ts
+export class LeaseManager {
+  constructor(private db: D1Database) {}
+
+  async acquire(opts: {
+    agentDid: string;
+    environmentId: string;
+    environmentType: string;
+    ttlMs: number;
+    sleepAfter: string;
+    expiryConditions: string[];
+  }): Promise<{ sandboxId: string; isNew: boolean }> {
+    const sandboxId = `${opts.agentDid}::${opts.environmentId}`;
+    const now = Date.now();
+
+    // Upsert — if lease exists and is active, return it (idempotent)
+    const existing = await this.db
+      .prepare('SELECT id, status FROM sandbox_leases WHERE id = ?')
+      .bind(sandboxId)
+      .first();
+
+    if (existing?.status === 'active') {
+      return { sandboxId, isNew: false };
+    }
+
+    await this.db
+      .prepare(`INSERT OR REPLACE INTO sandbox_leases 
+        (id, agent_did, environment_id, environment_type, leased_at, last_activity, ttl_ms, sleep_after, expiry_conditions, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`)
+      .bind(sandboxId, opts.agentDid, opts.environmentId, opts.environmentType,
+            now, now, opts.ttlMs, opts.sleepAfter,
+            JSON.stringify(opts.expiryConditions))
+      .run();
+
+    return { sandboxId, isNew: true };
+  }
+
+  async renew(sandboxId: string): Promise<void> {
+    await this.db
+      .prepare('UPDATE sandbox_leases SET last_activity = ? WHERE id = ? AND status = ?')
+      .bind(Date.now(), sandboxId, 'active')
+      .run();
+  }
+
+  async expire(sandboxId: string): Promise<void> {
+    await this.db
+      .prepare('UPDATE sandbox_leases SET status = ? WHERE id = ?')
+      .bind('destroyed', sandboxId)
+      .run();
+  }
+
+  async expireByCondition(environmentId: string, condition: string): Promise<string[]> {
+    // Find all leases for this environment that match the condition
+    const leases = await this.db
+      .prepare('SELECT id, expiry_conditions FROM sandbox_leases WHERE environment_id = ? AND status = ?')
+      .bind(environmentId, 'active')
+      .all();
+
+    const toExpire: string[] = [];
+    for (const lease of leases.results) {
+      const conditions = JSON.parse(lease.expiry_conditions as string);
+      if (conditions.includes(condition)) {
+        toExpire.push(lease.id as string);
+      }
+    }
+
+    if (toExpire.length > 0) {
+      await this.db.batch(
+        toExpire.map(id =>
+          this.db.prepare('UPDATE sandbox_leases SET status = ? WHERE id = ?').bind('destroyed', id)
+        )
+      );
+    }
+    return toExpire;
+  }
+
+  async getExpiredLeases(now: number = Date.now()): Promise<string[]> {
+    const result = await this.db
+      .prepare('SELECT id FROM sandbox_leases WHERE status = ? AND (leased_at + ttl_ms) < ?')
+      .bind('active', now)
+      .all();
+    return result.results.map(r => r.id as string);
+  }
 }
 ```
 
-Backend implementations:
-- `CloudflareSandboxExecutor` — CF Sandbox/moltworker (primary)
-- `ModalExecutor` — Modal.com containers (future)
-- `LocalDockerExecutor` — local Docker for dev/testing
+### Lease Lifecycle
+
+1. **Acquire**: DO calls `leaseManager.acquire()` when agent joins environment → gets `sandboxId`
+2. **Get sandbox**: `getSandbox(env.Sandbox, sandboxId, { sleepAfter: "5m" })` — creates or reconnects to existing instance
+3. **Hydrate**: On first acquire, mount R2 bucket + write environment-specific config files
+4. **Act**: On turn notification, call `sandbox.exec(...)` — Cloudflare auto-wakes if sleeping
+5. **Renew**: After each exec, call `leaseManager.renew(sandboxId)` to extend TTL
+6. **Auto-sleep**: Cloudflare handles this — after `sleepAfter` idle, container sleeps automatically
+7. **Expire**: Condition met (death, game end) → `sandbox.destroy()` + `leaseManager.expire(sandboxId)`
+
+### State Persistence via R2 Mount
+
+Instead of manually reading/writing R2 blobs, mount the R2 bucket directly as a filesystem inside the sandbox:
+
+```typescript
+// On sandbox hydration — mount R2 as /data
+await sandbox.mountBucket("agent-blobs", "/data", {
+  endpoint: `https://${env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  provider: "r2",
+  prefix: `/agents/${agentDid}/`,
+});
+
+// Now agent state is just files:
+// /data/character.json  — RPG character sheet
+// /data/memory/         — agent memories
+// /data/skills/         — loaded skill definitions
+// /data/campaign/       — campaign state
+
+// Agent code reads/writes normally:
+await sandbox.exec("cat /data/character.json");
+await sandbox.exec("python process_turn.py --state /data/campaign/state.json");
+```
+
+### Sessions for Isolated Agent Turns
+
+Use sandbox sessions to isolate individual turns within a shared sandbox:
+
+```typescript
+// Each turn gets an isolated exec context
+const session = await sandbox.createSession({
+  id: `turn-${turnNumber}`,
+  env: {
+    AGENT_DID: agentDid,
+    TURN_NUMBER: String(turnNumber),
+    GAME_ID: environmentId,
+  },
+  cwd: "/workspace",
+});
+
+const result = await session.exec("python take_turn.py");
+
+// Clean up after turn
+await sandbox.deleteSession(`turn-${turnNumber}`);
+```
+
+### Pre-configured Environment Dockerfiles
+
+Each environment type has a custom Dockerfile built by wrangler on deploy:
+
+**RPG Player Sandbox** (`sandboxes/rpg/Dockerfile`):
+```dockerfile
+FROM docker.io/cloudflare/sandbox:0.7.0-python
+
+# RPG-specific Python deps
+RUN pip install --no-cache-dir pydantic aiohttp
+
+# Pi agent harness + RPG skills
+COPY skills/rpg-player/ /skills/rpg-player/
+COPY harness/ /harness/
+
+# Turn processor script
+COPY scripts/rpg/take_turn.py /workspace/take_turn.py
+COPY scripts/rpg/process_action.py /workspace/process_action.py
+```
+
+**Catan Player Sandbox** (`sandboxes/catan/Dockerfile`):
+```dockerfile
+FROM docker.io/cloudflare/sandbox:0.7.0-python
+
+# Catan analysis deps
+RUN pip install --no-cache-dir numpy pydantic
+
+COPY skills/catan-player/ /skills/catan-player/
+COPY harness/ /harness/
+COPY scripts/catan/ /workspace/
+```
+
+**Coding Task Sandbox** (`sandboxes/coding/Dockerfile`):
+```dockerfile
+FROM docker.io/cloudflare/sandbox:0.7.0-python
+
+# Full coding environment
+RUN npm install -g typescript tsx
+RUN pip install --no-cache-dir ruff pytest
+
+COPY skills/coding/ /skills/coding/
+COPY harness/ /harness/
+
+# Git config for commits
+RUN git config --global user.name "Agent" && \
+    git config --global user.email "agent@atproto.network"
+```
+
+### Wrangler Configuration Changes
+
+Add to `apps/network/wrangler.toml`:
+
+```toml
+# Sandbox Durable Object (container-backed)
+[[durable_objects.bindings]]
+name = "SANDBOX"
+class_name = "Sandbox"
+
+# Container images — wrangler builds these Dockerfiles on deploy
+[[containers]]
+class_name = "Sandbox"
+image = "./sandboxes/default/Dockerfile"
+# Note: environment-specific images selected at runtime via sandbox config
+
+# Migration for Sandbox DO (uses SQLite internally)
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Sandbox"]
+```
+
+### DO → Sandbox Integration
+
+The Agent DO orchestrates the full lifecycle:
+
+```typescript
+// In agent.ts — when agent joins an environment
+async onEnvironmentJoin(environmentId: string, envType: string) {
+  const leaseManager = new LeaseManager(this.env.DB);
+
+  // 1. Acquire lease
+  const { sandboxId, isNew } = await leaseManager.acquire({
+    agentDid: this.agentDid,
+    environmentId,
+    environmentType: envType,
+    ttlMs: 24 * 60 * 60 * 1000, // 24h max lease
+    sleepAfter: "5m",
+    expiryConditions: this.getExpiryConditions(envType),
+  });
+
+  // 2. Get sandbox handle (creates or reconnects)
+  const sandbox = getSandbox(this.env.SANDBOX, sandboxId, {
+    sleepAfter: "5m",
+    normalizeId: true,
+  });
+
+  // 3. If new, hydrate
+  if (isNew) {
+    // Mount R2 for persistent state
+    await sandbox.mountBucket("agent-blobs", "/data", {
+      endpoint: `https://${this.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      provider: "r2",
+      prefix: `/agents/${this.agentDid}/`,
+    });
+
+    // Clone environment-specific repo/skills
+    await sandbox.gitCheckout(
+      "https://github.com/joelhooks/atproto-agent-network",
+      { branch: "main", depth: 1 }
+    );
+
+    // Write environment config
+    await sandbox.writeFile("/workspace/config.json", JSON.stringify({
+      agentDid: this.agentDid,
+      environmentId,
+      environmentType: envType,
+    }));
+  }
+
+  return sandbox;
+}
+
+// On turn notification — execute agent turn
+async onTurnNotification(turnData: TurnData) {
+  const sandbox = getSandbox(this.env.SANDBOX, this.currentSandboxId!, {
+    sleepAfter: "5m",
+  });
+
+  // Sandbox auto-wakes if sleeping — no manual wake() needed
+  const session = await sandbox.createSession({
+    id: `turn-${turnData.turnNumber}`,
+    env: {
+      TURN_DATA: JSON.stringify(turnData),
+      AGENT_DID: this.agentDid,
+    },
+    cwd: "/workspace",
+  });
+
+  const result = await session.exec("python take_turn.py", {
+    timeout: 60000,
+    env: { TURN_DATA: JSON.stringify(turnData) },
+  });
+
+  await sandbox.deleteSession(`turn-${turnData.turnNumber}`);
+
+  // Renew lease on activity
+  const leaseManager = new LeaseManager(this.env.DB);
+  await leaseManager.renew(this.currentSandboxId!);
+
+  return JSON.parse(result.stdout);
+}
+
+// On environment end — destroy sandbox
+async onEnvironmentEnd(environmentId: string, reason: string) {
+  const leaseManager = new LeaseManager(this.env.DB);
+  const expired = await leaseManager.expireByCondition(environmentId, reason);
+
+  for (const sandboxId of expired) {
+    const sandbox = getSandbox(this.env.SANDBOX, sandboxId, {});
+    await sandbox.destroy(); // Permanently kill + delete all state
+  }
+}
+
+private getExpiryConditions(envType: string): string[] {
+  switch (envType) {
+    case 'rpg': return ['agent.death', 'game.finished', 'campaign.ended'];
+    case 'catan': return ['game.finished'];
+    case 'coding': return ['task.complete', 'pr.merged'];
+    default: return ['game.finished'];
+  }
+}
+```
+
+### Long-running Processes (Game Servers, Watchers)
+
+For sandboxes that need persistent background processes:
+
+```typescript
+// Start a relay watcher as a long-running process
+const relayProc = await sandbox.startProcess(
+  "node relay-watcher.js --did " + agentDid, 
+  { cwd: "/workspace", env: { RELAY_URL: env.RELAY_URL } }
+);
+
+// Wait for it to be ready
+await relayProc.waitForLog(/Connected to relay/);
+
+// Later: kill it on lease expiry
+await sandbox.killProcess(relayProc.id);
+```
 
 ### Consequences
 
 Good:
 - Agents get real execution capability — full Pi harness with skills, bash, filesystem
 - Cost stays reasonable (~$5-6/mo per agent with idle sleep vs $35/mo always-on)
-- Warm wake latency (~2-3s) keeps game flow snappy
+- Automatic sleep/wake eliminates manual lifecycle management bugs
+- R2 mount gives agents a real filesystem backed by durable storage
+- Sessions isolate turns without per-turn container overhead
+- D1 lease tracking is queryable, auditable, and transactional
 - Environment-bound leases prevent orphaned containers
-- Executor abstraction allows backend migration without rewriting game logic
 
 Bad:
-- Added complexity: lease management, R2 state persistence, wake/sleep coordination
-- First wake after long sleep may take 5-10s (container restart vs memory resume)
-- R2 state hydration adds a serialization boundary — state must be JSON-serializable
+- D1 queries add ~1-5ms latency per lease operation (vs in-memory Redis)
+- R2 mount may have higher latency than local filesystem for large reads
+- Custom Dockerfiles increase deploy time (wrangler builds images on deploy)
+- First wake after extended sleep may take 3-5s
 
 Neutral:
 - DOs remain the coordination layer — they decide WHEN to act, sandboxes handle HOW
+- No abstraction layer over sandbox backends — we use `@cloudflare/sandbox` directly. If we need Modal/Docker later, we add adapters then, not prematurely.
 - Existing relay firehose already supports the subscription pattern — no new protocol needed
 
 ## Implementation Plan
 
 ### Affected Paths
-- `apps/network/src/executor/` — new: Executor interface + CF Sandbox implementation
-- `apps/network/src/agent.ts` — integrate sandbox spawning into environment membership resolution
-- `apps/network/src/lease/` — new: lease management (acquire, renew, expire)
-- `apps/network/src/environments/` — environment-specific sandbox configs (RPG, Catan, coding)
-- R2 bucket `agent-blobs` — sandbox state persistence
+- `apps/network/migrations/0004_sandbox_leases.sql` — D1 lease table
+- `apps/network/src/sandbox/lease-manager.ts` — D1-backed lease acquire/renew/expire
+- `apps/network/src/sandbox/sandbox-factory.ts` — `getSandbox()` wrapper with environment config
+- `apps/network/src/agent.ts` — integrate sandbox into environment membership
+- `sandboxes/rpg/Dockerfile` — RPG player sandbox image
+- `sandboxes/catan/Dockerfile` — Catan player sandbox image
+- `sandboxes/coding/Dockerfile` — Coding task sandbox image
+- `apps/network/wrangler.toml` — Sandbox DO binding, container config, migration
 
-### Patterns
-- Lease claims use Redis SET NX with TTL (stolen from joelclaw's `claimStory` pattern)
-- State hydration follows claim-check pattern: persist to R2, pass key to sandbox
-- Sandbox subscribes to relay firehose using existing `{"type":"subscribe","collections":[...],"dids":[...]}` protocol
-- Expiry conditions evaluated by DO on environment state changes (game end, death, task complete)
+### Stories (GitHub Sub-Issues of #59)
 
-### Stories (GitHub Sub-Issues)
+**Phase 1: Foundation**
 
-1. **Define Executor interface + types** — `executor/types.ts` with `Executor`, `SandboxConfig`, `SandboxHandle`, `ExecResult`. No implementation yet, just the contract.
+1. **#138 — Local Docker sandbox for dev/testing** — Set up local development environment with Docker that mirrors CF Sandbox API. Create `docker-compose.yml` with sandbox-compatible container. This is FIRST because everything else needs a local test target.
 
-2. **Implement lease manager** — Redis-backed lease acquire/renew/expire with TTL. Port joelclaw's claim pattern. Include condition-based expiry evaluation.
+2. **#129 — D1 lease schema + LeaseManager** — Create `migrations/0004_sandbox_leases.sql` and `src/sandbox/lease-manager.ts` with acquire/renew/expire/expireByCondition. No Executor interface — work directly with D1. Include unit tests with D1 mock.
 
-3. **CF Sandbox executor** — Implement `CloudflareSandboxExecutor` using CF Sandbox API. Spawn, exec, sleep, wake, kill. Include idle-sleep timer.
+3. **#131 — Sandbox factory with `getSandbox()` wrapper** — Create `src/sandbox/sandbox-factory.ts` that wraps `getSandbox()` with environment-specific defaults (sleepAfter, R2 mount config). Add SANDBOX DO binding to `wrangler.toml`.
 
-4. **R2 state persistence** — Serialize/deserialize sandbox state (skills, character, memory) to R2 `agent-blobs`. Hydration on spawn, persist on sleep/expire.
+**Phase 2: Environment Templates**
 
-5. **RPG player sandbox template** — Pre-configured sandbox image with Pi agent harness + `rpg-player` skill + relay WebSocket client. Character sheet from R2.
+4. **#132 — R2 mount + state persistence** — Implement `mountBucket` call on sandbox hydration. Define state directory conventions (`/data/character.json`, `/data/memory/`, etc). Write hydration and teardown helpers.
 
-6. **Catan player sandbox template** — Same pattern, Catan-specific skills and game state subscriber.
+5. **#133 — RPG player sandbox template** — Create `sandboxes/rpg/Dockerfile`, RPG turn processor scripts, skill loader. Test with local Docker from #138.
 
-7. **DO→Sandbox integration** — When `resolveActiveEnvironmentMemberships` finds an environment, DO acquires sandbox lease. Turn notifications wake sandbox. Environment end triggers expiry.
+6. **#134 — Catan player sandbox template** — Create `sandboxes/catan/Dockerfile`, Catan-specific scripts, board analysis tools.
 
-8. **Coding task sandbox template** — Full Pi coding agent, repo clone, push via control-plane pusher (#101).
+7. **#136 — Coding task sandbox template** — Create `sandboxes/coding/Dockerfile`, git clone flow, push via control-plane pusher (#101).
 
-9. **Cost management + dashboard** — Track container hours per agent, enforce budget limits, expose in admin API.
+**Phase 3: Integration**
 
-10. **Local Docker executor for testing** — `LocalDockerExecutor` for dev/CI. Run sandbox integration tests without CF.
+8. **#135 — DO→Sandbox integration** — Wire `onEnvironmentJoin`/`onTurnNotification`/`onEnvironmentEnd` in agent.ts. Use LeaseManager + sandbox factory. Sessions for isolated turns.
+
+9. **#137 — Cost management + dashboard** — Query D1 lease table for container-hours per agent. Budget limits in lease acquire. Admin API endpoint.
+
+10. **(Removed old #130 — Redis lease manager. Replaced by #129 with D1.)**
+
+### Dependency Order
+```
+#138 (local Docker) ──┐
+                      ├──► #129 (D1 leases) ──► #131 (sandbox factory) ──┐
+                      │                                                    │
+                      │    #132 (R2 mount) ◄──────────────────────────────┘
+                      │         │
+                      │    #133 (RPG) ──────┐
+                      │    #134 (Catan) ────┼──► #135 (DO integration) ──► #137 (cost)
+                      │    #136 (Coding) ───┘
+                      │
+```
 
 ### Tests
-- Unit: Executor interface contract tests (mock backend)
-- Unit: Lease acquire/renew/expire with Redis mock
-- Integration: Spawn sandbox, exec command, verify output
-- Integration: Sleep/wake cycle preserves state
-- Integration: Expiry condition triggers cleanup
+- Unit: LeaseManager acquire/renew/expire with D1 mock
+- Unit: Sandbox factory creates correct config per environment type
+- Integration: Spawn sandbox, exec command, verify output (local Docker)
+- Integration: R2 mount reads/writes persist across sleep/wake
+- Integration: Session isolation — two sessions don't share env vars
 - E2E: Agent joins RPG → sandbox spawned → turn taken → action posted via AT Proto
 
 ## Verification
 
-- [ ] Executor interface defined with spawn/exec/stream/artifacts/sleep/wake/kill methods
-- [ ] Lease acquire returns sandbox handle; duplicate acquire for same agent+environment returns existing lease
-- [ ] Lease TTL expires after configured duration with no renewal
-- [ ] Condition-based expiry (agent.death, game.finished) triggers sandbox kill + R2 state persist
-- [ ] CF Sandbox executor spawns container, executes command, returns output
-- [ ] Idle sleep triggers after configured timeout; wake resumes within 5s
-- [ ] RPG player sandbox loads skills, subscribes to relay, posts action on turn notification
-- [ ] Cost tracking records container-hours per agent per environment
-- [ ] Budget limit prevents new sandbox spawn when exceeded
-- [ ] Local Docker executor passes same contract tests as CF Sandbox executor
+- [ ] D1 migration creates `sandbox_leases` table with correct schema
+- [ ] LeaseManager.acquire is idempotent — duplicate acquire returns existing lease
+- [ ] Lease TTL expires after configured duration; `getExpiredLeases()` finds them
+- [ ] `expireByCondition("game.finished")` destroys all matching leases for an environment
+- [ ] `getSandbox()` with same ID returns same instance (verified by writing then reading a file)
+- [ ] `sleepAfter: "5m"` causes automatic sleep (verified in local Docker by checking container state)
+- [ ] R2 mountBucket makes agent state accessible at `/data/` inside sandbox
+- [ ] Sessions provide isolated exec contexts (env vars from session A not visible in session B)
+- [ ] `sandbox.destroy()` permanently removes all sandbox state
+- [ ] RPG sandbox Dockerfile builds and can execute `python take_turn.py`
+- [ ] Cost tracking query returns accurate container-hours per agent
+- [ ] Budget limit in lease acquire prevents spawn when exceeded
 
 ## More Information
 
 - [Epic #59](https://github.com/joelhooks/atproto-agent-network/issues/59) — original Cloudflare Sandbox epic
-- [joelclaw system-bus](https://github.com/joelhooks/joelclaw/tree/main/packages/system-bus) — Redis lease pattern source
+- [joelclaw system-bus](https://github.com/joelhooks/joelclaw/tree/main/packages/system-bus) — TTL lease concept (adapted from Redis to D1)
 - [joelclaw ADR-0010](https://github.com/joelhooks/joelclaw/blob/main/docs/decisions/0010-system-loop-gateway.md) — SENSE→ORIENT→DECIDE→ACT→LEARN gateway pattern
-- [CF Sandbox docs](https://developers.cloudflare.com/sandbox/)
+- [CF Sandbox docs](https://developers.cloudflare.com/sandbox/) — `@cloudflare/sandbox` SDK reference
+- [`getSandbox()` API](https://developers.cloudflare.com/sandbox/api/) — lifecycle, exec, files, sessions, R2 mount
 - [CF Sandbox pricing](https://developers.cloudflare.com/containers/pricing/) — ~$35/mo 24/7, ~$5-6/mo with idle sleep
-- [moltworker](https://github.com/cloudflare/moltworker) — OpenClaw on CF Sandbox
