@@ -985,13 +985,37 @@ export default {
               const relayId = env.RELAY.idFromName('main')
               const relay = env.RELAY.get(relayId)
 
+              // Build LLM text generator for dungeon design
+              const generateText = env.OPENROUTER_API_KEY && env.CF_ACCOUNT_ID && env.AI_GATEWAY_SLUG
+                ? async (prompt: string): Promise<string> => {
+                    const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.AI_GATEWAY_SLUG}/openrouter`
+                    const resp = await fetch(`${baseUrl}/chat/completions`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        model: 'google/gemini-2.0-flash-001',
+                        messages: [{ role: 'user', content: prompt }],
+                        max_tokens: 2000,
+                        temperature: 0.9,
+                      }),
+                    })
+                    if (!resp.ok) throw new Error(`LLM call failed: ${resp.status}`)
+                    const data = await resp.json() as any
+                    return data.choices?.[0]?.message?.content ?? ''
+                  }
+                : undefined
+
               const tool = environment.getTool({
                 agentName: hostAgent,
                 agentDid: hostDid,
                 db: env.DB,
                 relay,
                 broadcast: async () => {},
-              })
+                generateText,
+              } as any)
 
               if (typeof tool.execute !== 'function') {
                 return Response.json(

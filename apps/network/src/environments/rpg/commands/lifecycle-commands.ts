@@ -1,6 +1,7 @@
 import type { PersistentCharacter } from '@atproto-agent/core'
 
 import { generateTid } from '../../../../../../packages/core/src/identity'
+import { pickTheme, buildDungeonDesignPrompt, parseDungeonDesign } from '../dungeon-designer'
 
 import {
   craftDungeonFromLibrary,
@@ -15,6 +16,7 @@ import {
   type Room,
   type RpgClass,
   type RpgGameState,
+  type DifficultyTier,
 } from '../../../games/rpg-engine'
 import { createRpgSetupPhaseMachine, deserializePhaseMachine, serializePhaseMachine } from '../../phase-machine'
 import type { EnvironmentContext } from '../../types'
@@ -33,7 +35,10 @@ type EnvironmentRow = { id: string; state: string; type?: string | null }
 
 export type LifecycleCommandResult = CommandFailure | CommandSuccess
 
-type LifecycleContext = Pick<EnvironmentContext, 'agentName' | 'db' | 'broadcast' | 'loadCharacter' | 'saveCharacter'>
+type LifecycleContext = Pick<EnvironmentContext, 'agentName' | 'db' | 'broadcast' | 'loadCharacter' | 'saveCharacter'> & {
+  /** Optional LLM text generation for dungeon design */
+  generateText?: (prompt: string) => Promise<string>
+}
 
 export type LifecycleCommandDeps = {
   getCampaign: (db: D1Database, id: string) => Promise<CampaignState | null>
@@ -361,17 +366,35 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       }
       game.setupPhase = { currentPlayerIndex: 0, exchangeCount: 0, maxExchanges: 0, dialogues: {}, complete: true }
 
-      // Generate dungeon so agents can actually play
+      // Generate dungeon — Grimlock designs with wacky themes via LLM
       const compact = params.compact === true || params.compact === 'true'
-      const generated = craftDungeonFromLibrary({
-        theme: {
-          name: game.theme?.name || 'Forgotten Depths',
-          backstory: game.theme?.backstory || 'A perilous delve shaped by grim omens.',
-        },
-        party: game.party,
-        libraryContext: (game as any).libraryContext ?? {},
-        compact,
-      })
+      const dungeonTheme = pickTheme()
+      game.theme = dungeonTheme
+
+      // Try LLM-designed dungeon, fall back to static if unavailable
+      let generated: { rooms: Room[]; difficultyCurve: DifficultyTier[]; designNotes: string[] }
+      if (ctx.generateText) {
+        try {
+          const prompt = buildDungeonDesignPrompt({ theme: dungeonTheme, party: game.party, compact })
+          const llmResponse = await ctx.generateText(prompt)
+          const designed = parseDungeonDesign(llmResponse, dungeonTheme, game.party, compact)
+          generated = designed
+        } catch {
+          generated = craftDungeonFromLibrary({
+            theme: dungeonTheme,
+            party: game.party,
+            libraryContext: (game as any).libraryContext ?? {},
+            compact,
+          })
+        }
+      } else {
+        generated = craftDungeonFromLibrary({
+          theme: dungeonTheme,
+          party: game.party,
+          libraryContext: (game as any).libraryContext ?? {},
+          compact,
+        })
+      }
       game.dungeon = generated.rooms
       game.roomIndex = 0
       const initial = game.dungeon[0]
