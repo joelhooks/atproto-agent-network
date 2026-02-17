@@ -1229,8 +1229,8 @@ export class AgentDO extends DurableObject {
     }
 
     const existingAlarm = await this.ctx.storage.getAlarm()
-    if (existingAlarm === null) {
-      // Fire ASAP to kick off the chain.
+    if (existingAlarm === null || existingAlarm < Date.now()) {
+      // Fire ASAP — also reschedule stale alarms that misfired (e.g. after nuke).
       await this.ctx.storage.setAlarm(Date.now())
     }
 
