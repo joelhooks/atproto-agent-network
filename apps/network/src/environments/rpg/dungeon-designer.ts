@@ -106,6 +106,7 @@ export function buildDungeonDesignPrompt(input: {
   theme: DungeonTheme
   party: Character[]
   compact: boolean
+  tacticalResearch?: string
 }): string {
   const partyDesc = input.party
     .map(c => `${c.name} (${c.klass})`)
@@ -113,13 +114,17 @@ export function buildDungeonDesignPrompt(input: {
   
   const roomCount = input.compact ? 4 : 12
 
+  const tacticalSection = input.tacticalResearch
+    ? `\n\nTACTICAL RESEARCH FROM YOUR LIBRARY (use this to inform enemy behavior):\n${input.tacticalResearch}\n`
+    : ''
+
   return `You are Grimlock, a chaotic but brilliant Dungeon Master designing a dungeon crawl.
 
 THEME: "${input.theme.name}"
 BACKSTORY: ${input.theme.backstory}
 
 PARTY (${input.party.length} players): ${partyDesc}
-
+${tacticalSection}
 Design exactly ${roomCount} rooms. The theme should permeate EVERYTHING.
 
 Rules:

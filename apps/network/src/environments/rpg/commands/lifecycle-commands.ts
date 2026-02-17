@@ -3,6 +3,42 @@ import type { PersistentCharacter } from '@atproto-agent/core'
 import { generateTid } from '../../../../../../packages/core/src/identity'
 import { pickTheme, buildDungeonDesignPrompt, parseDungeonDesign } from '../dungeon-designer'
 
+// ── pdf-brain tactical research for dungeon design ────────────────────────────
+
+async function consultPdfBrain(webhookUrl: string, query: string): Promise<string> {
+  try {
+    const parsed = new URL(webhookUrl)
+    const token = parsed.searchParams.get('token')
+    if (token) parsed.searchParams.delete('token')
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const response = await fetch(parsed.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type: 'consult_library', query, limit: 3, expand: 1500 }),
+    })
+    if (!response.ok) return ''
+    const json = (await response.json()) as Record<string, unknown>
+    return typeof json.text === 'string' ? json.text : typeof json.result === 'string' ? json.result : ''
+  } catch {
+    return '' // pdf-brain unavailable, not fatal
+  }
+}
+
+async function researchTacticsForDungeon(webhookUrl: string | undefined, themeName: string): Promise<string> {
+  if (!webhookUrl) return ''
+  const queries = [
+    `monster combat tactics strategy intelligent enemies "The Monsters Know"`,
+    `encounter design varied enemy tactics flanking focus fire retreat morale`,
+    `dungeon encounter pacing difficulty curve boss fight design`,
+  ]
+  const results = await Promise.all(queries.map(q => consultPdfBrain(webhookUrl, q)))
+  const combined = results.filter(Boolean).join('\n\n---\n\n')
+  // Limit to ~3000 chars to not blow up the prompt
+  return combined.slice(0, 3000)
+}
+
 import {
   craftDungeonFromLibrary,
   createCharacter,
@@ -38,6 +74,8 @@ export type LifecycleCommandResult = CommandFailure | CommandSuccess
 type LifecycleContext = Pick<EnvironmentContext, 'agentName' | 'db' | 'broadcast' | 'loadCharacter' | 'saveCharacter'> & {
   /** Optional LLM text generation for dungeon design */
   generateText?: (prompt: string) => Promise<string>
+  /** Optional webhook URL for pdf-brain consult_library queries */
+  webhookUrl?: string
 }
 
 export type LifecycleCommandDeps = {
@@ -381,11 +419,14 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       const dungeonTheme = pickTheme(usedThemes)
       game.theme = dungeonTheme
 
+      // Research tactics from pdf-brain before designing the dungeon
+      const tacticalResearch = await researchTacticsForDungeon(ctx.webhookUrl, dungeonTheme.name)
+
       // Try LLM-designed dungeon, fall back to static if unavailable
       let generated: { rooms: Room[]; difficultyCurve: DifficultyTier[]; designNotes: string[] }
       if (ctx.generateText) {
         try {
-          const prompt = buildDungeonDesignPrompt({ theme: dungeonTheme, party: game.party, compact })
+          const prompt = buildDungeonDesignPrompt({ theme: dungeonTheme, party: game.party, compact, tacticalResearch })
           const llmResponse = await ctx.generateText(prompt)
           const designed = parseDungeonDesign(llmResponse, dungeonTheme, game.party, compact)
           generated = designed
