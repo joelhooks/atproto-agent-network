@@ -48,7 +48,34 @@ export function pickTheme(usedThemes?: string[]): DungeonTheme {
 // ENEMY GENERATION
 // ============================================================================
 
-function makeEnemy(name: string, tier: DifficultyTier, partySize: number, flavorText?: string): Enemy {
+// Map LLM-provided tactics hint to a real EnemyTacticKind
+const TACTIC_MAP: Record<string, string> = {
+  'focus-healer': 'goblin', 'assassin': 'ambush', 'flanker': 'pack',
+  'sniper': 'ranged', 'caster': 'spellcaster', 'brute': 'berserker',
+  'coward': 'retreater', 'horde': 'swarm', 'tank': 'guardian',
+  'hit-and-run': 'ambush', 'mindless': 'skeleton',
+}
+
+function resolveTacticKind(tier: DifficultyTier, hint?: string): string {
+  if (hint) {
+    const lower = hint.toLowerCase().trim()
+    if (TACTIC_MAP[lower]) return TACTIC_MAP[lower]
+    // Direct match against valid kinds
+    const validKinds = ['goblin','orc','skeleton','boss','pack','ambush','ranged','spellcaster','berserker','retreater','swarm','guardian']
+    if (validKinds.includes(lower)) return lower
+  }
+  // Default per tier — smarter defaults than before
+  switch (tier) {
+    case 'boss': return 'boss'
+    case 'deadly': return 'berserker'
+    case 'hard': return 'ambush'
+    case 'medium': return 'pack'
+    case 'easy': return 'goblin'
+    default: return 'unknown'
+  }
+}
+
+function makeEnemy(name: string, tier: DifficultyTier, partySize: number, flavorText?: string, tacticsHint?: string): Enemy {
   const scale = { easy: 0.7, medium: 1.0, hard: 1.4, deadly: 1.8, boss: 2.5 }[tier] ?? 1.0
   const sizeScale = partySize >= 4 ? 1.2 : partySize <= 2 ? 0.8 : 1.0
   const baseHp = tier === 'boss' ? 45 : tier === 'deadly' ? 30 : tier === 'hard' ? 22 : tier === 'medium' ? 16 : 10
@@ -64,7 +91,7 @@ function makeEnemy(name: string, tier: DifficultyTier, partySize: number, flavor
     dodge: Math.round(baseDodge * scale),
     armor: tier === 'boss' ? 3 : tier === 'deadly' ? 2 : tier === 'hard' ? 1 : 0,
     flavorText,
-    tactics: { kind: (tier === 'boss' ? 'boss' : tier === 'deadly' ? 'guardian' : 'hit-and-run') as any },
+    tactics: { kind: resolveTacticKind(tier, tacticsHint) as any },
   }
 }
 
@@ -101,15 +128,25 @@ Rules:
 - Mix: combat, trap, puzzle, treasure, rest rooms
 - Enemies: THEMED to the dungeon concept (NOT generic fantasy monsters)
 - Descriptions: vivid, funny, 1-2 sentences max
-- Each combat room needs: enemy names and difficulty (easy/medium/hard/deadly for regular, boss for final)
+- Each combat room needs: enemy names, difficulty (easy/medium/hard/deadly for regular, boss for final), AND tactics
+- TACTICS are crucial — each enemy needs a "tactics" field describing HOW they fight:
+  - "pack" = focus-fire the healer/mage, gang up on one target
+  - "ambush" = hit-and-run, target squishiest party member
+  - "ranged" / "spellcaster" = stay back, target lowest dodge
+  - "berserker" = attack the strongest/most dangerous fighter
+  - "guardian" = protect something, attack highest level target
+  - "boss" = smart targeting, finish off wounded targets, prioritize healers
+  - "swarm" / "skeleton" = mindless, attack randomly
+  - Or invent one! (e.g. "focus-healer", "assassin", "flanker", "brute")
+- Enemies should use DIFFERENT tactics in the same encounter for variety
 
 Respond in EXACT JSON (no markdown, no commentary):
 {
   "rooms": [
     {"type": "rest", "description": "..."},
-    {"type": "combat", "description": "...", "difficulty": "easy", "enemies": [{"name": "...", "special": "..."}]},
+    {"type": "combat", "description": "...", "difficulty": "easy", "enemies": [{"name": "...", "tactics": "pack", "special": "..."}]},
     {"type": "trap", "description": "..."},
-    {"type": "boss", "description": "...", "enemies": [{"name": "...", "special": "..."}], "bossPersonality": "..."}
+    {"type": "boss", "description": "...", "enemies": [{"name": "...", "tactics": "boss", "special": "..."}], "bossPersonality": "..."}
   ],
   "designNotes": ["one-liner about the dungeon's vibe"]
 }`
@@ -144,13 +181,13 @@ export function parseDungeonDesign(
         case 'combat': {
           const tier: DifficultyTier = r.difficulty || 'medium'
           const enemies = (r.enemies || [{ name: 'Themed Guardian' }]).map((e: any) =>
-            makeEnemy(e.name || 'Themed Guardian', tier, partySize, e.special || e.flavorText)
+            makeEnemy(e.name || 'Themed Guardian', tier, partySize, e.special || e.flavorText, e.tactics)
           )
           return { type: 'combat' as const, description: desc, enemies, difficultyTier: tier }
         }
         case 'boss': {
           const enemies = (r.enemies || [{ name: 'The Boss' }]).map((e: any) =>
-            makeEnemy(e.name || 'The Boss', 'boss', partySize, e.special || r.bossPersonality || e.flavorText)
+            makeEnemy(e.name || 'The Boss', 'boss', partySize, e.special || r.bossPersonality || e.flavorText, e.tactics || 'boss')
           )
           return { type: 'boss' as const, description: desc, enemies, difficultyTier: 'boss' as DifficultyTier }
         }

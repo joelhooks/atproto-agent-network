@@ -368,7 +368,17 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
 
       // Generate dungeon — Grimlock designs with wacky themes via LLM
       const compact = params.compact === true || params.compact === 'true'
-      const dungeonTheme = pickTheme()
+      // Query recent game themes from D1 to avoid repeats
+      let usedThemes: string[] = []
+      try {
+        const recentGames = await ctx.db
+          .prepare("SELECT state FROM environments WHERE type = 'rpg' ORDER BY rowid DESC LIMIT 10")
+          .all<{ state: string }>()
+        usedThemes = (recentGames.results ?? [])
+          .map(r => { try { return JSON.parse(r.state)?.theme?.name } catch { return null } })
+          .filter((n): n is string => typeof n === 'string')
+      } catch { /* table might not exist yet, that's fine */ }
+      const dungeonTheme = pickTheme(usedThemes)
       game.theme = dungeonTheme
 
       // Try LLM-designed dungeon, fall back to static if unavailable

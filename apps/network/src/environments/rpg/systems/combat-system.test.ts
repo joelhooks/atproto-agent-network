@@ -99,16 +99,17 @@ describe('combat-system', () => {
 
     const d100Rolls = [1, 100]
     let d100Index = 0
-    const dRolls = [1, 3]
-    let dIndex = 0
+    // No d-roll for target selection (tactics handles it), so d(6)=3 is first d-roll = damage
     const dice = createTestDice({
       d100: () => d100Rolls[d100Index++] ?? 100,
-      d: () => dRolls[dIndex++] ?? 1,
+      d: () => 3,
     })
 
     const lines = runEnemyFreeAttackRound(game, dice)
 
-    expect(lines[0]).toContain('Goblin strikes Alice for 3')
+    // Goblin uses 'goblin' tactics: Alice has 3 HP (lowest), so she's the target
+    expect(lines[0]).toContain('Goblin')
+    expect(lines[0]).toContain('Alice')
     expect(alice.hp).toBe(0)
   })
 
@@ -131,7 +132,8 @@ describe('combat-system', () => {
 
     const lines = runEnemyFreeAttackRound(game, dice)
 
-    expect(lines).toEqual(['Goblin swings at Alice but misses.'])
+    // Goblin uses 'goblin' tactics: targets lowest HP (Bob=14 < Alice=15)
+    expect(lines).toEqual(['Goblin swings at Bob but misses.'])
     expect(alice.hp).toBeGreaterThan(0)
   })
 })
