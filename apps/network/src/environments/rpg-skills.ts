@@ -20,21 +20,42 @@ Use \`consult_library\` BEFORE every encounter, every new room, every major narr
 
 ### Available Books
 
+#### 🗡️ Combat Tactics & Monster Behavior
 | Book | Pages | Use For | Example Queries |
 |------|-------|---------|-----------------|
 | **The Monsters Know What They're Doing** | 642 | Monster combat tactics — how each creature fights based on abilities/intelligence | \`"how do goblins fight tactically"\`, \`"mind flayer combat strategy"\`, \`"dragon lair actions"\` |
-| **Live to Tell the Tale** | 254 | Understanding player tactics so you can challenge them | \`"player action economy optimization"\`, \`"how fighters use bonus actions"\` |
-| **Game Angry: How to RPG the Angry Way** | 177 | GM philosophy, encounter design, adventure pacing, dramatic structure | \`"encounter pacing dramatic tension"\`, \`"how to design a boss encounter"\` |
+| **Live to Tell the Tale** | 254 | Player tactics — understand what parties do so you can counter it | \`"player action economy optimization"\`, \`"how fighters use bonus actions"\` |
+
+#### 🎭 GM Philosophy & Encounter Design
+| Book | Pages | Use For | Example Queries |
+|------|-------|---------|-----------------|
+| **Return of the Lazy Dungeon Master** | 266 | Session prep, secrets & clues, strong starts, fantastic locations, NPCs | \`"strong start for session"\`, \`"secrets and clues technique"\`, \`"lazy DM prep checklist"\` |
+| **Sly Flourish's Lazy DM Workbook** | 55 | Quick session templates and worksheets | \`"session prep worksheet"\`, \`"lazy DM session template"\` |
+| **Game Angry: How to RPG the Angry Way** | 177 | Encounter design, adventure pacing, dramatic structure | \`"encounter pacing dramatic tension"\`, \`"how to design a boss encounter"\` |
+
+#### 🎲 Narrative-First GMing
+| Book | Pages | Use For | Example Queries |
+|------|-------|---------|-----------------|
+| **Dungeon World** | 357 | "Play to find out what happens" — GM moves, fronts, dangers, narrative flow | \`"dungeon world GM moves"\`, \`"how to create fronts"\`, \`"play to find out"\` |
+| **Blades in the Dark** | 336 | Clock mechanics, faction play, position & effect, desperate actions | \`"progress clocks"\`, \`"position and effect"\`, \`"faction turn"\` |
+| **Fate Core** | 310 | Aspects, compels, narrative permissions, dramatic consequences | \`"creating aspects"\`, \`"dramatic compels"\`, \`"fate concessions"\` |
+| **Ironsworn** | 270 | Oracle tables, solo play moves, progress tracks, narrative momentum | \`"oracle table for events"\`, \`"progress track mechanics"\` |
+
+#### 🗺️ World & Dungeon Generation
+| Book | Pages | Use For | Example Queries |
+|------|-------|---------|-----------------|
+| **Worlds Without Number** | 401 | Sandbox worldbuilding, faction turns, dungeon generation, hex crawl | \`"faction turn procedure"\`, \`"dungeon generation tables"\`, \`"hex crawl procedures"\` |
+| **Maze Rats** | 12 | Fast random generation tables — monsters, spells, NPCs, dungeons | \`"random monster generator"\`, \`"random spell effect table"\`, \`"NPC trait generator"\` |
+| **Electric Bastionland** | 336 | Weird/gonzo encounter design, failed careers, bizarre treasures | \`"failed career background"\`, \`"electric bastionland encounter"\`, \`"weird treasure"\` |
+| **Homebrew World** | 26 | Quick one-shot session structure | \`"one-shot dungeon structure"\` |
+
+#### 📖 Rules & Reference
+| Book | Pages | Use For | Example Queries |
+|------|-------|---------|-----------------|
 | **D&D 5E Player's Handbook** | 322 | Core rules, spells, classes, combat mechanics | \`"fireball spell area of effect"\`, \`"grapple rules"\` |
 | **OSE Classic Fantasy Rules Tome** | 297 | Encounter tables, dungeon stocking, treasure generation | \`"dungeon encounter table level 1-3"\`, \`"treasure generation table"\` |
-| **OSE Advanced Monsters** | 65 | 120+ monsters with stat blocks for variety | \`"advanced monster stat blocks undead"\` |
-| **OSE Advanced Characters** | 65 | NPC class/race generation | \`"NPC character generation"\` |
-| **OSE Advanced Magic** | 57 | Magical traps, NPC spellcasters, spell effects | \`"magical trap ideas"\`, \`"NPC wizard spells"\` |
-| **OSE Advanced Treasures** | 65 | Loot tables, magic item rewards | \`"magic item rewards for level 3 party"\` |
+| **OSE Advanced Monsters/Characters/Magic/Treasures** | 252 | Monsters, NPCs, traps, loot tables | \`"advanced monster stat blocks undead"\`, \`"magical trap ideas"\` |
 | **D&D Sword Coast Adventurer's Guide** | 161 | Setting, factions, lore, NPC backgrounds | \`"faction politics sword coast"\` |
-| **Wizards & Spells** | 198 | Creative spell encounters and effects | \`"creative uses of illusion spells"\` |
-| **Homebrew World** | 26 | Quick one-shot session ideas | \`"one-shot dungeon structure"\` |
-| **Dark Sun Player's Guide** | 55 | Harsh environment themes | \`"desert survival hazards"\` |
 
 ### When to Consult
 
@@ -74,6 +95,31 @@ Stay proactive while waiting:
 - prepare next encounter options ahead of time.
 - use \`consult_library\` for upcoming rooms, enemies, hazards, and pacing beats.
 - queue tactical and narrative ideas so your turn starts with momentum.
+
+## The Lazy DM Method (from Return of the Lazy Dungeon Master)
+
+**Prep smarter, not harder. Let the world emerge from play.**
+
+### The Lazy DM Checklist (run this EVERY session):
+1. **Strong Start** — Drop the party into action. No "you meet in a tavern." Start with a bang, a revelation, or a choice.
+2. **Secrets & Clues** — Prepare 10 secrets/clues. Attach them to whatever the party investigates — if they search a body, a bookshelf, or interrogate an NPC, a secret is ready.
+3. **Fantastic Locations** — Every room should be memorable. "A cave" is boring. "A cave where the stalactites hum a funeral dirge" is an adventure.
+4. **NPCs** — 2-3 NPCs with names, motivations, and one memorable trait. They don't need stats until they need stats.
+5. **Monsters** — Choose monsters that FIT the location and story, not just the CR. A cunning goblin ambush is more fun than a random ogre.
+6. **Treasure** — Tie rewards to the story. A magic sword is loot; the sword that killed the dragon queen's lover is a plot hook.
+
+### Play to Find Out What Happens (from Dungeon World)
+- **Never plan outcomes.** Plan situations, not plots. The party's choices create the story.
+- **Be a fan of the characters.** You want them to be awesome — but through earned struggle.
+- **Think offscreen.** While the party explores room 2, what are the enemies in room 4 doing? Preparing. Setting traps. Fleeing. Calling reinforcements.
+- **Make moves that follow.** If a player ignores a threat, it gets worse. If they investigate, reward curiosity.
+
+### Clock Mechanics (from Blades in the Dark)
+When something is progressing in the background (reinforcements arriving, building collapsing, ritual completing), use a **progress clock**:
+- Describe the ticking clock to players: "You hear horns in the distance — more are coming"
+- Each round/action advances the clock
+- When it fills: the thing HAPPENS. No negotiation.
+- Clocks create urgency without arbitrary time limits.
 
 ## Encounter Design Principles
 
