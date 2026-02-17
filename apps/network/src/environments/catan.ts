@@ -211,34 +211,32 @@ export const catanEnvironment: AgentEnvironment = {
             }
           }
 
-          // Ensure the creating agent is included as a player (only if they're a registered agent)
-          if (
-            registeredNames.has(agentName.toLowerCase()) &&
-            !players.some((p) => p.toLowerCase() === agentName.toLowerCase())
-          ) {
-            players.push(agentName)
-          }
+          // Remove the host agent from players if they weren't explicitly included in the request
+          // (REST API uses 'grimlock' as host which isn't a playing agent)
+          const finalPlayers = players.filter((p) => registeredNames.has(p.toLowerCase()))
+
+          if (finalPlayers.length < 2) throw new Error('Need at least 2 registered agent players')
 
           const gameId = `catan_${generateTid()}`
-          const game = createGame(gameId, players)
+          const game = createGame(gameId, finalPlayers)
 
           await db
             .prepare(
               "INSERT INTO environments (id, host_agent, state, phase, players, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
             )
-            .bind(gameId, agentName || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(players))
+            .bind(gameId, agentName || 'unknown', JSON.stringify(game), game.phase, JSON.stringify(finalPlayers))
             .run()
 
           await ctx.broadcast({
             event_type: 'game.created',
-            context: { gameId, host: agentName || 'unknown', players, phase: game.phase },
+            context: { gameId, host: agentName || 'unknown', players: finalPlayers, phase: game.phase },
           })
 
           return {
             content: toTextContent(
-              `Game created: ${gameId}\nPlayers: ${players.join(', ')}\nHost: ${agentName || 'unknown'}\n\n${renderBoard(game)}`
+              `Game created: ${gameId}\nPlayers: ${finalPlayers.join(', ')}\nHost: ${agentName || 'unknown'}\n\n${renderBoard(game)}`
             ),
-            details: { gameId, players, phase: game.phase, host: agentName || 'unknown' },
+            details: { gameId, players: finalPlayers, phase: game.phase, host: agentName || 'unknown' },
           }
         }
 
