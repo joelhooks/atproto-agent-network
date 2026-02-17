@@ -142,7 +142,7 @@ export const catanEnvironment: AgentEnvironment = {
           players: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Player names for new_game (e.g. ["grimlock","swoop","sludge"]).',
+            description: 'Player names for new_game (e.g. ["slag","swoop","sludge"]). Must be registered agent names.',
           },
           gameAction: {
             type: 'object',
@@ -174,17 +174,17 @@ export const catanEnvironment: AgentEnvironment = {
         if (command === 'new_game') {
           const agentName = ctx.agentName.trim()
 
-          // Block duplicate games where this agent is already a participant.
+          // Block duplicate games where this agent is already a participant (setup OR playing).
           const existingGame = await db
-            .prepare("SELECT id FROM environments WHERE phase = 'playing' AND players LIKE ? LIMIT 1")
+            .prepare("SELECT id, phase FROM environments WHERE phase IN ('playing', 'setup') AND type = 'catan' AND players LIKE ? LIMIT 1")
             .bind(`%${agentName}%`)
-            .first<{ id: string }>()
+            .first<{ id: string; phase: string }>()
 
           if (existingGame?.id) {
             return {
               ok: false,
               error:
-                `Already in active game ${existingGame.id}. ` +
+                `Already in ${existingGame.phase} game ${existingGame.id}. ` +
                 `Use {"command":"status","gameId":"${existingGame.id}"} to check state, ` +
                 `or {"command":"action","gameId":"${existingGame.id}","gameAction":{"type":"roll_dice"}} if it's your turn.`,
             }
@@ -192,9 +192,29 @@ export const catanEnvironment: AgentEnvironment = {
 
           const { createGame, renderBoard } = await import('../games/catan')
           const players = Array.isArray(params.players)
-            ? params.players.filter((p): p is string => typeof p === 'string')
+            ? params.players.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+            .map((p) => p.trim())
             : []
           if (players.length < 2) throw new Error('Need at least 2 player names')
+
+          // Validate all players are registered agents (prevents "grimlock" or phantom players)
+          const registeredAgents = await db
+            .prepare('SELECT name FROM agents')
+            .all<{ name: string }>()
+          const registeredNames = new Set((registeredAgents.results ?? []).map((r) => r.name.toLowerCase()))
+          const invalidPlayers = players.filter((p) => !registeredNames.has(p.toLowerCase()))
+          if (invalidPlayers.length > 0) {
+            const validList = [...registeredNames].sort().join(', ')
+            return {
+              ok: false,
+              error: `Invalid player(s): ${invalidPlayers.join(', ')}. Valid agents: ${validList}`,
+            }
+          }
+
+          // Ensure the creating agent is included as a player
+          if (!players.some((p) => p.toLowerCase() === agentName.toLowerCase())) {
+            players.push(agentName)
+          }
 
           const gameId = `catan_${generateTid()}`
           const game = createGame(gameId, players)
