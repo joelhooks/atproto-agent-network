@@ -21,3 +21,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 - [Adopt architecture decision records](0001-adopt-architecture-decision-records.md) (accepted, 2026-02-14)
 - [Refactor RPG monolith into interface-driven modules](0002-refactor-rpg-monolith-into-interface-driven-modules.md) (proposed, 2026-02-14)
+- [Sandbox leasing for agent environments](0003-sandbox-leasing-for-agent-environments.md) (proposed, 2026-02-16)
