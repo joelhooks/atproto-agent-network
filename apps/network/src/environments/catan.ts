@@ -211,8 +211,11 @@ export const catanEnvironment: AgentEnvironment = {
             }
           }
 
-          // Ensure the creating agent is included as a player
-          if (!players.some((p) => p.toLowerCase() === agentName.toLowerCase())) {
+          // Ensure the creating agent is included as a player (only if they're a registered agent)
+          if (
+            registeredNames.has(agentName.toLowerCase()) &&
+            !players.some((p) => p.toLowerCase() === agentName.toLowerCase())
+          ) {
             players.push(agentName)
           }
 
