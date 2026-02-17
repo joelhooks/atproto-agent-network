@@ -751,36 +751,22 @@
         "progress.txt"
       ],
       "learnings": "Technical Discovery: `AgentDO.broadcastLoopEvent` always sets `agent_did` to the emitter, so targeted turn notifications must carry the next-player DID in event `context` and RelayDO must extract DIDs from context for subscription matching (`apps/network/src/agent.ts`, `apps/network/src/relay.ts`).\nGotcha: If `game.turn.notify` includes only `currentPlayer` (name) and not `currentPlayerDid`, `/relay/firehose` subscribers filtering by DID will miss events whenever another agent emits the turn change.\nFiles Context: `apps/network/src/games/catan.ts` now produces structured `turnNotification` metadata; `apps/network/src/agent.ts` is the emission point for `game.turn.notify` for both Catan and RPG; `apps/network/src/relay.ts` controls DID/collection matching for firehose fanout and must include context DID extraction for targeted streams."
+    },
+    {
+      "id": "story-mlq4l4d7",
+      "title": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "status": "failed",
+      "filesModified": [
+        "docs/decisions/0003-sandbox-leasing-for-agent-environments.md",
+        ".ralph-context.json",
+        ".ralph-iterations.jsonl",
+        "prd.json",
+        "progress.txt"
+      ],
+      "learnings": "[verification_rejected] "
     }
   ],
   "failures": [
-    {
-      "storyId": "story-mlh8s9mk",
-      "storyTitle": "Fix stuck detector — no free combat resolution, hint system instead",
-      "category": "test_failure",
-      "error": "$ turbo typecheck\n• turbo 2.8.3\n$ sh -c 'if command -v vitest >/dev/null 2>&1; then vitest run --passWithNoTests; else echo PASS; fi'\nstderr | src/agent-do.test.ts > AgentDO > guards Vectorize queries when embedding dimensions do not match the index (expected 1024)\nVectorize embedding dimension mismatch { expected: \u001b[33m1024\u001b[39m, got: \u001b[33m768\u001b[39m, model: \u001b[32m'@cf/baai/bge-large-en-v1.5'\u001b[39m }\n\nstderr | src/agent-do.test.ts > AgentDO > alarm() treats O11Y pipeline failures as non-fatal\no11y ",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "sed -n",
-        "nl -ba",
-        "rg -n"
-      ],
-      "iterationNumber": 1
-    },
-    {
-      "storyId": "story-mli3k0ny",
-      "storyTitle": "Permadeath + Resurrection system — BRP-style death is permanent",
-      "category": "unknown",
-      "error": "Test Files  20 passed | 2 skipped (22)\n      Tests  283 passed | 6 skipped (289)\n   Start at  06:11:13\n   Duration  7.42s (transform 2.55s, setup 0ms, collect 4.41s, tests 7.90s, environment 7ms, prepare 3.08s)",
-      "toolNames": [
-        "/usr/bin/zsh -lc",
-        "nl -ba",
-        "ls apps/network/src/games",
-        "ls apps/network/src/environments",
-        "rg -n"
-      ],
-      "iterationNumber": 1
-    },
     {
       "storyId": "story-mli3kxn1",
       "storyTitle": "Loot table system — tiered treasure generation with stat-affecting items",
@@ -999,6 +985,58 @@
         "rg -n"
       ],
       "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlq4l4d7",
+      "storyTitle": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Required target files not modified: lease-manager.ts, lease-manager.test.ts. Changed files: prd.json",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "rg -n",
+        "rg --files"
+      ],
+      "iterationNumber": 1
+    },
+    {
+      "storyId": "story-mlq4l4d7",
+      "storyTitle": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Required target files not modified: lease-manager.ts, lease-manager.test.ts. Changed files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "rg -n",
+        "nl -ba",
+        "swarm memory"
+      ],
+      "iterationNumber": 2
+    },
+    {
+      "storyId": "story-mlq4l4d7",
+      "storyTitle": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Required target files not modified: lease-manager.ts, lease-manager.test.ts. Changed files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt",
+      "toolNames": [
+        "/usr/bin/zsh -lc",
+        "sed -n",
+        "nl -ba",
+        "swarm memory"
+      ],
+      "iterationNumber": 3
+    },
+    {
+      "storyId": "story-mlq4l4d7",
+      "storyTitle": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "category": "verification_rejected",
+      "error": "[verification_rejected] Required target files not modified: lease-manager. Changed files: .ralph-context.json, .ralph-iterations.jsonl, prd.json, progress.txt",
+      "toolNames": [
+        "sed -n",
+        "/usr/bin/zsh -lc",
+        "swarm memory"
+      ],
+      "iterationNumber": 1
     }
   ]
 }

@@ -1356,6 +1356,51 @@
         "agent.ts",
         "relay.ts"
       ]
+    },
+    {
+      "id": "story-mlq4l4d7",
+      "title": "D1 lease schema + LeaseManager for sandbox leasing (#129)",
+      "description": "Create file apps/network/src/sandbox/lease-manager.ts that exports a LeaseManager class. It takes a D1Database in the constructor. Methods: acquire(agentName, envId, sandboxId, ttlMs), renew(agentName, envId), release(agentName, envId), getExpiredLeases(), getAgentLease(agentName, envId). All use D1 prepared statements against a sandbox_leases table. Also create apps/network/src/sandbox/lease-manager.test.ts with vitest tests.",
+      "priority": 140,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": []
+    },
+    {
+      "id": "story-mlq4l4z5",
+      "title": "Sandbox factory with getSandbox() wrapper (#131)",
+      "description": "Create sandbox factory that wraps @cloudflare/sandbox SDK per ADR-0003.\n\n1. Install: `bun add @cloudflare/sandbox`\n\n2. Create `apps/network/src/sandbox/sandbox-factory.ts`:\n```typescript\nimport { getSandbox, type Sandbox } from '@cloudflare/sandbox';\n\nexport function createAgentSandbox(env: Env, agentName: string, envType: string): Sandbox {\n  const sandboxId = `agent-${agentName}-${envType}`.toLowerCase();\n  return getSandbox(env.Sandbox, sandboxId, {\n    sleepAfter: \"5m\",\n    normalizeId: true,\n  });\n}\n```\n\n3. Add to `apps/network/src/index.ts`:\n```typescript\nexport { Sandbox } from '@cloudflare/sandbox';\n```\n\n4. Update `wrangler.toml`:\n- Add Sandbox DO binding under `[durable_objects.bindings]`\n- Add `[[containers]]` with `class_name = \"Sandbox\"` and `image = \"./sandboxes/Dockerfile\"`\n- Add migration `tag = \"v2\"` with `new_sqlite_classes = [\"Sandbox\"]`\n- Add `SANDBOX_TRANSPORT = \"websocket\"` to vars\n\n5. Add `ensureR2Mount()` helper that re-mounts R2 on every interaction:\n```typescript\nexport async function ensureR2Mount(sandbox: Sandbox, agentName: string, env: Env) {\n  await sandbox.mountBucket(\"agent-blobs\", \"/data\", {\n    endpoint: `https://${env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,\n    provider: \"r2\",\n    prefix: `/agents/${agentName}/`,\n  });\n}\n```\n\n6. Tests in `apps/network/src/sandbox/sandbox-factory.test.ts`\n\nRef: ADR-0003, GitHub #131. Depends on #129.",
+      "priority": 141,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": []
+    },
+    {
+      "id": "story-mlq4luu7",
+      "title": "Unified Sandbox Dockerfile for all environment types (#133/#134/#136)",
+      "description": "Create a single fat Dockerfile for all sandbox environment types per ADR-0003.\n\nCreate `sandboxes/Dockerfile`:\n```dockerfile\nFROM docker.io/cloudflare/sandbox:0.7.0-python\n\n# Python deps (numpy, pandas, matplotlib already in base)\nRUN pip install --no-cache-dir pydantic aiohttp\n\n# Node.js tools for coding environments\nRUN npm install -g typescript tsx\n\n# Git config\nRUN git config --global user.name \"agent-sandbox\" && git config --global user.email \"sandbox@agent-network\"\n\n# Turn processor scripts (all environment types)\nCOPY scripts/ /workspace/scripts/\n\n# Skills files\nCOPY skills/ /workspace/skills/\n```\n\nCreate directory structure:\n- `sandboxes/scripts/rpg/take_turn.py` — RPG turn processor (reads game state JSON from stdin, calls LLM via OPENROUTER_API_KEY env, outputs action JSON to stdout)\n- `sandboxes/scripts/catan/take_turn.py` — Catan turn processor (same pattern)\n- `sandboxes/scripts/coding/take_turn.py` — Coding task processor\n- `sandboxes/skills/rpg-player.md` — RPG player skill prompt\n- `sandboxes/skills/catan-player.md` — Catan player skill prompt\n\nEach take_turn.py follows this pattern:\n```python\n#!/usr/bin/env python3\nimport sys, json, os, urllib.request\n\nstate = json.load(sys.stdin)\nskill = open(f\"/workspace/skills/{state['env_type']}-player.md\").read()\n# Build prompt from state + skill\n# Call LLM via OPENROUTER_API_KEY\n# Parse response into action\n# Output JSON to stdout\n```\n\nTest: `docker build -t agent-sandbox sandboxes/ && echo '{\"env_type\":\"rpg\",\"game_state\":{}}' | docker run --rm -i agent-sandbox python /workspace/scripts/rpg/take_turn.py`\n\nRef: ADR-0003, GitHub #133, #134, #136",
+      "priority": 142,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": []
+    },
+    {
+      "id": "story-mlq4lvn3",
+      "title": "DO→Sandbox integration in agent.ts (#135)",
+      "description": "Wire sandbox lifecycle into agent DO per ADR-0003. This is the core integration story.\n\nIn `apps/network/src/agent.ts`, add:\n\n1. **Sandbox ID persistence** — store/load from DO storage:\n```typescript\nprivate async getSandboxId(): Promise<string | null> {\n  return await this.ctx.storage.get<string>(\"sandboxId\") ?? null;\n}\nprivate async setSandboxId(id: string) {\n  await this.ctx.storage.put(\"sandboxId\", id);\n}\n```\n\n2. **onEnvironmentJoin(agentName, envId, envType)** — acquire lease + create sandbox:\n- Call `leaseManager.acquire(agentName, envId, sandboxId, 4h, conditions)`\n- Create sandbox via `createAgentSandbox(env, agentName, envType)`\n- `ensureR2Mount(sandbox, agentName, env)`\n- Write environment-specific scripts to sandbox\n- Persist sandboxId to DO storage\n\n3. **onTurnNotification(agentName, envId, gameState)** — execute turn:\n- Get sandbox via factory (auto-wakes if sleeping)\n- `ensureR2Mount()` (R2 mount lost on sleep)\n- Create session: `sandbox.createSession({ id: \"turn-\" + Date.now(), env: { OPENROUTER_API_KEY, ENV_TYPE }, cwd: \"/workspace\" })`\n- `session.exec(\"python scripts/{envType}/take_turn.py\", { stdin: JSON.stringify(gameState), timeout: 60000 })`\n- Check `result.success`, handle errors gracefully (skip turn on failure)\n- Parse JSON output, return action\n- `sandbox.deleteSession(sessionId)`\n- `leaseManager.renew(agentName, envId)`\n\n4. **onEnvironmentEnd(agentName, envId)** — cleanup:\n- `sandbox.destroy()`\n- `leaseManager.release(agentName, envId)`\n- Clear sandboxId from DO storage\n\n5. **GC alarm sweep** — add to existing alarm handler:\n- Every 30 minutes, call `leaseManager.getExpiredLeases()`\n- For each expired lease, `getSandbox(env.Sandbox, lease.sandboxId).destroy()`\n- Update lease status to 'destroyed'\n\n6. **Error handling** on every exec():\n```typescript\nif (!result.success) {\n  console.error(\"Turn failed:\", result.stderr);\n  return { action: \"skip_turn\", reason: result.stderr.slice(0, 500) };\n}\nlet parsed;\ntry { parsed = JSON.parse(result.stdout); } catch { return { action: \"skip_turn\", reason: \"invalid JSON\" }; }\n```\n\nRef: ADR-0003, GitHub #135. Depends on #129, #131, #132, #133.",
+      "priority": 143,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": []
+    },
+    {
+      "id": "story-mlq4lw79",
+      "title": "Cost tracking + monitoring for sandbox leases (#137)",
+      "description": "Add cost tracking and admin endpoints for sandbox usage per ADR-0003.\n\n1. Add `GET /admin/sandbox/costs` endpoint:\n- Query D1 lease table for total active hours per agent\n- Calculate estimated costs using Container pricing (basic instance: $0.009/GiB-hr memory + $0.0012/vCPU-min CPU)\n- Return JSON: `{ agents: [{ name, activeHours, estimatedCost }], total: { hours, cost } }`\n\n2. Add budget check to lease acquire:\n- Before creating new lease, check if agent's monthly hours exceed budget\n- Budget configurable via admin config endpoint\n- Return error if over budget instead of creating sandbox\n\n3. Add `GET /admin/sandbox/leases` endpoint:\n- List all active leases with sandbox IDs, environment types, uptime\n- Include expired/destroyed for audit trail\n\n4. Add to `anet` CLI:\n- `anet sandbox` — list active sandboxes\n- `anet sandbox costs` — show cost breakdown\n\nRef: ADR-0003, GitHub #137. Depends on #135.",
+      "priority": 144,
+      "passes": false,
+      "validationCommand": "cd apps/network && npx tsc --noEmit",
+      "targetFiles": []
     }
   ],
   "metadata": {
