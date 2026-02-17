@@ -30,6 +30,7 @@ import type { AgentConfig, AgentEvent, AgentGoal, AgentIdentity } from '../../..
 
 import { withErrorHandling } from './http-errors'
 import { createLogger, logEvent, toErrorDetails } from './logger'
+import { LeaseManager } from './sandbox/lease-manager'
 import { createGmTool } from './tools/gm-tool'
 import {
   DM_SKILL,
@@ -49,6 +50,7 @@ interface AgentEnv {
   AGENTS?: DurableObjectNamespace
   DB: D1Database
   BLOBS: R2Bucket
+  Sandbox?: DurableObjectNamespace
   RELAY?: DurableObjectNamespace
   VECTORIZE?: VectorizeIndex
   AI?: Ai
@@ -94,6 +96,29 @@ interface StoredAgentSessionV1 {
 }
 
 type AlarmMode = 'think' | 'housekeeping' | 'reflection'
+
+type SandboxExecResult = {
+  success: boolean
+  stdout?: string
+  stderr?: string
+}
+
+type SandboxSession = {
+  exec(
+    command: string,
+    options?: {
+      stdin?: string
+      timeout?: number
+    }
+  ): Promise<SandboxExecResult>
+}
+
+type SandboxHandle = {
+  createSession(input: { id: string; env: Record<string, string>; cwd?: string }): Promise<SandboxSession>
+  deleteSession(sessionId: string): Promise<void>
+  destroy(): Promise<void>
+  writeFile?: (path: string, contents: string) => Promise<void>
+}
 
 export interface ObservationEvent {
   ts: number
@@ -214,6 +239,7 @@ const PERSISTENT_BACKOFF_MS = [60_000, 120_000, 300_000] as const
 const GAME_BACKOFF_MS = 15_000
 const DEFAULT_AGENT_SYSTEM_PROMPT = 'You are a Pi agent running on the AT Protocol Agent Network.'
 const DEFAULT_MAX_COMPLETED_GOALS = 2
+const MAX_TOTAL_GOALS = 20 // Hard cap: agents creating 280+ goals is a bug, not a feature
 const DEFAULT_TEAM_COMMS_LIMIT = 5
 const MAX_TEAM_COMMS_LIMIT = 20
 const DEFAULT_MAX_BROADCAST_AGE = 3
@@ -221,6 +247,8 @@ const AUTO_RECALL_LIMIT = 5
 const AUTO_RECALL_SHARED_LIMIT = 3
 const AUTO_RECALL_MAX_TOKENS = 500
 const ONE_HOUR_MS = 60 * 60 * 1000
+const SANDBOX_LEASE_TTL_MS = 4 * ONE_HOUR_MS
+const SANDBOX_GC_SWEEP_INTERVAL_MS = 30 * 60 * 1000
 const SIX_HOURS_MS = 6 * ONE_HOUR_MS
 const ONE_DAY_MS = 24 * ONE_HOUR_MS
 const TWO_DAYS_MS = 2 * ONE_DAY_MS
@@ -410,6 +438,261 @@ export class AgentDO extends DurableObject {
     await this.ctx.storage.put('sessionId', created)
     this.sessionId = created
     return created
+  }
+
+  private async getSandboxId(): Promise<string | null> {
+    return (await this.ctx.storage.get<string>('sandboxId')) ?? null
+  }
+
+  private async setSandboxId(id: string): Promise<void> {
+    await this.ctx.storage.put('sandboxId', id)
+  }
+
+  private normalizeSandboxEnvType(envType: unknown): string {
+    const raw = typeof envType === 'string' ? envType.trim().toLowerCase() : ''
+    if (raw.length === 0) return 'rpg'
+    return raw
+  }
+
+  private buildSandboxId(agentName: string, envType: string): string {
+    return `agent-${agentName}-${envType}`.toLowerCase()
+  }
+
+  private getSandboxExpiryConditions(envType: string): string[] {
+    switch (envType) {
+      case 'rpg':
+        return ['agent.death', 'game.finished', 'campaign.ended']
+      case 'catan':
+        return ['game.finished']
+      case 'coding':
+        return ['task.complete', 'pr.merged']
+      default:
+        return ['environment.ended']
+    }
+  }
+
+  private async resolveSandboxEnvType(envId: string, gameState: unknown): Promise<string> {
+    if (gameState && typeof gameState === 'object' && !Array.isArray(gameState)) {
+      const state = gameState as Record<string, unknown>
+      const fromPayload =
+        (typeof state.envType === 'string' && state.envType) ||
+        (typeof state.environmentType === 'string' && state.environmentType) ||
+        (typeof state.type === 'string' && state.type) ||
+        ''
+      if (fromPayload) return this.normalizeSandboxEnvType(fromPayload)
+    }
+
+    try {
+      const row = await this.agentEnv.DB
+        .prepare('SELECT type FROM environments WHERE id = ?')
+        .bind(envId)
+        .first<{ type?: string }>()
+      if (typeof row?.type === 'string' && row.type.trim().length > 0) {
+        return this.normalizeSandboxEnvType(row.type)
+      }
+    } catch {
+      // Fallback below.
+    }
+
+    return 'rpg'
+  }
+
+  private async writeSandboxBootstrapScripts(
+    sandbox: SandboxHandle,
+    agentName: string,
+    envId: string,
+    envType: string
+  ): Promise<void> {
+    if (typeof sandbox.writeFile !== 'function') return
+
+    const bootstrap = JSON.stringify(
+      {
+        agentName,
+        environmentId: envId,
+        environmentType: envType,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    )
+
+    await sandbox.writeFile(`/workspace/scripts/${envType}/agent-bootstrap.json`, bootstrap)
+  }
+
+  private async loadSandboxForEnvironment(
+    agentName: string,
+    envType: string,
+    sandboxId: string
+  ): Promise<SandboxHandle | null> {
+    if (!this.agentEnv.Sandbox) return null
+
+    const expectedId = this.buildSandboxId(agentName, envType)
+    if (sandboxId === expectedId) {
+      const { createAgentSandbox } = await import('./sandbox/sandbox-factory')
+      return createAgentSandbox(this.agentEnv as never, agentName, envType) as unknown as SandboxHandle
+    }
+
+    const { getSandbox } = await import('@cloudflare/sandbox')
+    return getSandbox(this.agentEnv.Sandbox as never, sandboxId, {
+      sleepAfter: '5m',
+      normalizeId: true,
+    }) as unknown as SandboxHandle
+  }
+
+  private async destroySandboxById(sandboxId: string): Promise<void> {
+    if (!this.agentEnv.Sandbox) return
+    const { getSandbox } = await import('@cloudflare/sandbox')
+    const sandbox = getSandbox(this.agentEnv.Sandbox as never, sandboxId, {
+      sleepAfter: '5m',
+      normalizeId: true,
+    }) as unknown as SandboxHandle
+    await sandbox.destroy()
+  }
+
+  private async onEnvironmentJoin(agentName: string, envId: string, envType: string): Promise<void> {
+    if (!this.agentEnv.Sandbox) return
+
+    const normalizedEnvType = this.normalizeSandboxEnvType(envType)
+    const sandboxId = this.buildSandboxId(agentName, normalizedEnvType)
+    const leaseManager = new LeaseManager(this.agentEnv.DB)
+
+    await leaseManager.acquire(
+      agentName,
+      envId,
+      sandboxId,
+      SANDBOX_LEASE_TTL_MS,
+      this.getSandboxExpiryConditions(normalizedEnvType)
+    )
+
+    const { createAgentSandbox, ensureR2Mount } = await import('./sandbox/sandbox-factory')
+    const sandbox = createAgentSandbox(this.agentEnv as never, agentName, normalizedEnvType) as unknown as SandboxHandle
+    await ensureR2Mount(sandbox as never, agentName, this.agentEnv as never)
+    await this.writeSandboxBootstrapScripts(sandbox, agentName, envId, normalizedEnvType)
+
+    await this.setSandboxId(sandboxId)
+  }
+
+  private async onTurnNotification(
+    agentName: string,
+    envId: string,
+    gameState: unknown
+  ): Promise<Record<string, unknown>> {
+    const sandboxId = await this.getSandboxId()
+    if (!sandboxId) {
+      return { action: 'skip_turn', reason: 'sandbox not initialized' }
+    }
+
+    const envType = await this.resolveSandboxEnvType(envId, gameState)
+    const sandbox = await this.loadSandboxForEnvironment(agentName, envType, sandboxId)
+    if (!sandbox) {
+      return { action: 'skip_turn', reason: 'sandbox binding missing' }
+    }
+
+    const { ensureR2Mount } = await import('./sandbox/sandbox-factory')
+    await ensureR2Mount(sandbox as never, agentName, this.agentEnv as never)
+
+    const sessionId = `turn-${Date.now()}`
+    const leaseManager = new LeaseManager(this.agentEnv.DB)
+    let result: SandboxExecResult | null = null
+    let execError: unknown = null
+
+    try {
+      const session = await sandbox.createSession({
+        id: sessionId,
+        env: {
+          OPENROUTER_API_KEY: this.agentEnv.OPENROUTER_API_KEY ?? '',
+          ENV_TYPE: envType,
+        },
+        cwd: '/workspace',
+      })
+      result = await session.exec(`python scripts/${envType}/take_turn.py`, {
+        stdin: JSON.stringify(gameState),
+        timeout: 60_000,
+      })
+    } catch (error) {
+      execError = error
+    } finally {
+      try {
+        await sandbox.deleteSession(sessionId)
+      } catch {
+        // Best-effort cleanup.
+      }
+      try {
+        await leaseManager.renew(agentName, envId)
+      } catch {
+        // Best-effort lease touch.
+      }
+    }
+
+    if (execError) {
+      const message = execError instanceof Error ? execError.message : String(execError)
+      console.error('Turn failed:', message)
+      return { action: 'skip_turn', reason: message.slice(0, 500) }
+    }
+
+    if (!result?.success) {
+      const stderr = typeof result?.stderr === 'string' ? result.stderr : 'sandbox turn execution failed'
+      console.error('Turn failed:', stderr)
+      return { action: 'skip_turn', reason: stderr.slice(0, 500) }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(typeof result.stdout === 'string' ? result.stdout : '')
+    } catch {
+      return { action: 'skip_turn', reason: 'invalid JSON' }
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { action: 'skip_turn', reason: 'invalid JSON' }
+    }
+
+    return parsed as Record<string, unknown>
+  }
+
+  private async onEnvironmentEnd(agentName: string, envId: string): Promise<void> {
+    const sandboxId = await this.getSandboxId()
+    if (sandboxId) {
+      try {
+        await this.destroySandboxById(sandboxId)
+      } catch (error) {
+        console.error(`Failed to destroy sandbox ${sandboxId}:`, error)
+      }
+    }
+
+    const leaseManager = new LeaseManager(this.agentEnv.DB)
+    try {
+      await leaseManager.release(agentName, envId)
+    } catch (error) {
+      console.error(`Failed to release sandbox lease for ${agentName}:${envId}:`, error)
+    }
+
+    await this.ctx.storage.delete('sandboxId')
+  }
+
+  private async runSandboxLeaseGcSweep(now: number = Date.now()): Promise<void> {
+    const lastSweep = await this.ctx.storage.get<number>('lastSandboxLeaseGcAt')
+    if (typeof lastSweep === 'number' && now - lastSweep < SANDBOX_GC_SWEEP_INTERVAL_MS) return
+
+    await this.ctx.storage.put('lastSandboxLeaseGcAt', now)
+
+    if (!this.agentEnv.Sandbox) return
+
+    const leaseManager = new LeaseManager(this.agentEnv.DB)
+    const expiredLeases = await leaseManager.getExpiredLeases()
+    for (const lease of expiredLeases) {
+      try {
+        await this.destroySandboxById(lease.sandbox_id)
+      } catch (error) {
+        console.error(`GC: failed to destroy sandbox ${lease.sandbox_id}:`, error)
+      }
+
+      try {
+        await leaseManager.release(lease.agent_name, lease.environment_id)
+      } catch (error) {
+        console.error(`GC: failed to mark lease destroyed for ${lease.agent_name}:${lease.environment_id}:`, error)
+      }
+    }
   }
 
   private async broadcastLoopEvent(input: {
@@ -642,9 +925,14 @@ export class AgentDO extends DurableObject {
             
             await this.ctx.storage.deleteAll()
             
+            // Restart the alarm chain so the agent resumes looping after the wipe.
+            // Without this, nuked agents sit idle until manually restarted via /loop/start.
+            const loopStatus = await this.startLoop()
+            
             return Response.json({ 
               ok: true, 
-              message: `Agent ${agentName} storage wiped. DO will reinitialize on next request.`,
+              message: `Agent ${agentName} storage wiped and loop restarted.`,
+              ...loopStatus,
             })
           }
 
@@ -920,11 +1208,20 @@ export class AgentDO extends DurableObject {
     const goals = Array.isArray(config.goals) ? config.goals : []
     const cutoff = Date.now() - 24 * 60 * 60 * 1000
 
-    const nextGoals = goals.filter((goal) => {
+    let nextGoals = goals.filter((goal) => {
       if (goal.status !== 'completed') return true
       const completedAt = goal.completedAt ?? goal.createdAt
       return typeof completedAt === 'number' && Number.isFinite(completedAt) ? completedAt >= cutoff : true
     })
+
+    // Hard cap: if goals exceed MAX_TOTAL_GOALS, keep only the newest ones.
+    // This cleans up agents with historical goal explosion.
+    if (nextGoals.length > MAX_TOTAL_GOALS) {
+      // Sort by createdAt descending, keep most recent MAX_TOTAL_GOALS
+      nextGoals = nextGoals
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+        .slice(0, MAX_TOTAL_GOALS)
+    }
 
     const prunedGoals = goals.length - nextGoals.length
     if (prunedGoals > 0) {
@@ -1014,7 +1311,9 @@ export class AgentDO extends DurableObject {
 
     if (normalized.goals && normalized.goals.length > 0) {
       const config = await this.loadOrCreateConfig()
-      const next: AgentConfig = { ...config, goals: structuredClone(normalized.goals) }
+      // Cap goals from reflection to prevent explosion (model returns all existing + new each cycle)
+      const cappedGoals = structuredClone(normalized.goals).slice(0, MAX_TOTAL_GOALS)
+      const next: AgentConfig = { ...config, goals: cappedGoals }
       this.config = await this.pruneAndArchiveCompletedGoals(next)
     }
 
@@ -1068,6 +1367,16 @@ export class AgentDO extends DurableObject {
         retryCount: alarmInfo?.retryCount ?? 0,
       },
     })
+
+    try {
+      await this.runSandboxLeaseGcSweep()
+    } catch (error) {
+      logger.error('agent.error', {
+        span_id: createSpanId(),
+        context: { phase: 'sandbox.gc', category: 'unknown' },
+        error: toErrorDetails(error),
+      })
+    }
 
     let intervalMs = DEFAULT_AGENT_LOOP_INTERVAL_MS
     this.intervalReason = 'default'
@@ -1771,8 +2080,9 @@ export class AgentDO extends DurableObject {
       `You are ${this.config?.name ?? 'an agent'} running an autonomous observe→think→act→reflect loop on the HighSwarm agent network.`,
       this.config?.personality ? `Personality: ${this.config.personality}` : '',
       '',
-      'Current goals:',
+      `Current goals (showing top ${Math.min(goals.length, 10)} of ${(this.config?.goals ?? []).filter((g: any) => g?.status !== 'completed').length} active):`,
       goals.length ? JSON.stringify(goals, null, 2) : '(no goals set)',
+      goals.length >= 10 ? `⚠️ You have many goals. Use set_goal(action:"complete") to finish goals, not add new ones. Max ${MAX_TOTAL_GOALS} total.` : '',
       '',
       'Recent action outcomes (last 5 tool calls):',
       recentOutcomesText,
@@ -1800,7 +2110,7 @@ export class AgentDO extends DurableObject {
       '2. If you have non-game inbox messages, RESPOND to each one using the message tool.',
       '3. Work toward your goals by using tools (remember, recall, message, search, etc.)',
       '4. Always use at least one tool per cycle. Do NOT just think — ACT.',
-      '5. If you want to update goals, include an updated `goals` array in your response.',
+      '5. Use set_goal to manage goals (add/complete/update). Complete old goals before adding new ones. Max 20 goals.',
       '6. If you encounter errors, bugs, or stuck situations, use notify({"to":"grimlock","text":"description","level":"error"}) to report them.',
     ].filter(Boolean).join('\n')
   }
@@ -3101,8 +3411,13 @@ export class AgentDO extends DurableObject {
       else active.push(goal)
     }
 
+    // Cap active goals shown in prompt to prevent context bloat.
+    // Sort by priority (lower = higher priority), then newest first.
+    active.sort((a, b) => (a.priority - b.priority) || ((b.createdAt ?? 0) - (a.createdAt ?? 0)))
+    const cappedActive = active.slice(0, 10)
+
     completed.sort((a, b) => (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt))
-    return [...active, ...completed.slice(0, maxCompleted)]
+    return [...cappedActive, ...completed.slice(0, maxCompleted)]
   }
 
   private async pruneAndArchiveCompletedGoals(config: AgentConfig): Promise<AgentConfig> {
@@ -4768,6 +5083,26 @@ export class AgentDO extends DurableObject {
             const goalInput = params.goal && typeof params.goal === 'object' ? (params.goal as Record<string, unknown>) : null
             const description = typeof goalInput?.description === 'string' ? goalInput.description : null
             if (!description) throw new Error('set_goal add requires goal.description')
+
+            // Hard cap: prevent goal explosion (agents creating hundreds of near-identical goals)
+            const pendingGoals = goals.filter((g) => g.status !== 'completed')
+            if (pendingGoals.length >= MAX_TOTAL_GOALS) {
+              throw new Error(`Goal limit reached (${MAX_TOTAL_GOALS} pending). Complete or remove existing goals before adding new ones.`)
+            }
+
+            // Deduplicate: reject goals that are too similar to existing ones
+            const descLower = description.toLowerCase()
+            const isDuplicate = pendingGoals.some((g) => {
+              const existingLower = g.description.toLowerCase()
+              // Exact match or one is substring of the other
+              return existingLower === descLower ||
+                existingLower.includes(descLower) ||
+                descLower.includes(existingLower)
+            })
+            if (isDuplicate) {
+              throw new Error('A similar goal already exists. Update the existing goal instead of adding a duplicate.')
+            }
+
             const priority = typeof goalInput?.priority === 'number' && Number.isFinite(goalInput.priority) ? goalInput.priority : 0
 
             updated = {
