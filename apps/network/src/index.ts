@@ -1001,7 +1001,8 @@ export default {
 
               let toolResult: unknown
               try {
-                toolResult = await tool.execute('http', { command: 'new_game', players })
+                const compact = validated.data.compact === true || validated.data.compact === 'true'
+                toolResult = await tool.execute('http', { command: 'new_game', players, compact })
               } catch (err) {
                 console.error('Environment create execute error:', err)
                 return Response.json({ error: 'Environment create failed', detail: String(err) }, { status: 502 })

@@ -1554,6 +1554,7 @@ export function craftDungeonFromLibrary(input: {
   theme: DungeonTheme
   party: Character[]
   libraryContext: Record<string, string>
+  compact?: boolean
 }): { rooms: Room[]; difficultyCurve: DifficultyTier[]; designNotes: string[] } {
   const theme = input.theme
   const party = Array.isArray(input.party) ? input.party : []
@@ -1711,7 +1712,13 @@ export function craftDungeonFromLibrary(input: {
     enemies: bossPhase1.map((e) => ({ ...e })),
   }
 
-  const rooms: Room[] = [
+  // Compact dungeon: 4 rooms for quick playthroughs
+  const rooms: Room[] = input.compact ? [
+    { type: 'rest', description: withThemeDescription(theme, 'You stand at the threshold. The air tastes of old stone and something worse.') },
+    easy,
+    { type: 'trap', description: withThemeDescription(theme, 'A simple hazard invites care: mark time, test stones, listen first.') },
+    boss,
+  ] : [
     { type: 'rest', description: withThemeDescription(theme, 'You stand at the threshold, counting torchlight and steps.') },
     easy,
     { type: 'trap', description: withThemeDescription(theme, 'A simple hazard invites care: mark time, test stones, listen first.') },
@@ -1730,7 +1737,9 @@ export function craftDungeonFromLibrary(input: {
     boss,
   ]
 
-  const difficultyCurve: DifficultyTier[] = ['easy', 'medium', 'hard', 'deadly', 'boss']
+  const difficultyCurve: DifficultyTier[] = input.compact
+    ? ['easy', 'boss']
+    : ['easy', 'medium', 'hard', 'deadly', 'boss']
   return { rooms, difficultyCurve, designNotes }
 }
 

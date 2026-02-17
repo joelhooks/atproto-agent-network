@@ -149,7 +149,7 @@ async function findJoinableEnvironmentsForAgent(
         const game = JSON.parse(row.state) as RpgGameState
         if (!game || game.type !== 'rpg') continue
         if (Array.isArray(game.party) && game.party.some((member) => member && isCharacter(member, agentName))) continue
-        if (!Array.isArray(game.party) || game.party.length >= 3) continue
+        if (!Array.isArray(game.party) || game.party.length >= 6) continue
         joinable.push({ id: row.id, game })
         if (joinable.length >= limit) break
       } catch {
@@ -187,7 +187,7 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       return { ok: false, error: `Adventure ${gameId} is not joinable (phase: ${game.phase})` }
     }
 
-    if (!Array.isArray(game.party) || game.party.length >= 3) {
+    if (!Array.isArray(game.party) || game.party.length >= 6) {
       return { ok: false, error: `Adventure ${gameId} party is full` }
     }
 
@@ -362,6 +362,7 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
       game.setupPhase = { currentPlayerIndex: 0, exchangeCount: 0, maxExchanges: 0, dialogues: {}, complete: true }
 
       // Generate dungeon so agents can actually play
+      const compact = params.compact === true || params.compact === 'true'
       const generated = craftDungeonFromLibrary({
         theme: {
           name: game.theme?.name || 'Forgotten Depths',
@@ -369,6 +370,7 @@ export async function executeLifecycleCommand(input: LifecycleCommandInput): Pro
         },
         party: game.party,
         libraryContext: (game as any).libraryContext ?? {},
+        compact,
       })
       game.dungeon = generated.rooms
       game.roomIndex = 0
