@@ -982,6 +982,25 @@ export class AgentDO extends DurableObject {
             // Nuclear option for corrupted encrypted storage that can't be read.
             if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
             
+            // Clear D1 encrypted memory records BEFORE wiping DO storage.
+            // After nuke, identity keypairs are regenerated so old records can't
+            // be decrypted. Leaving them causes observe() to waste 25s+ on failed
+            // crypto attempts, blocking the entire alarm cycle.
+            let d1Deleted = 0
+            try {
+              const result = await this.agentEnv.DB
+                .prepare('DELETE FROM records WHERE did = ?')
+                .bind(this.did)
+                .run()
+              d1Deleted = result.meta?.changes ?? 0
+            } catch (error) {
+              console.log(JSON.stringify({
+                event_type: 'nuke.d1_cleanup_failed',
+                did: this.did,
+                error: error instanceof Error ? error.message : String(error),
+              }))
+            }
+            
             await this.ctx.storage.deleteAll()
             
             // Restart the alarm chain so the agent resumes looping after the wipe.
@@ -990,7 +1009,8 @@ export class AgentDO extends DurableObject {
             
             return Response.json({ 
               ok: true, 
-              message: `Agent ${agentName} storage wiped and loop restarted.`,
+              message: `Agent ${agentName} storage wiped and loop restarted. ${d1Deleted} D1 records cleaned.`,
+              d1RecordsCleaned: d1Deleted,
               ...loopStatus,
             })
           }
@@ -1343,12 +1363,27 @@ export class AgentDO extends DurableObject {
       await this.safePut('actionOutcomes', kept)
     }
 
+    // Purge old encrypted memory records from D1 to prevent unbounded growth.
+    // Records older than 7 days are deleted, and each collection is capped at 500.
+    let memoryPurged = 0
+    if (this.memory) {
+      try {
+        memoryPurged = await this.memory.purgeOldRecords({ maxPerCollection: 500, maxAgeDays: 7 })
+      } catch (error) {
+        console.log(JSON.stringify({
+          event_type: 'agent.housekeeping.memory_purge_failed',
+          error: error instanceof Error ? error.message : String(error),
+        }))
+      }
+    }
+
     console.log(
       JSON.stringify({
         event_type: 'agent.housekeeping',
         level: 'info',
         prunedGoals,
         trimmedOutcomes,
+        memoryPurged,
       })
     )
   }

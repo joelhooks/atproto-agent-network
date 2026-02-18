@@ -180,11 +180,11 @@ export class EncryptedMemory {
     options: EncryptedMemoryListOptions = {}
   ): Promise<Array<EncryptedMemoryListEntry<T>>> {
     const limit = normalizeLimit(options.limit)
-    const rows = await this.loadRows(options.collection)
+    // Fetch 2x limit from D1 to account for deleted rows being filtered out
+    const rows = await this.loadRows(options.collection, limit * 2)
 
     const visible = rows
       .filter((row) => !row.deleted_at)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit)
 
     const entries: Array<EncryptedMemoryListEntry<T>> = []
@@ -430,18 +430,81 @@ export class EncryptedMemory {
     return true
   }
 
-  private async loadRows(collection?: string): Promise<RecordsRow[]> {
+  /**
+   * Purge old records beyond a retention limit per collection.
+   * Called during housekeeping to prevent unbounded growth.
+   * Also removes records older than maxAgeDays.
+   */
+  async purgeOldRecords(options: { maxPerCollection?: number; maxAgeDays?: number } = {}): Promise<number> {
+    const maxPerCollection = options.maxPerCollection ?? 500
+    const maxAgeDays = options.maxAgeDays ?? 7
+
+    let totalDeleted = 0
+
+    // 1. Age-based cleanup: delete records older than maxAgeDays
+    try {
+      const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
+      const result = await this.db
+        .prepare('DELETE FROM records WHERE did = ? AND created_at < ?')
+        .bind(this.identity.did, cutoff)
+        .run()
+      totalDeleted += result.meta?.changes ?? 0
+    } catch {
+      // non-fatal
+    }
+
+    // 2. Per-collection cap: keep only the newest maxPerCollection records
+    try {
+      const collections = await this.db
+        .prepare('SELECT DISTINCT collection FROM records WHERE did = ?')
+        .bind(this.identity.did)
+        .all<{ collection: string }>()
+
+      for (const { collection } of collections.results) {
+        const countResult = await this.db
+          .prepare('SELECT COUNT(*) as cnt FROM records WHERE did = ? AND collection = ?')
+          .bind(this.identity.did, collection)
+          .first<{ cnt: number }>()
+
+        const count = countResult?.cnt ?? 0
+        if (count > maxPerCollection) {
+          // Delete oldest records beyond the cap
+          const result = await this.db
+            .prepare(
+              `DELETE FROM records WHERE id IN (
+                SELECT id FROM records WHERE did = ? AND collection = ?
+                ORDER BY created_at DESC LIMIT -1 OFFSET ?
+              )`
+            )
+            .bind(this.identity.did, collection, maxPerCollection)
+            .run()
+          totalDeleted += result.meta?.changes ?? 0
+        }
+      }
+    } catch {
+      // non-fatal
+    }
+
+    return totalDeleted
+  }
+
+  private async loadRows(collection?: string, limit?: number): Promise<RecordsRow[]> {
+    // Default limit prevents fetching unbounded rows from D1.
+    // Even with 100-record list() limit, the old code fetched ALL rows
+    // then sliced in JS — catastrophic with 10K+ records.
+    const effectiveLimit = limit ?? 200
+
     if (collection) {
       const result = await this.db
-        .prepare('SELECT * FROM records WHERE did = ? AND collection = ?')
-        .bind(this.identity.did, collection)
+        .prepare('SELECT * FROM records WHERE did = ? AND collection = ? ORDER BY created_at DESC LIMIT ?')
+        .bind(this.identity.did, collection, effectiveLimit)
         .all<RecordsRow>()
       return result.results
     }
 
     const result = await this.db
-      .prepare('SELECT * FROM records WHERE did = ?')
-      .bind(this.identity.did)
+      .prepare('SELECT * FROM records WHERE did = ? ORDER BY created_at DESC LIMIT ?')
+      .bind(this.identity.did, effectiveLimit)
       .all<RecordsRow>()
     return result.results
   }
