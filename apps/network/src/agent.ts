@@ -1023,8 +1023,9 @@ export class AgentDO extends DurableObject {
             // 5. Also read alarm debug info from prior runs
             const lastAlarmAt = await this.ctx.storage.get<number>('debug:lastAlarmAt')
             const alarmRetry = await this.ctx.storage.get<unknown>('debug:alarmRetry')
+            const alarmPhase = await this.ctx.storage.get<string>('debug:alarmPhase')
             
-            return Response.json({ ok: true, kicked: true, nextAlarm, initialized: this.initialized, lastAlarmAt, alarmRetry })
+            return Response.json({ ok: true, kicked: true, nextAlarm, initialized: this.initialized, lastAlarmAt, alarmRetry, alarmPhase })
           }
 
           case 'analytics': {
@@ -1418,8 +1419,12 @@ export class AgentDO extends DurableObject {
 
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
     // Debug: track alarm invocations to diagnose stuck DOs
-    await this.ctx.storage.put('debug:lastAlarmAt', Date.now())
-    await this.ctx.storage.put('debug:alarmRetry', { retryCount: alarmInfo?.retryCount ?? 0, isRetry: alarmInfo?.isRetry ?? false })
+    const alarmStart = Date.now()
+    try {
+      await this.ctx.storage.put('debug:lastAlarmAt', alarmStart)
+      await this.ctx.storage.put('debug:alarmRetry', { retryCount: alarmInfo?.retryCount ?? 0, isRetry: alarmInfo?.isRetry ?? false })
+      await this.ctx.storage.put('debug:alarmPhase', 'start')
+    } catch { /* best effort */ }
     
     const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
     if (!running) {
@@ -1435,8 +1440,10 @@ export class AgentDO extends DurableObject {
     }
 
     if (!this.initialized) {
+      try { await this.ctx.storage.put('debug:alarmPhase', 'init') } catch {}
       await this.initialize()
     }
+    try { await this.ctx.storage.put('debug:alarmPhase', 'initialized') } catch {}
 
     const mode = (await this.ctx.storage.get<AlarmMode>('alarmMode')) ?? 'think'
     const modeCounterRaw = (await this.ctx.storage.get<number>('alarmModeCounter')) ?? 0
