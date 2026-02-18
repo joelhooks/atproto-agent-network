@@ -1001,9 +1001,12 @@ export class AgentDO extends DurableObject {
             if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
             try {
               await this.alarm()
-              return Response.json({ ok: true, kicked: true })
+              const loopCount = await this.ctx.storage.get<number>('loopCount') ?? 0
+              const nextAlarm = await this.ctx.storage.getAlarm()
+              return Response.json({ ok: true, kicked: true, loopCount, nextAlarm })
             } catch (error) {
-              return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+              const stack = error instanceof Error ? error.stack : undefined
+              return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error), stack }, { status: 200 })
             }
           }
 
