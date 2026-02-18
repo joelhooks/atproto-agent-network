@@ -996,16 +996,32 @@ export class AgentDO extends DurableObject {
           }
 
           case 'kick': {
-            // POST /agents/:name/kick — Force-reset alarm to bootstrap stuck DOs.
+            // POST /agents/:name/kick — Force-fire alarm for stuck DOs.
+            // When CF alarm scheduler fails to invoke alarm(), we call it
+            // via HTTP request context (which has a 30s CPU limit).
             if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
             
-            // Delete any stale alarm and set a fresh one 2s in the future
+            // First, clear any stale alarm state
             await this.ctx.storage.deleteAlarm()
             await this.ctx.storage.put('loopRunning', true)
-            const nextAlarm = Date.now() + 2000
-            await this.ctx.storage.setAlarm(nextAlarm)
             
-            return Response.json({ ok: true, kicked: true, nextAlarm })
+            // Run the alarm handler inline (observe + think + act)
+            try {
+              await this.alarm()
+              const loopCount = await this.ctx.storage.get<number>('loopCount') ?? 0
+              const nextAlarm = await this.ctx.storage.getAlarm()
+              return Response.json({ ok: true, kicked: true, loopCount, nextAlarm })
+            } catch (error) {
+              // Even if alarm() fails, try to set a fresh alarm so the chain continues
+              try {
+                await this.ctx.storage.setAlarm(Date.now() + 5000)
+              } catch { /* ignore */ }
+              return Response.json({ 
+                ok: false, 
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5) : undefined
+              })
+            }
           }
 
           case 'analytics': {
