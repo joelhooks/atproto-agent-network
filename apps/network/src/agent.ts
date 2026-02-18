@@ -1481,6 +1481,22 @@ export class AgentDO extends DurableObject {
     const mode = (await this.ctx.storage.get<AlarmMode>('alarmMode')) ?? 'think'
     const modeCounterRaw = (await this.ctx.storage.get<number>('alarmModeCounter')) ?? 0
 
+    // PRE-SCHEDULE the next alarm BEFORE doing any LLM work.
+    // This is the critical fix: if the current tick crashes (e.g. 30s CF wall time
+    // from a slow LLM call), the alarm chain is already set. Without this, a crash
+    // means no next alarm → CF exponential backoff → agent stuck for hours.
+    // The alarm will be rescheduled at the end of the cycle with the correct interval,
+    // but this ensures the chain is never broken.
+    try {
+      const preConfig = await this.ctx.storage.get<AgentConfig>('config')
+      const preInterval = Math.max(
+        MIN_AGENT_LOOP_INTERVAL_MS,
+        (preConfig as any)?.loopIntervalMs ?? DEFAULT_AGENT_LOOP_INTERVAL_MS
+      )
+      // Use 2x interval as safety margin — will be overwritten at end of cycle
+      await this.ctx.storage.setAlarm(Date.now() + preInterval * 2)
+    } catch { /* best effort — don't break the cycle */ }
+
     // Hot reload extensions at the start of the next alarm cycle after writes/removals.
     try { await this.ctx.storage.put('debug:alarmPhase', 'pre-extensions') } catch {}
     await this.maybeReloadExtensions()
