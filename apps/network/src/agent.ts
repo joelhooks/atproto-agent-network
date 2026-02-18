@@ -1497,12 +1497,40 @@ export class AgentDO extends DurableObject {
       await this.ctx.storage.setAlarm(Date.now() + preInterval * 2)
     } catch { /* best effort — don't break the cycle */ }
 
+    // Wall-time guard: CF kills alarm handlers at 30s. Track elapsed time
+    // and bail early if we're approaching the limit, to prevent crashes that
+    // trigger CF exponential backoff.
+    const WALL_TIME_LIMIT_MS = 25_000
+    const wallTimeCheck = () => {
+      const elapsed = Date.now() - alarmStart
+      if (elapsed > WALL_TIME_LIMIT_MS) {
+        console.log(JSON.stringify({
+          event_type: 'agent.alarm.wall_time_abort',
+          did: this.did,
+          elapsed,
+          phase: 'check',
+        }))
+        return true
+      }
+      return false
+    }
+
     // Hot reload extensions at the start of the next alarm cycle after writes/removals.
     try { await this.ctx.storage.put('debug:alarmPhase', 'pre-extensions') } catch {}
+    const extStart = Date.now()
     await this.maybeReloadExtensions()
     // Bootstrap hint for agents that haven't extended themselves yet.
     await this.maybeInjectSelfExtensionHint()
+    const extDuration = Date.now() - extStart
     try { await this.ctx.storage.put('debug:alarmPhase', 'post-extensions') } catch {}
+    try {
+      await this.ctx.storage.put('debug:phaseTiming', {
+        initMs: Date.now() - alarmStart - extDuration,
+        extensionsMs: extDuration,
+        totalBeforeCycleMs: Date.now() - alarmStart,
+      })
+    } catch {}
+    if (wallTimeCheck()) return
 
     const traceId = createTraceId()
     const sessionId = await this.getOrCreateSessionId()
@@ -1602,8 +1630,10 @@ export class AgentDO extends DurableObject {
           span_id: createSpanId(),
         })
         try { await this.ctx.storage.put('debug:alarmPhase', 'observing') } catch {}
-        observations = await this.observe()
-        await this.safePut('lastObservations', observations)
+        if (!wallTimeCheck()) {
+          observations = await this.observe()
+          await this.safePut('lastObservations', observations)
+        }
         try { await this.ctx.storage.put('debug:alarmPhase', 'observed') } catch {}
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -1633,7 +1663,7 @@ export class AgentDO extends DurableObject {
       // In passive mode, skip think/act — external brain handles those via API
       if (!isPassive) {
         try {
-          if (observations) {
+          if (observations && !wallTimeCheck()) {
             await this.broadcastLoopEvent({
               event_type: 'loop.think',
               trace_id: traceId,
@@ -1667,7 +1697,7 @@ export class AgentDO extends DurableObject {
         }
 
         try {
-          if (thought) {
+          if (thought && !wallTimeCheck()) {
             await this.broadcastLoopEvent({
               event_type: 'loop.act',
               trace_id: traceId,
