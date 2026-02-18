@@ -1020,8 +1020,11 @@ export class AgentDO extends DurableObject {
             const nextAlarm = Date.now() + 3000
             await this.ctx.storage.setAlarm(nextAlarm)
             
-            // 5. Return immediately — the alarm will fire via CF scheduler
-            return Response.json({ ok: true, kicked: true, nextAlarm, initialized: this.initialized })
+            // 5. Also read alarm debug info from prior runs
+            const lastAlarmAt = await this.ctx.storage.get<number>('debug:lastAlarmAt')
+            const alarmRetry = await this.ctx.storage.get<unknown>('debug:alarmRetry')
+            
+            return Response.json({ ok: true, kicked: true, nextAlarm, initialized: this.initialized, lastAlarmAt, alarmRetry })
           }
 
           case 'analytics': {
@@ -1414,6 +1417,10 @@ export class AgentDO extends DurableObject {
   }
 
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }): Promise<void> {
+    // Debug: track alarm invocations to diagnose stuck DOs
+    await this.ctx.storage.put('debug:lastAlarmAt', Date.now())
+    await this.ctx.storage.put('debug:alarmRetry', { retryCount: alarmInfo?.retryCount ?? 0, isRetry: alarmInfo?.isRetry ?? false })
+    
     const running = Boolean(await this.ctx.storage.get<boolean>('loopRunning'))
     if (!running) {
       // Keep this log structured so Pipelines can filter it out as a non-cycle event.
