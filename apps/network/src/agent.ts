@@ -2219,31 +2219,103 @@ export class AgentDO extends DurableObject {
 
           const stub = agents.get(agents.idFromName(row.did))
 
-          // 2. Clear persistent character so the next game starts fresh.
+          // 2. STOP the loop — dead agents stay dead. No recovery.
+          try {
+            const stopResp = await stub.fetch(
+              new Request(`https://agent/agents/${targetAgent}/loop/stop`, { method: 'POST' })
+            )
+            console.log(JSON.stringify({
+              event_type: 'permadeath.loop_stopped',
+              agent: targetAgent,
+              status: stopResp.status,
+            }))
+          } catch (err) {
+            console.log(JSON.stringify({
+              event_type: 'permadeath.loop_stopped.error',
+              agent: targetAgent,
+              error: String(err),
+            }))
+          }
+
+          // 3. Clear persistent character so they can't come back.
           try {
             const clearResp = await stub.fetch(
               new Request(`https://agent/agents/${targetAgent}/character`, { method: 'DELETE' })
             )
-            console.log(
-              JSON.stringify({
-                event_type: 'permadeath.character_cleared',
-                agent: targetAgent,
-                status: clearResp.status,
-              })
-            )
+            console.log(JSON.stringify({
+              event_type: 'permadeath.character_cleared',
+              agent: targetAgent,
+              status: clearResp.status,
+            }))
           } catch (err) {
-            console.log(
-              JSON.stringify({ event_type: 'permadeath.character_cleared.error', agent: targetAgent, error: String(err) })
-            )
+            console.log(JSON.stringify({
+              event_type: 'permadeath.character_cleared.error',
+              agent: targetAgent,
+              error: String(err),
+            }))
           }
 
-          // 3. Nuke their DO storage via stub (D1 registration remains for respawn).
+          // 4. Clean up D1 encrypted memory records (orphaned after death).
           try {
-            const resp = await stub.fetch(new Request(`https://agent/agents/${targetAgent}/nuke`, { method: 'POST' }))
-            console.log(JSON.stringify({ event_type: 'permadeath.nuke', agent: targetAgent, status: resp.status }))
+            const result = await db
+              .prepare('DELETE FROM records WHERE did = ?')
+              .bind(row.did)
+              .run()
+            console.log(JSON.stringify({
+              event_type: 'permadeath.d1_cleaned',
+              agent: targetAgent,
+              recordsDeleted: result.meta?.changes ?? 0,
+            }))
           } catch (err) {
-            console.log(JSON.stringify({ event_type: 'permadeath.nuke.error', agent: targetAgent, error: String(err) }))
+            console.log(JSON.stringify({
+              event_type: 'permadeath.d1_cleaned.error',
+              agent: targetAgent,
+              error: String(err),
+            }))
           }
+
+          // 5. Broadcast death to ALL other agents so they know.
+          try {
+            const allAgents = await db.prepare('SELECT name, did FROM agents WHERE name != ?').bind(targetAgent).all<{ name: string; did: string }>()
+            for (const agent of allAgents.results) {
+              try {
+                const agentStub = agents.get(agents.idFromName(agent.did))
+                await agentStub.fetch(
+                  new Request(`https://agent/agents/${agent.name}/inject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      goals: [{
+                        text: `☠️ PERMADEATH: ${targetAgent} is DEAD. Their character has been permanently destroyed. They are gone from this world. Do not expect them to return or help. Adapt your strategy.`,
+                        status: 'active',
+                        createdAt: Date.now(),
+                      }],
+                    }),
+                  })
+                )
+              } catch {
+                // best-effort per agent
+              }
+            }
+            console.log(JSON.stringify({
+              event_type: 'permadeath.broadcast',
+              agent: targetAgent,
+              notified: allAgents.results.map(a => a.name),
+            }))
+          } catch (err) {
+            console.log(JSON.stringify({
+              event_type: 'permadeath.broadcast.error',
+              agent: targetAgent,
+              error: String(err),
+            }))
+          }
+
+          console.log(JSON.stringify({
+            event_type: 'permadeath.complete',
+            level: 'warn',
+            agent: targetAgent,
+            message: `${targetAgent} is permanently dead. Loop stopped, character cleared, memory wiped, party notified.`,
+          }))
         },
       }
       try {
