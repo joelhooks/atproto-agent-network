@@ -1449,9 +1449,11 @@ export class AgentDO extends DurableObject {
     const modeCounterRaw = (await this.ctx.storage.get<number>('alarmModeCounter')) ?? 0
 
     // Hot reload extensions at the start of the next alarm cycle after writes/removals.
+    try { await this.ctx.storage.put('debug:alarmPhase', 'pre-extensions') } catch {}
     await this.maybeReloadExtensions()
     // Bootstrap hint for agents that haven't extended themselves yet.
     await this.maybeInjectSelfExtensionHint()
+    try { await this.ctx.storage.put('debug:alarmPhase', 'post-extensions') } catch {}
 
     const traceId = createTraceId()
     const sessionId = await this.getOrCreateSessionId()
@@ -1550,8 +1552,10 @@ export class AgentDO extends DurableObject {
           trace_id: traceId,
           span_id: createSpanId(),
         })
+        try { await this.ctx.storage.put('debug:alarmPhase', 'observing') } catch {}
         observations = await this.observe()
         await this.safePut('lastObservations', observations)
+        try { await this.ctx.storage.put('debug:alarmPhase', 'observed') } catch {}
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const category = this.categorizeAlarmError(error, { phase: 'observe' })
