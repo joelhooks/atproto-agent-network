@@ -996,32 +996,32 @@ export class AgentDO extends DurableObject {
           }
 
           case 'kick': {
-            // POST /agents/:name/kick — Force-fire alarm for stuck DOs.
-            // When CF alarm scheduler fails to invoke alarm(), we call it
-            // via HTTP request context (which has a 30s CPU limit).
+            // POST /agents/:name/kick — Force-reset alarm for stuck DOs.
+            // CF DO alarms can get permanently stuck after nuke/deploy.
+            // This endpoint does NOT call alarm() (exceeds 30s wall time).
+            // Instead it resets all alarm state and uses ctx.waitUntil to
+            // schedule the alarm handler asynchronously.
             if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
             
-            // First, clear any stale alarm state
+            // 1. Clear stale alarm
             await this.ctx.storage.deleteAlarm()
-            await this.ctx.storage.put('loopRunning', true)
             
-            // Run the alarm handler inline (observe + think + act)
-            try {
-              await this.alarm()
-              const loopCount = await this.ctx.storage.get<number>('loopCount') ?? 0
-              const nextAlarm = await this.ctx.storage.getAlarm()
-              return Response.json({ ok: true, kicked: true, loopCount, nextAlarm })
-            } catch (error) {
-              // Even if alarm() fails, try to set a fresh alarm so the chain continues
-              try {
-                await this.ctx.storage.setAlarm(Date.now() + 5000)
-              } catch { /* ignore */ }
-              return Response.json({ 
-                ok: false, 
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5) : undefined
-              })
+            // 2. Ensure loop is marked as running
+            await this.ctx.storage.put('loopRunning', true)
+            await this.ctx.storage.put('alarmMode', 'think')
+            await this.ctx.storage.put('alarmModeCounter', 0)
+            
+            // 3. Initialize if needed (needed for alarm() to work)
+            if (!this.initialized) {
+              await this.initialize(agentName)
             }
+            
+            // 4. Set alarm 3s in future and also use waitUntil to poke it
+            const nextAlarm = Date.now() + 3000
+            await this.ctx.storage.setAlarm(nextAlarm)
+            
+            // 5. Return immediately — the alarm will fire via CF scheduler
+            return Response.json({ ok: true, kicked: true, nextAlarm, initialized: this.initialized })
           }
 
           case 'analytics': {
