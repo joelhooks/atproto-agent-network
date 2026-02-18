@@ -29,8 +29,8 @@ interface OpenRouterToolDef {
 }
 
 // Pi philosophy: agent decides when it's done, timeout is the only limit
-const TOOL_LOOP_TIMEOUT_MS = 25_000
-const FETCH_TIMEOUT_MS = 20_000
+const TOOL_LOOP_TIMEOUT_MS = 20_000
+const FETCH_TIMEOUT_MS = 15_000
 
 /** A single step in the agentic tool loop — for o11y */
 export interface LoopStep {
