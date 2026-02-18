@@ -995,6 +995,18 @@ export class AgentDO extends DurableObject {
             })
           }
 
+          case 'kick': {
+            // POST /agents/:name/kick — Force-fire the alarm handler.
+            // Use when CF DO alarms get stuck after nuke/deploy.
+            if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            try {
+              await this.alarm()
+              return Response.json({ ok: true, kicked: true })
+            } catch (error) {
+              return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+            }
+          }
+
           case 'analytics': {
             // Internal-only endpoint used by `/admin/analytics` in the network worker.
             // Guard it so it can't be reached via public `/agents/:name/...` forwarding.
