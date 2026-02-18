@@ -1008,7 +1008,8 @@ export class AgentDO extends DurableObject {
             
             // 2. Ensure loop is marked as running
             await this.ctx.storage.put('loopRunning', true)
-            await this.ctx.storage.put('alarmMode', 'think')
+            // Start with housekeeping to bootstrap without LLM call (avoids CF wall time limit)
+            await this.ctx.storage.put('alarmMode', 'housekeeping')
             await this.ctx.storage.put('alarmModeCounter', 0)
             
             // 3. Initialize if needed (needed for alarm() to work)
