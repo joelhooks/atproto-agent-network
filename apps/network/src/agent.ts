@@ -1446,6 +1446,38 @@ export class AgentDO extends DurableObject {
     }
     try { await this.ctx.storage.put('debug:alarmPhase', 'initialized') } catch {}
 
+    // First-boot fast path: on a fresh DO (after nuke), skip the LLM-heavy
+    // observe→think→act cycle. Just increment loopCount, set state, and schedule
+    // the next alarm. This prevents CF 30s wall-time crashes that cause exponential
+    // backoff, making agents unrecoverable without waiting hours.
+    const currentLoopCount = await this.ctx.storage.get<number>('loopCount')
+    const isFirstBoot = typeof currentLoopCount !== 'number' || currentLoopCount === 0
+    if (isFirstBoot && !alarmInfo?.isRetry) {
+      try {
+        await this.ctx.storage.put('loopCount', 1)
+        await this.ctx.storage.put('alarmMode', 'think')
+        await this.ctx.storage.put('alarmModeCounter', 0)
+        await this.ctx.storage.put('errorBackoff', { category: 'unknown', streak: 0 })
+        await this.ctx.storage.put('consecutiveErrors', 0)
+        await this.ctx.storage.put('debug:alarmPhase', 'first-boot-done')
+        // Schedule next alarm quickly — the real work starts on tick 2
+        const config = await this.ctx.storage.get<AgentConfig>('config')
+        const bootInterval = Math.max(MIN_AGENT_LOOP_INTERVAL_MS, (config as any)?.loopIntervalMs ?? DEFAULT_AGENT_LOOP_INTERVAL_MS)
+        await this.ctx.storage.setAlarm(Date.now() + bootInterval)
+        logEvent({
+          event_type: 'agent.cycle.first_boot',
+          level: 'info',
+          component: 'agent-do',
+          did: this.did,
+          context: { reason: 'fast_path_skip_llm', nextAlarmMs: bootInterval },
+        })
+      } catch (error) {
+        // Even if something fails, try to schedule the next alarm
+        try { await this.ctx.storage.setAlarm(Date.now() + 5000) } catch {}
+      }
+      return
+    }
+
     const mode = (await this.ctx.storage.get<AlarmMode>('alarmMode')) ?? 'think'
     const modeCounterRaw = (await this.ctx.storage.get<number>('alarmModeCounter')) ?? 0
 
