@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -28,5 +30,39 @@ describe("git hooks", () => {
     expect(hasUncommentedCommand(contents, "pnpm typecheck")).toBe(true)
     expect(hasUncommentedCommand(contents, "pnpm test")).toBe(true)
   })
-})
 
+  it("root test script runs the Vitest wrapper without silent fallback", () => {
+    const repoRoot = repoRootFromHere()
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"))
+    const testScript = packageJson.scripts?.test
+
+    expect(testScript).toBe("node ./scripts/vitest.mjs run --passWithNoTests")
+    expect(testScript).not.toContain("command -v vitest")
+    expect(testScript).not.toContain("echo PASS")
+  })
+
+  it("Vitest wrapper reports missing dependencies instead of passing", () => {
+    const repoRoot = repoRootFromHere()
+    const tempRepo = mkdtempSync(path.join(tmpdir(), "atproto-agent-network-vitest-"))
+
+    try {
+      const scriptsDir = path.join(tempRepo, "scripts")
+      const wrapperPath = path.join(scriptsDir, "vitest.mjs")
+      mkdirSync(scriptsDir, { recursive: true })
+      copyFileSync(path.join(repoRoot, "scripts", "vitest.mjs"), wrapperPath)
+
+      const result = spawnSync(
+        process.execPath,
+        [wrapperPath, "run", "--passWithNoTests"],
+        { encoding: "utf8" },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("Vitest is not installed")
+      expect(result.stderr).toContain("pnpm install --frozen-lockfile")
+      expect(result.stdout).not.toContain("PASS")
+    } finally {
+      rmSync(tempRepo, { recursive: true, force: true })
+    }
+  })
+})
