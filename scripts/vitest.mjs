@@ -1,10 +1,18 @@
 import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, "..")
 const vitestPath = path.join(repoRoot, "node_modules", "vitest", "vitest.mjs")
+
+if (!existsSync(vitestPath)) {
+  console.error(
+    "Vitest is not installed. Run pnpm install --frozen-lockfile before running pnpm test.",
+  )
+  process.exit(1)
+}
 
 const args = process.argv.slice(2)
 const forwarded = []
@@ -42,5 +50,10 @@ if (!hasProjectArg) {
 const result = spawnSync(process.execPath, [vitestPath, ...forwarded], {
   stdio: "inherit",
 })
+
+if (result.error) {
+  console.error(`Failed to start Vitest: ${result.error.message}`)
+  process.exit(1)
+}
 
 process.exit(result.status ?? 1)
