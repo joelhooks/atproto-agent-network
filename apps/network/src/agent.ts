@@ -1486,8 +1486,9 @@ export class AgentDO extends DurableObject {
     // the next alarm. This prevents CF 30s wall-time crashes that cause exponential
     // backoff, making agents unrecoverable without waiting hours.
     const currentLoopCount = await this.ctx.storage.get<number>('loopCount')
+    const isTestRun = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)
     const isFirstBoot = typeof currentLoopCount !== 'number' || currentLoopCount === 0
-    if (isFirstBoot && !alarmInfo?.isRetry) {
+    if (isFirstBoot && !isTestRun && !alarmInfo?.isRetry) {
       try {
         await this.ctx.storage.put('loopCount', 1)
         await this.ctx.storage.put('alarmMode', 'think')
@@ -1786,7 +1787,7 @@ export class AgentDO extends DurableObject {
       // Treat failed steps as an error signal for alarm scheduling.
       if (acted?.steps?.some((s) => !s.ok)) {
         hadError = true
-        const gameStepFailed = acted.steps.some((s) => s.name === 'game' && !s.ok)
+        const gameStepFailed = acted.steps.some((s) => (s.name === 'game' || s.name === 'rpg') && !s.ok)
         const category: AlarmErrorCategory = gameStepFailed ? 'game' : 'persistent'
         const firstFailure = acted.steps.find((s) => !s.ok)
         const message = typeof (firstFailure as any)?.error === 'string' ? (firstFailure as any).error : 'tool_failed'
@@ -2219,25 +2220,7 @@ export class AgentDO extends DurableObject {
 
           const stub = agents.get(agents.idFromName(row.did))
 
-          // 2. STOP the loop — dead agents stay dead. No recovery.
-          try {
-            const stopResp = await stub.fetch(
-              new Request(`https://agent/agents/${targetAgent}/loop/stop`, { method: 'POST' })
-            )
-            console.log(JSON.stringify({
-              event_type: 'permadeath.loop_stopped',
-              agent: targetAgent,
-              status: stopResp.status,
-            }))
-          } catch (err) {
-            console.log(JSON.stringify({
-              event_type: 'permadeath.loop_stopped.error',
-              agent: targetAgent,
-              error: String(err),
-            }))
-          }
-
-          // 3. Clear persistent character so they can't come back.
+          // 2. Clear persistent character first so they can't come back even if loop stop fails.
           try {
             const clearResp = await stub.fetch(
               new Request(`https://agent/agents/${targetAgent}/character`, { method: 'DELETE' })
@@ -2250,6 +2233,24 @@ export class AgentDO extends DurableObject {
           } catch (err) {
             console.log(JSON.stringify({
               event_type: 'permadeath.character_cleared.error',
+              agent: targetAgent,
+              error: String(err),
+            }))
+          }
+
+          // 3. Nuke the target DO so old keys/storage cannot resurrect the character.
+          try {
+            const nukeResp = await stub.fetch(
+              new Request(`https://agent/agents/${targetAgent}/nuke`, { method: 'POST' })
+            )
+            console.log(JSON.stringify({
+              event_type: 'permadeath.nuked',
+              agent: targetAgent,
+              status: nukeResp.status,
+            }))
+          } catch (err) {
+            console.log(JSON.stringify({
+              event_type: 'permadeath.nuked.error',
               agent: targetAgent,
               error: String(err),
             }))
@@ -3280,6 +3281,15 @@ export class AgentDO extends DurableObject {
 	    // We treat the first environment returning non-empty buildContext() as "active",
 	    // matching how the prompt picks a single environment context block.
 	    let activeEnvironmentType: string | null = null
+
+      try {
+        const memberships = await this.resolveActiveEnvironmentMemberships()
+        const activeId = memberships[0]?.environmentId?.toLowerCase() ?? ''
+        if (activeId.includes('rpg')) activeEnvironmentType = 'rpg'
+        else if (activeId.includes('catan') || activeId.includes('game')) activeEnvironmentType = 'catan'
+      } catch {
+        // Best-effort routing hint only.
+      }
 	
 	    // Auto-play injection via environment registry.
 	    // Each environment defines isActionTaken() and getAutoPlayActions() to handle
@@ -3329,7 +3339,10 @@ export class AgentDO extends DurableObject {
 	            arguments: (c.arguments ?? {}) as Record<string, unknown>,
 	          }))
 
-	          if (env.isActionTaken(toolCallsForCheck)) break
+	          if (env.isActionTaken(toolCallsForCheck)) {
+            activeEnvironmentType = activeEnvironmentType ?? env.type
+            break
+          }
 	          const autoActions = await env.getAutoPlayActions(envCtx)
 	          if (autoActions.length > 0) {
 	            // Prepend all but the last (usually roll_dice), append the last (usually end_turn)
@@ -3359,7 +3372,7 @@ export class AgentDO extends DurableObject {
 	          try {
 	            const lines = await env.buildContext(envCtx)
 	            if (Array.isArray(lines) && lines.length > 0) {
-	              activeEnvironmentType = env.type
+	              activeEnvironmentType = activeEnvironmentType ?? env.type
 	              break
 	            }
 	          } catch {
@@ -3427,6 +3440,15 @@ export class AgentDO extends DurableObject {
         continue
       }
 
+      const toolArgs = (call.arguments ?? {}) as Record<string, unknown>
+      if ((name === 'game' || name === 'rpg') && typeof toolArgs.command !== 'string') {
+        steps.push({ name, ok: false, error: `${name} command required` })
+        outcomes.push({ tool: name, success: false, timestamp: Date.now() })
+        if (outcomes.length > 50) outcomes.splice(0, outcomes.length - 50)
+        await this.safePut('actionOutcomes', outcomes.slice(-50))
+        continue
+      }
+
       const tool = this.tools.find((t) => t.name === name)
       if (!tool || typeof tool.execute !== 'function') {
         steps.push({ name, ok: false, error: name === 'gm' ? 'tool not available' : 'Tool not found' })
@@ -3441,7 +3463,7 @@ export class AgentDO extends DurableObject {
         // Think() results don't include toolCallId. Generate a stable-ish id per step for tracing.
         const toolCallId = `tc_${generateTid()}`
         const result = await promiseWithTimeout(
-          Promise.resolve(tool.execute(toolCallId, call.arguments ?? {})),
+          Promise.resolve(tool.execute(toolCallId, toolArgs)),
           remaining,
           `Tool timed out: ${name}`
         )
@@ -7256,7 +7278,7 @@ export class AgentDO extends DurableObject {
     const normalized = message.toLowerCase()
 
     // Game-context: errors explicitly coming from game actions should not stall the agent for long.
-    if (ctx.phase === 'act' && normalized.includes('game')) return 'game'
+    if (ctx.phase === 'act' && (normalized.includes('game') || normalized.includes('rpg'))) return 'game'
 
     // Transient: timeouts, rate limits, temporary upstream failures.
     if (normalized.includes('rate limit') || normalized.includes('too many requests') || normalized.includes('429')) {

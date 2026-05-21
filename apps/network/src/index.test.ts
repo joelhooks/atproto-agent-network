@@ -11,6 +11,11 @@ import {
   WARRIOR_SKILL,
 } from './environments/rpg-skills'
 
+vi.mock('@cloudflare/sandbox', () => ({
+  getSandbox: vi.fn(() => ({ destroy: vi.fn(), createSession: vi.fn() })),
+  Sandbox: class Sandbox {},
+}))
+
 vi.mock('cloudflare:workers', () => {
   class DurableObject {
     // eslint-disable-next-line @typescript-eslint/no-useless-constructor
@@ -740,6 +745,8 @@ describe('network worker environments API', () => {
 
   it('POST /environments creates a new instance and /games stays an alias', async () => {
     const db = new D1MockDatabase()
+    await registerAgent(db, { name: 'slag', did: 'did:cf:slag' })
+    await registerAgent(db, { name: 'snarl', did: 'did:cf:snarl' })
     const env = createHealthEnv({ DB: db })
     const { default: worker } = await import('./index')
 
